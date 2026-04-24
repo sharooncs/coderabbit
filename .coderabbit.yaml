@@ -1,0 +1,79 @@
+# .coderabbit.yaml — IDC Global Template
+# Drop this file at the repo root. Inherits org-level defaults from sharooncs/coderabbit.
+# CodeRabbit reads CLAUDE.md automatically — do NOT duplicate rules here.
+
+language: "en-US"
+early_access: true
+
+reviews:
+  profile: "assertive"         # strict on logic/security; Claude handles style
+  auto_review:
+    enabled: true
+    drafts: false              # skip WIP draft PRs (Claude authoring in progress)
+  request_changes_workflow: false  # don't block PRs; flag only
+  high_level_summary: true
+  poem: false
+  review_status: true
+
+  # Machine-readable output so Claude Code can parse and auto-fix findings
+  # Requires CodeRabbit Pro
+  # prompt_for_ai_agents: true
+
+  path_filters:
+    - "!**/__pycache__/**"
+    - "!**/*.pyc"
+    - "!**/*.pot"
+    - "!**/node_modules/**"
+    - "!**/build/**"
+    - "!**/dist/**"
+    - "!**/*.min.js"
+    - "!**/*.generated.*"
+    - "!**/package-lock.json"
+    - "!**/.git/**"
+
+  path_instructions:
+    # Odoo module manifests
+    - path: "**/__manifest__.py"
+      instructions: >
+        Validate: version field present, license declared, depends list complete,
+        category valid. Flag any missing installable=True.
+
+    # Odoo models
+    - path: "**/models/**/*.py"
+      instructions: >
+        Check: no raw SQL unless inside _cr.execute with params (never string format),
+        _sql_constraints present for uniqueness, no bypass of stored compute fields,
+        _inherit before _name, no print() statements, proper @api decorators.
+
+    # Odoo migrations
+    - path: "**/migration*/**/*.py"
+      instructions: >
+        STRICT: every migration must have pre-state guards (check before mutating),
+        post-state verification (VFY assertions), and rollback comments.
+        Raw SQL INSERT must explicitly populate stored computed fields.
+        Never bulk-move AML lines without counterpart trace.
+
+    # Odoo views/XML
+    - path: "**/*.xml"
+      instructions: >
+        No attrs= in Odoo 19+ (use invisible=, required=, readonly= directly).
+        No deprecated widget names. Check action ids are unique.
+
+    # SQL scripts
+    - path: "**/*.sql"
+      instructions: >
+        Every UPDATE/DELETE must have a WHERE clause.
+        Every financial AML mutation must filter am.state='posted'.
+        No DROP without explicit user confirmation comment.
+
+    # Tests
+    - path: "**/tests/**/*.py"
+      instructions: >
+        Focus on coverage gaps and missing edge cases.
+        Do not flag hardcoded test data or magic numbers in test fixtures.
+
+    # JavaScript/TypeScript
+    - path: "**/*.{ts,tsx,js,jsx}"
+      instructions: >
+        Flag: unhandled promise rejections, missing error boundaries,
+        direct DOM manipulation in React components, missing TypeScript types on props.
