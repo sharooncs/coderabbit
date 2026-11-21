@@ -102,7 +102,11 @@ fun ReconcileScreen() {
             }
 
             item(key = "hdamaged") { MdGroupHeader("Damaged", damaged.size) }
-            items(damaged, key = { "d" + it.id }) { m -> MovableRow(m) }
+            items(damaged, key = { "d" + it.id }) { m ->
+                MovableRow(m)
+                val note = (if (m.isBox) data.box(m.id)?.damageNote else data.item(m.id)?.damageNote).orEmpty()
+                if (note.isNotBlank()) Hint(note, Modifier.padding(start = 54.dp, end = 16.dp, bottom = 8.dp))
+            }
             if (damaged.isNotEmpty()) item(key = "damagehint") {
                 Hint("Open each one to add photos and a note. The damage report is under More → Reports.", Modifier.padding(16.dp))
             }

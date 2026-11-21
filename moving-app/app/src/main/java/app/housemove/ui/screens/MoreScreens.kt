@@ -65,6 +65,7 @@ private fun GroupTitle(text: String) {
 @Composable
 fun SettingsScreen() {
     val store = LocalStore.current
+    val nav = LocalNav.current
     val data = appData()
     val device = deviceInfo()
     val move = data.move
@@ -110,7 +111,8 @@ fun SettingsScreen() {
         onConfirm = {
             store.photoDir.listFiles()?.forEach { it.delete() }
             store.replaceAll(AppData())
-            store.setDevice { it.copy(nextSeq = 1, currentRoomId = null, currentTripId = null, lastSyncAt = 0) }
+            store.setDevice { it.copy(nextSeq = 1, currentRoomId = null, currentTripId = null, lastSyncAt = 0, lastBackupAt = 0) }
+            nav.navigate("setup") { popUpTo(0) { inclusive = true } }
         },
         onDismiss = { confirmErase = false },
     )

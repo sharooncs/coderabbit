@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -211,13 +212,13 @@ private fun MdArrivalPanel(m: Movable, already: Boolean, onDamage: () -> Unit, o
             Button(
                 onClick = onDamage,
                 colors = ButtonDefaults.buttonColors(containerColor = fg, contentColor = bg),
-                modifier = Modifier.height(52.dp),
+                modifier = Modifier.heightIn(min = 52.dp),
             ) { Text("Report damage") }
             if (!already) OutlinedButton(
                 onClick = onUndo,
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = fg),
                 border = BorderStroke(1.dp, fg),
-                modifier = Modifier.height(52.dp),
+                modifier = Modifier.heightIn(min = 52.dp),
             ) { Text("Undo") }
         }
     }

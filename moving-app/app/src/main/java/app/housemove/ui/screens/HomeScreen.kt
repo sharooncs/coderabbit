@@ -5,7 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -55,6 +55,19 @@ fun HomeScreen() {
 
     Screen(title = move.name.ifBlank { "HouseMove" }, back = false, tab = "home", actions = { TopActions() }) {
         ScrollColumn {
+            var warning by remember { mutableStateOf(store.loadWarning) }
+            warning?.let { w ->
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer), modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(w, color = MaterialTheme.colorScheme.onErrorContainer)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { nav.open("sync") }) { Text("Sync and backup") }
+                            TextButton(onClick = { store.clearLoadWarning(); warning = null }) { Text("Dismiss") }
+                        }
+                    }
+                }
+            }
+
             // Countdown
             Card(
                 Modifier.fillMaxWidth().clickable { nav.open("settings") },

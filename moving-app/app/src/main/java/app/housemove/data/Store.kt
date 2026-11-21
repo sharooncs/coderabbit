@@ -11,6 +11,7 @@ import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 val AppJson = Json {
     ignoreUnknownKeys = true
@@ -43,7 +44,11 @@ data class DeviceInfo(
  */
 class Store(private val dir: File, private val clock: () -> Long = System::currentTimeMillis) {
 
-    val photoDir: File = File(dir, "photos").apply { mkdirs() }
+    val photoDir: File = File(dir, "photos").apply {
+        mkdirs()
+        // Leftovers from a transfer or import that was cut off.
+        listFiles()?.filter { it.name.endsWith(".part") || it.name.endsWith(".import") }?.forEach { it.delete() }
+    }
     private val dataFile = File(dir, "data.json")
     private val backupFile = File(dir, "data.json.bak")
     private val deviceFile = File(dir, "device.json")
@@ -53,6 +58,15 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
     }
     private val dirty = AtomicBoolean(false)
 
+    /** Set when the saved data could not be read normally at start-up; shown once on the dashboard. */
+    @Volatile
+    var loadWarning: String? = null
+        private set
+
+    fun clearLoadWarning() {
+        loadWarning = null
+    }
+
     private val _data = MutableStateFlow(load())
     val data: StateFlow<AppData> = _data
 
@@ -60,14 +74,23 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
     val device: StateFlow<DeviceInfo> = _device
 
     private fun load(): AppData {
+        var damaged = false
         for (f in listOf(dataFile, backupFile)) {
             if (!f.exists()) continue
             try {
-                return AppJson.decodeFromString<AppData>(f.readText())
+                val d = AppJson.decodeFromString<AppData>(f.readText())
+                if (damaged) loadWarning = "The saved data was damaged, so the previous saved copy was loaded. The last few changes may be missing."
+                return d
             } catch (_: Exception) {
-                // fall through to the backup copy
+                // Keep the unreadable file for recovery instead of overwriting it, then try the older copy.
+                damaged = true
+                try {
+                    f.copyTo(File(dir, f.name + ".damaged"), overwrite = true)
+                } catch (_: Exception) {
+                }
             }
         }
+        if (damaged) loadWarning = "The saved data could not be read, so the app started empty. Restore your latest backup, or sync from another phone."
         return AppData()
     }
 
@@ -78,7 +101,23 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
         DeviceInfo()
     }
 
-    fun now(): Long = clock()
+    private val lastStamp = AtomicLong(maxStamp(_data.value))
+
+    /**
+     * Time used to stamp changes. It never goes backwards and is always later
+     * than every change this phone has already seen, including ones received
+     * from other phones. So an edit made after a sync always wins over what was
+     * synced, even when the phones' clocks disagree.
+     */
+    fun now(): Long = lastStamp.updateAndGet { last -> maxOf(clock(), last + 1) }
+
+    private fun maxStamp(d: AppData): Long {
+        var m = d.move.updatedAt
+        for (list in listOf<List<Rec>>(d.rooms, d.items, d.boxes, d.photos, d.tasks, d.expenses, d.supplies, d.trips, d.readings)) {
+            for (r in list) if (r.updatedAt > m) m = r.updatedAt
+        }
+        return m
+    }
 
     // ---- persistence -------------------------------------------------------
 
@@ -108,6 +147,16 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
         try {
             io.submit { writeNow() }.get(10, TimeUnit.SECONDS)
         } catch (_: Exception) {
+        }
+    }
+
+    /** Write everything out and stop background writes. The store must not be used afterwards. */
+    fun close() {
+        flush()
+        io.shutdownNow() // also drops delayed writes; flush() above already saved everything
+        try {
+            io.awaitTermination(5, TimeUnit.SECONDS)
+        } catch (_: InterruptedException) {
         }
     }
 
@@ -244,6 +293,8 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
 
     /** Merge another phone's (or a backup's) dataset into this one. Returns the merged result. */
     fun mergeIn(remote: AppData): AppData {
+        val seen = maxStamp(remote)
+        lastStamp.updateAndGet { maxOf(it, seen) }
         update { merge(it, remote) }
         // Remove files for photos that were deleted on the other phone.
         val dead = _data.value.photos.filter { it.deleted }.map { it.file }
@@ -252,5 +303,9 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
     }
 
     /** Replace everything with [other] (used for "restore and overwrite"). */
-    fun replaceAll(other: AppData) = update { other }
+    fun replaceAll(other: AppData) {
+        val seen = maxStamp(other)
+        lastStamp.updateAndGet { maxOf(it, seen) }
+        update { other }
+    }
 }

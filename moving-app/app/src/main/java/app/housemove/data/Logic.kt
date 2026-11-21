@@ -199,7 +199,7 @@ fun AppData.progress(): Progress {
     val tasks = liveTasks
     return Progress(
         triage = Ratio(items.count { it.disposition != Disposition.UNDECIDED }, items.size),
-        destinations = Ratio(moving.count { it.destRoomId != null }, moving.size),
+        destinations = Ratio(moving.count { room(it.destRoomId) != null }, moving.size),
         roomsPacked = Ratio(origin.count { it.packed }, origin.size),
         sealed = Ratio(boxes.count { it.sealed }, boxes.size),
         loaded = Ratio(mv.count { it.stage != Stage.AT_ORIGIN }, mv.size),
@@ -227,13 +227,13 @@ fun AppData.issues(now: Long = today()): List<Issue> {
     val undecided = liveItems.count { it.disposition == Disposition.UNDECIDED }
     if (undecided > 0) out += Issue("$undecided item${if (undecided == 1) "" else "s"} not triaged", "triage")
     val moving = movingItems()
-    val noDest = moving.count { it.destRoomId == null }
+    val noDest = moving.count { room(it.destRoomId) == null }
     if (noDest > 0) out += Issue("$noDest item${if (noDest == 1) "" else "s"} with no destination room", "plan")
     val wontFit = moving.count { fitOf(it) == Fit.NO && !it.needsDisassembly }
     if (wontFit > 0) out += Issue("$wontFit item${if (wontFit == 1) "" else "s"} won't fit through the door assembled", "plan", severe = true)
     val toGo = liveItems.count { it.disposition in listOf(Disposition.SELL, Disposition.DONATE, Disposition.BIN) && !it.gone }
     if (toGo > 0) out += Issue("$toGo item${if (toGo == 1) "" else "s"} still to sell, donate or bin", "disposal")
-    val boxNoDest = liveBoxes.count { it.destRoomId == null }
+    val boxNoDest = liveBoxes.count { room(it.destRoomId) == null }
     if (boxNoDest > 0) out += Issue("$boxNoDest box${if (boxNoDest == 1) "" else "es"} with no destination room", "boxes")
     val unsealed = liveBoxes.count { !it.sealed && it.stage == Stage.AT_ORIGIN }
     if (unsealed > 0) out += Issue("$unsealed box${if (unsealed == 1) "" else "es"} still open", "boxes")

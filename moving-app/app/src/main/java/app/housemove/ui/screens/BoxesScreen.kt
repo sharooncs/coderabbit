@@ -262,12 +262,12 @@ fun PackScreen() {
             }
             item(key = "buttons") {
                 Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(onClick = { scanning = true }, modifier = Modifier.fillMaxWidth().height(64.dp)) {
+                    Button(onClick = { scanning = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
                         Icon(Icons.Default.QrCodeScanner, contentDescription = null)
                         Spacer(Modifier.width(12.dp))
                         Text("Scan a printed label", style = MaterialTheme.typography.titleMedium)
                     }
-                    OutlinedButton(onClick = { startBox(store.nextHandCode()) }, modifier = Modifier.fillMaxWidth().height(56.dp)) {
+                    OutlinedButton(onClick = { startBox(store.nextHandCode()) }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
                         Icon(Icons.Default.Edit, contentDescription = null)
                         Spacer(Modifier.width(12.dp))
                         Text("No sticker? Use a handwritten code")

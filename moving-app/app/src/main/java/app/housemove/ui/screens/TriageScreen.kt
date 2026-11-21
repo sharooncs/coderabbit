@@ -111,7 +111,7 @@ fun TriageScreen() {
 
                 Button(
                     onClick = { decide(current.id, Disposition.MOVE) },
-                    modifier = Modifier.fillMaxWidth().height(60.dp),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp),
                 ) {
                     Icon(Icons.Default.LocalShipping, contentDescription = null)
                     Spacer(Modifier.width(10.dp))
@@ -143,7 +143,7 @@ fun TriageScreen() {
 
 @Composable
 private fun ChoiceButton(text: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    FilledTonalButton(onClick = onClick, modifier = modifier.height(56.dp)) {
+    FilledTonalButton(onClick = onClick, modifier = modifier.heightIn(min = 56.dp)) {
         Text(text, style = MaterialTheme.typography.titleMedium)
     }
 }

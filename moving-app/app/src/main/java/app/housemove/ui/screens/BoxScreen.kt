@@ -137,7 +137,7 @@ fun BoxScreen(id: String) {
 
             // ---- seal ----
             if (!box.sealed) {
-                Button(onClick = { edit { it.copy(sealed = true) } }, modifier = Modifier.fillMaxWidth().height(60.dp)) {
+                Button(onClick = { edit { it.copy(sealed = true) } }, modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp)) {
                     Icon(Icons.Default.Lock, contentDescription = null)
                     Spacer(Modifier.width(12.dp))
                     Text("Seal box", style = MaterialTheme.typography.titleMedium)

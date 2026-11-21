@@ -61,7 +61,7 @@ fun WalkScreen() {
                     Button(
                         onClick = { camera = true },
                         enabled = canShoot,
-                        modifier = Modifier.fillMaxWidth().height(64.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
                     ) {
                         Icon(Icons.Default.PhotoCamera, contentDescription = null)
                         Spacer(Modifier.width(12.dp))

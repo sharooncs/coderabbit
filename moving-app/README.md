@@ -52,9 +52,38 @@ screen, and merged into any phone.
 Requires JDK 17 and the Android SDK (platform 35).
 
 ```
-./gradlew :app:testDebugUnitTest   # data, sync and screen tests
-./gradlew :app:assembleRelease     # app/build/outputs/apk/release/app-release.apk
+./gradlew :app:testDebugUnitTest          # simulated Android on the JVM, about 2 minutes
+./gradlew :app:assembleRelease            # app/build/outputs/apk/release/app-release.apk
+./gradlew :app:connectedDebugAndroidTest  # on a connected phone or running emulator
 ```
+
+## How it is tested
+
+Three layers, all free to run:
+
+1. **Logic and edge cases** (`DataTest`, `EdgeCaseTest`). Merge rules, phones with
+   clocks that disagree, the same box edited on two phones, delete against edit,
+   duplicate labels, a photo deleted on one phone, a transfer cut off half way,
+   a stranger connecting to the sync port, damaged or newer-version data files,
+   files that are not backups, changing the move date, deleting a room that is in
+   use, and a 600-box move staying fast.
+2. **Every screen and flow on simulated Android** (`ScreensTest`, `FlowsTest`,
+   `JourneyTest`, `PdfTest`). Each screen opens with data, with none, and on a
+   small dark phone with enlarged text. Flows are driven by tapping and typing:
+   setup, joining as a second phone, scanning known, unknown and wrong codes,
+   packing, relabelling, undo, damage, reconcile, erase. Every printed label on
+   every sheet layout is scanned back.
+3. **The real app on a real Android emulator** (`DeviceTest`, run by GitHub
+   Actions on Android 8.0 and 14). The whole journey from a fresh install, a photo
+   taken through the camera, the scanner running on live camera frames, PDFs
+   opened with Android's own renderer and their labels scanned, sync over a real
+   socket, backup through the share route, and the app being rebuilt and stopped.
+   Screenshots from the run are attached to the workflow as artifacts.
+
+What no simulation covers: a physical camera reading a printed sticker in real
+light, a physical printer's scaling, and two phones on one particular Wi-Fi
+network (some routers and guest networks stop devices talking to each other; a
+phone hotspot avoids that).
 
 ## Code map
 

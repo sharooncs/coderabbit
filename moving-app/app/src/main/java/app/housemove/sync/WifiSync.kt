@@ -276,6 +276,10 @@ object WifiSync {
                     sink?.write(buf, 0, n)
                     left -= n
                 }
+            } catch (e: Exception) {
+                sink?.close()
+                tmp?.delete()
+                throw e
             } finally {
                 sink?.close()
             }

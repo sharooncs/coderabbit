@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -21,7 +22,6 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -85,25 +85,20 @@ fun BudgetScreen() {
     var tab by rememberSaveable { mutableStateOf(0) }
     var editingId by rememberSaveable { mutableStateOf<String?>(null) }
 
-    Screen(
-        "Supplies and costs",
-        fab = {
-            if (tab == 1) ExtendedFloatingActionButton(
-                onClick = {
-                    val e = Expense(id = newId(), day = today(), category = EXPENSE_CATEGORIES.first())
-                    store.put(e)
-                    editingId = e.id
-                },
-                icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                text = { Text("Add a cost") },
-            )
-        },
-    ) {
+    Screen("Supplies and costs") {
         TabRow(selectedTabIndex = tab) {
             Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Supplies") })
             Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Costs") })
         }
-        if (tab == 0) MdSupplies(Modifier.weight(1f)) else MdCosts(Modifier.weight(1f)) { editingId = it }
+        if (tab == 0) MdSupplies(Modifier.weight(1f)) else MdCosts(
+            Modifier.weight(1f),
+            onAdd = {
+                val e = Expense(id = newId(), day = today(), category = EXPENSE_CATEGORIES.first())
+                store.put(e)
+                editingId = e.id
+            },
+            onEdit = { editingId = it },
+        )
     }
 
     val editing = appData().liveExpenses.firstOrNull { it.id == editingId }
@@ -131,7 +126,7 @@ private fun MdSupplies(modifier: Modifier) {
                 )
                 Button(
                     onClick = { data.suggestSupplies().forEach { (name, need) -> store.put(Supply(newId(), name, need)) } },
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
                 ) { Text("Suggest a list for my home") }
             }
         } else item(key = "summary") {
@@ -223,7 +218,7 @@ private fun MdStepper(label: String, value: Int, what: String, onChange: (Int) -
 // ---- costs -----------------------------------------------------------------
 
 @Composable
-private fun MdCosts(modifier: Modifier, onEdit: (String) -> Unit) {
+private fun MdCosts(modifier: Modifier, onAdd: () -> Unit, onEdit: (String) -> Unit) {
     val data = appData()
     val currency = data.move.currency
     val expenses = data.liveExpenses.sortedWith(compareByDescending<Expense> { it.day }.thenBy { it.title })
@@ -237,6 +232,14 @@ private fun MdCosts(modifier: Modifier, onEdit: (String) -> Unit) {
                 MdTotalRow("Quoted, not paid yet", mdMoney(currency, quoted))
                 HorizontalDivider()
                 MdTotalRow("Expected in total", mdMoney(currency, paid + quoted), strong = true)
+            }
+        }
+        item(key = "add") {
+            // In the page itself rather than a floating button, so it is always there on this tab.
+            Button(onClick = onAdd, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).heightIn(min = 52.dp)) {
+                Icon(Icons.Default.Add, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("Add a cost")
             }
         }
         if (expenses.isEmpty()) item(key = "empty") {
@@ -268,8 +271,6 @@ private fun MdCosts(modifier: Modifier, onEdit: (String) -> Unit) {
             }
             HorizontalDivider()
         }
-        // Room for the "Add a cost" button so it never covers the last row.
-        item(key = "fabspace") { Spacer(Modifier.height(88.dp)) }
     }
 }
 

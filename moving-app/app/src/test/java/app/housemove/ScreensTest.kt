@@ -13,6 +13,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.File
@@ -111,6 +112,25 @@ class ScreensTest {
             rule.waitForIdle()
             rule.onRoot().assertExists()
             rule.onRoot().captureRoboImage("build/screens/" + route.replace('/', '_') + ".png")
+        }
+    }
+
+    /** A small, cheap phone in dark mode with the system font enlarged: nothing may crash or become unusable. */
+    @Test
+    @Config(sdk = [34], qualifiers = "w320dp-h568dp-night-xhdpi")
+    fun everyScreenOpensOnASmallDarkPhoneWithLargeText() {
+        RuntimeEnvironment.setFontScale(1.3f)
+        val store = seeded()
+        var nav: NavHostController? = null
+        rule.setContent { AppRoot(store, startRoute = "home", onNav = { nav = it }) }
+        rule.waitForIdle()
+        for (route in routes) {
+            rule.runOnUiThread { nav!!.navigate(route) }
+            rule.waitForIdle()
+            rule.onRoot().assertExists()
+            if (route in setOf("home", "box/box1", "unload", "item/wardrobe", "load", "pack")) {
+                rule.onRoot().captureRoboImage("build/screens/small-dark-" + route.replace('/', '_') + ".png")
+            }
         }
     }
 
