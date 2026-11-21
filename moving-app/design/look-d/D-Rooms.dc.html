@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Rooms, night house look</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+button{font-family:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; box-sizing: border-box; display: flex; flex-direction: column; background: radial-gradient(50% 24% at 82% 18%, rgba(70, 120, 255, 0.32), rgba(11, 20, 34, 0) 72%), radial-gradient(60% 26% at 30% 30%, rgba(47, 211, 168, 0.28), rgba(11, 20, 34, 0) 72%), radial-gradient(70% 22% at 20% 62%, rgba(70, 120, 255, 0.24), rgba(11, 20, 34, 0) 72%), radial-gradient(90% 26% at 50% 102%, rgba(98, 227, 187, 0.50), rgba(11, 20, 34, 0) 72%), linear-gradient(180deg, #0a1320 0%, #101d2e 55%, #0b1725 100%); color: #f2f6fa; font-family: 'Outfit', 'Segoe UI', Roboto, Arial, sans-serif; font-size: 14px; line-height: 1.35; overflow: hidden">
+
+<header style="display: flex; align-items: center; justify-content: space-between; padding: 16px 16px 0">
+<button type="button" aria-label="Back" style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; padding: 0; background: radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.50) 0%, rgba(255, 255, 255, 0.12) 42%, rgba(255, 255, 255, 0.04) 70%, rgba(255, 255, 255, 0.14) 100%); border: 1px solid rgba(255, 255, 255, 0.30); border-radius: 24px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), inset 0 -6px 10px rgba(255, 255, 255, 0.06), 0 8px 18px rgba(0, 0, 0, 0.45); backdrop-filter: blur(14px) saturate(170%); color: #f2f6fa">
+<svg viewBox="0 0 24 24" aria-hidden="true" style="width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round"><path d="m15 18-6-6 6-6"></path></svg>
+</button>
+<div style="text-align: center">
+<div style="font-size: 12px; color: #c3cfdb">Old home</div>
+<h1 style="margin: 0; font-size: 22px; font-weight: 500; line-height: 1.15">Rooms</h1>
+</div>
+<button type="button" aria-label="Room settings" style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; padding: 0; background: radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.50) 0%, rgba(255, 255, 255, 0.12) 42%, rgba(255, 255, 255, 0.04) 70%, rgba(255, 255, 255, 0.14) 100%); border: 1px solid rgba(255, 255, 255, 0.30); border-radius: 24px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), inset 0 -6px 10px rgba(255, 255, 255, 0.06), 0 8px 18px rgba(0, 0, 0, 0.45); backdrop-filter: blur(14px) saturate(170%); color: #f2f6fa">
+<svg viewBox="0 0 24 24" aria-hidden="true" style="width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round"><path d="M4 8h9M17 8h3M4 16h3M11 16h9"></path><circle cx="15" cy="8" r="2"></circle><circle cx="9" cy="16" r="2"></circle></svg>
+</button>
+</header>
+
+<div style="display: flex; justify-content: center; padding-top: 8px">
+<div style="position: relative; width: 358px; height: 284px">
+<svg viewBox="0 0 358 284" role="img" aria-label="The ground floor as a lit model: kitchen being packed, living room and study packed, bedroom not started" style="width: 358px; height: 284px; display: block; overflow: visible">
+<defs>
+<linearGradient id="drSlabL" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color: #1a2836"></stop><stop offset="1" style="stop-color: #0a121c"></stop></linearGradient>
+<linearGradient id="drSlabR" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color: #0f1924"></stop><stop offset="1" style="stop-color: #060b12"></stop></linearGradient>
+<linearGradient id="drAmber" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color: #e6b25c"></stop><stop offset="1" style="stop-color: #a36f2b"></stop></linearGradient>
+<linearGradient id="drTeal" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color: #45c4a4"></stop><stop offset="1" style="stop-color: #1c7461"></stop></linearGradient>
+<linearGradient id="drSlate" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color: #566d8a"></stop><stop offset="1" style="stop-color: #303f53"></stop></linearGradient>
+<linearGradient id="drWallL" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color: #f8fafd"></stop><stop offset="1" style="stop-color: #b9c6d4"></stop></linearGradient>
+<linearGradient id="drWallR" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color: #b4c2d1"></stop><stop offset="1" style="stop-color: #7c8da3"></stop></linearGradient>
+<linearGradient id="drGlass" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color: #fff3cc"></stop><stop offset="1" style="stop-color: #ffb84d"></stop></linearGradient>
+<linearGradient id="drDoor" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color: #8d9bab"></stop><stop offset="1" style="stop-color: #5c6b7d"></stop></linearGradient>
+<linearGradient id="drBlanket" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color: #7fa2d8"></stop><stop offset="1" style="stop-color: #456494"></stop></linearGradient>
+<linearGradient id="drBoxT" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color: #f4d3a0"></stop><stop offset="1" style="stop-color: #dcae6e"></stop></linearGradient>
+<linearGradient id="drBoxL" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color: #dcae6c"></stop><stop offset="1" style="stop-color: #b58445"></stop></linearGradient>
+<linearGradient id="drBoxR" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color: #b58749"></stop><stop offset="1" style="stop-color: #855e2c"></stop></linearGradient>
+</defs>
+<g transform="translate(155 74)">
+<ellipse cx="24" cy="194" rx="150" ry="22" style="fill: rgba(98, 227, 187, 0.42); filter: blur(18px)"></ellipse>
+<polygon points="-144,72 48,168 48,188.8 -144,92.8" style="fill: url(#drSlabL)"></polygon>
+<polygon points="48,168 192,96 192,116.8 48,188.8" style="fill: url(#drSlabR)"></polygon>
+<polygon points="0,0 96,48 24,84 -72,36" style="fill: url(#drAmber)"></polygon>
+<polygon points="96,48 192,96 120,132 24,84" style="fill: url(#drTeal)"></polygon>
+<polygon points="-72,36 48,96 -24,132 -144,72" style="fill: url(#drSlate)"></polygon>
+<polygon points="48,96 120,132 48,168 -24,132" style="fill: url(#drTeal)"></polygon>
+<path d="M-24,12 168,108M-48,24 144,120M-96,48 96,144M-120,60 72,156" style="fill: none; stroke: rgba(255, 255, 255, 0.07); stroke-width: 1"></path>
+<polyline points="-144,72 48,168 192,96" style="fill: none; stroke: rgba(255, 255, 255, 0.4); stroke-width: 1.2"></polyline>
+<polygon points="121.2,64.2 159.6,83.4 129.6,112.8 91.2,93.6" style="fill: rgba(255, 220, 140, 0.26)"></polygon>
+<polygon points="-20.4,13.8 -49.2,28.2 -19.2,55.2 9.6,40.8" style="fill: rgba(255, 220, 140, 0.26)"></polygon>
+<polygon points="0,0 192,96 192,33.6 0,-62.4" style="fill: url(#drWallR)"></polygon>
+<polygon points="0,0 -144,72 -144,9.6 0,-62.4" style="fill: url(#drWallL)"></polygon>
+<polygon points="0,-62.4 192,33.6 198,30.6 0,-68.4" style="fill: #ffffff"></polygon>
+<polygon points="0,-62.4 -144,9.6 -150,6.6 0,-68.4" style="fill: #ffffff"></polygon>
+<polygon points="0,0 192,96 192,88.2 0,-7.8" style="fill: rgba(10, 18, 28, 0.2)"></polygon>
+<polygon points="0,0 -144,72 -144,64.2 0,-7.8" style="fill: rgba(10, 18, 28, 0.14)"></polygon>
+<polygon points="124.8,39 163.2,58.2 163.2,32.2 124.8,13" style="fill: rgba(255, 200, 100, 0.6); filter: blur(7px)"></polygon>
+<polygon points="124.8,39 163.2,58.2 163.2,32.2 124.8,13" style="fill: url(#drGlass); stroke: #56657a; stroke-width: 1.5"></polygon>
+<polygon points="-24,-11.4 -52.8,3 -52.8,-23 -24,-37.4" style="fill: rgba(255, 200, 100, 0.6); filter: blur(7px)"></polygon>
+<polygon points="-24,-11.4 -52.8,3 -52.8,-23 -24,-37.4" style="fill: url(#drGlass); stroke: #56657a; stroke-width: 1.5"></polygon>
+<path d="M144,48.6 144,22.6M-38.4,-4.2 -38.4,-30.2" style="fill: none; stroke: #56657a; stroke-width: 1.2"></path>
+<polygon points="-96,48 -117.6,58.8 -117.6,9.4 -96,-1.4" style="fill: url(#drDoor)"></polygon>
+<polygon points="-12,34.8 7.2,44.4 24,46.8 43.2,37.2 24,27.6 7.2,25.2" style="fill: rgba(4, 9, 15, 0.38)"></polygon>
+<polygon points="2.4,54 21.6,63.6 38.4,66 57.6,56.4 38.4,46.8 21.6,44.4" style="fill: rgba(4, 9, 15, 0.38)"></polygon>
+<polygon points="-12,34.8 7.2,44.4 7.2,23.6 -12,14" style="fill: url(#drBoxL)"></polygon>
+<polygon points="26.4,34.8 7.2,44.4 7.2,23.6 26.4,14" style="fill: url(#drBoxR)"></polygon>
+<polygon points="7.2,4.4 26.4,14 7.2,23.6 -12,14" style="fill: url(#drBoxT)"></polygon>
+<polygon points="2.4,54 21.6,63.6 21.6,42.8 2.4,33.2" style="fill: url(#drBoxL)"></polygon>
+<polygon points="40.8,54 21.6,63.6 21.6,42.8 40.8,33.2" style="fill: url(#drBoxR)"></polygon>
+<polygon points="21.6,23.6 40.8,33.2 21.6,42.8 2.4,33.2" style="fill: url(#drBoxT)"></polygon>
+<polygon points="22.6,83.3 25.4,84.7 25.4,71.7 22.6,70.3" style="fill: url(#drWallL)"></polygon>
+<polygon points="97.4,48.7 25.4,84.7 25.4,71.7 97.4,35.7" style="fill: url(#drWallR)"></polygon>
+<polygon points="94.6,34.3 97.4,35.7 25.4,71.7 22.6,70.3" style="fill: #ffffff"></polygon>
+<polygon points="86.4,86.4 105.6,96 122.4,98.4 141.6,88.8 122.4,79.2 105.6,76.8" style="fill: rgba(4, 9, 15, 0.38)"></polygon>
+<polygon points="100.8,105.6 120,115.2 136.8,117.6 156,108 136.8,98.4 120,96" style="fill: rgba(4, 9, 15, 0.38)"></polygon>
+<polygon points="86.4,86.4 105.6,96 105.6,75.2 86.4,65.6" style="fill: url(#drBoxL)"></polygon>
+<polygon points="124.8,86.4 105.6,96 105.6,75.2 124.8,65.6" style="fill: url(#drBoxR)"></polygon>
+<polygon points="105.6,56 124.8,65.6 105.6,75.2 86.4,65.6" style="fill: url(#drBoxT)"></polygon>
+<polygon points="86.4,65.6 105.6,75.2 105.6,54.4 86.4,44.8" style="fill: url(#drBoxL)"></polygon>
+<polygon points="124.8,65.6 105.6,75.2 105.6,54.4 124.8,44.8" style="fill: url(#drBoxR)"></polygon>
+<polygon points="105.6,35.2 124.8,44.8 105.6,54.4 86.4,44.8" style="fill: url(#drBoxT)"></polygon>
+<polygon points="100.8,105.6 120,115.2 120,94.4 100.8,84.8" style="fill: url(#drBoxL)"></polygon>
+<polygon points="139.2,105.6 120,115.2 120,94.4 139.2,84.8" style="fill: url(#drBoxR)"></polygon>
+<polygon points="120,75.2 139.2,84.8 120,94.4 100.8,84.8" style="fill: url(#drBoxT)"></polygon>
+<polygon points="-73.4,36.7 118.6,132.7 118.6,119.7 -73.4,23.7" style="fill: url(#drWallL)"></polygon>
+<polygon points="121.4,131.3 118.6,132.7 118.6,119.7 121.4,118.3" style="fill: url(#drWallR)"></polygon>
+<polygon points="-70.6,22.3 121.4,118.3 118.6,119.7 -73.4,23.7" style="fill: #ffffff"></polygon>
+<polygon points="-112.8,70.8 -67.2,93.6 -50.4,96 -12,76.8 -57.6,54 -74.4,51.6" style="fill: rgba(4, 9, 15, 0.38)"></polygon>
+<polygon points="-112.8,70.8 -67.2,93.6 -67.2,81.9 -112.8,59.1" style="fill: #c5cfda"></polygon>
+<polygon points="-28.8,74.4 -67.2,93.6 -67.2,81.9 -28.8,62.7" style="fill: #9aa9ba"></polygon>
+<polygon points="-74.4,39.9 -28.8,62.7 -67.2,81.9 -112.8,59.1" style="fill: #eef2f7"></polygon>
+<polygon points="-58.8,47.7 -28.8,62.7 -67.2,81.9 -97.2,66.9" style="fill: url(#drBlanket)"></polygon>
+<polygon points="-102.7,56.9 -93.1,61.7 -93.1,58.1 -102.7,53.3" style="fill: #d5dde6"></polygon>
+<polygon points="-69.1,49.7 -93.1,61.7 -93.1,58.1 -69.1,46.1" style="fill: #b4c0cd"></polygon>
+<polygon points="-78.7,41.3 -69.1,46.1 -93.1,58.1 -102.7,53.3" style="fill: #ffffff"></polygon>
+<polygon points="-25.4,131.3 -22.6,132.7 -22.6,119.7 -25.4,118.3" style="fill: url(#drWallL)"></polygon>
+<polygon points="49.4,96.7 -22.6,132.7 -22.6,119.7 49.4,83.7" style="fill: url(#drWallR)"></polygon>
+<polygon points="46.6,82.3 49.4,83.7 -22.6,119.7 -25.4,118.3" style="fill: #ffffff"></polygon>
+<polygon points="28.8,134.4 48,144 64.8,146.4 84,136.8 64.8,127.2 48,124.8" style="fill: rgba(4, 9, 15, 0.38)"></polygon>
+<polygon points="-2.4,130.8 16.8,140.4 33.6,142.8 52.8,133.2 33.6,123.6 16.8,121.2" style="fill: rgba(4, 9, 15, 0.38)"></polygon>
+<polygon points="28.8,134.4 48,144 48,123.2 28.8,113.6" style="fill: url(#drBoxL)"></polygon>
+<polygon points="67.2,134.4 48,144 48,123.2 67.2,113.6" style="fill: url(#drBoxR)"></polygon>
+<polygon points="48,104 67.2,113.6 48,123.2 28.8,113.6" style="fill: url(#drBoxT)"></polygon>
+<polygon points="28.8,113.6 48,123.2 48,102.4 28.8,92.8" style="fill: url(#drBoxL)"></polygon>
+<polygon points="67.2,113.6 48,123.2 48,102.4 67.2,92.8" style="fill: url(#drBoxR)"></polygon>
+<polygon points="48,83.2 67.2,92.8 48,102.4 28.8,92.8" style="fill: url(#drBoxT)"></polygon>
+<polygon points="-2.4,130.8 16.8,140.4 16.8,119.6 -2.4,110" style="fill: url(#drBoxL)"></polygon>
+<polygon points="36,130.8 16.8,140.4 16.8,119.6 36,110" style="fill: url(#drBoxR)"></polygon>
+<polygon points="16.8,100.4 36,110 16.8,119.6 -2.4,110" style="fill: url(#drBoxT)"></polygon>
+<path d="M16.8,9.2 -2.4,18.8M31.2,28.4 12,38M115.2,40 96,49.6M129.6,80 110.4,89.6M57.6,88 38.4,97.6M26.4,105.2 7.2,114.8" style="fill: none; stroke: #f3d9ad; stroke-width: 2.4"></path>
+<circle cx="21.6" cy="33.2" r="13" style="fill: rgba(255, 200, 97, 0.65); filter: blur(5px)"></circle>
+<circle cx="21.6" cy="33.2" r="7" style="fill: rgba(255, 200, 97, 0.4); stroke: #fff8e8; stroke-width: 1.5"></circle>
+<circle cx="21.6" cy="33.2" r="2.8" style="fill: #ffffff"></circle>
+</g>
+</svg>
+<div style="position: absolute; left: 194px; top: 26px; display: flex; align-items: center; gap: 8px; padding: 6px 14px 6px 6px; background: linear-gradient(135deg, rgba(255, 255, 255, 0.26) 0%, rgba(255, 255, 255, 0.08) 40%, rgba(255, 255, 255, 0.04) 65%, rgba(255, 255, 255, 0.14) 100%); border: 1px solid rgba(255, 255, 255, 0.30); border-radius: 28px; box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.50), inset -1px -1px 0 rgba(255, 255, 255, 0.12), 0 14px 30px rgba(0, 0, 0, 0.45); backdrop-filter: blur(16px) saturate(170%)">
+<span aria-hidden="true" style="width: 36px; height: 36px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at 32% 24%, #fff3cf 0%, #ffd27a 35%, #f2a93b 100%); color: #2b1c00; border-radius: 18px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), inset 0 -5px 8px rgba(120, 70, 0, 0.35), 0 0 16px rgba(255, 200, 97, 0.55)">
+<svg viewBox="0 0 24 24" style="width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round"><path d="M21 8 12 3 3 8v8l9 5 9-5z"></path><path d="m3 8 9 5 9-5M12 13v8"></path></svg>
+</span>
+<div><div style="font-size: 12px; color: #d5dee7; line-height: 1.2">Kitchen</div><div style="font-size: 15px; font-weight: 600; line-height: 1.2">6 boxes left</div></div>
+</div>
+</div>
+</div>
+
+<div style="display: flex; gap: 8px; padding: 10px 16px 0">
+<div style="flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 4px; padding: 8px 10px 10px; background: linear-gradient(135deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.05)); border: 1px solid rgba(255, 255, 255, 0.24); border-radius: 18px; box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.42), 0 10px 22px rgba(0, 0, 0, 0.35); backdrop-filter: blur(14px) saturate(170%)">
+<div style="font-size: 12px; color: #d5dee7; line-height: 1.2">Kitchen</div>
+<div style="font-size: 16px; font-weight: 600; line-height: 1.1">4/10</div>
+<div aria-hidden="true" style="height: 5px; background: rgba(255, 255, 255, 0.16); border-radius: 3px"><div style="width: 40%; height: 5px; background: #f2a93b; border-radius: 3px; box-shadow: 0 0 8px rgba(242, 169, 59, 0.9)"></div></div>
+</div>
+<div style="flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 4px; padding: 8px 10px 10px; background: linear-gradient(135deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.05)); border: 1px solid rgba(255, 255, 255, 0.24); border-radius: 18px; box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.42), 0 10px 22px rgba(0, 0, 0, 0.35); backdrop-filter: blur(14px) saturate(170%)">
+<div style="font-size: 12px; color: #d5dee7; line-height: 1.2">Living</div>
+<div style="font-size: 16px; font-weight: 600; line-height: 1.1">8/8</div>
+<div aria-hidden="true" style="height: 5px; background: rgba(255, 255, 255, 0.16); border-radius: 3px"><div style="width: 100%; height: 5px; background: #8ff0d2; border-radius: 3px; box-shadow: 0 0 8px rgba(143, 240, 210, 0.9)"></div></div>
+</div>
+<div style="flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 4px; padding: 8px 10px 10px; background: linear-gradient(135deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.05)); border: 1px solid rgba(255, 255, 255, 0.24); border-radius: 18px; box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.42), 0 10px 22px rgba(0, 0, 0, 0.35); backdrop-filter: blur(14px) saturate(170%)">
+<div style="font-size: 12px; color: #d5dee7; line-height: 1.2">Bedroom</div>
+<div style="font-size: 16px; font-weight: 600; line-height: 1.1">0/7</div>
+<div aria-hidden="true" style="height: 5px; background: rgba(255, 255, 255, 0.16); border-radius: 3px"></div>
+</div>
+<div style="flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 4px; padding: 8px 10px 10px; background: linear-gradient(135deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.05)); border: 1px solid rgba(255, 255, 255, 0.24); border-radius: 18px; box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.42), 0 10px 22px rgba(0, 0, 0, 0.35); backdrop-filter: blur(14px) saturate(170%)">
+<div style="font-size: 12px; color: #d5dee7; line-height: 1.2">Study</div>
+<div style="font-size: 16px; font-weight: 600; line-height: 1.1">6/6</div>
+<div aria-hidden="true" style="height: 5px; background: rgba(255, 255, 255, 0.16); border-radius: 3px"><div style="width: 100%; height: 5px; background: #8ff0d2; border-radius: 3px; box-shadow: 0 0 8px rgba(143, 240, 210, 0.9)"></div></div>
+</div>
+</div>
+
+<div style="display: flex; gap: 12px; padding: 14px 16px 0">
+<section style="flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 14px; background: linear-gradient(112deg, rgba(255, 255, 255, 0) 28%, rgba(255, 255, 255, 0.13) 44%, rgba(255, 255, 255, 0) 58%), linear-gradient(135deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0.07) 40%, rgba(255, 255, 255, 0.03) 65%, rgba(255, 255, 255, 0.12) 100%); border: 1px solid rgba(255, 255, 255, 0.24); border-radius: 26px; box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.45), inset -1px -1px 0 rgba(255, 255, 255, 0.10), 0 16px 34px rgba(0, 0, 0, 0.40); backdrop-filter: blur(18px) saturate(170%)">
+<div style="display: flex; align-items: center; justify-content: space-between">
+<h2 style="margin: 0; font-size: 14px; font-weight: 500">Boxes sealed</h2>
+<svg viewBox="0 0 24 24" aria-hidden="true" style="width: 16px; height: 16px; fill: none; stroke: #c3cfdb; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round"><path d="M7 17 17 7M9 7h8v8"></path></svg>
+</div>
+<div style="position: relative; width: 128px; height: 78px; align-self: center">
+<svg viewBox="0 0 128 78" role="img" aria-label="31 of 48 boxes sealed" style="width: 128px; height: 78px; display: block">
+<defs>
+<linearGradient id="drArc" x1="0" y1="0" x2="1" y2="0"><stop offset="0" style="stop-color: #2fb893"></stop><stop offset="1" style="stop-color: #c8ffee"></stop></linearGradient>
+</defs>
+<path d="M 16 68 A 48 48 0 0 1 112 68" style="fill: none; stroke: rgba(0, 0, 0, 0.35); stroke-width: 13; stroke-linecap: round"></path>
+<path d="M 16 68 A 48 48 0 0 1 112 68" style="fill: none; stroke: rgba(255, 255, 255, 0.14); stroke-width: 11; stroke-linecap: round"></path>
+<path d="M 16 68 A 48 48 0 0 1 112 68" style="fill: none; stroke: #62e3bb; stroke-width: 11; stroke-linecap: round; stroke-dasharray: 97 152; filter: blur(6px)"></path>
+<path d="M 16 68 A 48 48 0 0 1 112 68" style="fill: none; stroke: url(#drArc); stroke-width: 11; stroke-linecap: round; stroke-dasharray: 97 152"></path>
+</svg>
+<div style="position: absolute; left: 0; right: 0; bottom: 0; text-align: center; font-size: 23px; font-weight: 600; line-height: 1">31/48</div>
+</div>
+<span style="align-self: center; padding: 3px 12px; background: rgba(98, 227, 187, 0.20); color: #a6f7de; border: 1px solid rgba(143, 240, 210, 0.35); border-radius: 12px; font-size: 12px; font-weight: 500">On track</span>
+</section>
+
+<section style="flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 14px; background: linear-gradient(112deg, rgba(255, 255, 255, 0) 28%, rgba(255, 255, 255, 0.13) 44%, rgba(255, 255, 255, 0) 58%), linear-gradient(135deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0.07) 40%, rgba(255, 255, 255, 0.03) 65%, rgba(255, 255, 255, 0.12) 100%); border: 1px solid rgba(255, 255, 255, 0.24); border-radius: 26px; box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.45), inset -1px -1px 0 rgba(255, 255, 255, 0.10), 0 16px 34px rgba(0, 0, 0, 0.40); backdrop-filter: blur(18px) saturate(170%)">
+<div style="display: flex; align-items: center; justify-content: space-between">
+<h2 style="margin: 0; font-size: 14px; font-weight: 500">Van load</h2>
+<svg viewBox="0 0 24 24" aria-hidden="true" style="width: 16px; height: 16px; fill: none; stroke: #c3cfdb; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round"><path d="M7 17 17 7M9 7h8v8"></path></svg>
+</div>
+<span style="align-self: flex-start; padding: 3px 12px; background: rgba(98, 227, 187, 0.20); color: #a6f7de; border: 1px solid rgba(143, 240, 210, 0.35); border-radius: 12px; font-size: 12px; font-weight: 500">Fits in 1 trip</span>
+<div>
+<div style="font-size: 27px; font-weight: 600; line-height: 1.1">9.4 m³</div>
+<div style="font-size: 12px; color: #c3cfdb">of a 12 m³ van</div>
+</div>
+<div aria-hidden="true" style="display: flex; align-items: flex-end; gap: 6px; height: 34px">
+<div style="width: 11px; height: 14px; background: linear-gradient(180deg, #7fe9c9, #23896e); border-radius: 4px"></div>
+<div style="width: 11px; height: 22px; background: linear-gradient(180deg, #7fe9c9, #23896e); border-radius: 4px"></div>
+<div style="width: 11px; height: 34px; background: linear-gradient(180deg, #d6fff3, #3fc79f); border-radius: 4px; box-shadow: 0 0 12px rgba(98, 227, 187, 0.8)"></div>
+<div style="width: 11px; height: 18px; background: linear-gradient(180deg, #7fe9c9, #23896e); border-radius: 4px"></div>
+<div style="width: 11px; height: 27px; background: linear-gradient(180deg, #7fe9c9, #23896e); border-radius: 4px"></div>
+<div style="width: 11px; height: 12px; background: linear-gradient(180deg, #7fe9c9, #23896e); border-radius: 4px"></div>
+<div style="width: 11px; height: 20px; background: linear-gradient(180deg, #7fe9c9, #23896e); border-radius: 4px"></div>
+</div>
+</section>
+</div>
+
+<div style="padding: 14px 16px 0">
+<button type="button" style="display: flex; align-items: center; gap: 12px; width: 100%; box-sizing: border-box; padding: 10px 14px 10px 10px; background: linear-gradient(112deg, rgba(255, 255, 255, 0) 28%, rgba(255, 255, 255, 0.13) 44%, rgba(255, 255, 255, 0) 58%), linear-gradient(135deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0.07) 40%, rgba(255, 255, 255, 0.03) 65%, rgba(255, 255, 255, 0.12) 100%); border: 1px solid rgba(255, 255, 255, 0.24); border-radius: 34px; box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.45), inset -1px -1px 0 rgba(255, 255, 255, 0.10), 0 16px 34px rgba(0, 0, 0, 0.40); backdrop-filter: blur(18px) saturate(170%); color: #f2f6fa; text-align: left">
+<span aria-hidden="true" style="width: 46px; height: 46px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at 32% 24%, #e6fff7 0%, #86f0cf 22%, #49d1a8 55%, #1c9778 100%); color: #053326; border-radius: 23px; box-shadow: inset 0 2px 1px rgba(255, 255, 255, 0.75), inset 0 -6px 10px rgba(6, 60, 44, 0.45), 0 0 18px rgba(40, 220, 170, 0.6)">
+<svg viewBox="0 0 24 24" style="width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round"><path d="M21 8 12 3 3 8v8l9 5 9-5z"></path><path d="m3 8 9 5 9-5M12 13v8"></path></svg>
+</span>
+<span style="flex-grow: 1; display: flex; flex-direction: column">
+<span style="font-size: 16px; font-weight: 600; line-height: 1.2">Pack a box</span>
+<span style="font-size: 13px; color: #c3cfdb">Kitchen is next</span>
+</span>
+<svg viewBox="0 0 24 24" aria-hidden="true" style="width: 20px; height: 20px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round"><path d="m9 18 6-6-6-6"></path></svg>
+</button>
+</div>
+
+<nav aria-label="Main" style="position: relative; height: 132px; flex-shrink: 0; margin-top: auto">
+<div aria-hidden="true" style="position: absolute; left: -44px; right: -44px; top: 16px; height: 280px; background: linear-gradient(180deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0.07) 26%, rgba(255, 255, 255, 0.02) 100%); border: 1px solid rgba(255, 255, 255, 0.30); border-radius: 50%; box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.55), inset 0 18px 30px rgba(255, 255, 255, 0.06), 0 -12px 40px rgba(0, 0, 0, 0.35); backdrop-filter: blur(22px) saturate(170%)"></div>
+<div aria-hidden="true" style="position: absolute; left: -32px; right: -32px; top: 28px; height: 280px; border-top: 1px solid rgba(255, 255, 255, 0.14); border-radius: 50%"></div>
+<button type="button" aria-label="Rooms" aria-current="page" style="position: absolute; left: 38px; top: 58px; width: 58px; height: 58px; display: flex; align-items: center; justify-content: center; padding: 0; background: radial-gradient(circle at 30% 22%, #ffffff 0%, #e6eef5 48%, #b4c3d3 100%); color: #0e1826; border: 1px solid rgba(255, 255, 255, 0.8); border-radius: 29px; box-shadow: inset 0 -6px 10px rgba(60, 80, 100, 0.30), 0 0 22px rgba(255, 255, 255, 0.35), 0 10px 22px rgba(0, 0, 0, 0.45)">
+<svg viewBox="0 0 24 24" aria-hidden="true" style="width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round"><path d="M3.5 11 12 4l8.5 7v9h-17z"></path><path d="M9.5 20v-6h5v6"></path></svg>
+</button>
+<button type="button" aria-label="Boxes" style="position: absolute; left: 124px; top: 38px; width: 56px; height: 56px; display: flex; align-items: center; justify-content: center; padding: 0; background: radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.50) 0%, rgba(255, 255, 255, 0.12) 42%, rgba(255, 255, 255, 0.04) 70%, rgba(255, 255, 255, 0.14) 100%); color: #f2f6fa; border: 1px solid rgba(255, 255, 255, 0.30); border-radius: 28px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), inset 0 -6px 10px rgba(255, 255, 255, 0.06), 0 10px 20px rgba(0, 0, 0, 0.45)">
+<svg viewBox="0 0 24 24" aria-hidden="true" style="width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round"><path d="M21 8 12 3 3 8v8l9 5 9-5z"></path><path d="m3 8 9 5 9-5M12 13v8"></path></svg>
+</button>
+<button type="button" aria-label="Move day" style="position: absolute; right: 124px; top: 38px; width: 56px; height: 56px; display: flex; align-items: center; justify-content: center; padding: 0; background: radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.50) 0%, rgba(255, 255, 255, 0.12) 42%, rgba(255, 255, 255, 0.04) 70%, rgba(255, 255, 255, 0.14) 100%); color: #f2f6fa; border: 1px solid rgba(255, 255, 255, 0.30); border-radius: 28px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), inset 0 -6px 10px rgba(255, 255, 255, 0.06), 0 10px 20px rgba(0, 0, 0, 0.45)">
+<svg viewBox="0 0 24 24" aria-hidden="true" style="width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round"><path d="M1 6h13v10H1zM14 9h4l4 4v3h-8z"></path><circle cx="6" cy="18" r="2"></circle><circle cx="18" cy="18" r="2"></circle></svg>
+</button>
+<button type="button" aria-label="People" style="position: absolute; right: 38px; top: 58px; width: 56px; height: 56px; display: flex; align-items: center; justify-content: center; padding: 0; background: radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.50) 0%, rgba(255, 255, 255, 0.12) 42%, rgba(255, 255, 255, 0.04) 70%, rgba(255, 255, 255, 0.14) 100%); color: #f2f6fa; border: 1px solid rgba(255, 255, 255, 0.30); border-radius: 28px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), inset 0 -6px 10px rgba(255, 255, 255, 0.06), 0 10px 20px rgba(0, 0, 0, 0.45)">
+<svg viewBox="0 0 24 24" aria-hidden="true" style="width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round"><circle cx="9" cy="8" r="3.5"></circle><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.2a6.5 6.5 0 0 1 3.5 5.8"></path></svg>
+</button>
+</nav>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>
