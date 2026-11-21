@@ -23,25 +23,34 @@ private fun nextStep(data: AppData): NextStep {
     val mv = data.movables()
     val delivered = mv.count { it.stage == Stage.DELIVERED || it.stage == Stage.DONE }
     val loaded = mv.count { it.stage == Stage.LOADED }
+    val inventoryOnly = data.move.kind == MoveKind.INVENTORY
+    val van = data.vehicle()
     return when {
-        data.roomsOf(Home.ORIGIN).isEmpty() || data.roomsOf(Home.DEST).isEmpty() ->
-            NextStep("Add the rooms of both homes so things can be given a place.", "Add rooms", "rooms", Icons.Default.MeetingRoom)
+        data.roomsOf(Home.ORIGIN).isEmpty() || (!inventoryOnly && data.roomsOf(Home.DEST).isEmpty()) ->
+            NextStep(
+                if (inventoryOnly) "Add the rooms of your home so things can be given a place." else "Add the rooms of both homes so things can be given a place.",
+                "Add rooms", "rooms", Icons.Default.MeetingRoom,
+            )
         data.liveItems.isEmpty() && data.liveBoxes.isEmpty() ->
             NextStep("Photograph the big things, room by room.", "Start the walk-through", "walk", Icons.Default.PhotoCamera)
-        p.triage.done < p.triage.total ->
+        data.uses(Part.TRIAGE) && p.triage.done < p.triage.total ->
             NextStep("Decide what happens to each thing. ${p.triage.total - p.triage.done} left.", "Triage", "triage", Icons.Default.Rule)
-        p.destinations.done < p.destinations.total ->
-            NextStep("Give every item a room in the new home.", "Plan destinations", "plan", Icons.Default.Map)
-        loaded > 0 && delivered < mv.size ->
-            NextStep("$loaded on the van. Scan each thing as it comes off.", "Unload", "unload", Icons.Default.Download)
-        mv.isNotEmpty() && delivered == mv.size && p.unpacked.done < p.unpacked.total ->
+        data.uses(Part.PLAN) && p.destinations.done < p.destinations.total ->
+            NextStep("Give every item a room in ${data.move.destName.lowercase()}.", "Plan destinations", "plan", Icons.Default.Map)
+        data.uses(Part.MOVE_DAY) && loaded > 0 && delivered < mv.size ->
+            NextStep("$loaded on the $van. Scan each thing as it comes off.", "Unload", "unload", Icons.Default.Download)
+        data.uses(Part.UNPACK) && mv.isNotEmpty() && delivered == mv.size && p.unpacked.done < p.unpacked.total ->
             NextStep("Everything has arrived. First-night boxes first.", "Unpack", "unpack", Icons.Default.Unarchive)
-        mv.isNotEmpty() && p.unpacked.done == p.unpacked.total ->
-            NextStep("Everything is unpacked. Save the inventory.", "Reports and close-out", "reports", Icons.Default.Description)
-        (data.move.moveDay ?: Long.MAX_VALUE) <= today() && mv.any { it.stage == Stage.AT_ORIGIN } ->
-            NextStep("Move day: scan everything onto the van.", "Load the van", "load", Icons.Default.LocalShipping)
-        else ->
+        mv.isNotEmpty() && delivered == mv.size ->
+            NextStep("Everything has arrived. Save the inventory.", "Reports and close-out", "reports", Icons.Default.Description)
+        data.uses(Part.MOVE_DAY) && (data.move.moveDay ?: Long.MAX_VALUE) <= today() && mv.any { it.stage == Stage.AT_ORIGIN } ->
+            NextStep("Move day: scan everything onto the $van.", "Load the $van", "load", Icons.Default.LocalShipping)
+        data.uses(Part.BOXES) ->
             NextStep("Pack room by room: label, photo, contents, seal.", "Pack a box", "pack", Icons.Default.Inventory2)
+        data.uses(Part.DEVICES) && data.liveItems.any { it.isElectronic() && it.serial.isBlank() } ->
+            NextStep("Record the serial numbers of your devices.", "Devices", "electronics", Icons.Default.Tv)
+        else ->
+            NextStep("Your list is up to date. Save a copy of it.", "Reports and close-out", "reports", Icons.Default.Description)
     }
 }
 
@@ -56,6 +65,11 @@ fun HomeScreen() {
     // -1 follows the phase the move is in; tapping the strip looks at another one.
     var picked by rememberSaveable { mutableIntStateOf(-1) }
     val shown = if (picked < 0) now else picked
+
+    if (device.helper && move.setupDone) {
+        HelperHome()
+        return
+    }
 
     Screen(title = move.name.ifBlank { "HouseMove" }, back = false, tab = "home", actions = { TopActions() }) {
         ScrollColumn {
@@ -82,7 +96,9 @@ fun HomeScreen() {
                     Row(Modifier.fillMaxWidth().clickable { nav.open("settings") }, verticalAlignment = Alignment.CenterVertically) {
                         val day = move.moveDay
                         val d = day?.let { it - today() }
-                        Text(
+                        if (move.kind == MoveKind.INVENTORY) {
+                            Icon(Icons.Default.ListAlt, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(44.dp))
+                        } else Text(
                             when {
                                 d == null -> "?"
                                 d >= 0 -> "$d"
@@ -96,6 +112,7 @@ fun HomeScreen() {
                         Column(Modifier.weight(1f)) {
                             Text(
                                 when {
+                                    move.kind == MoveKind.INVENTORY -> "${data.liveItems.size} things listed"
                                     d == null -> "No move day set"
                                     d > 1 -> "days to go"
                                     d == 1L -> "day to go"
@@ -106,7 +123,11 @@ fun HomeScreen() {
                                 style = MaterialTheme.typography.titleMedium,
                             )
                             Text(
-                                if (day == null) "Tap to set the date" else fmtDay(day),
+                                when {
+                                    move.kind == MoveKind.INVENTORY -> move.originName
+                                    day == null -> "Tap to set the date"
+                                    else -> fmtDay(day)
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -128,7 +149,7 @@ fun HomeScreen() {
                     Spacer(Modifier.width(8.dp))
                     Text("Walk-through")
                 }
-                FilledTonalButton(onClick = { nav.open("pack") }, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
+                if (data.uses(Part.BOXES)) FilledTonalButton(onClick = { nav.open("pack") }, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
                     Icon(Icons.Default.Inventory2, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
                     Text("Pack a box")
@@ -177,6 +198,36 @@ fun HomeScreen() {
                         TextButton(onClick = { all = !all }) { Text(if (all) "Show fewer" else "Show ${issues.size - 3} more") }
                     }
                 }
+            }
+        }
+    }
+}
+
+/** Home for a helper's phone: only the jobs a helper does, as large tiles. */
+@Composable
+private fun HelperHome() {
+    val nav = LocalNav.current
+    val store = LocalStore.current
+    val data = appData()
+    val p = data.progress()
+    Screen(title = data.move.name.ifBlank { "HouseMove" }, back = false, tab = "home", actions = { TopActions() }) {
+        ScrollColumn {
+            data class Job(val icon: ImageVector, val title: String, val route: String, val status: String?, val part: Part?)
+            val jobs = listOf(
+                Job(Icons.Default.Inventory2, "Pack a box", "pack", "${p.sealed.done} of ${p.sealed.total} sealed", Part.BOXES),
+                Job(Icons.Default.LocalShipping, "Load the ${data.vehicle()}", "load", "${p.loaded.done} of ${p.loaded.total} on", Part.MOVE_DAY),
+                Job(Icons.Default.Download, "Unload", "unload", "${p.delivered.done} of ${p.delivered.total} in", Part.MOVE_DAY),
+                Job(Icons.Default.Unarchive, "Unpack", "unpack", "${p.unpacked.done} of ${p.unpacked.total} done", Part.UNPACK),
+                Job(Icons.Default.Search, "Find anything", "search", null, null),
+                Job(Icons.Default.QrCodeScanner, "Scan a label", "scan", null, null),
+            ).filter { it.part == null || data.uses(it.part) }
+            TileGrid(jobs, columns = 2) { job, m ->
+                Tile(job.icon, job.title, onClick = { nav.open(job.route) }, modifier = m.heightIn(min = 108.dp), status = job.status)
+            }
+            BigAction(Icons.Default.Sync, "Sync with the other phones", onClick = { nav.open("sync") }, primary = false)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Hint("Helper mode: only the essentials are shown.", Modifier.weight(1f))
+                TextButton(onClick = { store.setDevice { it.copy(helper = false) } }) { Text("Show everything") }
             }
         }
     }

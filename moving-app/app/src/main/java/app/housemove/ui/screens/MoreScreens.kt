@@ -57,38 +57,73 @@ fun SettingsScreen() {
         ScrollColumn {
             Section("The move") {
                 TextInput(move.name, { v -> store.setMove { it.copy(name = v) } }, "Name", key = "name")
-                DateButton(move.moveDay, { d -> store.setMove { it.copy(moveDay = d) } }, "Move day", Modifier.fillMaxWidth())
-                TextInput(move.originName, { v -> store.setMove { it.copy(originName = v) } }, "Old home", key = "origin")
-                TextInput(move.destName, { v -> store.setMove { it.copy(destName = v) } }, "New home", key = "dest")
+                if (move.kind != MoveKind.INVENTORY) {
+                    DateButton(move.moveDay, { d -> store.setMove { it.copy(moveDay = d) } }, "Move day", Modifier.fillMaxWidth())
+                }
+                TextInput(move.originName, { v -> store.setMove { it.copy(originName = v) } }, "Moving from", key = "origin-${move.kind}")
+                if (move.kind != MoveKind.INVENTORY) {
+                    TextInput(move.destName, { v -> store.setMove { it.copy(destName = v) } }, "Moving to", key = "dest-${move.kind}")
+                }
             }
-            Section("Van") {
-                NumberInput(
-                    move.vanCapacityM3, { v -> if (v != null && v > 0) store.setMove { it.copy(vanCapacityM3 = v) } },
-                    "Van load space (m³)", Modifier.fillMaxWidth(), key = "van",
+
+            Section("What you use it for") {
+                KindPicker()
+            }
+
+            Fold(
+                "Parts of the app", Icons.Default.Tune,
+                summary = Part.entries.count { data.uses(it) }.let { n -> if (n == Part.entries.size) "Everything is on" else "$n of ${Part.entries.size} on" },
+            ) {
+                Hint("Switch off what you don't need and it disappears from the app. Nothing is deleted.")
+                ToggleTiles(
+                    Part.entries.map { part ->
+                        Toggle(part.label, part.icon(), data.uses(part)) { on ->
+                            store.setMove { m -> m.copy(off = if (on) m.off - part.name else (m.off + part.name).distinct()) }
+                        }
+                    },
+                    columns = 2,
                 )
-                Hint("Typical: small van 6 m³, long-wheelbase van 11–13 m³, box van with tail lift 15–20 m³. Used to estimate the number of trips.")
             }
-            Section("Units and money") {
-                SwitchRow("Enter furniture sizes in inches", move.useInches, { v -> store.setMove { it.copy(useInches = v) } })
-                TextInput(move.currency, { v -> store.setMove { it.copy(currency = v.take(4)) } }, "Currency symbol", key = "cur")
-            }
-            Section("Book titles") {
-                SwitchRow(
-                    "Look up book titles online", device.bookLookup == true, { v -> store.setDevice { it.copy(bookLookup = v) } },
-                    sub = "When you scan a book's barcode into a box, fetch its title from Open Library, a free public catalogue. Only the barcode number is sent. Everything else in the app stays offline.",
-                )
-            }
-            Section("This phone") {
+
+            Fold(
+                "This phone", Icons.Default.PhoneAndroid,
+                summary = listOf(device.name.ifBlank { "No name" }, "letter ${device.letter}", if (device.helper) "helper" else null).filterNotNull().joinToString(" · "),
+            ) {
                 TextInput(device.name, { v -> store.setDevice { it.copy(name = v) } }, "Who uses this phone?", key = "dname")
                 TextInput(
                     device.letter,
                     { v -> v.trim().uppercase().firstOrNull { it.isLetter() }?.let { c -> store.setDevice { it.copy(letter = c.toString()) } } },
                     "Letter for handwritten box codes", key = "dletter",
                 )
-                Hint("Each phone needs a different letter, so two people writing codes by hand never produce the same one. This phone writes ${device.letter}1, ${device.letter}2, …")
+                Hint("Each phone needs its own letter. This one writes ${device.letter}1, ${device.letter}2, …")
+                SwitchRow(
+                    "Helper mode", device.helper, { v -> store.setDevice { it.copy(helper = v) } },
+                    sub = "Home shows only packing, loading, unloading and search.",
+                )
             }
-            Section("Start again") {
-                Hint("Removes every room, item, box, task and photo from this phone only. Other phones keep their copy.")
+
+            Fold(
+                "Sizes, money and book titles", Icons.Default.Straighten,
+                summary = listOf(
+                    "${fmtNum(move.vanCapacityM3)} m³ ${data.vehicle()}", if (move.useInches) "inches" else "cm",
+                    move.currency.ifBlank { null }, if (device.bookLookup == true) "titles online" else null,
+                ).filterNotNull().joinToString(" · "),
+            ) {
+                NumberInput(
+                    move.vanCapacityM3, { v -> if (v != null && v > 0) store.setMove { it.copy(vanCapacityM3 = v) } },
+                    "Load space of the ${data.vehicle()} (m³)", Modifier.fillMaxWidth(), key = "van",
+                )
+                Hint("Small van 6, long van 12, box van 15–20. Used to estimate trips.")
+                SwitchRow("Furniture sizes in inches", move.useInches, { v -> store.setMove { it.copy(useInches = v) } })
+                TextInput(move.currency, { v -> store.setMove { it.copy(currency = v.take(4)) } }, "Currency symbol", key = "cur")
+                SwitchRow(
+                    "Look up book titles online", device.bookLookup == true, { v -> store.setDevice { it.copy(bookLookup = v) } },
+                    sub = "Sends only a book's barcode number to Open Library. Everything else stays offline.",
+                )
+            }
+
+            Fold("Start again", Icons.Default.DeleteForever, summary = "Erase everything on this phone") {
+                Hint("Removes every room, item, box, task and photo from this phone only.")
                 OutlinedButton(onClick = { confirmErase = true }) { Text("Erase all data on this phone") }
             }
         }
@@ -137,8 +172,8 @@ fun SearchScreen() {
             modifier = Modifier.fillMaxWidth().padding(16.dp).focusRequester(focus),
         )
         when {
-            query.isBlank() -> EmptyHint("Searches box contents, item names, label codes, notes and room names on this phone.")
-            hits.isEmpty() -> EmptyHint("Nothing matches \"$query\". Try a single word, or sync with the other phones in case it was packed on one of them.")
+            query.isBlank() -> EmptyState(Icons.Default.Search, "Find a box or an item", text = "Type what is in it, its name, its label or its room.")
+            hits.isEmpty() -> EmptyState(Icons.Default.SearchOff, "Nothing matches \"$query\"", text = "Try one word. If another phone packed it, sync first.")
             else -> LazyColumn(Modifier.weight(1f)) {
                 items(hits, key = { it.movable.id }) { hit ->
                     Row(Modifier.fillMaxWidth()) {

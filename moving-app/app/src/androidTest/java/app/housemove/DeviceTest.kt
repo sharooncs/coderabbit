@@ -169,8 +169,9 @@ class DeviceTest {
 
     @Test
     fun fresh_installThroughToUnpacked() {
-        see("Your move")
+        see("What is it for?")
         shot("01-setup")
+        tap("Next") // keep "Moving it myself"
         tap("Next")
         tap("Kitchen")
         tap("Next")
@@ -330,13 +331,13 @@ class DeviceTest {
         }
         tap("More")
         val menu = listOf(
-            "Rooms", "Triage", "Destination plan and fit check", "Sell, donate, bin", "Electronics and serial numbers", "Timeline", "Supplies and costs",
-            "Labels and door signs", "Special lists", "Packing order", "Unpack", "Reports and close-out", "Sync and backup", "Settings",
+            "Rooms", "Triage", "Devices", "Plan rooms", "Sell, donate, bin", "Timeline", "Supplies and costs",
+            "Labels and signs", "Packing order", "Special lists", "Unpack", "Reports", "Sync and backup", "Settings",
         )
         for (row in menu) {
             tapInList(row)
             rule.waitForIdle()
-            if (row == "Labels and door signs") shot("21-labels")
+            if (row == "Labels and signs") shot("21-labels")
             if (row == "Sync and backup") {
                 tap("Show sync code") // starts the real listener and draws the code
                 shot("22-sync-code")

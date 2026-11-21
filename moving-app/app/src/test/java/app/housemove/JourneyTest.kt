@@ -54,7 +54,8 @@ class JourneyTest {
         }
 
         // Setup wizard: one room in each home, same name, so they link automatically.
-        rule.onNodeWithText("Your move").assertExists()
+        rule.onNodeWithText("What is it for?").assertExists()
+        tap("Next") // keep "Moving it myself"
         tap("Next")
         tap("Kitchen")
         tap("Next")

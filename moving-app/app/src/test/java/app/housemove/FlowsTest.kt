@@ -132,8 +132,8 @@ class FlowsTest {
     @Test
     fun setupCanBeFinishedWithNoRoomsAndAddedLater() {
         start(setUp = false)
-        see("Your move")
-        tap("Next"); tap("Next"); tap("Finish")
+        see("What is it for?")
+        tap("Next"); tap("Next"); tap("Next"); tap("Finish")
         assertEquals("home", route())
         assertTrue(data.move.setupDone)
         see("Add the rooms of both homes")
@@ -146,6 +146,7 @@ class FlowsTest {
     @Test
     fun secondPhoneJoinsInsteadOfSettingUpAgain() {
         start(setUp = false)
+        tap("Second phone for the same move?")
         tap("Join a move from another phone")
         assertEquals("sync", route())
         // The first phone's data arrives (as a sync would deliver it).
@@ -648,6 +649,7 @@ class FlowsTest {
         val photo = store.newPhotoFile().apply { writeBytes(ByteArray(500)) }
         store.addPhoto(a.id, PhotoKind.CONTENTS, photo)
         go("settings")
+        tap("Start again")
         tap("Erase all data on this phone")
         tap("Cancel")
         assertEquals(1, data.liveBoxes.size)
@@ -658,6 +660,82 @@ class FlowsTest {
         assertTrue(store.photoDir.listFiles()!!.isEmpty())
         store.flush()
         assertFalse(Store(File(tmp.root, "flows")).data.value.move.setupDone)
+    }
+
+    // ---- one app, different uses -------------------------------------------------
+
+    @Test
+    fun inventoryOnlyUseShowsOnlyWhatApplies() {
+        start(setUp = false)
+        tap("Just listing what I own")
+        tap("Next")
+        see("Your home")
+        tap("Next")
+        tap("Kitchen")
+        tap("Finish") // no second home to describe
+        assertEquals("home", route())
+        assertEquals(MoveKind.INVENTORY, data.move.kind)
+        assertTrue(data.roomsOf(Home.DEST).isEmpty())
+        assertTrue(data.liveTasks.isEmpty())
+        see("things listed")
+        see("Start the walk-through")
+        dontSee("Pack a box")
+        dontSee("Boxes")
+        dontSee("Move day")
+        go("more")
+        see("Walk-through"); see("Devices"); see("Reports")
+        dontSee("Load the"); dontSee("Timeline"); dontSee("Labels and signs")
+    }
+
+    @Test
+    fun moversUseSaysTruckAndGetsItsOwnChecklist() {
+        start(setUp = false)
+        tap("Movers are doing it")
+        tap("Next"); tap("Next")
+        tap("Kitchen"); tap("Next")
+        tap("Kitchen"); tap("Finish")
+        assertEquals(MoveKind.MOVERS, data.move.kind)
+        assertTrue(data.liveTasks.any { it.title.startsWith("Book the movers") })
+        assertTrue(data.liveTasks.none { it.category == "Van" || it.title.contains("Collect the van") })
+        assertEquals("truck", data.vehicle())
+        go("more")
+        see("Load the truck")
+        dontSee("Load the van")
+    }
+
+    @Test
+    fun partsOfTheAppCanBeSwitchedOffAndOnAgain() {
+        start()
+        store.put(Task(id = "late", title = "Book the lift", dueDay = today() - 2))
+        assertTrue(data.issues().any { it.route == "tasks" })
+        go("settings")
+        tap("Parts of the app")
+        tap("Task timeline")
+        assertFalse(data.uses(Part.TIMELINE))
+        assertTrue(data.issues().none { it.route == "tasks" })
+        assertEquals(1, data.liveTasks.size) // switched off, not deleted
+        go("more")
+        dontSee("Timeline")
+        go("settings")
+        tap("Parts of the app")
+        tap("Task timeline")
+        assertTrue(data.uses(Part.TIMELINE))
+    }
+
+    @Test
+    fun helperPhoneShowsOnlyTheEssentials() {
+        start()
+        store.createBox("L001", oldKitchen.id)
+        rule.runOnUiThread { store.setDevice { it.copy(helper = true) } }
+        settle()
+        see("Load the van"); see("Unload"); see("Find anything"); see("Sync with the other phones")
+        dontSee("Needs attention"); dontSee("Walk-through")
+        tap("Pack a box")
+        assertEquals("pack", route())
+        back()
+        tap("Show everything")
+        assertFalse(store.device.value.helper)
+        see("Walk-through")
     }
 
     @Test

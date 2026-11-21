@@ -10,11 +10,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Straighten
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.housemove.data.*
 import app.housemove.ui.*
@@ -35,32 +39,42 @@ fun RoomsScreen() {
         }
         ScrollColumn {
             Hint(
-                if (home == Home.ORIGIN) "Rooms you are moving out of. Link each to the new room most of its things go to, so boxes get that destination automatically."
-                else "Rooms things go into. The colour is used on labels and door signs. Enter the narrowest opening on the way in to check furniture fits.",
+                if (home == Home.ORIGIN) "Link each room to where most of its things go."
+                else "The colour is used on boxes, labels and door signs.",
             )
             rooms.forEach { r ->
+                val rc = roomColor(r.color)
                 Card(Modifier.fillMaxWidth().clickable { editing = r.id }) {
-                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.height(IntrinsicSize.Min), verticalAlignment = Alignment.CenterVertically) {
                         if (home == Home.DEST) {
-                            ColorDot(r.color)
-                            Spacer(Modifier.width(12.dp))
+                            // The room's colour as a block, with its short code, as on the door sign.
+                            Box(Modifier.width(64.dp).fillMaxHeight().background(rc.color()), contentAlignment = Alignment.Center) {
+                                Text(r.code.ifBlank { suggestRoomCode(r.name) }, color = rc.onColor(), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                            }
+                        } else {
+                            Box(Modifier.width(64.dp).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                                Icon(
+                                    if (r.packed) Icons.Default.CheckCircle else Pic.Room, contentDescription = if (r.packed) "Packed" else null,
+                                    tint = if (r.packed) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
-                        Column(Modifier.weight(1f)) {
+                        Column(Modifier.weight(1f).padding(vertical = 12.dp, horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(r.name, style = MaterialTheme.typography.titleMedium)
-                            Hint(
-                                if (home == Home.ORIGIN) {
-                                    "Goes to: " + (data.room(r.mapsTo)?.name ?: "not linked") + if (r.packed) " · packed" else ""
-                                } else {
-                                    listOfNotNull(
-                                        r.code.ifBlank { null },
-                                        roomColor(r.color).name,
-                                        r.floor.ifBlank { null },
-                                        r.doorWidthCm?.let { "opening ${fmtNum(it)} cm" } ?: "no opening width",
-                                    ).joinToString(" · ")
-                                },
-                            )
+                            if (home == Home.ORIGIN) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Icon(Icons.Default.ArrowForward, contentDescription = "goes to", modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    val to = data.room(r.mapsTo)
+                                    if (to != null) RoomBadge(to) else Flag("Not linked")
+                                }
+                            } else {
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Hint(listOfNotNull(rc.name, r.floor.ifBlank { null }).joinToString(" · "))
+                                    if (r.doorWidthCm != null) IconFlag(Icons.Default.Straighten, "${fmtNum(r.doorWidthCm)} cm") else if (data.uses(Part.PLAN)) Flag("No door width")
+                                }
+                            }
                         }
-                        Icon(Icons.Default.Edit, contentDescription = "Edit ${r.name}", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Icon(Icons.Default.Edit, contentDescription = "Edit ${r.name}", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(end = 14.dp))
                     }
                 }
             }

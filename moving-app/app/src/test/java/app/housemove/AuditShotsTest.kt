@@ -136,6 +136,25 @@ class AuditShotsTest {
         }
     }
 
+    /** The variants of Home and the first-run screens, which the route list does not reach. */
+    @Test
+    @Config(sdk = [34], qualifiers = "w411dp-h1500dp-mdpi")
+    fun variants() {
+        val store = seeded()
+        var nav: NavHostController? = null
+        rule.setContent { AppRoot(store, startRoute = "home", onNav = { nav = it }) }
+        rule.waitForIdle()
+        fun shot(name: String) = rule.onRoot().captureRoboImage("build/audit/tall/$name.png")
+        rule.runOnUiThread { store.setDevice { it.copy(helper = true) } }
+        rule.waitForIdle(); shot("home_helper")
+        rule.runOnUiThread { store.setDevice { it.copy(helper = false) }; store.setMove { it.copy(kind = MoveKind.MOVERS) } }
+        rule.waitForIdle(); shot("home_movers")
+        rule.runOnUiThread { store.setMove { it.copy(kind = MoveKind.INVENTORY, off = partsOffFor(MoveKind.INVENTORY)) } }
+        rule.waitForIdle(); shot("home_inventory")
+        rule.runOnUiThread { store.setMove { it.copy(kind = MoveKind.SELF, off = emptyList(), setupDone = false) }; nav!!.navigate("setup") }
+        rule.waitForIdle(); shot("setup")
+    }
+
     @Test
     @Config(sdk = [34], qualifiers = "w411dp-h891dp-xhdpi")
     fun fold() = capture("fold")

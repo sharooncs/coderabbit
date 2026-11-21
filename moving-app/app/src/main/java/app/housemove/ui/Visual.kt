@@ -160,6 +160,7 @@ private fun PickTile(
     label: String,
     selected: Boolean,
     modifier: Modifier = Modifier,
+    large: Boolean = false,
 ) {
     val scheme = MaterialTheme.colorScheme
     Column(
@@ -171,14 +172,17 @@ private fun PickTile(
                 if (selected) scheme.primary else scheme.outlineVariant,
                 RoundedCornerShape(12.dp),
             )
-            .padding(horizontal = 4.dp, vertical = 10.dp),
+            .padding(horizontal = if (large) 10.dp else 4.dp, vertical = if (large) 22.dp else 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(if (large) 10.dp else 4.dp),
     ) {
-        Icon(icon, contentDescription = null, tint = if (selected) scheme.primary else scheme.onSurfaceVariant)
+        Icon(
+            icon, contentDescription = null, tint = if (selected) scheme.primary else scheme.onSurfaceVariant,
+            modifier = Modifier.size(if (large) 40.dp else 24.dp),
+        )
         Text(
             label,
-            style = MaterialTheme.typography.labelMedium,
+            style = if (large) MaterialTheme.typography.titleSmall else MaterialTheme.typography.labelMedium,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
             color = if (selected) scheme.onPrimaryContainer else scheme.onSurface,
             textAlign = TextAlign.Center,
@@ -187,7 +191,7 @@ private fun PickTile(
     }
 }
 
-/** Pick exactly one. Tiles share the width, [columns] to a row. */
+/** Pick exactly one. Tiles share the width, [columns] to a row. [large] is for a screen's main choice. */
 @Composable
 fun <T> IconChoice(
     options: List<Choice<T>>,
@@ -195,6 +199,7 @@ fun <T> IconChoice(
     onPick: (T) -> Unit,
     modifier: Modifier = Modifier,
     columns: Int = options.size.coerceIn(1, 4),
+    large: Boolean = false,
 ) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         options.chunked(columns).forEach { row ->
@@ -203,6 +208,7 @@ fun <T> IconChoice(
                     PickTile(
                         c.icon, c.label, c.value == selected,
                         Modifier.weight(1f).selectable(selected = c.value == selected, role = Role.RadioButton) { onPick(c.value) },
+                        large = large,
                     )
                 }
                 repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }

@@ -5,6 +5,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -91,61 +93,62 @@ fun SyncScreen() {
                 }
             }
 
-            Section("Sync two phones") {
-                Text("Each phone keeps its own full copy and works without internet. Syncing swaps the changes both ways, including photos.")
-                Hint("Both phones must be on the same Wi-Fi, or one connected to the other's hotspot. If both changed the same thing, the most recent change wins.")
-                val h = host
-                if (h == null) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(
-                            onClick = {
-                                try {
-                                    host = WifiSync.host(store) { r -> scope.launch { onSynced(r) } }
-                                    message = null
-                                } catch (e: Exception) {
-                                    message = "Could not start: ${e.message}"
-                                }
-                            },
-                            modifier = Modifier.weight(1f),
-                        ) { Text("Show sync code") }
-                        OutlinedButton(onClick = { joining = true }, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Scan sync code") }
-                    }
-                    Hint("One phone shows the code, the other scans it. Either way round gives the same result.")
-                } else {
-                    val addresses = remember { WifiSync.localAddresses() }
-                    if (addresses.isEmpty()) {
-                        Text("This phone is not on a Wi-Fi network or hotspot. Connect, then try again.", color = MaterialTheme.colorScheme.error)
-                    } else {
-                        val qr = remember(h) { qrBitmap(h.invite(addresses).encode(), 640).asImageBitmap() }
-                        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Image(qr, contentDescription = "Sync code", modifier = Modifier.size(260.dp).background(Color.White).padding(8.dp))
-                            Hint("On the other phone: More → Sync and backup → Scan sync code")
-                        }
-                    }
-                    OutlinedButton(onClick = { h.stop(); host = null }) { Text("Stop showing the code") }
-                }
-                Hint(
-                    if (device.lastSyncAt == 0L) "Not synced yet."
-                    else "Last synced ${agoText(device.lastSyncAt)}.",
-                )
+            // Two phones, changes going both ways: the picture is the explanation.
+            Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.PhoneAndroid, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(52.dp))
+                Icon(Icons.Default.SyncAlt, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 12.dp).size(32.dp))
+                Icon(Icons.Default.PhoneAndroid, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(52.dp))
             }
-
-            Section("This phone") {
-                TextInput(device.name, { v -> store.setDevice { it.copy(name = v) } }, "Who uses this phone?", key = "n")
-                Hint("Handwritten box codes from this phone start with ${device.letter}. Each phone needs its own letter; change it in Settings.")
+            val h = host
+            if (h == null) {
+                BigAction(
+                    Icons.Default.QrCode2, "Show sync code",
+                    onClick = {
+                        try {
+                            host = WifiSync.host(store) { r -> scope.launch { onSynced(r) } }
+                            message = null
+                        } catch (e: Exception) {
+                            message = "Could not start: ${e.message}"
+                        }
+                    },
+                )
+                BigAction(Icons.Default.QrCodeScanner, "Scan sync code", onClick = { joining = true }, primary = false, enabled = !busy)
+                Hint("One phone shows the code, the other scans it. Both must be on the same Wi-Fi or hotspot.")
+            } else {
+                val addresses = remember { WifiSync.localAddresses() }
+                if (addresses.isEmpty()) {
+                    Text("This phone is not on a Wi-Fi network or hotspot. Connect, then try again.", color = MaterialTheme.colorScheme.error)
+                } else {
+                    val qr = remember(h) { qrBitmap(h.invite(addresses).encode(), 640).asImageBitmap() }
+                    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Image(qr, contentDescription = "Sync code", modifier = Modifier.size(260.dp).background(Color.White).padding(8.dp))
+                        Hint("On the other phone: Sync and backup → Scan sync code")
+                    }
+                }
+                OutlinedButton(onClick = { h.stop(); host = null }, modifier = Modifier.fillMaxWidth()) { Text("Stop showing the code") }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(
+                    if (device.lastSyncAt == 0L) Icons.Default.SyncProblem else Icons.Default.CheckCircle, contentDescription = null,
+                    tint = if (device.lastSyncAt == 0L) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.tertiary,
+                    modifier = Modifier.size(18.dp),
+                )
+                Hint(if (device.lastSyncAt == 0L) "Not synced yet" else "Last synced ${agoText(device.lastSyncAt)}")
             }
 
             Section("Backup") {
-                Text("A backup is one file with all the data and photos (${data.livePhotos.size} photos).")
-                Hint(
-                    (if (device.lastBackupAt == 0L) "No backup saved yet. " else "Last backup ${agoText(device.lastBackupAt)}. ") +
-                        "Save one before move day, somewhere off this phone.",
-                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Default.Backup, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Hint(
+                        (if (device.lastBackupAt == 0L) "No backup yet" else "Last backup ${agoText(device.lastBackupAt)}") +
+                            " · one file with everything, ${data.livePhotos.size} photos",
+                    )
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
                         enabled = !busy,
                         onClick = { saveBackup.launch("housemove-backup-${LocalDate.now()}.zip") },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).heightIn(min = 52.dp),
                     ) { Text("Save backup") }
                     OutlinedButton(
                         enabled = !busy,
@@ -165,14 +168,26 @@ fun SyncScreen() {
                                 if (file != null) Share.send(context, file, "application/zip") else message = "Could not create the backup."
                             }
                         },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).heightIn(min = 52.dp),
                     ) { Text("Share backup") }
                 }
                 OutlinedButton(
                     enabled = !busy,
                     onClick = { openBackup.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) },
+                    modifier = Modifier.fillMaxWidth(),
                 ) { Text("Restore or merge a backup file") }
-                Hint("Restoring adds the backup to what is already here; nothing on this phone is removed. It also works as a way to combine phones that cannot reach the same Wi-Fi.")
+                Hint("Restoring adds to what is here; nothing on this phone is removed.")
+            }
+
+            Fold("How syncing works", Icons.Default.HelpOutline) {
+                Text("Each phone keeps its own full copy and works without internet. Syncing swaps the changes both ways, photos included.")
+                Text("If both phones changed the same thing, the most recent change wins.")
+                Text("All phones must be on the same version of the app.")
+            }
+
+            Fold("This phone", Icons.Default.PhoneAndroid, summary = "${device.name.ifBlank { "No name" }} · letter ${device.letter}") {
+                TextInput(device.name, { v -> store.setDevice { it.copy(name = v) } }, "Who uses this phone?", key = "n")
+                Hint("Handwritten box codes from this phone start with ${device.letter}. Change the letter in Settings.")
             }
         }
     }
