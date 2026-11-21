@@ -377,7 +377,7 @@ class AuditChecksTest {
         return Timing(name, "data", m, runs, AuditReport.DATA_LIMIT_MS, m > AuditReport.DATA_LIMIT_MS)
     }
 
-    private class Timed(val runs: List<Double>, val nodes: Int)
+    private class Timed(val runs: List<Double>, val nodes: Int, val first: Double)
 
     /**
      * Open [route] a few times; each time is from asking for it until Compose has nothing left to do.
@@ -387,6 +387,7 @@ class AuditChecksTest {
     private fun timeScreen(route: String, typeWord: String? = null, times: Int = 3): Timed? {
         val runs = ArrayList<Double>()
         var nodes = 0
+        var first = 0.0
         for (i in 0..times) {
             var known = true
             var t = System.nanoTime()
@@ -410,10 +411,10 @@ class AuditChecksTest {
             nodes = rule.onAllNodes(SemanticsMatcher("anything") { true }, useUnmergedTree = true).fetchSemanticsNodes(atLeastOneRootRequired = false).size
             rule.runOnUiThread { nav!!.popBackStack() }
             rule.waitForIdle()
-            if (ms > 20_000) return Timed(listOf(round(ms)), nodes) // far too slow to repeat
-            if (i > 0) runs += round(ms) // the first opening is the warm-up
+            if (ms > 20_000) return Timed(listOf(round(ms)), nodes, round(ms)) // far too slow to repeat
+            if (i > 0) runs += round(ms) else first = round(ms) // the first opening is the warm-up
         }
-        return Timed(runs, nodes)
+        return Timed(runs, nodes, first)
     }
 
     @Test
@@ -427,6 +428,10 @@ class AuditChecksTest {
         val timings = ArrayList<Timing>()
         val notes = ArrayList<String>()
 
+        // A fixed piece of work that has nothing to do with the app. How long it takes says how busy and
+        // how fast the computer was, so that two reports can be compared fairly.
+        val numbers = IntArray(400_000) { (it * 1_103_515_245L + 12_345L).toInt() }
+        timings += timeData("Reference work (sorting 400,000 numbers)") { numbers.copyOf().sort() }.copy(kind = "reference", limitMs = 0.0, over = false)
         timings += timeData("Save the whole move to disk") { big.flush() }
         val records = AuditSampleData.countRecords(saved)
         for ((list, wanted) in AuditSampleData.LARGE) {
@@ -467,7 +472,7 @@ class AuditChecksTest {
                 val m = median(timed.runs)
                 timings += Timing(
                     name, if (asked) "screen" else "other screen", m, timed.runs, AuditReport.SCREEN_LIMIT_MS, m > AuditReport.SCREEN_LIMIT_MS,
-                    smallMoveMs = if (route in AuditSampleData.LARGE_EXAMPLES) null else smallRuns[plan]?.let { median(it.runs) }, nodes = timed.nodes,
+                    smallMoveMs = if (route in AuditSampleData.LARGE_EXAMPLES) null else smallRuns[plan]?.let { median(it.runs) }, nodes = timed.nodes, firstMs = timed.first,
                     note = if (timed.runs.size == 1) "one run only, too slow to repeat" else "",
                 )
             } catch (e: Throwable) {
@@ -475,7 +480,7 @@ class AuditChecksTest {
             }
         }
         big.close()
-        AuditReport.save(SpeedPart(records, AuditSampleData.COMMON_WORD, timings, notes, seconds(t0)))
+        AuditReport.save(SpeedPart(records, saved.length(), AuditSampleData.COMMON_WORD, timings, notes, seconds(t0)))
         assertTrue("The speed check could not time a single screen: $notes", timings.any { it.kind == "screen" })
     }
 }

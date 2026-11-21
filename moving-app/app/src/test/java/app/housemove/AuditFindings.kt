@@ -146,7 +146,10 @@ internal data class SizePart(
 @Serializable
 internal data class Timing(
     val name: String,
-    /** "data" for a function of the data layer, "screen" for opening a screen. */
+    /**
+     * "data" for a function of the data layer, "screen" for a screen that was asked for, "other screen" for
+     * the rest, and "reference" for the fixed piece of work that shows how fast the computer was.
+     */
     val kind: String,
     val medianMs: Double,
     val runsMs: List<Double>,
@@ -156,11 +159,22 @@ internal data class Timing(
     val smallMoveMs: Double? = null,
     /** How many semantics nodes the screen held once open: a measure of how much it builds. */
     val nodes: Int = 0,
+    /** The very first run, before anything was warmed up (screens only). */
+    val firstMs: Double? = null,
     val note: String = "",
 )
 
 @Serializable
-internal data class SpeedPart(val records: Map<String, Int>, val word: String, val timings: List<Timing>, val notes: List<String> = emptyList(), val seconds: Double)
+internal data class SpeedPart(
+    /** Records per list of the large move, counted in the saved file. */
+    val records: Map<String, Int>,
+    val savedBytes: Long = 0,
+    /** The word searched for. */
+    val word: String,
+    val timings: List<Timing>,
+    val notes: List<String> = emptyList(),
+    val seconds: Double,
+)
 
 /** What the checks made of the made-up screen with planted problems. Empty [wrong] means they found exactly those. */
 @Serializable

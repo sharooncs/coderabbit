@@ -239,8 +239,9 @@ internal object AuditReport {
         body.appendLine()
         if (inRow.isNotEmpty()) {
             body.appendLine(
-                "**Unnamed controls inside a named row.** The row itself can be tapped and is read out properly; the switch or box inside it is a second stop " +
-                    "that says only “switch, on” or “tick box, not ticked”. Less serious, but it doubles the stops on the screen, and on its own stop the control does not say what it is for.",
+                "**Unnamed controls inside a named row.** The row around the control has a name and can be tapped, so a listener usually hears that name just before. " +
+                    "But the switch or tick box is a stop of its own, and there it says only “switch, on” or “tick box, not ticked”. " +
+                    "It matters most where tapping the row does something else than the control does; the check cannot tell that apart.",
             )
             body.appendLine()
             body.appendLine("| Screen | Control | Inside the rows | |")
@@ -255,8 +256,9 @@ internal object AuditReport {
         }
         for ((role, list) in inRow.groupBy { it.role }) {
             worst += Worst(
-                35 + min(10, list.size / 3), "Screen reader",
-                "${plural(list.size, "unnamed $role control")} inside rows that are named themselves, on ${screensOf(list.map { it.screen }, 4)}: a second stop that reads out only its state.",
+                48 + min(10, list.size / 3), "Screen reader",
+                "${plural(list.size, "$role control")} without a name of ${if (list.size == 1) "its" else "their"} own, inside rows that are named, on ${screensOf(list.map { it.screen }, 4)}: " +
+                    "on that stop a screen reader says only whether it is on or ticked, not what it is for. For example in ${examples(list.map { it.insideNamed }, 1)}.",
             )
         }
         summary += SummaryLine(
@@ -350,7 +352,7 @@ internal object AuditReport {
         summary += SummaryLine(
             "3. Contrast (estimate from pixels)", low.size,
             if (low.isEmpty()) "No text is below the contrast it needs. $measured measured, ${phone.notMeasured.size} could not be." +
-                (closest?.let { " Closest to the limit: `${it.textColor}` on `${it.background}`, ${it.ratio}:1 where ${it.required}:1 is needed." } ?: "")
+                (closest?.let { " Closest to the limit: `${it.textColor}` on `${it.background}`, ${"%.2f".format(it.ratio)}:1 where ${it.required}:1 is needed." } ?: "")
             else "${plural(low.size, "text")} in ${plural(low.map { it.textColor + it.background }.distinct().size, "colour pair")} on ${plural(low.map { it.screen }.distinct().size, "screen")} " +
                 "${if (low.size == 1) "is" else "are"} below the contrast needed (lowest about ${"%.1f".format(low.minOf { it.ratio })}:1). $measured measured, ${phone.notMeasured.size} could not be.",
         )
@@ -443,6 +445,8 @@ internal object AuditReport {
                 grade == "nothing" -> "${plural(n, "text")} on $screen ${if (n == 1) "is" else "are"} shortened until nothing is left but …"
                 grade == "most" -> "${plural(n, "text")} on $screen ${if (n == 1) "loses" else "lose"} more than half to …"
                 grade == "some" -> "${plural(n, "text")} on $screen ${if (n == 1) "is" else "are"} shortened with …"
+                kind == CUT_CLIPPED -> "${plural(n, "text")} on $screen ${if (n == 1) "is" else "are"} cut off without …"
+                kind == CUT_SPILLS -> "${plural(n, "text")} on $screen ${if (n == 1) "sticks" else "stick"} out of ${if (n == 1) "its control" else "their controls"}"
                 else -> "${plural(n, "text or control", "texts or controls")} on $screen: ${KIND_WORDS[kind]}"
             }
             worst += Worst(base + min(5, n), "Screen size", "$what ($where): ${examples(texts)}." + if (grade.isEmpty()) " ${list.first().second.detail.replaceFirstChar { it.uppercase() }}." else "")
@@ -506,11 +510,12 @@ internal object AuditReport {
         }
         body.appendLine(
             "A move with " + speed.records.entries.filter { it.value > 0 }.joinToString(", ") { "%,d %s".format(it.value, it.key) } +
-                " (counted in the saved file; the photos are records without picture files). " +
+                " (counted in the saved file, which is ${"%,d".format(speed.savedBytes / 1024)} KB; the photos are records without picture files). " +
                 "Each number is the middle one of a few runs after a warm-up, in milliseconds, on the computer that ran the checks. " +
                 "**A phone is several times slower than this, and drawing is not part of it, so read the numbers as a rough guide and compare them between runs rather than trusting any one.** " +
                 "Marked when over ${ms(DATA_LIMIT_MS)} ms for a data function or ${ms(SCREEN_LIMIT_MS)} ms for a screen. " +
                 "A screen is timed from asking for it until Compose has nothing left to do: building and laying out the screen, and stepping through the 0.7 s change-over animation, which is simulated and costs little real time. " +
+                "The first row is a fixed piece of work that has nothing to do with the app: when it takes twice as long as in another report, the computer was twice as slow, and so is everything below it. " +
                 "“Nodes built” says how much of the data the screen turned into things on screen: a list that builds only what shows stays small however long it is.",
         )
         body.appendLine()
@@ -519,12 +524,14 @@ internal object AuditReport {
             body.appendLine("|---|---:|---:|---|---|---:|---:|")
             for (t in rows) {
                 body.appendLine(
-                    "| ${cell(t.name)}${if (t.note.isEmpty()) "" else " — " + cell(t.note)} | ${ms(t.medianMs)} | ${ms(t.limitMs)} | ${if (t.over) "**over**" else "ok"} | " +
+                    "| ${cell(t.name)}${if (t.note.isEmpty()) "" else " — " + cell(t.note)} | ${ms(t.medianMs)} | ${if (t.limitMs > 0) ms(t.limitMs) else "–"} | " +
+                        "${if (t.limitMs <= 0) "" else if (t.over) "**over**" else "ok"} | " +
                         "${t.runsMs.joinToString(", ") { ms(it) }} | ${t.smallMoveMs?.let { ms(it) } ?: ""} | ${if (t.nodes > 0) "%,d".format(t.nodes) else ""} |",
                 )
             }
             body.appendLine()
         }
+        val real = speed.timings.filter { it.kind != "reference" }
         table(speed.timings.filter { it.kind != "other screen" })
         val others = speed.timings.filter { it.kind == "other screen" }
         if (others.isNotEmpty()) {
@@ -534,19 +541,21 @@ internal object AuditReport {
         }
         for (n in speed.notes) body.appendLine("- $n")
         if (speed.notes.isNotEmpty()) body.appendLine()
-        val over = speed.timings.filter { it.over }
+        val over = real.filter { it.over }
         for (t in over) {
             val times = t.medianMs / t.limitMs
             worst += Worst((72 + min(26.0, 13 * (times - 1))).roundToInt(), "Speed", "${t.name} takes ${ms(t.medianMs)} ms with the large move (limit ${ms(t.limitMs)} ms).")
         }
-        val slowestData = speed.timings.filter { it.kind == "data" }.maxByOrNull { it.medianMs }
-        val slowestScreen = speed.timings.filter { it.kind != "data" }.maxByOrNull { it.medianMs }
+        val slowestData = real.filter { it.kind == "data" }.maxByOrNull { it.medianMs }
+        val slowestScreen = real.filter { it.kind != "data" }.maxByOrNull { it.medianMs }
+        val reference = speed.timings.firstOrNull { it.kind == "reference" }
         summary += SummaryLine(
             "6. Speed with a large move", over.size,
-            (if (over.isEmpty()) "All ${speed.timings.size} timings are within the limits."
-            else "${over.size} of ${speed.timings.size} timings are over the limit: " + over.sortedByDescending { it.medianMs / it.limitMs }.take(3).joinToString("; ") { "${it.name} ${ms(it.medianMs)} ms" } + ".") +
+            (if (over.isEmpty()) "All ${real.size} timings are within the limits."
+            else "${over.size} of ${real.size} timings are over the limit: " + over.sortedByDescending { it.medianMs / it.limitMs }.take(3).joinToString("; ") { "${it.name} ${ms(it.medianMs)} ms" } + ".") +
                 " Slowest data function: " + (slowestData?.let { "${it.name}, ${ms(it.medianMs)} ms" } ?: "–") +
-                "; slowest screen: " + (slowestScreen?.let { "${it.name.removePrefix("Open the ").removeSuffix(" screen")}, ${ms(it.medianMs)} ms" } ?: "–") + " (computer time, not phone time).",
+                "; slowest screen: " + (slowestScreen?.let { "${it.name.removePrefix("Open the ").removeSuffix(" screen")}, ${ms(it.medianMs)} ms" } ?: "–") +
+                ". Computer time, not phone time" + (reference?.let { "; the reference work took ${ms(it.medianMs)} ms" } ?: "") + ".",
         )
     }
 

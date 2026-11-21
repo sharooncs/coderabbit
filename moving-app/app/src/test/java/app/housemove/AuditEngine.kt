@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Paint
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.graphics.toArgb
@@ -15,6 +16,7 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.toSize
 import java.io.File
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
@@ -216,15 +218,15 @@ internal fun touchTargets(tree: AuditTree, screen: String, view: Int): List<Touc
         val takers = LinkedHashSet<AuditNode>()
 
         fun mine(x: Float, y: Float): Boolean {
-            if (r.contains(androidx.compose.ui.geometry.Offset(x, y))) return true
-            for (b in rivals) if (b.rect.contains(androidx.compose.ui.geometry.Offset(x, y))) {
+            if (r.contains(Offset(x, y))) return true
+            for (b in rivals) if (b.rect.contains(Offset(x, y))) {
                 takers += b
                 return false
             }
             val own = gapSquared(r, x, y)
             for (b in rivals) {
                 val small = b.rect.width < minPx - 0.5f || b.rect.height < minPx - 0.5f
-                if (small && grown(b.rect).contains(androidx.compose.ui.geometry.Offset(x, y)) && gapSquared(b.rect, x, y) < own) {
+                if (small && grown(b.rect).contains(Offset(x, y)) && gapSquared(b.rect, x, y) < own) {
                     takers += b
                     return false
                 }
@@ -343,7 +345,7 @@ internal fun cutOffs(tree: AuditTree, screen: String): List<CutOff> {
             val ellipsised = (0 until lines).any { layout.isLineEllipsized(it) }
             val tooTall = para.didExceedMaxLines || layout.size.height < para.height - 0.5f
             // Line widths from left and right edge: getLineWidth would count the space a wrapped line ends in.
-            val tooWide = (0 until lines).maxOfOrNull { kotlin.math.abs(layout.getLineRight(it) - layout.getLineLeft(it)) }?.let { it > layout.size.width + slack } == true
+            val tooWide = (0 until lines).maxOfOrNull { abs(layout.getLineRight(it) - layout.getLineLeft(it)) }?.let { it > layout.size.width + slack } == true
             if (ellipsised) {
                 val total = layout.layoutInput.text.length
                 val visible = layout.getLineEnd(lines - 1, visibleEnd = true)
@@ -433,8 +435,8 @@ internal fun contrastRatio(a: Int, b: Int): Double {
 internal fun hex(rgb: Int): String = "#%06X".format(rgb and 0xFFFFFF)
 
 private fun apart(a: Int, b: Int): Int = max(
-    max(kotlin.math.abs((a shr 16 and 0xFF) - (b shr 16 and 0xFF)), kotlin.math.abs((a shr 8 and 0xFF) - (b shr 8 and 0xFF))),
-    kotlin.math.abs((a and 0xFF) - (b and 0xFF)),
+    max(abs((a shr 16 and 0xFF) - (b shr 16 and 0xFF)), abs((a shr 8 and 0xFF) - (b shr 8 and 0xFF))),
+    abs((a and 0xFF) - (b and 0xFF)),
 )
 
 /** [argb] painted over the opaque colour [under]. */
@@ -635,7 +637,7 @@ internal fun contrast(tree: AuditTree, px: Pixels, screen: String, view: Int, do
             // right-aligned line has to be put back where it sits in the real, narrower text.
             val para = layout.multiParagraph
             for (line in 0 until layout.lineCount) {
-                val width = kotlin.math.abs(layout.getLineRight(line) - layout.getLineLeft(line))
+                val width = abs(layout.getLineRight(line) - layout.getLineLeft(line))
                 val spare = para.width - width
                 var left = min(layout.getLineLeft(line), layout.getLineRight(line))
                 if (spare > 0.5f && para.width > n.rect.width + 0.5f) left = (left * (n.rect.width - width) / spare)
