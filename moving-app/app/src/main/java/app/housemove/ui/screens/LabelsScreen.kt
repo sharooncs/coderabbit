@@ -1,5 +1,6 @@
 package app.housemove.ui.screens
 
+import android.content.Context
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -13,27 +14,67 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import app.housemove.data.Home
+import app.housemove.data.*
 import app.housemove.pdf.LabelSheet
 import app.housemove.pdf.Pdf
 import app.housemove.pdf.Share
+import app.housemove.pdf.TagSheet
 import app.housemove.pdf.labelCode
 import app.housemove.ui.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.Locale
 import kotlin.math.ceil
 
 private const val PDF_MIME = "application/pdf"
 
-private fun LabelSheet.short(): String = when (this) {
-    LabelSheet.A4_21 -> "A4 sticker sheet"
-    LabelSheet.LETTER_10 -> "Letter sticker sheet"
-    LabelSheet.A4_PLAIN -> "A4 paper, cut out"
-    LabelSheet.LETTER_PLAIN -> "Letter paper, cut out"
+/** Countries that print on Letter paper; everywhere else it is A4. */
+private val LETTER_COUNTRIES = setOf("US", "CA", "MX", "PH", "CL", "CO", "VE", "PA", "GT", "SV", "CR", "DO", "PR")
+
+/**
+ * Makes the sheet of hang tags. The app draws a PDF; tests put their own in its place,
+ * because Android's PDF writer does not exist where they run.
+ */
+fun interface TagPrinter {
+    fun make(context: Context, codes: List<String>, sheet: TagSheet): File
 }
 
+val LocalTagPrinter = staticCompositionLocalOf { TagPrinter { context, codes, sheet -> Pdf.hangTags(context, codes, sheet) } }
+
+/** One printing of hang tags: the luggage that gets a tag with its own code, then new numbers that fill the page. */
+internal class TagRun(val luggage: List<Box>, val fresh: List<String>, val lastNumber: Int) {
+    val codes: List<String> get() = luggage.map { it.label } + fresh
+}
+
+/**
+ * What to print on hang tags. A suitcase or bag that was given a handwritten code (a
+ * sticker does not stay on it) gets a proper tag with that same code; the rest of the
+ * page is new numbers from [first] on, for the luggage still to be packed.
+ */
+internal fun AppData.hangTagRun(sheet: TagSheet, first: Int = move.labelsPrinted + 1): TagRun {
+    val luggage = liveBoxes
+        .filter { (it.kind == ContainerKind.SUITCASE || it.kind == ContainerKind.BAG) && !PRINTED_CODE.matches(it.label) && it.stage != Stage.DONE }
+        .sortedWith(CODE_ORDER).distinctBy { it.label.uppercase() }
+    val pages = maxOf(1, ceil(luggage.size / sheet.perPage.toDouble()).toInt())
+    val spare = pages * sheet.perPage - luggage.size
+    val fresh = ArrayList<String>()
+    var n = first
+    while (fresh.size < spare && n <= 9999) {
+        val code = labelCode(n)
+        if (findByLabel(code) == null) fresh += code
+        n++
+    }
+    return TagRun(luggage, fresh, if (fresh.isEmpty()) first - 1 else n - 1)
+}
+
+/**
+ * Everything that is printed: stickers for boxes, hang tags for suitcases and bags, and
+ * signs for the doors of the new home. The paper is chosen once, for all three; numbers
+ * carry on from the last ones made, so nothing needs typing to print the next sheet.
+ */
 @Composable
 fun LabelsScreen() {
     val store = LocalStore.current
@@ -41,15 +82,28 @@ fun LabelsScreen() {
     val context = LocalContext.current
     val data = appData()
     val scope = rememberCoroutineScope()
+    val tagPrinter = LocalTagPrinter.current
 
-    var sheet by rememberSaveable { mutableStateOf(LabelSheet.A4_21) }
-    // Starts after the last printed number; stays put while this page is open so
-    // "Open to print" followed by "Share" gives the same sheet.
-    var start by rememberSaveable { mutableStateOf<Int?>(data.move.labelsPrinted + 1) }
-    var count by rememberSaveable { mutableStateOf<Int?>(42) }
+    var letter by rememberSaveable { mutableStateOf(Locale.getDefault().country in LETTER_COUNTRIES) }
+    var plain by rememberSaveable { mutableStateOf(false) }
+    val sheet = when {
+        letter && plain -> LabelSheet.LETTER_PLAIN
+        letter -> LabelSheet.LETTER_10
+        plain -> LabelSheet.A4_PLAIN
+        else -> LabelSheet.A4_21
+    }
     var copies by rememberSaveable { mutableStateOf(2) }
-    var letter by rememberSaveable { mutableStateOf(false) }
-    // Which printout is being made right now ("labels" or "signs"), or null.
+    // The first number follows the last one made until this sheet has been made (or a number is typed):
+    // from then on it stays put, so "Open to print" followed by "Share" gives the same sheet.
+    var fixedStart by rememberSaveable { mutableStateOf<Int?>(null) }
+    var badStart by rememberSaveable { mutableStateOf(false) }
+    var sheets by rememberSaveable { mutableStateOf(4) }
+    var exact by rememberSaveable { mutableStateOf<Int?>(null) }
+    var badCount by rememberSaveable { mutableStateOf(false) }
+    // Goes up when a chip sets the numbers, so the fields under "Other numbers" show them.
+    var round by rememberSaveable { mutableStateOf(0) }
+    var tagStart by rememberSaveable { mutableStateOf<Int?>(null) }
+    // Which printout is being made right now ("labels", "tags" or "signs"), or null.
     var busy by remember { mutableStateOf<String?>(null) }
 
     /** Build a PDF off the main thread, then open or share it. */
@@ -59,7 +113,9 @@ fun LabelsScreen() {
         scope.launch {
             val file = try {
                 withContext(Dispatchers.IO) { make() }
-            } catch (_: Exception) {
+            } catch (e: CancellationException) {
+                throw e // the screen was left while the file was being made
+            } catch (_: Throwable) {
                 null
             }
             busy = null
@@ -67,17 +123,28 @@ fun LabelsScreen() {
                 toast(context, "Could not create the PDF. Please try again.")
             } else {
                 after()
-                if (share) Share.send(context, file, PDF_MIME) else Share.open(context, file, PDF_MIME)
+                try {
+                    if (share) Share.send(context, file, PDF_MIME) else Share.open(context, file, PDF_MIME)
+                } catch (_: Exception) {
+                    toast(context, "The PDF was made, but no app could open it.")
+                }
             }
         }
     }
 
+    val printed = data.move.labelsPrinted
+
     Screen("Labels and door signs") {
         ScrollColumn {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                ContainerHeading("Paper")
+                ChipPicker(listOf(false, true), letter, label = { if (it) "Letter" else "A4" }, onPick = { letter = it })
+            }
+
             // ---- box labels: what will be printed, the buttons, then the options ----
             Section {
-                val s = start
-                val n = count
+                val s = if (badStart) null else fixedStart ?: (printed + 1)
+                val n = if (badCount) null else exact ?: (sheets * sheet.perPage / copies).coerceIn(1, 500)
                 val ready = s != null && n != null
                 val last = if (s != null && n != null) s + n - 1 else 0
                 val stickers = (n ?: 0) * copies
@@ -89,39 +156,39 @@ fun LabelsScreen() {
                     else "Enter a first number (1–9999) and how many boxes (1–500).",
                 )
                 val codes = if (s != null && n != null) (s until s + n).map { labelCode(it) } else emptyList()
-                val markPrinted: () -> Unit = { store.setMove { it.copy(labelsPrinted = maxOf(it.labelsPrinted, last)) } }
+                val markPrinted: () -> Unit = {
+                    fixedStart = s
+                    store.setMove { it.copy(labelsPrinted = maxOf(it.labelsPrinted, last)) }
+                }
                 PrintButtons(
                     enabled = ready && busy == null,
                     busy = busy == "labels",
                     onPrint = { produce("labels", share = false, after = markPrinted) { Pdf.labels(context, codes, sheet, copies) } },
                     onShare = { produce("labels", share = true, after = markPrinted) { Pdf.labels(context, codes, sheet, copies) } },
                 )
-
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    NumberInput(
-                        start?.toDouble(),
-                        onChange = { v -> start = v?.toInt()?.takeIf { it in 1..9999 } },
-                        label = "First number",
-                        modifier = Modifier.weight(1f),
-                        key = "start",
-                    )
-                    NumberInput(
-                        count?.toDouble(),
-                        onChange = { v -> count = v?.toInt()?.takeIf { it in 1..500 } },
-                        label = "How many boxes",
-                        modifier = Modifier.weight(1f),
-                        key = "count",
+                if (s != null && s <= printed) {
+                    GlassChip(
+                        "These are made. Next: from ${labelCode(printed + 1)}", icon = Icons.Default.SkipNext, tone = GlassTone.Amber,
+                        onClick = { fixedStart = null; badStart = false; round++ },
                     )
                 }
-                if (s != null && s <= data.move.labelsPrinted) {
-                    IconFlag(Icons.Default.Warning, "Up to ${labelCode(data.move.labelsPrinted)} are made already. Start after that", error = true)
-                }
 
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Pages", style = MaterialTheme.typography.labelLarge, color = Night.TextDim)
+                    ChipPicker(
+                        listOf(1, 2, 4, 6, 10), sheets.takeIf { exact == null && !badCount },
+                        label = { "$it" },
+                        onPick = { sheets = it; exact = null; badCount = false; round++ },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
                 IconChoice(
-                    LabelSheet.entries.map { Choice(it, it.short(), if (it.outline) Icons.Default.ContentCut else Icons.Default.ViewModule) },
-                    sheet,
-                    onPick = { sheet = it },
-                    columns = 2,
+                    listOf(
+                        Choice(false, "Sticker sheet", Icons.Default.ViewModule),
+                        Choice(true, "Plain paper, cut out", Icons.Default.ContentCut),
+                    ),
+                    plain,
+                    onPick = { plain = it },
                 )
                 Hint(sheet.label)
                 IconChoice(
@@ -132,6 +199,64 @@ fun LabelsScreen() {
                     copies,
                     onPick = { copies = it },
                 )
+                Fold(
+                    "Other numbers", Pic.More, open = !ready,
+                    summary = if (s != null && n != null) "From ${labelCode(s)}, for ${containerCount(n, "box", "boxes")}" else null,
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        NumberInput(
+                            s?.toDouble(),
+                            onChange = { v -> fixedStart = v?.toInt()?.takeIf { it in 1..9999 }; badStart = fixedStart == null },
+                            label = "First number",
+                            modifier = Modifier.weight(1f),
+                            key = "start:$round",
+                        )
+                        NumberInput(
+                            n?.toDouble(),
+                            onChange = { v -> exact = v?.toInt()?.takeIf { it in 1..500 }; badCount = exact == null },
+                            label = "How many boxes",
+                            modifier = Modifier.weight(1f),
+                            key = "count:$round:$sheet:$copies",
+                        )
+                    }
+                }
+            }
+
+            // ---- hang tags: a sticker does not stay on a suitcase or a bag ----
+            Section {
+                val tagSheet = if (letter) TagSheet.LETTER_TAGS else TagSheet.A4_TAGS
+                val first = tagStart ?: (printed + 1)
+                val run = data.hangTagRun(tagSheet, first)
+                val codes = run.codes
+                val pages = ceil(codes.size / tagSheet.perPage.toDouble()).toInt()
+                Printout(
+                    Icons.Default.Luggage,
+                    title = "Hang tags",
+                    sub = "${codes.size} tags on $pages page${if (pages == 1) "" else "s"} for suitcases and bags. Cut out, punch a hole, tie to the handle.",
+                )
+                // What will be on them: the luggage already packed under a handwritten code, then new numbers.
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    run.luggage.forEach { GlassChip(it.label, icon = it.kind.picture(), tone = GlassTone.Mint) }
+                    if (run.fresh.isNotEmpty()) {
+                        GlassChip(if (run.fresh.size == 1) run.fresh.first() else "${run.fresh.first()} – ${run.fresh.last()}", icon = Pic.Label)
+                    }
+                }
+                val markPrinted: () -> Unit = {
+                    tagStart = first
+                    store.setMove { it.copy(labelsPrinted = maxOf(it.labelsPrinted, run.lastNumber)) }
+                }
+                PrintButtons(
+                    enabled = codes.isNotEmpty() && busy == null,
+                    busy = busy == "tags",
+                    onPrint = { produce("tags", share = false, after = markPrinted) { tagPrinter.make(context, codes, tagSheet) } },
+                    onShare = { produce("tags", share = true, after = markPrinted) { tagPrinter.make(context, codes, tagSheet) } },
+                )
+                if (run.fresh.isNotEmpty() && first <= printed) {
+                    GlassChip(
+                        "These are made. Next: from ${labelCode(printed + 1)}", icon = Icons.Default.SkipNext, tone = GlassTone.Amber,
+                        onClick = { tagStart = null },
+                    )
+                }
             }
 
             // ---- door signs ----
@@ -155,15 +280,14 @@ fun LabelsScreen() {
                         onPrint = { produce("signs", share = false) { Pdf.doorSigns(context, data, letter) } },
                         onShare = { produce("signs", share = true) { Pdf.doorSigns(context, data, letter) } },
                     )
-                    ChipPicker(listOf(false, true), letter, label = { if (it) "Letter paper" else "A4 paper" }, onPick = { letter = it })
                 }
             }
 
-            Fold("How it works", Icons.Default.HelpOutline, summary = "Stickers for boxes, coloured signs for doors") {
+            Fold("How it works", Icons.Default.HelpOutline, summary = "Stickers for boxes, tags for luggage, signs for doors") {
                 Text("Every box gets a sticker with a number and a square code. Scanning the code opens that box in the app: what's inside, where it goes, where it is now.")
+                Text("A sticker does not stay on a suitcase or a bag, so those get a tag tied to the handle. It carries the same kind of number and code.")
                 Text("Every room in the new home gets a sign on its door in its own colour, so anyone carrying a box can see where to put it down. Tape the signs up before unloading starts.")
-                Text("Print more stickers than you think you need; spare numbers cost nothing. Big furniture can have one too. A black-and-white printer works: names and codes are printed large.")
-                Text("No printer today? Skip the stickers: the app gives each box a short code to write on with a marker.")
+                Text("Print more than you think you need; spare numbers cost nothing. A black-and-white printer works. No printer today? The app gives each box a short code to write on with a marker.")
             }
         }
     }

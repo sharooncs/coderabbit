@@ -316,11 +316,15 @@ class FlowsTest {
         store.addPhoto(a.id, PhotoKind.CONTENTS, photo)
         go("box/${a.id}")
 
-        type("Contents", "Glasses, mugs")
+        tap("Glasses"); tap("Mugs") // the usual things for a kitchen box, one tap each
+        assertEquals("Glasses, Mugs", data.box(a.id)!!.contents)
+        tapDesc("Edit what's inside") // typing is still there for whatever the chips do not cover
+        type("What's inside", "Glasses, mugs")
         tap("Fragile"); tap("This way up")
         tap("First night")
         tap("Box size") // rarely changed, so it is folded away
         tap("Small")
+        tap("Going to") // the room it goes to is filled in already; this opens the others
         tap("Bedroom") // send it to a different room than the default
         var b = data.box(a.id)!!
         assertEquals("Glasses, mugs", b.contents)
@@ -454,23 +458,25 @@ class FlowsTest {
         start()
         val box = store.createBox("L001", oldKitchen.id)
         go("box/${box.id}")
-        tap("Scan books and products into this box")
-        type("Or type a barcode number or a name", "9780140328721")
+        tapDesc("Scan barcodes of books and products")
+        tap("Type it") // the camera scans and the microphone names; the keyboard is asked for
+        type("A barcode number or a name", "9780140328721")
         tap("Add")
         see("Look up book titles online?") // asked once, before anything goes online
         tap("No, stay offline")
         assertEquals(false, store.device.value.bookLookup)
         assertEquals("9780140328721", data.entriesOf(box.id).single().code)
 
+        tapDesc("Type a name for barcode 9780140328721")
         type("Name for barcode 9780140328721", "Fantastic Mr Fox")
         tap("Save")
         assertEquals("Fantastic Mr Fox", data.entriesOf(box.id).single().title)
 
-        type("Or type a barcode number or a name", "Photo albums")
+        type("A barcode number or a name", "Photo albums")
         tap("Add")
-        type("Or type a barcode number or a name", "978-0-14-032872-1") // the same book again
+        type("A barcode number or a name", "978-0-14-032872-1") // the same book again
         tap("Add")
-        see("Already in this box")
+        see("Already in here")
         assertEquals(2, data.entriesOf(box.id).size)
         tapDesc("Remove Photo albums")
         assertEquals(1, data.entriesOf(box.id).size)

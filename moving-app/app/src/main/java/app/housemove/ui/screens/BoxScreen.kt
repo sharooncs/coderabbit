@@ -1,16 +1,26 @@
 package app.housemove.ui.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.VectorPath
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -18,8 +28,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.housemove.data.*
 import app.housemove.ui.*
-
-private val PRINTED_LABEL = Regex("^L\\d+$", RegexOption.IGNORE_CASE)
 
 /** The same picture drawn smaller, standing on the same floor, so sizes can be told apart at a glance. */
 private fun ImageVector.shrunk(scale: Float): ImageVector =
@@ -45,11 +53,16 @@ private val SIZE_ICONS: Map<BoxSize, ImageVector> by lazy {
     )
 }
 
-@Composable
-private fun Heading(text: String, modifier: Modifier = Modifier) {
-    Text(text, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = modifier)
-}
+/** "Suitcase 1 (B1)" or "Suitcase B1": a container's name with the code to look for. */
+private fun Box.nameAndCode(): String = if (name.isBlank()) "${kind.noun} $label" else "$name ($label)"
 
+/**
+ * One container, laid out for packing it without the keyboard. Everything about it is
+ * already filled in from the last one packed in the same room, so the first screenful is
+ * only things to look at or tap: what kind it is, what kind of things go in it, a photo,
+ * what is inside (tap, say or scan) and, fixed at the bottom, Seal. What else can go in
+ * it (catalogued items, other containers) and everything rarely changed comes below.
+ */
 @Composable
 fun BoxScreen(id: String) {
     val store = LocalStore.current
@@ -70,62 +83,159 @@ fun BoxScreen(id: String) {
     var confirmDelete by remember { mutableStateOf(false) }
     var relabel by remember { mutableStateOf(false) }
     var scanIn by remember { mutableStateOf(false) }
+    var scanItem by remember { mutableStateOf(false) }
+    var scanOuter by remember { mutableStateOf(false) }
+    // Why the Store refused the last thing asked about items, and about containers.
+    var itemTrouble by remember { mutableStateOf<String?>(null) }
+    var nestTrouble by remember { mutableStateOf<String?>(null) }
+    var destOpen by rememberSaveable(id) { mutableStateOf(false) }
+    var typing by rememberSaveable(id) { mutableStateOf(false) }
+    // Goes up whenever the contents change from outside the text field, so the field shows them.
+    var typingRound by remember { mutableIntStateOf(0) }
+
     val vehicle = data.vehicle()
+    val word = box.kind.word()
     val entries = data.entriesOf(box.id)
+    val items = data.itemsIn(box.id)
+    val children = data.childrenOf(box.id)
+    val parent = data.parentOf(box)
     val dest = data.room(box.destRoomId)
-    val handwritten = !PRINTED_LABEL.matches(box.label)
+    val category = data.categoryOf(box)
+    val handwritten = !PRINTED_CODE.matches(box.label)
     val labelClash = box.label.uppercase() in data.duplicateLabels()
+    // Catalogued things from the same room that could go in: not packed yet, and in the same place as this.
+    val loose = data.looseItems().filter { it.originRoomId == box.originRoomId && it.stage == box.stage }
+    val anyLoose = loose.isNotEmpty() || data.looseItems().any { it.stage == box.stage }
+    val lines = contentsLines(box.contents)
     val missing = listOfNotNull(
-        "a room to go to".takeIf { dest == null },
+        "a room to go to".takeIf { dest == null && parent == null },
         "what's inside".takeIf {
-            box.contents.isBlank() && entries.isEmpty() && data.photosOf(box.id, PhotoKind.CONTENTS).isEmpty()
+            box.contents.isBlank() && entries.isEmpty() && items.isEmpty() && children.isEmpty() &&
+                data.photosOf(box.id, PhotoKind.CONTENTS).isEmpty()
         },
     )
+    val config = LocalConfiguration.current
+    val narrow = config.screenWidthDp / config.fontScale < 360f
+
+    fun setContents(f: (String) -> String) {
+        edit { it.copy(contents = f(it.contents)) }
+        typingRound++
+    }
 
     Screen(
-        "Box ${box.label}",
+        box.shownName(),
         actions = {
-            TopAction(Icons.Default.Delete, "Delete this box") { confirmDelete = true }
+            TopAction(Icons.Default.Delete, "Delete this $word") { confirmDelete = true }
         },
     ) {
         ScrollColumn(Modifier.weight(1f)) {
-            LabelCard(box.label, handwritten, labelClash)
-
-            // ---- where it goes ----
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Heading("Going to", Modifier.weight(1f))
-                    if (dest == null) IconFlag(Icons.Default.ErrorOutline, "Choose a room", error = true)
-                }
-                RoomTiles(Home.DEST, box.destRoomId, onPick = { r -> edit { it.copy(destRoomId = r) } })
-            }
-
-            // ---- what's inside ----
-            PhotoHero(box.id, PhotoKind.CONTENTS, height = 190.dp, emptyText = "Photo of the open box")
-            TextInput(
-                box.contents,
-                onChange = { v -> edit { it.copy(contents = v) } },
-                label = "Contents",
-                key = box.id,
-                singleLine = false,
-                mic = true,
-                placeholder = "A few words: pans, cutlery, kettle",
+            Ticket(
+                box, dest, handwritten, labelClash,
+                destOpen = destOpen || (dest == null && parent == null && data.roomsOf(Home.DEST).isNotEmpty()),
+                onToggleDest = { destOpen = !destOpen },
+                onDest = { r -> edit { it.copy(destRoomId = r) } },
             )
-            OutlinedButton(onClick = { scanIn = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                Icon(Icons.Default.QrCodeScanner, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Scan books and products into this box")
+            if (parent != null) {
+                GlassPill(Modifier.fillMaxWidth(), tone = GlassTone.Amber, contentPadding = PaddingValues(start = 16.dp, end = 4.dp)) {
+                    Icon(Icons.Default.SubdirectoryArrowRight, contentDescription = null, tint = Night.AmberPale, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        "Inside ${parent.nameAndCode()}", style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f).clickable { nav.open("box/${parent.id}") }.padding(vertical = 12.dp),
+                    )
+                    TextButton(onClick = { nestTrouble = store.nest(id, null).reason }) { Text("Take out") }
+                }
+                nestTrouble?.let { ContainerRefusal(it) { nestTrouble = null } }
             }
-            if (entries.isNotEmpty()) {
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("Scanned in (${entries.size})", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    entries.take(3).forEach { e ->
-                        Text(
-                            e.title.ifBlank { "Barcode ${e.code}" } + if (e.author.isBlank()) "" else " · ${e.author}",
-                            style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
+
+            // ---- what it is ----
+            ContainerTiles(
+                ContainerKind.entries.map { Choice(it, it.tileLabel(), it.picture()) }, box.kind, columns = 3,
+                onPick = { k -> edit { store.data.value.withKind(it, k) } },
+            )
+
+            // ---- what's inside: the kind of things, then the things ----
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    ContainerHeading("What's inside", Modifier.weight(1f))
+                    SpeakButton("What is in the $word?", contentDescription = "Say what's inside", size = 40.dp) { said ->
+                        setContents { addContents(it, *contentsLines(said).map { l -> l.replaceFirstChar(Char::uppercase) }.toTypedArray()) }
+                    }
+                    GlassOrb(Icons.Default.QrCodeScanner, "Scan barcodes of books and products", size = 40.dp) { scanIn = true }
+                    GlassOrb(Icons.Default.Edit, "Edit what's inside", kind = if (typing) OrbKind.Selected else OrbKind.Plain, size = 40.dp) { typing = !typing }
+                }
+                ContainerTiles(
+                    BOX_CATEGORIES.map { Choice(it, it, categoryPicture(it)) }, category, columns = if (narrow) 3 else 4,
+                    onPick = { c -> edit { it.copy(category = c) } },
+                )
+                // What is in it already, ticked; then the usual things for this category, one tap each.
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    lines.forEach { line -> GlassChip(line, selected = true, onClick = { setContents { removeContents(it, line) } }) }
+                    contentsChips(category, data.room(box.originRoomId)?.name, box.contents).forEach { chip ->
+                        GlassChip(chip, onClick = { setContents { addContents(it, chip) } })
+                    }
+                }
+                if (typing) {
+                    TextInput(
+                        box.contents,
+                        onChange = { v -> edit { it.copy(contents = v) } },
+                        label = "What's inside",
+                        key = "$id:$typingRound",
+                        singleLine = false,
+                    )
+                }
+                if (entries.isNotEmpty()) {
+                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { scanIn = true }.padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("Scanned in (${entries.size})", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        entries.take(3).forEach { e ->
+                            Text(
+                                e.title.ifBlank { "Barcode ${e.code}" } + if (e.author.isBlank()) "" else " · ${e.author}",
+                                style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        if (entries.size > 3) Text("and ${entries.size - 3} more", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            }
+
+            // ---- catalogued items packed in it ----
+            if (items.isNotEmpty() || anyLoose) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        ContainerHeading(if (items.isEmpty()) "Items inside" else "Items inside (${items.size})", Modifier.weight(1f))
+                        GlassOrb(Icons.Default.QrCodeScanner, "Scan an item's label to put it in", size = 40.dp) { scanItem = true }
+                    }
+                    items.forEach { i ->
+                        ContainerItemRow(i, onOpen = { nav.open("item/${i.id}") }) {
+                            IconButton(onClick = { itemTrouble = store.takeOut(i.id).reason }) {
+                                Icon(Icons.Default.Close, contentDescription = "Take ${i.title()} out")
+                            }
+                        }
+                    }
+                    if (loose.isNotEmpty()) {
+                        Hint("Tap to put in" + (data.room(box.originRoomId)?.let { ": loose in ${it.name}" } ?: ""))
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(loose, key = { it.id }) { i -> LooseTile(i) { itemTrouble = store.putInto(i.id, id).reason } }
+                        }
+                    }
+                    itemTrouble?.let { ContainerRefusal(it) { itemTrouble = null } }
+                }
+            }
+
+            // ---- other containers packed in it ----
+            if (children.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ContainerHeading("Inside this $word (${children.size})")
+                    children.forEach { c ->
+                        ContainerRow(
+                            c, data, showRoom = false, onOpen = { nav.open("box/${it.id}") },
+                            trailing = {
+                                IconButton(onClick = { nestTrouble = store.nest(c.id, null).reason }) {
+                                    Icon(Icons.Default.Close, contentDescription = "Take ${c.shownName()} out")
+                                }
+                            },
                         )
                     }
-                    if (entries.size > 3) TextButton(onClick = { scanIn = true }) { Text("Show all ${entries.size}") }
                 }
             }
 
@@ -138,7 +248,7 @@ fun BoxScreen(id: String) {
                 ),
             )
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Heading("Unpack")
+                ContainerHeading("Unpack")
                 IconChoice(
                     Priority.entries.map { Choice(it, it.label, it.icon()) },
                     box.priority,
@@ -148,11 +258,20 @@ fun BoxScreen(id: String) {
 
             // ---- needed now and then: closed, each saying what is set ----
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Heading("More about this box")
+                ContainerHeading("More about this $word")
+                if (parent == null && children.isEmpty()) {
+                    GlassPill(Modifier.fillMaxWidth(), onClick = { scanOuter = true }) {
+                        Icon(Icons.Default.MoveToInbox, contentDescription = null, tint = Night.Mint)
+                        Spacer(Modifier.width(14.dp))
+                        Text("Put inside another container", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                        Icon(Icons.Default.QrCodeScanner, contentDescription = null, tint = Night.TextDim, modifier = Modifier.size(20.dp))
+                    }
+                }
+                if (parent == null) nestTrouble?.let { ContainerRefusal(it) { nestTrouble = null } }
                 Fold("Coming from", Pic.Room, summary = data.room(box.originRoomId)?.name ?: "No room") {
                     RoomTiles(Home.ORIGIN, box.originRoomId, onPick = { r -> edit { it.copy(originRoomId = r) } })
                 }
-                Fold("Box size", Pic.Size, summary = box.size.label) {
+                Fold(if (box.kind == ContainerKind.CARTON) "Box size" else "Size", Pic.Size, summary = box.size.label, key = "size") {
                     IconChoice(
                         BoxSize.entries.map { Choice(it, it.label, SIZE_ICONS.getValue(it)) },
                         box.size,
@@ -178,7 +297,6 @@ fun BoxScreen(id: String) {
                         box.stage,
                         onPick = { s -> edit { it.copy(stage = s) } },
                     )
-                    if (data.uses(Part.MOVE_DAY)) Hint("Changes by itself when the box is scanned on or off the $vehicle.")
                 }
                 Fold(
                     "Damage", Pic.Damage, open = box.damaged,
@@ -197,17 +315,32 @@ fun BoxScreen(id: String) {
                         PhotoStrip(box.id, PhotoKind.DAMAGE, label = "Photo of the damage")
                     }
                 }
+                val photos = data.photosOf(box.id, PhotoKind.CONTENTS).size
+                Fold("Photos", Pic.Camera, summary = if (photos == 0) "None yet" else containerCount(photos, "photo")) {
+                    PhotoStrip(box.id, PhotoKind.CONTENTS, label = "What's inside")
+                }
                 Fold(
-                    "Notes", Pic.Notes,
-                    summary = box.notes.lineSequence().firstOrNull { it.isNotBlank() }
-                        ?: if (box.packedBy.isBlank()) "None" else "Packed by ${box.packedBy}",
+                    "Name and notes", Pic.Notes,
+                    summary = listOfNotNull(
+                        box.name.ifBlank { null },
+                        box.notes.lineSequence().firstOrNull { it.isNotBlank() },
+                        box.packedBy.ifBlank { null }?.let { "Packed by $it" },
+                    ).joinToString(" · ").ifEmpty { "None" },
                 ) {
+                    TextInput(
+                        box.name,
+                        onChange = { v -> edit { it.copy(name = v) } },
+                        label = "Name",
+                        key = "$id:name:${box.kind}",
+                        placeholder = "${box.kind.noun} ${box.label}",
+                    )
                     TextInput(
                         box.notes,
                         onChange = { v -> edit { it.copy(notes = v) } },
                         label = "Notes",
                         key = box.id + ":notes",
                         singleLine = false,
+                        mic = true,
                     )
                     if (box.packedBy.isNotBlank()) Hint("Packed by ${box.packedBy}")
                 }
@@ -225,11 +358,18 @@ fun BoxScreen(id: String) {
         }
 
         SealBar(
+            word = word,
             sealed = box.sealed,
             missing = missing,
-            onSeal = { edit { it.copy(sealed = true) } },
+            // Sealing accepts the category that was suggested, so the next one from this room starts the same.
+            onSeal = { edit { it.copy(sealed = true, category = it.category.ifBlank { category }) } },
             onOpen = { edit { it.copy(sealed = false) } },
-            onNext = { if (!nav.popBackStack("pack", inclusive = false)) nav.popBackStack() },
+            onNext = {
+                if (!nav.popBackStack("pack", inclusive = false)) {
+                    nav.popBackStack()
+                    nav.open("pack")
+                }
+            },
         )
     }
 
@@ -255,12 +395,56 @@ fun BoxScreen(id: String) {
         )
     }
 
-    if (scanIn) ScanInDialog(box, onClose = { scanIn = false })
+    if (scanIn) ScanInDialog(box, onClose = { scanIn = false; typingRound++ })
+
+    if (scanItem) {
+        ScanDialog(
+            title = "Scan the label on the item",
+            onCode = { raw ->
+                val code = raw.trim()
+                val d = store.data.value
+                val found = d.findByLabel(code)
+                    ?: d.liveItems.firstOrNull { it.serial.isNotBlank() && it.serial.equals(code, ignoreCase = true) }?.toMovable()
+                if (code.isNotBlank()) {
+                    itemTrouble = when {
+                        found == null -> "Nothing here has the label $code."
+                        found.id == id -> "That is this $word's own label."
+                        // Another container: it goes inside this one.
+                        found.isBox -> store.nest(found.id, id).reason
+                        else -> store.putInto(found.id, id).reason
+                    }
+                    scanItem = false
+                }
+            },
+            onClose = { scanItem = false },
+        )
+    }
+
+    if (scanOuter) {
+        ScanDialog(
+            title = "Scan the label on the outer container",
+            onCode = { raw ->
+                val code = raw.trim()
+                val outer = store.data.value.findByLabel(code)
+                if (code.isNotBlank()) {
+                    nestTrouble = when {
+                        outer == null -> "No container has the label $code."
+                        !outer.isBox -> "${outer.title} is an item, not a container."
+                        else -> store.nest(id, outer.id).reason
+                    }
+                    scanOuter = false
+                }
+            },
+            onClose = { scanOuter = false },
+        )
+    }
 
     if (confirmDelete) {
+        val kept = items.isNotEmpty() || children.isNotEmpty()
         ConfirmDialog(
-            title = "Delete box ${box.label}?",
-            text = "This record and its photos will be removed from every phone at the next sync.",
+            title = "Delete ${box.nameAndCode()}?",
+            text = "This record and its photos will be removed from every phone at the next sync." +
+                if (kept) " What is packed in it stays in the app." else "",
             onConfirm = {
                 data.photosOf(box.id).forEach { store.delete(it) }
                 store.delete(box)
@@ -271,51 +455,104 @@ fun BoxScreen(id: String) {
     }
 }
 
-/** The code to look for on the cardboard, and where to put it. */
+/**
+ * The top of the page: the photo of what's inside, the code to look for on the thing
+ * itself with how to mark it, and the room it goes to, which opens to change it.
+ */
 @Composable
-private fun LabelCard(label: String, handwritten: Boolean, clash: Boolean) {
-    val scheme = MaterialTheme.colorScheme
-    GlassCard(Modifier.fillMaxWidth(), tone = GlassTone.Mint) {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+private fun Ticket(
+    box: Box,
+    dest: Room?,
+    handwritten: Boolean,
+    clash: Boolean,
+    destOpen: Boolean,
+    onToggleDest: () -> Unit,
+    onDest: (String?) -> Unit,
+) {
+    val luggage = box.kind == ContainerKind.SUITCASE || box.kind == ContainerKind.BAG
+    GlassCard(Modifier.fillMaxWidth(), tone = GlassTone.Mint, shape = RoundedCornerShape(26.dp), sheen = true) {
+        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            ContainerPhoto(box.id, PhotoKind.CONTENTS, "Photo of what's inside", Modifier.size(104.dp))
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
                 Text(
-                    label,
-                    fontSize = 36.sp,
-                    lineHeight = 40.sp,
-                    fontWeight = FontWeight.Black,
-                    color = scheme.onPrimaryContainer,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.widthIn(max = 200.dp),
+                    box.label, fontSize = 34.sp, lineHeight = 38.sp, fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(Modifier.width(16.dp))
-                Icon(
-                    if (handwritten) Icons.Default.Edit else Pic.Label, contentDescription = null,
-                    tint = scheme.onPrimaryContainer, modifier = Modifier.size(20.dp),
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    if (handwritten) "Write it on the top and one side" else "Stick one on top, one on a side",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = if (handwritten) FontWeight.SemiBold else FontWeight.Normal,
-                    color = scheme.onPrimaryContainer,
-                    modifier = Modifier.weight(1f),
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        if (handwritten) Icons.Default.Edit else Pic.Label, contentDescription = null,
+                        tint = Night.MintPale, modifier = Modifier.size(15.dp),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        when {
+                            luggage && handwritten -> "Write it on a tag for the handle"
+                            luggage -> "Tie its tag to the handle"
+                            handwritten -> "Write it on the top and one side"
+                            else -> "Stick one on top, one on a side"
+                        },
+                        style = MaterialTheme.typography.bodySmall, color = Night.TextSoft, maxLines = 2,
+                    )
+                }
+                Row(
+                    Modifier.padding(top = 2.dp).clip(RoundedCornerShape(12.dp)).clickable(role = Role.Button, onClick = onToggleDest).heightIn(min = 40.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text("Going to", style = MaterialTheme.typography.labelLarge, color = Night.TextSoft)
+                    RoomBadge(dest, Modifier.weight(1f, fill = false))
+                    Icon(
+                        if (destOpen) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = if (destOpen) "Close the rooms" else "Choose another room", modifier = Modifier.size(20.dp),
+                    )
+                }
             }
-            if (clash) IconFlag(Icons.Default.Warning, "This label is used twice. Change one", error = true)
+        }
+        if (clash) {
+            Box(Modifier.padding(start = 12.dp, end = 12.dp, bottom = 10.dp)) {
+                IconFlag(Icons.Default.Warning, "This label is used twice. Change one", error = true)
+            }
+        }
+        if (destOpen) {
+            RoomTiles(Home.DEST, box.destRoomId, onPick = onDest, modifier = Modifier.padding(start = 10.dp, end = 10.dp, bottom = 10.dp))
         }
     }
 }
 
-/** Fixed at the bottom of the box page, so sealing never needs scrolling. */
+/** A catalogued item not packed yet, as a picture to tap: one tap puts it in. */
 @Composable
-private fun SealBar(sealed: Boolean, missing: List<String>, onSeal: () -> Unit, onOpen: () -> Unit, onNext: () -> Unit) {
+private fun LooseTile(item: Item, onPut: () -> Unit) {
+    Column(
+        Modifier.width(104.dp).glass(RoundedCornerShape(18.dp), shadow = 4.dp)
+            .clickable(role = Role.Button, onClickLabel = "Put in", onClick = onPut).padding(6.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Box {
+            OwnerThumb(item.id, Modifier.fillMaxWidth().aspectRatio(4f / 3f))
+            // On a dark disc, so the plus shows on a bright photograph too.
+            Icon(
+                Icons.Default.Add, contentDescription = null, tint = Night.Mint,
+                modifier = Modifier.align(Alignment.TopEnd).padding(3.dp).size(22.dp).clip(CircleShape)
+                    .background(Night.Panel).border(1.dp, Night.GlassRimHi, CircleShape).padding(3.dp),
+            )
+        }
+        Text(
+            item.title(), style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 2.dp),
+        )
+    }
+}
+
+/** Fixed at the bottom of the page, so sealing never needs scrolling. */
+@Composable
+private fun SealBar(word: String, sealed: Boolean, missing: List<String>, onSeal: () -> Unit, onOpen: () -> Unit, onNext: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     Box(Modifier.fillMaxWidth().bottomBar(if (sealed) GlassTone.Mint else GlassTone.Plain)) {
         if (!sealed) {
             Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (missing.isNotEmpty()) Hint("Still to add: ${missing.joinToString(", ")}")
-                BigAction(Icons.Default.Lock, "Seal box", onSeal)
+                BigAction(Icons.Default.Lock, "Seal $word", onSeal)
             }
         } else {
             val tick = @Composable {
