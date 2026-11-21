@@ -415,9 +415,13 @@ class MergeRulesTest {
             assertNull(s.data.value.person(late.id))
             assertEquals(listOf(asha.me!!.id), s.data.value.people.filter { it.role == Role.ORGANISER }.map { it.id })
         }
-        // The new phone finds out at its first sync: it is nobody in this move, has the least rights, and its decision did not count.
+        // The new phone finds out at its first sync: it is not who it thought it was, nor anyone the move knows. It goes on as
+        // a Helper nobody has added yet, with the least rights, and its decision did not count.
         sync(asha, phone)
-        assertNull(phone.me)
+        val standIn = phone.me!!.id
+        assertNotEquals(late.id, standIn)
+        assertNull(phone.data.value.person(late.id))
+        assertNull(asha.data.value.person(standIn))
         assertEquals(Role.HELPER, phone.myRole)
         assertFalse(phone.can(Action.DECIDE))
         assertNotNull(phone.decide(sofa, Disposition.BIN).reason)
@@ -428,6 +432,7 @@ class MergeRulesTest {
         assertTrue(phone.joinAs(real.id, asha.data.value).ok)
         assertEquals(real.id, phone.me!!.id)
         assertEquals(Role.HELPER, phone.myRole)
+        assertNull(phone.data.value.person(standIn)) // the stand-in is not left behind
     }
 
     @Test

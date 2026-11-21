@@ -18,7 +18,11 @@ val AppJson = Json {
     coerceInputValues = true
 }
 
-fun newId(): String = UUID.randomUUID().toString()
+/** Where new ids come from. A test that has to repeat a run exactly swaps in a seeded source; the app never does. */
+@Volatile
+internal var idSource: () -> String = { UUID.randomUUID().toString() }
+
+fun newId(): String = idSource()
 
 /** Settings that belong to this phone only and are never synced. */
 @Serializable
@@ -198,7 +202,13 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
         try {
             io.execute {
                 try {
-                    deviceFile.writeText(AppJson.encodeToString(next))
+                    // Written whole or not at all: this file says who the phone is, and half of it would say nobody.
+                    val tmp = File(dir, "device.json.tmp")
+                    tmp.writeText(AppJson.encodeToString(next))
+                    if (!tmp.renameTo(deviceFile)) {
+                        tmp.copyTo(deviceFile, overwrite = true)
+                        tmp.delete()
+                    }
                 } catch (_: Exception) {
                 }
             }
@@ -216,7 +226,9 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
      */
     fun setDevice(f: (DeviceInfo) -> DeviceInfo) = synchronized(lock) {
         val before = _device.value
-        val asked = f(before)
+        // Who the phone is, is not a setting: a caller that builds the settings afresh and so leaves it
+        // out does not make the phone nobody. Only becomePerson, joinAs and starting again change it.
+        val asked = f(before).let { if (it.personId.isBlank() && before.personId.isNotBlank()) it.copy(personId = before.personId) else it }
         val d = _data.value
         val me = d.person(before.personId)
         if (me != null && asked.personId == before.personId) {
@@ -255,11 +267,11 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
     private fun actor(d: AppData) = Actor(d, d.person(_device.value.personId))
 
     /**
-     * Make sure this phone has a person. Data from before 2.0 has none: the
-     * phone then becomes an Organiser, or a Helper if its old helper switch was
-     * on. Nobody appointed them, so the grant is an open one.
+     * Make sure this phone has a person, so that it is never nobody. Data from
+     * before 2.0 has none: the phone then becomes an Organiser, or a Helper if
+     * its old helper switch was on. Nobody appointed them, so the grant is an open one.
      */
-    private fun ensureMe() = synchronized(lock) {
+    private fun ensureMe(restoring: Boolean = false) = synchronized(lock) {
         val dev = _device.value
         val d = _data.value
         if (d.person(dev.personId) == null) {
@@ -269,7 +281,10 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
                 writeDevice(dev.copy(personId = only.id))
             } else {
                 val t = now()
-                val role = if (dev.helper) Role.HELPER else Role.ORGANISER
+                // A phone that starts up holding a move with an Organiser in it, without knowing which of its people it is
+                // (its settings file was lost or damaged), does not make itself one: it gets the least rights until someone
+                // says who it is. Whoever restores a backup on purpose was allowed to, and comes in as before.
+                val role = if (dev.helper || (!restoring && d.hasOrganiser())) Role.HELPER else Role.ORGANISER
                 val wanted = dev.letter.trim().uppercase().ifBlank { "A" }
                 val letter = if (d.people.any { it.letter.equals(wanted, ignoreCase = true) }) d.freeLetter() else wanted
                 val p = Person(id = newId(), name = dev.name, role = role, letter = letter, joinedAt = t, grants = listOf(Grant(role, false, t, "")), updatedAt = t)
@@ -278,6 +293,16 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
                 writeDevice(dev.copy(personId = p.id))
             }
         }
+        mirrorMe()
+    }
+
+    /** If it turns out that someone who was in the move before this phone's person has the same letter, this phone takes another. */
+    private fun giveWayOnLetter() {
+        val d = _data.value
+        val me = d.person(_device.value.personId) ?: return
+        val letter = d.letterInstead(me) ?: return
+        val t = now()
+        _data.value = d.copy(people = d.people.map { if (it.id == me.id) it.copy(letter = letter, updatedAt = t) else it })
         mirrorMe()
     }
 
@@ -566,7 +591,7 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
      */
     fun addPerson(name: String, role: Role): Outcome<Person> = act(Action.MANAGE_PEOPLE) {
         val shown = name.trim().ifBlank { role.label + " " + (d.people.count { it.role == role } + 1) }
-        val p = savePerson(Person(id = newId(), name = shown, role = role, letter = d.freeLetter(), grants = listOf(Grant(role, false, t, actor.signature))))
+        val p = savePerson(Person(id = newId(), name = shown, role = role, letter = d.letterFor(actor.me), grants = listOf(Grant(role, false, t, actor.signature))))
         events.say("added $shown as ${article(role)}", p.id)
         Outcome.Ok(p)
     }
@@ -668,8 +693,7 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
         val dev = _device.value
         val seen = maxStamp(incoming)
         lastStamp.updateAndGet { maxOf(it, seen) }
-        val mine = _data.value.let { d -> if (isAlone() && dev.personId != personId) d.copy(people = emptyList()) else d }
-        val merged = merge(distrustUnstamped(mine), incoming)
+        val merged = merge(distrustUnstamped(offerFor(personId)), incoming)
         val t = now()
         _data.value = merged.copy(people = merged.people.map { if (it.id == personId) it.copy(joinedAt = t, updatedAt = t) else it })
         scheduleSave()
@@ -677,6 +701,44 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
         mirrorMe()
         forgetDeletedPhotos()
         Outcome.Ok(_data.value.person(personId) ?: target)
+    }
+
+    /**
+     * This phone's data as it goes into a move it is joining as [personId]. A phone that was on its
+     * own until now leaves its own move behind ([leavingOwnMove]); one that is already in the move
+     * offers what it has.
+     */
+    internal fun offerFor(personId: String): AppData = synchronized(lock) {
+        val d = _data.value
+        val mine = _device.value.personId
+        when {
+            isAlone() && mine != personId -> leavingOwnMove(d)
+            // A stand-in the phone gave itself when it turned out to be nobody ([ensureMe]) is not taken along either.
+            mine != personId && d.person(mine)?.let { p -> p.joinedAt != 0L && p.grants.size == 1 && p.grants[0].by.isEmpty() && p.role == Role.HELPER } == true ->
+                d.copy(people = d.people.filter { it.id != mine })
+            else -> d
+        }
+    }
+
+    /**
+     * Take in what another phone says about its own person, when the two phones are not going to
+     * sync: someone who has been removed. They may know more about that than this phone does (an
+     * Organiser who took themselves out of the move has nobody else to tell), and it must reach the
+     * rest of the move. As in a merge, every grant either phone knows is kept and each is checked.
+     */
+    internal fun hearAbout(peer: Person?) {
+        if (peer == null) return
+        synchronized(lock) {
+            val d = _data.value
+            if (d.people.none { it.id == peer.id }) return
+            val people = mergePeople(d.people, listOf(peer))
+            if (people == d.people) return
+            val seen = maxOf(peer.updatedAt, peer.grants.maxOfOrNull { it.at } ?: 0L)
+            lastStamp.updateAndGet { maxOf(it, seen) }
+            _data.value = d.copy(people = people)
+            ensureMe()
+        }
+        scheduleSave()
     }
 
     /** Note that [personId]'s phone has joined. Called on the phone that showed the invite. */
@@ -917,8 +979,16 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
         synchronized(lock) {
             val seen = maxStamp(remote)
             lastStamp.updateAndGet { maxOf(it, seen) }
-            _data.value = merge(distrustUnstamped(_data.value), distrustUnstamped(remote))
-            mirrorMe()
+            val was = _data.value
+            val dev = _device.value
+            var merged = merge(distrustUnstamped(was), distrustUnstamped(remote))
+            fun AppData.helperHere() = hasOrganiser() && roleOf(dev) == Role.HELPER
+            if (was.helperHere() && merged.helperHere()) merged = merged.withHelpersShareOf(was)
+            _data.value = merged
+            // What arrived can show that this phone's person was never rightly in the move (whoever added them had
+            // already lost the right to). The phone is not left as nobody: it goes on as a Helper nobody has added yet.
+            ensureMe()
+            giveWayOnLetter()
         }
         scheduleSave()
         forgetDeletedPhotos()
@@ -934,8 +1004,13 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
         synchronized(lock) {
             val seen = maxStamp(other)
             lastStamp.updateAndGet { maxOf(it, seen) }
-            _data.value = migrate(other)
-            ensureMe()
+            val mine = _data.value.person(_device.value.personId)
+            var next = migrate(other)
+            // An older copy of the move does not know what this phone's person has been granted since.
+            // Whoever restores it stays who they are, so a phone cannot restore itself out of its own move.
+            if (mine != null && next.person(mine.id) != null) next = next.copy(people = mergePeople(next.people, listOf(mine)))
+            _data.value = next
+            ensureMe(restoring = true)
         }
         scheduleSave()
     }

@@ -111,9 +111,10 @@ fun AppData.personName(id: String?): String = person(id)?.name?.ifBlank { null }
  * time. An open grant ([Grant.by] blank) counts when it is how the person
  * first appears (a phone starting its own move) or when the move had no
  * Organiser at that time, so there was nobody to ask. Anything else, such as
- * a Decider's phone writing itself a promotion, is ignored. Because past
- * roles are kept, a decision made by an Organiser stays good after they are
- * demoted or removed.
+ * a Decider's phone writing itself a promotion, is ignored. So is a grant that
+ * would take the last Organiser away while other people are in the move.
+ * Because past roles are kept, a decision made by an Organiser stays good
+ * after they are demoted or removed.
  */
 class Roles(people: Collection<Person>) {
     private class Step(val at: Long, val role: Role, val removed: Boolean, val by: String) {
@@ -121,6 +122,9 @@ class Roles(people: Collection<Person>) {
     }
 
     private val steps = HashMap<String, ArrayList<Step>>()
+
+    /** Each moment the number of Organisers changed, with the number from then on. */
+    private val organisersFrom = ArrayList<Pair<Long, Int>>()
 
     init {
         val all = ArrayList<Pair<String, Grant>>()
@@ -132,10 +136,22 @@ class Roles(people: Collection<Person>) {
             val ok = if (g.by.isEmpty()) mine == null || organisers == 0 else steps[g.by]?.lastOrNull()?.organiser == true
             if (!ok) continue
             val step = Step(g.at, g.role, g.removed, g.by)
-            organisers += (if (step.organiser) 1 else 0) - (if (mine?.lastOrNull()?.organiser == true) 1 else 0)
+            val wasOrganiser = mine?.lastOrNull()?.organiser == true
+            // The last Organiser stays one while there is anyone else in the move. Each phone refuses that by itself;
+            // this is for two Organisers who step down (or remove themselves) on their own phones at the same time.
+            if (wasOrganiser && !step.organiser && organisers == 1 && steps.any { (other, s) -> other != id && !s.last().removed }) continue
+            val before = organisers
+            organisers += (if (step.organiser) 1 else 0) - (if (wasOrganiser) 1 else 0)
+            if (organisers != before) organisersFrom += g.at to organisers
             steps.getOrPut(id) { ArrayList() }.add(step)
         }
     }
+
+    /**
+     * Was there nobody to ask at [time]: no Organiser in the move then? Something set in
+     * nobody's name counts only if so. Time 0 is data from before there were roles.
+     */
+    fun nobodyToAsk(time: Long): Boolean = time == 0L || (organisersFrom.lastOrNull { it.first <= time }?.second ?: 0) == 0
 
     private fun stepAt(id: String, time: Long): Step? = steps[id]?.lastOrNull { it.at <= time }
 
@@ -190,6 +206,47 @@ fun AppData.freeLetter(except: String? = null): String {
     var n = 0
     while (letterAt(n) in used) n++
     return letterAt(n)
+}
+
+/**
+ * The letter for someone [by] is adding. While [by] is the only Organiser, nobody else can be
+ * adding people at the same moment, so the next free letter is theirs to give. Once there are
+ * several Organisers, two of them could each give out the same "next free" letter on their own
+ * phones before those have synced, and two people would then write the same codes on their
+ * boxes. So each Organiser hands out letters that begin with their own: Asha (A) gives AA, AB, …
+ * and Omar (B) gives BA, BB, ….
+ */
+internal fun AppData.letterFor(by: Person?): String {
+    val mine = by?.letter?.trim()?.uppercase().orEmpty()
+    val alone = people.none { it.id != by?.id && it.role == Role.ORGANISER && !it.removed }
+    if (by == null || mine.isEmpty() || alone) return freeLetter()
+    val used = people.map { it.letter.uppercase() }.toSet()
+    var n = 0
+    while (mine + letterAt(n) in used) n++
+    return mine + letterAt(n)
+}
+
+/**
+ * No two people share a letter, yet two phones can each have given one out, or had one chosen,
+ * before they met: two people picking the same letter at the same moment, or a phone let in as it
+ * is that happens to use a letter already taken. When their phones learn of each other, whoever
+ * has been in the move longest keeps the letter. Returns the letter [me] takes instead when [me]
+ * is not that person, or null when nothing has to change: their own with one more letter after it.
+ */
+internal fun AppData.letterInstead(me: Person): String? {
+    val mine = me.letter.trim().uppercase()
+    if (mine.isEmpty()) return null
+    fun since(p: Person) = p.grants.minOfOrNull { it.at } ?: Long.MAX_VALUE
+    val first = people.filter { it.letter.trim().equals(mine, ignoreCase = true) }.minWithOrNull(compareBy({ since(it) }, { it.id })) ?: return null
+    if (first.id == me.id) return null
+    val used = people.map { it.letter.uppercase() }.toSet()
+    // Where to start looking differs from person to person, so that two who must both change do not pick the same again.
+    var n = Math.floorMod(me.id.hashCode(), 26)
+    repeat(26) {
+        if (mine + letterAt(n) !in used) return mine + letterAt(n)
+        n = (n + 1) % 26
+    }
+    return freeLetter()
 }
 
 /** Letters used by more than one person, which would make their handwritten codes clash. */
@@ -247,6 +304,25 @@ fun AppData.roleOfPeer(peer: Person?): Role? {
 
 /** Photo kinds a Helper's phone is not sent. */
 val HIDDEN_FROM_HELPERS = setOf(PhotoKind.RECEIPT, PhotoKind.SERIAL)
+
+/**
+ * What a Helper's phone keeps of a merge. The other phone leaves out what a Helper is not sent,
+ * but it goes by what it knows, and it may take this phone's person for more than a Helper (it
+ * has heard of a promotion that does not count, say). So a phone whose person was a Helper before
+ * the merge and is one after it takes in none of it: its costs, cost suggestions, and receipt and
+ * serial-label photos stay exactly as they were ([was]).
+ */
+internal fun AppData.withHelpersShareOf(was: AppData): AppData {
+    val photosWere = was.photos.filter { it.kind in HIDDEN_FROM_HELPERS }.associateBy { it.id }
+    val suggestionsWere = was.proposals.filter { it.kind == ProposalKind.COST }.associateBy { it.id }
+    val photoIds = photos.map { it.id }.toSet()
+    val suggestionIds = proposals.map { it.id }.toSet()
+    return copy(
+        expenses = was.expenses,
+        photos = photos.mapNotNull { if (it.kind in HIDDEN_FROM_HELPERS) photosWere[it.id] else it } + photosWere.values.filter { it.id !in photoIds },
+        proposals = proposals.mapNotNull { if (it.kind == ProposalKind.COST) suggestionsWere[it.id] else it } + suggestionsWere.values.filter { it.id !in suggestionIds },
+    )
+}
 
 /**
  * The part of the data that is sent to a phone whose person has [role].
