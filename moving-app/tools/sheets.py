@@ -10,7 +10,7 @@ ORDER = [
     "boxes", "box_box1", "box_box2", "box_box5", "pack", "labels", "lists", "packorder", "tasks",
     "moveday", "load", "unload", "reconcile", "sweep", "records_ORIGIN", "unpack", "budget", "reports",
     "rooms", "more", "sync", "settings", "search", "scan",
-    "setup", "home_helper", "home_movers", "home_inventory",
+    "setup", "setup_2", "setup_3", "home_helper", "home_movers", "home_inventory",
 ]
 wanted = [n for n in (sys.argv[1].split(",") if len(sys.argv) > 1 and sys.argv[1] else ORDER) if n]
 out = ROOT / "sheets"

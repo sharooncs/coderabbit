@@ -175,6 +175,10 @@ class AuditShotsTest {
         rule.waitForIdle(); shot("home_inventory")
         rule.runOnUiThread { store.setMove { it.copy(kind = MoveKind.SELF, off = emptyList(), setupDone = false) }; nav!!.navigate("setup") }
         rule.waitForIdle(); shot("setup")
+        for (page in 2..3) {
+            rule.onAllNodes(hasText("Next") and hasClickAction()).onFirst().performClick()
+            rule.waitForIdle(); shot("setup_$page")
+        }
     }
 
     /**

@@ -186,7 +186,9 @@ private fun HomeHero(data: AppData, device: DeviceInfo, packing: Boolean, modifi
             Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 10.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            keyNumbers(data).forEach { k -> KeyNumberView(k, Modifier.weight(1f, fill = false)) { nav.open(k.route) } }
+            // On a narrow screen, or with large text, the little orbs go so the words fit.
+            val tight = LocalConfiguration.current.let { it.screenWidthDp / it.fontScale < 340f }
+            keyNumbers(data).forEach { k -> KeyNumberView(k, !tight, Modifier.weight(1f, fill = false)) { nav.open(k.route) } }
         }
 
         val oldRooms = data.roomsOf(Home.ORIGIN)
@@ -373,14 +375,16 @@ private fun AppMark() {
 }
 
 @Composable
-private fun KeyNumberView(k: KeyNumber, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun KeyNumberView(k: KeyNumber, withOrb: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Row(
         modifier.clip(RoundedCornerShape(24.dp)).clickable(role = Role.Button, onClick = onClick).heightIn(min = 48.dp).padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        GlassOrb(k.icon, null, size = 36.dp)
-        Spacer(Modifier.width(8.dp))
-        Column {
+        if (withOrb) {
+            GlassOrb(k.icon, null, size = 36.dp)
+            Spacer(Modifier.width(8.dp))
+        }
+        Column(horizontalAlignment = if (withOrb) Alignment.Start else Alignment.CenterHorizontally) {
             Text(k.value, fontSize = 18.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
             Text(k.label, style = MaterialTheme.typography.bodySmall, color = Night.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
