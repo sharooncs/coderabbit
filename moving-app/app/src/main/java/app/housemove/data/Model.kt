@@ -8,7 +8,7 @@ import kotlinx.serialization.Serializable
  * Version of the saved data layout. Two phones must be on the same one to sync,
  * so fields added by a newer version are never dropped by an older one.
  */
-const val SCHEMA = 2
+const val SCHEMA = 3
 
 /**
  * Every record carries an id, a last-modified time and a tombstone flag.
@@ -22,6 +22,18 @@ interface Rec {
 }
 
 enum class Home { ORIGIN, DEST }
+
+/** What the person is using the app for. Sets the wording, the checklist and which parts show. */
+enum class MoveKind(val label: String) {
+    SELF("Moving it myself"), MOVERS("Movers are doing it"), STORAGE("Putting things in storage"), INVENTORY("Just listing what I own")
+}
+
+/** Parts of the app that can be switched off when someone does not need them. */
+enum class Part(val label: String) {
+    TRIAGE("Deciding what to keep"), DEVICES("Devices and serial numbers"), PLAN("Room plan and fit check"),
+    TIMELINE("Task timeline"), BUDGET("Supplies and costs"), BOXES("Packing boxes"), LABELS("Printed labels and door signs"),
+    MOVE_DAY("Loading and unloading"), RECORDS("Photos and meters of both homes"), UNPACK("Unpacking"),
+}
 
 enum class Disposition(val label: String) {
     UNDECIDED("Undecided"), MOVE("Move"), SELL("Sell"), DONATE("Donate"), BIN("Bin"), STORE("Store")
@@ -58,6 +70,9 @@ data class MoveInfo(
     val currency: String = "",
     /** Highest number printed on a QR label sheet so far, so the next sheet continues from it. */
     val labelsPrinted: Int = 0,
+    val kind: MoveKind = MoveKind.SELF,
+    /** Names of the [Part]s switched off. Everything is on unless listed, so new parts appear by default. */
+    val off: List<String> = emptyList(),
     val setupDone: Boolean = false,
     val updatedAt: Long = 0,
 )

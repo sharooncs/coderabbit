@@ -49,6 +49,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
@@ -445,6 +446,87 @@ fun PhotoStrip(ownerId: String, kind: PhotoKind, modifier: Modifier = Modifier, 
             }
             items(photos, key = { it.id }) { p ->
                 PhotoThumb(p, Modifier.size(72.dp).clickable { viewing = p })
+            }
+        }
+    }
+    if (camera) {
+        CameraDialog(hint = label, newFile = { store.newPhotoFile() }, onPhoto = { store.addPhoto(ownerId, kind, it) }, onClose = { camera = false })
+    }
+    viewing?.let { p -> PhotoViewer(p, onClose = { viewing = null }) }
+}
+
+/**
+ * The main picture of a box or item, shown large, with buttons to add more.
+ * With no photo yet it is one big "take a photo" target.
+ */
+@Composable
+fun PhotoHero(
+    ownerId: String,
+    kind: PhotoKind,
+    modifier: Modifier = Modifier,
+    label: String = kind.label,
+    height: Dp = 200.dp,
+    emptyText: String = "Take a photo",
+) {
+    val store = LocalStore.current
+    val context = LocalContext.current
+    val photos = appData().photosOf(ownerId, kind)
+    var camera by remember { mutableStateOf(false) }
+    var viewing by remember { mutableStateOf<Photo?>(null) }
+    val gallery = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { uris ->
+        uris.forEach { uri ->
+            val f = store.newPhotoFile()
+            if (importImage(context, uri, f)) store.addPhoto(ownerId, kind, f)
+        }
+    }
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Box(
+            Modifier.fillMaxWidth().height(height).clip(RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+        ) {
+            val first = photos.firstOrNull()
+            if (first != null) {
+                AsyncImage(
+                    model = store.photoFile(first),
+                    contentDescription = label,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize().clickable { viewing = first },
+                )
+            } else {
+                Column(
+                    Modifier.fillMaxSize().clickable { camera = true },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    Icon(Icons.Default.PhotoCamera, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(44.dp))
+                    Spacer(Modifier.height(6.dp))
+                    Text(emptyText, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                }
+            }
+            Row(
+                Modifier.align(Alignment.BottomEnd).padding(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (photos.size > 1) {
+                    Text(
+                        "${photos.size} photos",
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Color(0x99000000)).padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                }
+                FilledTonalIconButton(onClick = { gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
+                    Icon(Icons.Default.PhotoLibrary, contentDescription = "Add $label from gallery")
+                }
+                FilledIconButton(onClick = { camera = true }) {
+                    Icon(Icons.Default.PhotoCamera, contentDescription = "Take $label photo")
+                }
+            }
+        }
+        if (photos.size > 1) {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(photos, key = { it.id }) { p -> PhotoThumb(p, Modifier.size(56.dp).clickable { viewing = p }) }
             }
         }
     }

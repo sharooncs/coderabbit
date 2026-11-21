@@ -8,6 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -21,44 +22,25 @@ import app.housemove.ui.*
 
 @Composable
 fun MoreScreen() {
-    val nav = LocalNav.current
     val data = appData()
-    val p = data.progress()
-    Screen("More", back = false, tab = "more", actions = { TopActions() }) {
-        LazyColumn(Modifier.weight(1f)) {
-            item { GroupTitle("Plan") }
-            item { MenuRow(Icons.Default.MeetingRoom, "Rooms", "Both homes, colours, door widths") { nav.open("rooms") } }
-            item { MenuRow(Icons.Default.Rule, "Triage", "Move, sell, donate, bin or store", p.triage.toString()) { nav.open("triage") } }
-            item { MenuRow(Icons.Default.Straighten, "Destination plan and fit check", "Where each item goes and whether it fits", p.destinations.toString()) { nav.open("plan") } }
-            item { MenuRow(Icons.Default.Sell, "Sell, donate, bin", "Track what still has to go") { nav.open("disposal") } }
-            item { MenuRow(Icons.Default.Tv, "Electronics and serial numbers", "Make, model, serial, warranty, accessories") { nav.open("electronics") } }
-            item { MenuRow(Icons.Default.Checklist, "Timeline", "Tasks counted back from move day", p.tasks.toString()) { nav.open("tasks") } }
-            item { MenuRow(Icons.Default.ShoppingCart, "Supplies and costs", "Shopping list, quotes, receipts") { nav.open("budget") } }
-            item { HorizontalDivider() }
-            item { GroupTitle("Pack") }
-            item { MenuRow(Icons.Default.QrCode2, "Labels and door signs", "Print QR labels and room signs") { nav.open("labels") } }
-            item { MenuRow(Icons.Default.Star, "Special lists", "Travels with me, First night, Hazardous") { nav.open("lists") } }
-            item { MenuRow(Icons.Default.FormatListNumbered, "Packing order", "What to pack when, room by room", p.roomsPacked.toString()) { nav.open("packorder") } }
-            item { HorizontalDivider() }
-            item { GroupTitle("After the move") }
-            item { MenuRow(Icons.Default.Unarchive, "Unpack", "Priority boxes first", p.unpacked.toString()) { nav.open("unpack") } }
-            item { MenuRow(Icons.Default.Description, "Reports and close-out", "Inventory, damage report, wrap-up") { nav.open("reports") } }
-            item { HorizontalDivider() }
-            item { GroupTitle("Phones") }
-            item { MenuRow(Icons.Default.Sync, "Sync and backup", "Share data between phones; save a backup") { nav.open("sync") } }
-            item { MenuRow(Icons.Default.Settings, "Settings", "Move date, home names, van size") { nav.open("settings") } }
+    val device = deviceInfo()
+    Screen("Everything", back = false, tab = "more", actions = { TopActions() }) {
+        ScrollColumn {
+            // Every screen once, grouped by the phase of the move it belongs to.
+            val seen = HashSet<String>()
+            shownPhases(data).forEach { (_, phase) ->
+                val skip = phase.steps.map { it.route }.filter { !seen.add(it) }.toSet()
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(phase.icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(phase.name, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(8.dp))
+                    Text(phase.timing, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                PhaseTiles(phase, data, device, columns = 3, skipRoutes = skip)
+            }
         }
     }
-}
-
-@Composable
-private fun GroupTitle(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp),
-    )
 }
 
 // ---- Settings --------------------------------------------------------------

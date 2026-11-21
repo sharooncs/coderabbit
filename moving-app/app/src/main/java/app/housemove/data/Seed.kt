@@ -66,9 +66,49 @@ val SELF_MOVE_TASKS = listOf(
     TaskSeed(14, "Admin", "Export the home inventory for your insurer"),
 )
 
-fun seedTasks(): List<Task> = SELF_MOVE_TASKS.map {
-    Task(id = newId(), title = it.title, offsetDays = it.offset, category = it.category)
-}
+/** Lines of the self-move list that are about hiring and driving a van yourself. */
+private val VAN_ONLY = setOf("Van", "People")
+
+/** With movers: the van, helper and equipment jobs go, and dealing with the firm comes in. */
+val MOVERS_TASKS: List<TaskSeed> = SELF_MOVE_TASKS.filter { it.category !in VAN_ONLY && !Regex("\\bvan\\b", RegexOption.IGNORE_CASE).containsMatchIn(it.title) } + listOf(
+    TaskSeed(-42, "Movers", "Ask three moving firms for quotes; send them the inventory from Reports"),
+    TaskSeed(-35, "Movers", "Compare quotes: what is included, insurance cover, packing, storage"),
+    TaskSeed(-28, "Movers", "Book the movers and confirm the date in writing"),
+    TaskSeed(-21, "Movers", "Check what the movers will not carry (gas, paint, plants, valuables)"),
+    TaskSeed(-7, "Movers", "Confirm arrival time, parking and access at both homes with the movers"),
+    TaskSeed(-1, "Movers", "Sync all phones; get water and snacks for the crew"),
+    TaskSeed(0, "Move day", "Walk the crew through both homes; point out fragile and keep-upright items"),
+    TaskSeed(0, "Move day", "Scan everything onto the truck, or check it against the movers' list"),
+    TaskSeed(0, "Move day", "Scan everything off; note any damage on the movers' paperwork before signing"),
+    TaskSeed(3, "Admin", "Send the damage report to the movers within their claims deadline"),
+)
+
+val STORAGE_TASKS = listOf(
+    TaskSeed(-21, "Plan", "Catalogue what is going into storage"),
+    TaskSeed(-21, "Plan", "Choose a unit size from the load estimate; check access hours"),
+    TaskSeed(-14, "Admin", "Book the unit and arrange insurance for what is stored"),
+    TaskSeed(-14, "Supplies", "Buy boxes, tape, covers and a padlock"),
+    TaskSeed(-7, "Pack", "Pack and label; note anything fragile or that must stay upright"),
+    TaskSeed(-1, "Pack", "Photograph valuable items before they go in"),
+    TaskSeed(0, "Move day", "Load, scanning everything; heaviest at the bottom, things you may need at the front"),
+    TaskSeed(0, "Move day", "Photograph the packed unit and save a backup"),
+    TaskSeed(1, "Admin", "Export the inventory and keep it with the storage contract"),
+)
+
+val INVENTORY_TASKS = listOf(
+    TaskSeed(0, "List", "Photograph the big and valuable things in each room"),
+    TaskSeed(0, "List", "Record make, model and serial number of electronics and appliances"),
+    TaskSeed(0, "List", "Photograph receipts and warranty cards"),
+    TaskSeed(7, "Admin", "Export the inventory and send a copy to yourself or your insurer"),
+    TaskSeed(7, "Admin", "Save a backup somewhere off this phone"),
+)
+
+fun seedTasks(kind: MoveKind = MoveKind.SELF): List<Task> = when (kind) {
+    MoveKind.SELF -> SELF_MOVE_TASKS
+    MoveKind.MOVERS -> MOVERS_TASKS.sortedBy { it.offset }
+    MoveKind.STORAGE -> STORAGE_TASKS
+    MoveKind.INVENTORY -> INVENTORY_TASKS
+}.map { Task(id = newId(), title = it.title, offsetDays = it.offset, category = it.category) }
 
 /** Places people forget during the final sweep. */
 val SWEEP_HINTS = listOf(

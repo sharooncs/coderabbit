@@ -94,7 +94,15 @@ fun Screen(
         },
         bottomBar = {
             if (tab != null) NavigationBar {
-                TABS.forEach { t ->
+                val data = appData()
+                // Tabs for parts of the app this person does not use are left out.
+                TABS.filter { t ->
+                    when (t.route) {
+                        "boxes" -> data.uses(Part.BOXES)
+                        "moveday" -> data.uses(Part.MOVE_DAY) || data.uses(Part.RECORDS) || data.uses(Part.UNPACK)
+                        else -> true
+                    }
+                }.forEach { t ->
                     NavigationBarItem(
                         selected = t.route == tab,
                         onClick = { if (t.route != tab) nav.goTab(t.route) },
@@ -403,9 +411,10 @@ fun RoomPicker(
     }
 }
 
-fun stageText(stage: Stage, isBox: Boolean): String = when (stage) {
+/** Where something is, in words. Pass [vehicle] from `data.vehicle()` so movers read "truck". */
+fun stageText(stage: Stage, isBox: Boolean, vehicle: String = "van"): String = when (stage) {
     Stage.AT_ORIGIN -> "At old home"
-    Stage.LOADED -> "On the van"
+    Stage.LOADED -> "On the $vehicle"
     Stage.DELIVERED -> "Delivered"
     Stage.DONE -> if (isBox) "Unpacked" else "In place"
 }
@@ -442,7 +451,7 @@ fun MovableRow(
             Text(m.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
-                    "→ " + (dest?.name ?: "no room") + " · " + stageText(m.stage, m.isBox),
+                    "→ " + (dest?.name ?: "no room") + " · " + stageText(m.stage, m.isBox, data.vehicle()),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,

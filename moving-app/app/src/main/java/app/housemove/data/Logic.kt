@@ -232,31 +232,31 @@ fun AppData.issues(now: Long = today()): List<Issue> {
     val mv = movables()
     val anyDelivered = mv.any { it.stage == Stage.DELIVERED || it.stage == Stage.DONE }
     val onVan = mv.count { it.stage == Stage.LOADED }
-    if (anyDelivered && onVan > 0) out += Issue("$onVan loaded but not yet delivered", "reconcile", severe = true)
+    if (uses(Part.MOVE_DAY) && anyDelivered && onVan > 0) out += Issue("$onVan loaded but not yet delivered", "reconcile", severe = true)
     val dup = duplicateLabels()
     if (dup.isNotEmpty()) out += Issue("Label used twice: ${dup.take(4).joinToString()}", "boxes", severe = true)
     val overdue = liveTasks.count { !it.done && (dueDay(it) ?: Long.MAX_VALUE) < now }
-    if (overdue > 0) out += Issue("$overdue overdue task${if (overdue == 1) "" else "s"}", "tasks", severe = true)
+    if (uses(Part.TIMELINE) && overdue > 0) out += Issue("$overdue overdue task${if (overdue == 1) "" else "s"}", "tasks", severe = true)
     val damaged = mv.count { it.damaged }
     if (damaged > 0) out += Issue("$damaged damaged in the move", "reports")
     val undecided = liveItems.count { it.disposition == Disposition.UNDECIDED }
-    if (undecided > 0) out += Issue("$undecided item${if (undecided == 1) "" else "s"} not triaged", "triage")
+    if (uses(Part.TRIAGE) && undecided > 0) out += Issue("$undecided item${if (undecided == 1) "" else "s"} not triaged", "triage")
     val moving = movingItems()
     val noDest = moving.count { room(it.destRoomId) == null }
-    if (noDest > 0) out += Issue("$noDest item${if (noDest == 1) "" else "s"} with no destination room", "plan")
+    if (uses(Part.PLAN) && noDest > 0) out += Issue("$noDest item${if (noDest == 1) "" else "s"} with no destination room", "plan")
     val wontFit = moving.count { fitOf(it) == Fit.NO && !it.needsDisassembly }
-    if (wontFit > 0) out += Issue("$wontFit item${if (wontFit == 1) "" else "s"} won't fit through the door assembled", "plan", severe = true)
+    if (uses(Part.PLAN) && wontFit > 0) out += Issue("$wontFit item${if (wontFit == 1) "" else "s"} won't fit through the door assembled", "plan", severe = true)
     val toGo = liveItems.count { it.disposition in listOf(Disposition.SELL, Disposition.DONATE, Disposition.BIN) && !it.gone }
-    if (toGo > 0) out += Issue("$toGo item${if (toGo == 1) "" else "s"} still to sell, donate or bin", "disposal")
+    if (uses(Part.TRIAGE) && toGo > 0) out += Issue("$toGo item${if (toGo == 1) "" else "s"} still to sell, donate or bin", "disposal")
     val boxNoDest = liveBoxes.count { room(it.destRoomId) == null }
-    if (boxNoDest > 0) out += Issue("$boxNoDest box${if (boxNoDest == 1) "" else "es"} with no destination room", "boxes")
+    if (uses(Part.BOXES) && uses(Part.PLAN) && boxNoDest > 0) out += Issue("$boxNoDest box${if (boxNoDest == 1) "" else "es"} with no destination room", "boxes")
     val unsealed = liveBoxes.count { !it.sealed && it.stage == Stage.AT_ORIGIN }
-    if (unsealed > 0) out += Issue("$unsealed box${if (unsealed == 1) "" else "es"} still open", "boxes")
+    if (uses(Part.BOXES) && unsealed > 0) out += Issue("$unsealed box${if (unsealed == 1) "" else "es"} still open", "boxes")
     val noSerial = moving.count { it.isElectronic() && it.serial.isBlank() && photosOf(it.id, PhotoKind.SERIAL).isEmpty() }
-    if (noSerial > 0) out += Issue("$noSerial device${if (noSerial == 1) "" else "s"} with no serial number recorded", "electronics")
+    if (uses(Part.DEVICES) && noSerial > 0) out += Issue("$noSerial device${if (noSerial == 1) "" else "s"} with no serial number recorded", "electronics")
     val boxesWithEntries = liveEntries.map { it.boxId }.toSet()
     val blank = liveBoxes.count { b -> b.contents.isBlank() && photosOf(b.id).isEmpty() && b.id !in boxesWithEntries }
-    if (blank > 0) out += Issue("$blank box${if (blank == 1) "" else "es"} with no contents recorded", "boxes")
+    if (uses(Part.BOXES) && blank > 0) out += Issue("$blank box${if (blank == 1) "" else "es"} with no contents recorded", "boxes")
     return out
 }
 
@@ -296,7 +296,7 @@ fun AppData.search(query: String): List<Hit> {
 /** Where is it right now, in words. */
 fun AppData.whereIs(m: Movable): String = when (m.stage) {
     Stage.AT_ORIGIN -> "${move.originName}: ${room(m.originRoomId)?.name ?: "no room"}"
-    Stage.LOADED -> "On the van" + (trip(m.tripId)?.let { " (${it.name})" } ?: "")
+    Stage.LOADED -> "On the ${vehicle()}" + (trip(m.tripId)?.let { " (${it.name})" } ?: "")
     Stage.DELIVERED, Stage.DONE -> "${move.destName}: ${room(m.destRoomId)?.name ?: "no room"}"
 }
 
@@ -421,4 +421,26 @@ fun handlingTips(name: String): List<String> {
     if (has("turntable")) tips += "Secure the tone arm and remove the platter."
     if (has("microwave")) tips += "Take the glass plate out and wrap it separately."
     return tips
+}
+
+// ---- one app, different uses -----------------------------------------------------
+
+/** Is this part of the app switched on for this move? */
+fun AppData.uses(part: Part): Boolean = part.name !in move.off
+
+/** The word for what carries the load: movers bring a truck, a self-move hires a van. */
+fun AppData.vehicle(): String = if (move.kind == MoveKind.MOVERS) "truck" else "van"
+
+/** Parts that make no sense for a kind of use, switched off when that kind is chosen. */
+fun partsOffFor(kind: MoveKind): List<String> = when (kind) {
+    MoveKind.SELF, MoveKind.MOVERS -> emptyList()
+    MoveKind.STORAGE -> listOf(Part.RECORDS, Part.UNPACK).map { it.name }
+    MoveKind.INVENTORY -> listOf(Part.PLAN, Part.TIMELINE, Part.BUDGET, Part.BOXES, Part.LABELS, Part.MOVE_DAY, Part.RECORDS, Part.UNPACK).map { it.name }
+}
+
+/** Names for the two places, suited to the kind of use. */
+fun placeNamesFor(kind: MoveKind): Pair<String, String> = when (kind) {
+    MoveKind.STORAGE -> "Home" to "Storage unit"
+    MoveKind.INVENTORY -> "Home" to "New home"
+    else -> "Old home" to "New home"
 }

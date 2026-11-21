@@ -36,6 +36,8 @@ data class DeviceInfo(
     val lastBackupAt: Long = 0,
     /** May book titles be fetched online from their barcode? Null until the person has been asked. */
     val bookLookup: Boolean? = null,
+    /** A helper's phone: Home shows only packing, loading, unloading and search. */
+    val helper: Boolean = false,
 )
 
 /** What happened when something was scanned into a box. */
