@@ -1,6 +1,14 @@
 package app.housemove.data
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
+
+/**
+ * Version of the saved data layout. Two phones must be on the same one to sync,
+ * so fields added by a newer version are never dropped by an older one.
+ */
+const val SCHEMA = 2
 
 /**
  * Every record carries an id, a last-modified time and a tombstone flag.
@@ -34,7 +42,8 @@ enum class BoxSize(val label: String, val m3: Double) {
 
 enum class PhotoKind(val label: String) {
     GENERAL("Photo"), CONTENTS("Contents"), CONDITION("Condition before"), DISASSEMBLY("Disassembly"),
-    CABLES("Cables"), DAMAGE("Damage"), ROOM("Room"), METER("Meter"), RECEIPT("Receipt")
+    CABLES("Cables"), DAMAGE("Damage"), ROOM("Room"), METER("Meter"), RECEIPT("Receipt"),
+    SERIAL("Serial label")
 }
 
 @Serializable
@@ -114,6 +123,36 @@ data class Item(
     val damaged: Boolean = false,
     val damageNote: String = "",
     val notes: String = "",
+    /** Has a make, model and serial number worth recording. Null means "judge by its name". */
+    val electronic: Boolean? = null,
+    val make: String = "",
+    val model: String = "",
+    val serial: String = "",
+    val boughtDay: Long? = null,
+    val warrantyDay: Long? = null,
+    /** What travels with it: remote, power lead, stand, screws, cables. */
+    val accessories: String = "",
+    val accessoriesPacked: Boolean = false,
+    /** Label of the box the accessories are in, when they are not taped to the item. */
+    val accessoryBox: String = "",
+    /** Must travel standing up (TVs, fridges). Shown when loading and unloading. */
+    val keepUpright: Boolean = false,
+    val prepCablesLabelled: Boolean = false,
+    val prepSignedOut: Boolean = false,
+    val createdAt: Long = 0,
+    override val updatedAt: Long = 0,
+    override val deleted: Boolean = false,
+) : Rec
+
+/** One thing put in a box and recorded by its own barcode: a book, a game, a boxed product. */
+@Serializable
+data class BoxEntry(
+    override val id: String,
+    val boxId: String,
+    /** The barcode number as printed, e.g. an ISBN. Empty when added by typing a title. */
+    val code: String = "",
+    val title: String = "",
+    val author: String = "",
     val createdAt: Long = 0,
     override val updatedAt: Long = 0,
     override val deleted: Boolean = false,
@@ -221,9 +260,10 @@ data class Reading(
 ) : Rec
 
 /** The whole dataset. Lists include tombstones; use the `live*` views for display. */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class AppData(
-    val version: Int = 1,
+    @EncodeDefault val version: Int = SCHEMA,
     val move: MoveInfo = MoveInfo(),
     val rooms: List<Room> = emptyList(),
     val items: List<Item> = emptyList(),
@@ -234,6 +274,7 @@ data class AppData(
     val supplies: List<Supply> = emptyList(),
     val trips: List<Trip> = emptyList(),
     val readings: List<Reading> = emptyList(),
+    val entries: List<BoxEntry> = emptyList(),
 ) {
     val liveRooms get() = rooms.filter { !it.deleted }.sortedWith(compareBy({ it.sort }, { it.name }))
     val liveItems get() = items.filter { !it.deleted }
@@ -244,6 +285,10 @@ data class AppData(
     val liveSupplies get() = supplies.filter { !it.deleted }
     val liveTrips get() = trips.filter { !it.deleted }.sortedWith(compareBy({ it.sort }, { it.name }))
     val liveReadings get() = readings.filter { !it.deleted }
+    val liveEntries get() = entries.filter { !it.deleted }
+
+    /** Things scanned into a box, newest first. */
+    fun entriesOf(boxId: String) = entries.filter { !it.deleted && it.boxId == boxId }.sortedByDescending { it.createdAt }
 
     fun roomsOf(home: Home) = liveRooms.filter { it.home == home }
     fun room(id: String?) = if (id == null) null else rooms.firstOrNull { it.id == id && !it.deleted }

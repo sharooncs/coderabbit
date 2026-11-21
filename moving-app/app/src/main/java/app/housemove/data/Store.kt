@@ -34,7 +34,17 @@ data class DeviceInfo(
     val currentTripId: String? = null,
     val lastSyncAt: Long = 0,
     val lastBackupAt: Long = 0,
+    /** May book titles be fetched online from their barcode? Null until the person has been asked. */
+    val bookLookup: Boolean? = null,
 )
+
+/** What happened when something was scanned into a box. */
+sealed class ScanIn {
+    abstract val entry: BoxEntry
+    data class Added(override val entry: BoxEntry) : ScanIn()
+    data class AlreadyHere(override val entry: BoxEntry) : ScanIn()
+    data class Moved(override val entry: BoxEntry, val fromLabel: String?) : ScanIn()
+}
 
 /**
  * Holds the whole dataset in memory and persists it as one JSON file.
@@ -113,7 +123,7 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
 
     private fun maxStamp(d: AppData): Long {
         var m = d.move.updatedAt
-        for (list in listOf<List<Rec>>(d.rooms, d.items, d.boxes, d.photos, d.tasks, d.expenses, d.supplies, d.trips, d.readings)) {
+        for (list in listOf<List<Rec>>(d.rooms, d.items, d.boxes, d.photos, d.tasks, d.expenses, d.supplies, d.trips, d.readings, d.entries)) {
             for (r in list) if (r.updatedAt > m) m = r.updatedAt
         }
         return m
@@ -203,10 +213,23 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
     fun put(x: Supply) = update { it.copy(supplies = it.supplies.upsert(x.copy(updatedAt = now()))) }
     fun put(x: Trip) = update { it.copy(trips = it.trips.upsert(x.copy(updatedAt = now()))) }
     fun put(x: Reading) = update { it.copy(readings = it.readings.upsert(x.copy(updatedAt = now()))) }
+    fun put(x: BoxEntry) = update {
+        val t = now()
+        it.copy(entries = it.entries.upsert(x.copy(updatedAt = t, createdAt = if (x.createdAt == 0L) t else x.createdAt)))
+    }
 
     fun delete(x: Room) = put(x.copy(deleted = true))
     fun delete(x: Item) = put(x.copy(deleted = true))
-    fun delete(x: Box) = put(x.copy(deleted = true))
+    fun delete(x: BoxEntry) = put(x.copy(deleted = true))
+
+    /** Deleting a box also removes the list of things scanned into it. */
+    fun delete(x: Box) = update { d ->
+        val t = now()
+        d.copy(
+            boxes = d.boxes.upsert(x.copy(deleted = true, updatedAt = t)),
+            entries = d.entries.map { if (it.boxId == x.id && !it.deleted) it.copy(deleted = true, updatedAt = t) else it },
+        )
+    }
     fun delete(x: Task) = put(x.copy(deleted = true))
     fun delete(x: Expense) = put(x.copy(deleted = true))
     fun delete(x: Supply) = put(x.copy(deleted = true))
@@ -260,6 +283,35 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
         val room = Room(id = newId(), home = home, name = name.trim(), code = code, color = color, sort = (existing.maxOfOrNull { it.sort } ?: 0) + 1)
         put(room)
         return room
+    }
+
+    /**
+     * Record something in a box by its own barcode, or by a typed [title] when it has none.
+     * A book (ISBN) exists once, so scanning it into another box moves it there.
+     * Other products can be in several boxes, since identical ones share a barcode.
+     * A name given to a barcode before is reused.
+     */
+    fun scanInto(boxId: String, code: String, title: String = "", author: String = ""): ScanIn {
+        val c = code.trim()
+        val d = _data.value
+        if (c.isNotEmpty()) {
+            d.liveEntries.firstOrNull { it.code == c && it.boxId == boxId }?.let { return ScanIn.AlreadyHere(it) }
+            if (isIsbn(c)) {
+                d.liveEntries.firstOrNull { it.code == c }?.let { elsewhere ->
+                    val moved = elsewhere.copy(boxId = boxId)
+                    put(moved)
+                    return ScanIn.Moved(moved, d.box(elsewhere.boxId)?.label)
+                }
+            }
+        }
+        val known = if (c.isEmpty()) null else d.entries.lastOrNull { it.code == c && it.title.isNotBlank() }
+        val entry = BoxEntry(
+            id = newId(), boxId = boxId, code = c,
+            title = title.trim().ifBlank { known?.title ?: "" },
+            author = author.trim().ifBlank { known?.author ?: "" },
+        )
+        put(entry)
+        return ScanIn.Added(entry)
     }
 
     // ---- photos ------------------------------------------------------------

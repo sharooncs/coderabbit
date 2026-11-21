@@ -19,11 +19,13 @@ an older one and keeps its data.
 | --- | --- |
 | Set up | Move date, both homes' rooms, a colour per new-home room |
 | Catalogue | Walk-through: one photo per big thing, name it later |
+| Devices | Make, model, serial number (typed, scanned or photographed), receipt, warranty, accessories |
 | Decide | Triage: Move, Sell, Donate, Bin or Store |
 | Plan | A destination room for every item; door-width fit check; load estimate |
 | Prepare | Timeline of tasks counted back from move day; supplies and costs |
 | Label | Print a sheet of QR labels, or write the short code the app gives you |
 | Pack | Scan a label, photograph the open box, say what's inside, seal |
+| Books etc. | Scan the barcode already on a book or product into its box; search finds it later |
 | Move day | Record both homes, scan onto the van, final sweep, scan off the van |
 | Reconcile | Anything loaded but not delivered is listed before the van goes back |
 | Unpack | Boxes in priority order; search finds which box anything is in |
@@ -31,6 +33,25 @@ an older one and keeps its data.
 
 Furniture, appliances and valuables are catalogued one by one. Everything
 small is catalogued by box, at the moment it is packed.
+
+### Barcodes
+
+The app reads three kinds of code and keeps them apart so one is never
+mistaken for another:
+
+- **HouseMove labels** (the printed QR stickers): identify a box or an item on
+  move day. Only these are accepted when loading and unloading.
+- **Book and product barcodes** (ISBN, EAN, UPC): scanned into a box from the
+  box's page. A book exists once, so scanning it into another box moves it;
+  identical products can be in several boxes.
+- **Serial-number barcodes** on the back of devices: fill in the serial number.
+
+"Scan a label" from any top bar accepts all three and opens whatever the code
+belongs to.
+
+The only online feature is looking up a book's title from its barcode in Open
+Library. It is off until you agree the first time you scan a book, sends only
+the barcode number, and can be changed in Settings.
 
 ## Several phones
 
@@ -41,6 +62,8 @@ if the same record was changed on both, the most recent change wins.
 
 - Set the move up on one phone only. Other phones join by syncing.
 - Give each phone its own letter in Settings; handwritten box codes start with it.
+- Keep every phone on the same version of the app. Phones on different versions
+  refuse to sync, so newer details are never lost on an older phone.
 - Sync whenever the phones are together, and the evening before move day.
 - The sync connection is not encrypted, so use a network you trust.
 

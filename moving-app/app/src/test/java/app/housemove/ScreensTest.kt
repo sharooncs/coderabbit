@@ -79,6 +79,10 @@ class ScreensTest {
         s.put(Box(id = "box5", label = "L005", originRoomId = loft.id, destRoomId = destLiving.id, contents = "Christmas decorations", sealed = true, stage = Stage.DONE))
         s.put(Box(id = "box6", label = "L006", originRoomId = loft.id, contents = "Passports, documents", travelsWithMe = true, sealed = true))
 
+        s.put(s.data.value.item("fridge")!!.copy(make = "Bosch", model = "KGN36", serial = "FD9907-000123", keepUpright = true, accessories = "Shelves, ice tray"))
+        s.put(Item(id = "tv", name = "Living room TV", originRoomId = bed.id, destRoomId = destLiving.id, disposition = Disposition.MOVE))
+        s.scanInto("box5", "9780140328721", title = "Fantastic Mr. Fox", author = "Roald Dahl")
+        s.scanInto("box5", "5012345678900")
         for ((owner, kind) in listOf("wardrobe" to PhotoKind.GENERAL, "wardrobe" to PhotoKind.CONDITION, "box1" to PhotoKind.CONTENTS, "bed" to PhotoKind.DAMAGE, "lamp" to PhotoKind.GENERAL)) {
             val f = s.newPhotoFile()
             jpeg(f, 0xFF8899AA.toInt())
@@ -95,7 +99,8 @@ class ScreensTest {
     }
 
     private val routes = listOf(
-        "home", "items", "item/wardrobe", "item/bed", "item/sofa", "item/missing", "walk", "triage", "plan", "disposal",
+        "home", "items", "item/wardrobe", "item/bed", "item/sofa", "item/fridge", "item/tv", "item/missing", "walk", "triage", "plan", "disposal",
+        "electronics", "box/box5",
         "boxes", "box/box1", "box/box3", "box/missing", "pack", "labels", "lists", "packorder", "tasks",
         "moveday", "load", "unload", "reconcile", "sweep", "records/ORIGIN", "records/DEST", "unpack", "budget", "reports",
         "rooms", "more", "sync", "settings", "search", "scan",

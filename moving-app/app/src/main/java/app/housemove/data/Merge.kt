@@ -36,4 +36,5 @@ fun merge(a: AppData, b: AppData): AppData = AppData(
     supplies = mergeList(a.supplies, b.supplies),
     trips = mergeList(a.trips, b.trips),
     readings = mergeList(a.readings, b.readings),
+    entries = mergeList(a.entries, b.entries),
 )

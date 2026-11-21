@@ -450,6 +450,7 @@ fun MovableRow(
                     modifier = Modifier.weight(1f, fill = false),
                 )
                 if (m.fragile) Flag("Fragile")
+                if (m.upright) Flag("Upright")
                 if (m.heavy) Flag("Heavy")
                 if (m.damaged) Flag("Damaged", error = true)
                 if (m.priority == Priority.FIRST_NIGHT) Flag("First night")

@@ -62,6 +62,9 @@ object Backup {
             }
         }
         val d = data ?: throw IllegalArgumentException("Not a HouseMove backup: data.json is missing")
+        if (d.version > SCHEMA) {
+            throw IllegalArgumentException("This backup was made by a newer version of HouseMove. Update the app, then restore it.")
+        }
         if (replace) store.replaceAll(d) else store.mergeIn(d)
         store.flush()
         return Result(d.items.size + d.boxes.size + d.rooms.size + d.tasks.size, photos)

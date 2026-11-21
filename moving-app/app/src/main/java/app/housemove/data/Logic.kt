@@ -80,15 +80,17 @@ data class Movable(
     val damaged: Boolean,
     val priority: Priority,
     val travelsWithMe: Boolean,
+    /** Must travel standing up. */
+    val upright: Boolean = false,
 )
 
 fun Box.title(): String = "Box $label" + if (contents.isBlank()) "" else " · " + contents.lineSequence().first().take(40)
 fun Item.title(): String = name.ifBlank { "Unnamed item" }
 
-fun Box.toMovable() = Movable(id, true, title(), label, originRoomId, destRoomId, stage, tripId, fragile, heavy, damaged, priority, travelsWithMe)
+fun Box.toMovable() = Movable(id, true, title(), label, originRoomId, destRoomId, stage, tripId, fragile, heavy, damaged, priority, travelsWithMe, thisWayUp)
 fun Item.toMovable() = Movable(
     id, false, title(), label, originRoomId, destRoomId, stage, tripId, fragile, twoPerson, damaged,
-    if (firstNight) Priority.FIRST_NIGHT else Priority.WHENEVER, travelsWithMe,
+    if (firstNight) Priority.FIRST_NIGHT else Priority.WHENEVER, travelsWithMe, keepUpright,
 )
 
 fun AppData.movingItems(): List<Item> = liveItems.filter { it.disposition == Disposition.MOVE }
@@ -99,6 +101,19 @@ fun AppData.findByLabel(code: String): Movable? {
     val c = code.trim()
     liveBoxes.firstOrNull { it.label.equals(c, ignoreCase = true) }?.let { return it.toMovable() }
     liveItems.firstOrNull { it.label?.equals(c, ignoreCase = true) == true }?.let { return it.toMovable() }
+    return null
+}
+
+/**
+ * Find what a scanned or typed code belongs to: a label first, then an item's
+ * serial number, then something scanned into a box by its own barcode.
+ */
+fun AppData.findByAnyCode(code: String): Movable? {
+    val c = code.trim()
+    if (c.isEmpty()) return null
+    findByLabel(c)?.let { return it }
+    liveItems.firstOrNull { it.serial.isNotBlank() && it.serial.equals(c, ignoreCase = true) }?.let { return it.toMovable() }
+    liveEntries.firstOrNull { it.code == c }?.let { e -> box(e.boxId)?.let { return it.toMovable() } }
     return null
 }
 
@@ -237,7 +252,10 @@ fun AppData.issues(now: Long = today()): List<Issue> {
     if (boxNoDest > 0) out += Issue("$boxNoDest box${if (boxNoDest == 1) "" else "es"} with no destination room", "boxes")
     val unsealed = liveBoxes.count { !it.sealed && it.stage == Stage.AT_ORIGIN }
     if (unsealed > 0) out += Issue("$unsealed box${if (unsealed == 1) "" else "es"} still open", "boxes")
-    val blank = liveBoxes.count { b -> b.contents.isBlank() && photosOf(b.id).isEmpty() }
+    val noSerial = moving.count { it.isElectronic() && it.serial.isBlank() && photosOf(it.id, PhotoKind.SERIAL).isEmpty() }
+    if (noSerial > 0) out += Issue("$noSerial device${if (noSerial == 1) "" else "s"} with no serial number recorded", "electronics")
+    val boxesWithEntries = liveEntries.map { it.boxId }.toSet()
+    val blank = liveBoxes.count { b -> b.contents.isBlank() && photosOf(b.id).isEmpty() && b.id !in boxesWithEntries }
     if (blank > 0) out += Issue("$blank box${if (blank == 1) "" else "es"} with no contents recorded", "boxes")
     return out
 }
@@ -258,9 +276,19 @@ fun AppData.search(query: String): List<Hit> {
         if (matches(text)) out += Hit(b.toMovable(), b.contents.ifBlank { b.notes })
     }
     for (i in liveItems) {
-        val text = listOf(i.name, i.label, i.notes, room(i.destRoomId)?.name, room(i.originRoomId)?.name)
+        val text = listOf(i.name, i.label, i.notes, i.make, i.model, i.serial, i.accessories, room(i.destRoomId)?.name, room(i.originRoomId)?.name)
             .joinToString(" ").lowercase()
-        if (matches(text)) out += Hit(i.toMovable(), i.notes)
+        if (matches(text)) out += Hit(i.toMovable(), listOf(i.make, i.model, i.serial).filter { it.isNotBlank() }.joinToString(" ").ifBlank { i.notes })
+    }
+    // Books and products scanned into a box: the hit is the box, with what matched as the detail.
+    val seen = out.filter { it.movable.isBox }.map { it.movable.id }.toMutableSet()
+    for ((boxId, list) in liveEntries.groupBy { it.boxId }) {
+        if (boxId in seen) continue
+        val matched = list.filter { e -> matches(listOf(e.title, e.author, e.code).joinToString(" ").lowercase()) }
+        if (matched.isEmpty()) continue
+        val b = box(boxId) ?: continue
+        seen += boxId
+        out += Hit(b.toMovable(), matched.take(3).joinToString("; ") { it.title.ifBlank { it.code } } + if (matched.size > 3) " and ${matched.size - 3} more" else "")
     }
     return out
 }
@@ -315,4 +343,82 @@ fun AppData.suggestSupplies(): List<Pair<String, Int>> {
         "Toolkit (screwdrivers, hex keys, spanner)" to 1,
         "Bin bags (soft items, rubbish)" to 30,
     )
+}
+
+// ---- barcodes already on things ---------------------------------------------
+
+/** True for a book barcode: ISBN-13 (978/979 with a valid check digit) or ISBN-10. */
+fun isIsbn(code: String): Boolean {
+    val c = code.trim().replace("-", "").replace(" ", "")
+    if (c.length == 13 && c.all { it.isDigit() } && (c.startsWith("978") || c.startsWith("979"))) {
+        val sum = c.take(12).mapIndexed { i, ch -> (ch - '0') * if (i % 2 == 0) 1 else 3 }.sum()
+        return (10 - sum % 10) % 10 == c[12] - '0'
+    }
+    if (c.length == 10 && c.take(9).all { it.isDigit() } && (c[9].isDigit() || c[9] == 'X' || c[9] == 'x')) {
+        val sum = c.take(9).mapIndexed { i, ch -> (ch - '0') * (10 - i) }.sum() + if (c[9].isDigit()) c[9] - '0' else 10
+        return sum % 11 == 0
+    }
+    return false
+}
+
+/** A retail barcode number (EAN / UPC / ISBN) rather than a title someone typed. */
+fun looksLikeBarcodeNumber(text: String): Boolean {
+    val c = text.trim().replace("-", "").replace(" ", "")
+    return c.length in 8..14 && c.all { it.isDigit() } || isIsbn(c)
+}
+
+// ---- electronics and appliances ----------------------------------------------
+
+private val ELECTRONIC_WORDS = listOf(
+    "tv", "television", "monitor", "projector", "computer", "pc", "imac", "macbook", "laptop", "tablet", "ipad", "printer",
+    "scanner", "router", "console", "playstation", "xbox", "nintendo", "speaker", "speakers", "soundbar", "amplifier", "hi-fi",
+    "hifi", "stereo", "turntable", "camera", "drone", "fridge", "fridge-freezer", "freezer", "refrigerator", "washing machine",
+    "washer", "dryer", "dishwasher", "microwave", "oven", "cooker", "vacuum", "hoover", "dehumidifier", "air conditioner",
+    "coffee machine", "drill", "mower", "lawnmower", "treadmill", "e-bike", "ebike", "nas",
+)
+
+private val NOT_THE_DEVICE = setOf(
+    "stand", "stands", "unit", "cabinet", "table", "desk", "bench", "bracket", "brackets", "mount", "shelf", "shelves", "rack",
+    "cover", "case", "bag", "trolley", "chair", "cables", "leads",
+)
+
+/** Does the name sound like something with a plug and a serial number? */
+fun looksElectronic(name: String): Boolean {
+    val words = name.lowercase().split(Regex("[^a-z0-9-]+")).filter { it.isNotBlank() }
+    // "TV stand", "computer desk", "speaker brackets": furniture and fittings named after a device.
+    if (words.any { it in NOT_THE_DEVICE }) return false
+    val joined = " " + words.joinToString(" ") + " "
+    return ELECTRONIC_WORDS.any { w -> if (' ' in w) w in joined else w in words }
+}
+
+fun Item.isElectronic(): Boolean = electronic ?: looksElectronic(name)
+
+fun Item.makeModel(): String = listOf(make, model).filter { it.isNotBlank() }.joinToString(" ")
+
+/** Moving advice specific to the kind of device, from its name. */
+fun handlingTips(name: String): List<String> {
+    val n = " " + name.lowercase() + " "
+    fun has(vararg w: String) = w.any { it in n }
+    val tips = ArrayList<String>()
+    if (has(" tv", "television", "monitor", "screen")) {
+        tips += "Carry and transport it upright, never flat: the panel can crack under its own weight."
+        tips += "Use the original box if you kept it. Otherwise cover the screen with cardboard, then a blanket."
+        tips += "Take the stand or wall bracket off and bag its screws with the remote."
+    }
+    if (has("fridge", "freezer", "refrigerator")) {
+        tips += "Empty and defrost it 24–48 hours before, then dry it so it does not leak or smell."
+        tips += "Keep it upright in the van. At the new home let it stand a few hours before switching on."
+    }
+    if (has("washing", "washer", "dishwasher")) {
+        tips += "Drain the hoses and tape them and the door shut."
+        if (has("washing", "washer")) tips += "Fit the transit bolts so the drum cannot swing."
+    }
+    if (has("computer", " pc ", "laptop", "imac", "mac ", "console", "playstation", "xbox", "nintendo", " nas ", "tablet")) {
+        tips += "Back it up before it is unplugged."
+        tips += "Pack it in its original box if you have it; otherwise pad every side."
+    }
+    if (has("printer")) tips += "Take out ink or toner cartridges and tape the lid and trays shut."
+    if (has("turntable")) tips += "Secure the tone arm and remove the platter."
+    if (has("microwave")) tips += "Take the glass plate out and wrap it separately."
+    return tips
 }

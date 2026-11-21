@@ -31,6 +31,7 @@ fun MoreScreen() {
             item { MenuRow(Icons.Default.Rule, "Triage", "Move, sell, donate, bin or store", p.triage.toString()) { nav.open("triage") } }
             item { MenuRow(Icons.Default.Straighten, "Destination plan and fit check", "Where each item goes and whether it fits", p.destinations.toString()) { nav.open("plan") } }
             item { MenuRow(Icons.Default.Sell, "Sell, donate, bin", "Track what still has to go") { nav.open("disposal") } }
+            item { MenuRow(Icons.Default.Tv, "Electronics and serial numbers", "Make, model, serial, warranty, accessories") { nav.open("electronics") } }
             item { MenuRow(Icons.Default.Checklist, "Timeline", "Tasks counted back from move day", p.tasks.toString()) { nav.open("tasks") } }
             item { MenuRow(Icons.Default.ShoppingCart, "Supplies and costs", "Shopping list, quotes, receipts") { nav.open("budget") } }
             item { HorizontalDivider() }
@@ -88,6 +89,12 @@ fun SettingsScreen() {
             Section("Units and money") {
                 SwitchRow("Enter furniture sizes in inches", move.useInches, { v -> store.setMove { it.copy(useInches = v) } })
                 TextInput(move.currency, { v -> store.setMove { it.copy(currency = v.take(4)) } }, "Currency symbol", key = "cur")
+            }
+            Section("Book titles") {
+                SwitchRow(
+                    "Look up book titles online", device.bookLookup == true, { v -> store.setDevice { it.copy(bookLookup = v) } },
+                    sub = "When you scan a book's barcode into a box, fetch its title from Open Library, a free public catalogue. Only the barcode number is sent. Everything else in the app stays offline.",
+                )
             }
             Section("This phone") {
                 TextInput(device.name, { v -> store.setDevice { it.copy(name = v) } }, "Who uses this phone?", key = "dname")
@@ -178,6 +185,7 @@ fun ScanScreen() {
     val nav = LocalNav.current
     val data = appData()
     var unknown by remember { mutableStateOf<String?>(null) }
+    var notRecorded by remember { mutableStateOf<String?>(null) }
     var typed by remember { mutableStateOf("") }
 
     fun handle(text: String) {
@@ -187,12 +195,25 @@ fun ScanScreen() {
         }
         val code = labelFromQr(text)
         if (code.isBlank()) return
-        val found = data.findByLabel(code)
-        if (found != null) nav.openMovable(found) else unknown = code
+        val found = data.findByAnyCode(code)
+        when {
+            found != null -> nav.openMovable(found)
+            // A shop barcode that nothing was recorded against is not a label to start a box with.
+            !text.startsWith(QR_PREFIX) && looksLikeBarcodeNumber(code) -> notRecorded = code
+            else -> unknown = code
+        }
     }
 
     Screen("Scan a label") {
-        QrScanner(onText = { if (unknown == null) handle(it) }, modifier = Modifier.fillMaxWidth().weight(1f))
+        QrScanner(
+            onText = { if (unknown == null && notRecorded == null) handle(it) },
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            formats = ScanFormats.ANY,
+        )
+        Hint(
+            "Scan a HouseMove label, a book or product barcode you scanned into a box, or a device's serial number.",
+            Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+        )
         Row(Modifier.padding(12.dp)) {
             OutlinedTextField(
                 value = typed,
@@ -204,6 +225,15 @@ fun ScanScreen() {
             Spacer(Modifier.width(8.dp))
             Button(enabled = typed.isNotBlank(), onClick = { handle(typed); typed = "" }) { Text("Open") }
         }
+    }
+
+    notRecorded?.let { code ->
+        AlertDialog(
+            onDismissRequest = { notRecorded = null },
+            title = { Text("Barcode $code is not recorded") },
+            text = { Text("Nothing with this barcode has been scanned into a box yet. To record it, open the box and tap \"Scan books and products into this box\".") },
+            confirmButton = { TextButton(onClick = { notRecorded = null }) { Text("OK") } },
+        )
     }
 
     unknown?.let { code ->

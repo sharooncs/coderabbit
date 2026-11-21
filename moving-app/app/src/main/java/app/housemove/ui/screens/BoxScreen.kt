@@ -36,6 +36,8 @@ fun BoxScreen(id: String) {
 
     var confirmDelete by remember { mutableStateOf(false) }
     var relabel by remember { mutableStateOf(false) }
+    var scanIn by remember { mutableStateOf(false) }
+    val entries = data.entriesOf(box.id)
     val dest = data.room(box.destRoomId)
     val handwritten = !PRINTED_LABEL.matches(box.label)
     val labelClash = box.label.uppercase() in data.duplicateLabels()
@@ -108,6 +110,23 @@ fun BoxScreen(id: String) {
                 )
                 Hint("A few words are enough. Tap the microphone to say them instead of typing.")
                 PhotoStrip(box.id, PhotoKind.CONTENTS, label = "Photo of the open box")
+                OutlinedButton(onClick = { scanIn = true }, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.QrCodeScanner, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Scan books and products into this box")
+                }
+                if (entries.isEmpty()) {
+                    Hint("Books, games and boxed things already have a barcode. Scan each one as it goes in and you can search for it by name later. No extra stickers needed.")
+                } else {
+                    Text("Scanned in (${entries.size})", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    entries.take(5).forEach { e ->
+                        Text(
+                            e.title.ifBlank { "Barcode ${e.code}" } + if (e.author.isBlank()) "" else " · ${e.author}",
+                            style = MaterialTheme.typography.bodyMedium, maxLines = 1,
+                        )
+                    }
+                    if (entries.size > 5) TextButton(onClick = { scanIn = true }) { Text("Show all ${entries.size}") }
+                }
             }
 
             // ---- handling ----
@@ -227,6 +246,8 @@ fun BoxScreen(id: String) {
             onClose = { relabel = false },
         )
     }
+
+    if (scanIn) ScanInDialog(box, onClose = { scanIn = false })
 
     if (confirmDelete) {
         ConfirmDialog(

@@ -58,6 +58,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import app.housemove.data.Photo
 import app.housemove.data.PhotoKind
 import app.housemove.data.Qr
+import app.housemove.data.ScanFormats
 import app.housemove.data.labelFromQr
 import coil.compose.AsyncImage
 import java.io.File
@@ -268,8 +269,8 @@ fun CameraDialog(
 
 // ---- scanning --------------------------------------------------------------
 
-private class QrAnalyzer(private val onText: (String) -> Unit) : ImageAnalysis.Analyzer {
-    private val decoder = Qr.Decoder()
+private class QrAnalyzer(formats: ScanFormats, private val onText: (String) -> Unit) : ImageAnalysis.Analyzer {
+    private val decoder = Qr.Decoder(formats)
 
     override fun analyze(image: ImageProxy) {
         try {
@@ -300,7 +301,7 @@ private class QrAnalyzer(private val onText: (String) -> Unit) : ImageAnalysis.A
  * again for a couple of seconds so holding the phone still does not re-trigger.
  */
 @Composable
-fun QrScanner(onText: (String) -> Unit, modifier: Modifier = Modifier) {
+fun QrScanner(onText: (String) -> Unit, modifier: Modifier = Modifier, formats: ScanFormats = ScanFormats.LABELS) {
     CameraPermission(modifier) {
         val context = LocalContext.current
         val haptic = LocalHapticFeedback.current
@@ -326,7 +327,7 @@ fun QrScanner(onText: (String) -> Unit, modifier: Modifier = Modifier) {
                         ResolutionStrategy(Size(1280, 720), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER)
                     ).build()
                 ).build().also {
-                    it.setAnalyzer(executor, QrAnalyzer { text ->
+                    it.setAnalyzer(executor, QrAnalyzer(formats) { text ->
                         val now = System.currentTimeMillis()
                         if (text != last || now - lastAt > 2500) {
                             last = text
@@ -371,7 +372,14 @@ fun QrScanner(onText: (String) -> Unit, modifier: Modifier = Modifier) {
  * The code can also be typed, for handwritten labels or when the camera is unavailable.
  */
 @Composable
-fun ScanDialog(title: String, onCode: (String) -> Unit, onClose: () -> Unit, raw: Boolean = false) {
+fun ScanDialog(
+    title: String,
+    onCode: (String) -> Unit,
+    onClose: () -> Unit,
+    raw: Boolean = false,
+    formats: ScanFormats = ScanFormats.LABELS,
+    typeLabel: String = "Or type the code",
+) {
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize().systemBarsPadding().imePadding()) {
@@ -382,13 +390,14 @@ fun ScanDialog(title: String, onCode: (String) -> Unit, onClose: () -> Unit, raw
                 QrScanner(
                     onText = { onCode(if (raw) it else labelFromQr(it)) },
                     modifier = Modifier.fillMaxWidth().weight(1f),
+                    formats = formats,
                 )
                 var typed by remember { mutableStateOf("") }
                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
                         value = typed,
                         onValueChange = { typed = it },
-                        label = { Text("Or type the code") },
+                        label = { Text(typeLabel) },
                         singleLine = true,
                         modifier = Modifier.weight(1f),
                     )

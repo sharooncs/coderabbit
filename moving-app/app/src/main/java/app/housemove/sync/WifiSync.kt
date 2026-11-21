@@ -2,6 +2,7 @@ package app.housemove.sync
 
 import app.housemove.data.AppData
 import app.housemove.data.AppJson
+import app.housemove.data.SCHEMA
 import app.housemove.data.SYNC_PREFIX
 import app.housemove.data.Store
 import app.housemove.data.isSafeFileName
@@ -27,7 +28,9 @@ import kotlin.concurrent.thread
  * Both phones must be on the same Wi-Fi, or one on the other's hotspot.
  */
 object WifiSync {
-    private const val MAGIC = "HMSYNC1"
+    private const val MAGIC = "HMSYNC2"
+    private const val OLD_MAGIC = "HMSYNC1"
+    const val VERSION_MISMATCH = "The two phones have different versions of HouseMove. Install the same version on both, then sync again."
     private const val TIMEOUT_MS = 30_000
     private const val MAX_JSON = 64 * 1024 * 1024
     private const val MAX_PHOTO = 40L * 1024 * 1024
@@ -112,13 +115,23 @@ object WifiSync {
                     s.soTimeout = TIMEOUT_MS
                     val din = DataInputStream(s.getInputStream().buffered())
                     val out = DataOutputStream(s.getOutputStream().buffered())
-                    if (din.readUTF() != MAGIC) throw IOException("Not a HouseMove phone")
+                    val magic = din.readUTF()
+                    if (magic == OLD_MAGIC) {
+                        out.writeUTF("NO"); out.flush()
+                        throw IOException(VERSION_MISMATCH)
+                    }
+                    if (magic != MAGIC) throw IOException("Not a HouseMove phone")
                     val theirToken = din.readUTF()
                     peer = din.readUTF()
                     letter = din.readUTF()
+                    val theirSchema = din.readInt()
                     if (theirToken != token) {
                         out.writeUTF("NO"); out.flush()
                         throw IOException("Wrong sync code")
+                    }
+                    if (theirSchema != SCHEMA) {
+                        out.writeUTF("VERSION"); out.flush()
+                        throw IOException(VERSION_MISMATCH)
                     }
                     out.writeUTF("OK")
                     out.writeUTF(store.device.value.name)
@@ -180,8 +193,16 @@ object WifiSync {
                     out.writeUTF(invite.token)
                     out.writeUTF(store.device.value.name)
                     out.writeUTF(store.device.value.letter)
+                    out.writeInt(SCHEMA)
                     out.flush()
-                    if (din.readUTF() != "OK") return Result("", "", 0, 0, "The sync code was not accepted. Scan the QR code again.")
+                    val answer = try {
+                        din.readUTF()
+                    } catch (_: java.io.EOFException) {
+                        // A phone on an older version hangs up at the first line.
+                        return Result("", "", 0, 0, VERSION_MISMATCH)
+                    }
+                    if (answer == "VERSION") return Result("", "", 0, 0, VERSION_MISMATCH)
+                    if (answer != "OK") return Result("", "", 0, 0, "The sync code was not accepted. Scan the QR code again.")
                     val peer = din.readUTF()
                     val letter = din.readUTF()
 

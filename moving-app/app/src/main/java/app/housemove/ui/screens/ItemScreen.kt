@@ -31,6 +31,10 @@ fun ItemScreen(id: String) {
 
     var confirmDelete by remember { mutableStateOf(false) }
     var scanning by remember { mutableStateOf(false) }
+    var scanningSerial by remember { mutableStateOf(false) }
+    // Bumped when a scan fills the serial number in, so the text field picks the new value up.
+    var serialScans by remember { mutableIntStateOf(0) }
+    val electronic = item.isElectronic()
 
     // Always edit the newest copy in the store, so two quick changes never overwrite each other.
     fun edit(f: (Item) -> Item) {
@@ -82,6 +86,52 @@ fun ItemScreen(id: String) {
                     singleLine = false,
                     mic = true,
                 )
+                SwitchRow(
+                    "It has a make, model and serial number", electronic, { v -> edit { it.copy(electronic = v) } },
+                    sub = "TVs, computers, appliances, tools, bikes. Worth recording for insurance, warranty and theft.",
+                )
+            }
+
+            if (electronic) {
+                Section("Make, model and serial number") {
+                    TextInput(item.make, { v -> edit { it.copy(make = v) } }, "Make", key = "$id-make", placeholder = "e.g. Samsung")
+                    TextInput(item.model, { v -> edit { it.copy(model = v) } }, "Model", key = "$id-model", placeholder = "e.g. QE55Q60")
+                    TextInput(item.serial, { v -> edit { it.copy(serial = v.trim()) } }, "Serial number", key = "$id-serial-$serialScans")
+                    OutlinedButton(onClick = { scanningSerial = true }, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Default.QrCodeScanner, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Scan the serial number barcode")
+                    }
+                    Hint("The label is usually on the back or underneath. If its barcode will not scan, a clear photo does the job.")
+                    PhotoStrip(item.id, PhotoKind.SERIAL, label = "Photo of the serial label")
+                    PhotoStrip(item.id, PhotoKind.RECEIPT, label = "Receipt or warranty card")
+                    DateButton(item.boughtDay, { d -> edit { it.copy(boughtDay = d) } }, "Bought", Modifier.fillMaxWidth())
+                    DateButton(item.warrantyDay, { d -> edit { it.copy(warrantyDay = d) } }, "Warranty until", Modifier.fillMaxWidth())
+                }
+
+                Section("What travels with it") {
+                    TextInput(
+                        item.accessories, { v -> edit { it.copy(accessories = v) } }, "Remote, leads, stand, screws…",
+                        key = "$id-acc", singleLine = false, mic = true,
+                    )
+                    CheckRow(
+                        "Bagged and marked with this item's name", item.accessoriesPacked, { v -> edit { it.copy(accessoriesPacked = v) } },
+                        sub = "Tape the bag to the item, or note the box it went in below.",
+                    )
+                    TextInput(item.accessoryBox, { v -> edit { it.copy(accessoryBox = v.trim()) } }, "Box they are in (label, optional)", key = "$id-accbox")
+                    val accBox = data.findByLabel(item.accessoryBox)
+                    if (item.accessoryBox.isNotBlank()) {
+                        if (accBox != null) TextButton(onClick = { nav.openMovable(accBox) }) { Text("Open ${accBox.title}") }
+                        else Hint("No box or item has the label ${item.accessoryBox} yet.")
+                    }
+                }
+
+                val tips = handlingTips(item.name)
+                if (tips.isNotEmpty()) {
+                    Section("Moving it safely") {
+                        tips.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
+                    }
+                }
             }
 
             Section("What happens to it?") {
@@ -154,6 +204,10 @@ fun ItemScreen(id: String) {
                 SwitchRow("Fragile", item.fragile, { v -> edit { it.copy(fragile = v) } })
                 SwitchRow("Needs two people to lift", item.twoPerson, { v -> edit { it.copy(twoPerson = v) } })
                 SwitchRow(
+                    "Keep upright", item.keepUpright, { v -> edit { it.copy(keepUpright = v) } },
+                    sub = "TVs, fridges and freezers. Shown when loading and unloading.",
+                )
+                SwitchRow(
                     "Needs taking apart", item.needsDisassembly, { v -> edit { it.copy(needsDisassembly = v) } },
                     sub = "To get it out, through a door, or into the van.",
                 )
@@ -163,6 +217,7 @@ fun ItemScreen(id: String) {
                 val steps = listOfNotNull(
                     item.prepEmptied, item.prepPhotos, item.prepDisassembled.takeIf { item.needsDisassembly },
                     item.prepHardware, item.prepCables, item.prepWrapped,
+                    item.prepCablesLabelled.takeIf { electronic }, item.prepSignedOut.takeIf { electronic },
                 )
                 Section("Getting it ready (${steps.count { it }} of ${steps.size})") {
                     CheckRow("Emptied", item.prepEmptied, { v -> edit { it.copy(prepEmptied = v) } }, sub = "Drawers, shelves and cupboards cleared out.")
@@ -187,6 +242,16 @@ fun ItemScreen(id: String) {
                         sub = "For anything with wires: photograph the back before unplugging.",
                     )
                     PhotoStrip(item.id, PhotoKind.CABLES, label = "Cables and connections")
+                    if (electronic) {
+                        CheckRow(
+                            "Cables labelled and bagged", item.prepCablesLabelled, { v -> edit { it.copy(prepCablesLabelled = v) } },
+                            sub = "Tag each lead with what it plugs into. Keep them with the remote.",
+                        )
+                        CheckRow(
+                            "Backed up and ready to unplug", item.prepSignedOut, { v -> edit { it.copy(prepSignedOut = v) } },
+                            sub = "Computers, consoles and smart TVs: back up first. Take batteries out of remotes for storage.",
+                        )
+                    }
                     CheckRow("Wrapped and protected", item.prepWrapped, { v -> edit { it.copy(prepWrapped = v) } })
                 }
 
@@ -290,6 +355,25 @@ fun ItemScreen(id: String) {
                 }
             },
             onClose = { scanning = false },
+        )
+    }
+
+    if (scanningSerial) {
+        ScanDialog(
+            title = "Scan the serial number barcode",
+            raw = true,
+            formats = ScanFormats.SERIALS,
+            typeLabel = "Or type the serial number",
+            onCode = { text ->
+                val serial = text.trim()
+                if (serial.isNotEmpty()) {
+                    edit { it.copy(serial = serial) }
+                    serialScans++
+                    toast(context, "Serial number: $serial. Check it against the label.")
+                    scanningSerial = false
+                }
+            },
+            onClose = { scanningSerial = false },
         )
     }
 

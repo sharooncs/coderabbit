@@ -330,7 +330,7 @@ class DeviceTest {
         }
         tap("More")
         val menu = listOf(
-            "Rooms", "Triage", "Destination plan and fit check", "Sell, donate, bin", "Timeline", "Supplies and costs",
+            "Rooms", "Triage", "Destination plan and fit check", "Sell, donate, bin", "Electronics and serial numbers", "Timeline", "Supplies and costs",
             "Labels and door signs", "Special lists", "Packing order", "Unpack", "Reports and close-out", "Sync and backup", "Settings",
         )
         for (row in menu) {
@@ -347,6 +347,79 @@ class DeviceTest {
         tapDesc("Find anything")
         type("What are you looking for?", "kettle")
         see("Box L001")
+    }
+
+    // ---- barcodes already on things, and devices ------------------------------------
+
+    @Test
+    fun booksGoIntoABoxAndSerialNumbersOntoADevice() {
+        tap("Boxes")
+        tap("L001", sub = true)
+        tap("Scan books and products into this box")
+        Thread.sleep(3000) // the camera looks for book and product barcodes, upright and sideways
+        rule.waitForIdle()
+        shot("30-scan-into-box")
+        type("Or type a barcode number or a name", "9780140328721")
+        tap("Add")
+        see("Look up book titles online?")
+        tap("No, stay offline")
+        assertEquals("9780140328721", data.entriesOf("box1").single().code)
+        type("Or type a barcode number or a name", "Photo albums")
+        tap("Add")
+        assertEquals(2, data.entriesOf("box1").size)
+        tap("Done")
+        see("Scanned in (2)")
+        tapDesc("Back")
+
+        tap("Items")
+        tap("Oak wardrobe")
+        tap("It has a make, model and serial number")
+        type("Make", "Acme")
+        type("Serial number", "SN-TEST-1")
+        assertEquals("SN-TEST-1", data.item("item1")!!.serial)
+        tap("Scan the serial number barcode")
+        Thread.sleep(2500) // the camera looks for serial-number barcodes
+        rule.waitForIdle()
+        shot("31-scan-serial")
+        type("Or type the serial number", "SN-TEST-2")
+        tap("OK")
+        assertEquals("SN-TEST-2", data.item("item1")!!.serial)
+        see("SN-TEST-2")
+        shot("32-device-details")
+        tapDesc("Back")
+
+        tapDesc("Scan a label") // "what is this?" finds things by serial number and by book barcode
+        type("Or type the code on the label", "sn-test-2")
+        tap("Open")
+        see("What happens to it?")
+        tapDesc("Back")
+        type("Or type the code on the label", "9780140328721")
+        tap("Open")
+        see("Kettle and mugs")
+    }
+
+    /** The one online feature, against the real public catalogue. Skipped, not failed, when there is no connection. */
+    @Test
+    fun bookTitleLookupWorksAgainstTheRealCatalogue() {
+        val info = try {
+            BookLookup.fetch("9780140328721", timeoutMs = 15_000)
+        } catch (e: java.io.IOException) {
+            Log.w("DeviceTest", "catalogue not reachable: $e")
+            assumeTrue("catalogue not reachable from this device: $e", false)
+            null
+        }
+        assertNotNull("the catalogue did not list a very well known book", info)
+        assertTrue("unexpected title: ${info!!.title}", info.title.contains("Fox", ignoreCase = true))
+        assertTrue("unexpected author: ${info.author}", info.author.contains("Dahl", ignoreCase = true))
+        // And through the app's own flow: scanning it into a box with lookups switched on fills the title in.
+        store.setDevice { it.copy(bookLookup = true) }
+        tap("Boxes")
+        tap("L001", sub = true)
+        tap("Scan books and products into this box")
+        type("Or type a barcode number or a name", "9780140328721")
+        tap("Add")
+        waitFor("the title to arrive", 25_000) { data.entriesOf("box1").firstOrNull()?.title?.contains("Fox", ignoreCase = true) == true }
+        shot("33-book-title")
     }
 
     // ---- restart and recreation ---------------------------------------------------

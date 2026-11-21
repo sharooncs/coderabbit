@@ -32,6 +32,7 @@ val SELF_MOVE_TASKS = listOf(
     TaskSeed(-14, "Declutter", "Finish selling, donating and tip runs"),
     TaskSeed(-14, "People", "Arrange care for children and pets on move day"),
     TaskSeed(-14, "Van", "Check equipment: dolly, straps, blankets, toolkit"),
+    TaskSeed(-14, "Records", "Record make, model and serial number of TVs, computers and appliances; photograph receipts"),
     TaskSeed(-7, "Pack", "Pack most of the kitchen; keep only essentials out"),
     TaskSeed(-7, "Pack", "Take apart furniture you can live without"),
     TaskSeed(-7, "Van", "Confirm van, helpers and timings"),

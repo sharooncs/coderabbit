@@ -12,7 +12,34 @@ import com.google.zxing.common.HybridBinarizer
 import com.google.zxing.qrcode.QRCodeWriter
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 
-/** QR encoding and decoding, kept free of Android classes so it can be tested on its own. */
+/** Which kinds of code a scanner should accept. Narrow sets avoid misreads of unrelated codes. */
+enum class ScanFormats(internal val formats: List<BarcodeFormat>) {
+    /** HouseMove's own stickers and sync codes. */
+    LABELS(listOf(BarcodeFormat.QR_CODE)),
+
+    /** The barcode already printed on a book or a product. */
+    PRODUCTS(listOf(BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.UPC_A, BarcodeFormat.UPC_E)),
+
+    /** Serial-number labels on the back of devices. */
+    SERIALS(
+        listOf(
+            BarcodeFormat.CODE_128, BarcodeFormat.CODE_39, BarcodeFormat.CODE_93, BarcodeFormat.DATA_MATRIX,
+            BarcodeFormat.QR_CODE, BarcodeFormat.EAN_13, BarcodeFormat.UPC_A,
+        )
+    ),
+
+    /** Anything: used when the app looks up what a code belongs to. */
+    ANY(
+        listOf(
+            BarcodeFormat.QR_CODE, BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.UPC_A, BarcodeFormat.UPC_E,
+            BarcodeFormat.CODE_128, BarcodeFormat.DATA_MATRIX,
+        )
+    );
+
+    internal val hasLinear get() = formats.any { it != BarcodeFormat.QR_CODE && it != BarcodeFormat.DATA_MATRIX }
+}
+
+/** QR and barcode encoding and decoding, kept free of Android classes so it can be tested on its own. */
 object Qr {
     fun matrix(text: String, sizePx: Int): BitMatrix {
         val hints = mapOf(EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.M, EncodeHintType.MARGIN to 1)
@@ -20,13 +47,28 @@ object Qr {
     }
 
     /** Reusable decoder for a stream of camera frames. Not thread-safe; use from one thread. */
-    class Decoder {
+    class Decoder(private val accept: ScanFormats = ScanFormats.LABELS) {
         private val reader = MultiFormatReader().apply {
-            setHints(mapOf(DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE), DecodeHintType.TRY_HARDER to true))
+            setHints(mapOf(DecodeHintType.POSSIBLE_FORMATS to accept.formats, DecodeHintType.TRY_HARDER to true))
+        }
+        private var turned = ByteArray(0)
+
+        /** [luma] is one brightness byte per pixel, row by row. Returns the code's text or null. */
+        fun decode(luma: ByteArray, width: Int, height: Int): String? {
+            attempt(luma, width, height)?.let { return it }
+            if (!accept.hasLinear) return null
+            // Striped barcodes are only read along their length, and the camera frame is
+            // often a quarter turn from how the phone is held, so try that way round too.
+            if (turned.size != luma.size) turned = ByteArray(luma.size)
+            for (y in 0 until height) {
+                val row = y * width
+                val col = height - 1 - y
+                for (x in 0 until width) turned[x * height + col] = luma[row + x]
+            }
+            return attempt(turned, height, width)
         }
 
-        /** [luma] is one brightness byte per pixel, row by row. Returns the QR text or null. */
-        fun decode(luma: ByteArray, width: Int, height: Int): String? {
+        private fun attempt(luma: ByteArray, width: Int, height: Int): String? {
             val source = PlanarYUVLuminanceSource(luma, width, height, 0, 0, width, height, false)
             return try {
                 reader.decodeWithState(BinaryBitmap(HybridBinarizer(source))).text

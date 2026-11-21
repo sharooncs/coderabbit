@@ -244,6 +244,21 @@ object Pdf {
         if (items.isEmpty()) p.text("No items catalogued.", 9f, color = Color.DKGRAY)
         p.space(12f)
 
+        val devices = items.filter { it.make.isNotBlank() || it.model.isNotBlank() || it.serial.isNotBlank() }
+        if (devices.isNotEmpty()) {
+            p.text("Make, model and serial numbers", 14f, bold = true, gap = 6f)
+            val devCols = listOf(0f, 150f, 250f, 350f, 460f)
+            p.row(devCols.zip(listOf("Item", "Make", "Model", "Serial number", "Warranty")), bold = true)
+            p.rule()
+            for (i in devices) {
+                p.row(devCols.zip(listOf(i.title(), i.make, i.model, i.serial, i.warrantyDay?.let { fmtDayShort(it) } ?: "")))
+                if (i.accessories.isNotBlank()) {
+                    p.row(listOf(12f to ("With it: " + i.accessories.replace('\n', ' ') + if (i.accessoryBox.isBlank()) "" else " (box ${i.accessoryBox})")), size = 8f)
+                }
+            }
+            p.space(12f)
+        }
+
         p.text("Boxes", 14f, bold = true, gap = 6f)
         val boxCols = listOf(0f, 50f, 140f, 230f, 300f)
         p.row(boxCols.zip(listOf("Box", "From", "To", "Priority", "Contents")), bold = true)
@@ -255,7 +270,8 @@ object Pdf {
                 boxCols.zip(
                     listOf(
                         b.label, data.room(b.originRoomId)?.name ?: "–", data.room(b.destRoomId)?.name ?: "–",
-                        b.priority.label, (flags + " " + b.contents.replace('\n', ' ')).trim(),
+                        b.priority.label,
+                        (flags + " " + b.contents.replace('\n', ' ') + scannedSummary(data, b.id)).trim(),
                     )
                 )
             )
@@ -281,6 +297,12 @@ object Pdf {
             p.text(m.title, 13f, bold = true)
             val note = if (m.isBox) data.box(m.id)?.damageNote else data.item(m.id)?.damageNote
             if (!note.isNullOrBlank()) p.text("Damage: $note", 10f)
+            val device = if (m.isBox) null else data.item(m.id)
+            val ident = listOfNotNull(
+                device?.makeModel()?.takeIf { it.isNotBlank() },
+                device?.serial?.takeIf { it.isNotBlank() }?.let { "serial number $it" },
+            ).joinToString(", ")
+            if (ident.isNotBlank()) p.text(ident, 10f)
             val value = if (m.isBox) null else data.item(m.id)?.value
             if (value != null) p.text("Declared value: ${data.move.currency} ${fmtNum(value)}".trim(), 10f)
             for ((title, kind) in listOf("Before the move" to PhotoKind.CONDITION, "After the move" to PhotoKind.DAMAGE)) {
@@ -307,6 +329,14 @@ object Pdf {
         return write(doc, outFile(context, "housemove-damage-report.pdf"))
     }
 
+    /** " · 12 scanned in: Dune, Emma, …" for the inventory's contents column. */
+    private fun scannedSummary(data: AppData, boxId: String): String {
+        val entries = data.entriesOf(boxId)
+        if (entries.isEmpty()) return ""
+        val names = entries.take(4).joinToString(", ") { it.title.ifBlank { it.code } }
+        return " · ${entries.size} scanned in: $names" + if (entries.size > 4) ", …" else ""
+    }
+
     private fun write(doc: PdfDocument, file: File): File {
         file.outputStream().use { doc.writeTo(it) }
         doc.close()
@@ -323,13 +353,14 @@ object Csv {
     /** Items and boxes as one spreadsheet-friendly file. */
     fun inventory(context: Context, data: AppData): File {
         val sb = StringBuilder()
-        sb.append("Type,Label,Name / contents,From room,To room,Decision,Status,Width cm,Depth cm,Height cm,Value,Fragile,Damaged,Notes\n")
+        sb.append("Type,Label,Name / contents,From room,To room,Decision,Status,Width cm,Depth cm,Height cm,Value,Fragile,Damaged,Notes,Make,Model,Serial number,Warranty until,Travels with it\n")
         for (i in data.liveItems) {
             sb.append(
                 listOf(
                     "Item", i.label, i.title(), data.room(i.originRoomId)?.name, data.room(i.destRoomId)?.name,
                     i.disposition.label, i.stage.label, fmtNum(i.widthCm), fmtNum(i.depthCm), fmtNum(i.heightCm), fmtNum(i.value),
                     if (i.fragile) "yes" else "", if (i.damaged) "yes: ${i.damageNote}" else "", i.notes,
+                    i.make, i.model, i.serial, i.warrantyDay?.let { fmtDay(it) } ?: "", i.accessories,
                 ).joinToString(",") { cell(it) }
             ).append('\n')
         }
@@ -339,6 +370,15 @@ object Csv {
                     "Box", b.label, b.contents, data.room(b.originRoomId)?.name, data.room(b.destRoomId)?.name,
                     "Move", b.stage.label, "", "", "", "",
                     if (b.fragile) "yes" else "", if (b.damaged) "yes: ${b.damageNote}" else "", b.notes,
+                ).joinToString(",") { cell(it) }
+            ).append('\n')
+        }
+        for (e in data.liveEntries) {
+            val b = data.box(e.boxId) ?: continue
+            sb.append(
+                listOf(
+                    "In box", b.label, e.title.ifBlank { "Barcode ${e.code}" }, data.room(b.originRoomId)?.name, data.room(b.destRoomId)?.name,
+                    "Move", b.stage.label, "", "", "", "", "", "", listOf(e.author, e.code).filter { it.isNotBlank() }.joinToString(" / "),
                 ).joinToString(",") { cell(it) }
             ).append('\n')
         }

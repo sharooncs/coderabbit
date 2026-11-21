@@ -313,6 +313,97 @@ class FlowsTest {
     }
 
     @Test
+    fun deviceDetailsAreRecordedAndFoundBySerialNumber() {
+        start()
+        val wardrobe = store.createItem("Oak wardrobe", oldBedroom.id)
+        val tv = store.createItem("Samsung TV", oldBedroom.id)
+        store.put(data.item(tv.id)!!.copy(disposition = Disposition.MOVE))
+        fun it() = data.item(tv.id)!!
+
+        // Furniture is not asked for a serial number unless you switch it on.
+        go("item/${wardrobe.id}")
+        dontSee("Scan the serial number barcode")
+        tap("It has a make, model and serial number")
+        see("Scan the serial number barcode")
+        assertEquals(true, data.item(wardrobe.id)!!.electronic)
+
+        // A TV is recognised by its name.
+        go("item/${tv.id}")
+        type("Make", "Samsung")
+        type("Model", "QE55Q60")
+        type("Serial number", "0AB3HCPT500123X")
+        type("Remote, leads, stand, screws…", "Remote, power lead, stand and 4 screws")
+        tap("Bagged and marked with this item's name")
+        tap("Keep upright")
+        tap("Cables labelled and bagged")
+        assertEquals("Samsung QE55Q60", it().makeModel())
+        assertEquals("0AB3HCPT500123X", it().serial)
+        assertTrue(it().accessoriesPacked && it().keepUpright && it().prepCablesLabelled)
+        see("never flat") // the advice for moving a TV
+
+        // The barcode on the serial label can fill the field in (typed here in place of the camera).
+        tap("Scan the serial number barcode")
+        type("Or type the serial number", "ZX81-0042")
+        tap("OK")
+        assertEquals("ZX81-0042", it().serial)
+        see("ZX81-0042")
+
+        go("scan")
+        type("Or type the code on the label", "zx81-0042")
+        tap("Open")
+        assertEquals("item/{id}", route())
+
+        go("electronics")
+        see("S/N ZX81-0042")
+        see("No serial number") // the wardrobe that was switched on but not filled in
+        go("load")
+        see("Upright")
+    }
+
+    @Test
+    fun booksAndProductsGoIntoABoxByTheirOwnBarcode() {
+        start()
+        val box = store.createBox("L001", oldKitchen.id)
+        go("box/${box.id}")
+        tap("Scan books and products into this box")
+        type("Or type a barcode number or a name", "9780140328721")
+        tap("Add")
+        see("Look up book titles online?") // asked once, before anything goes online
+        tap("No, stay offline")
+        assertEquals(false, store.device.value.bookLookup)
+        assertEquals("9780140328721", data.entriesOf(box.id).single().code)
+
+        type("Name for barcode 9780140328721", "Fantastic Mr Fox")
+        tap("Save")
+        assertEquals("Fantastic Mr Fox", data.entriesOf(box.id).single().title)
+
+        type("Or type a barcode number or a name", "Photo albums")
+        tap("Add")
+        type("Or type a barcode number or a name", "978-0-14-032872-1") // the same book again
+        tap("Add")
+        see("Already in this box")
+        assertEquals(2, data.entriesOf(box.id).size)
+        tapDesc("Remove Photo albums")
+        assertEquals(1, data.entriesOf(box.id).size)
+        tap("Done")
+        see("Scanned in (1)")
+
+        go("search")
+        type("What are you looking for?", "mr fox")
+        see("Box L001")
+        go("scan")
+        type("Or type the code on the label", "9780140328721")
+        tap("Open")
+        assertEquals("box/{id}", route())
+        go("scan")
+        type("Or type the code on the label", "5012345678900") // a product nobody scanned in
+        tap("Open")
+        see("is not recorded")
+        tap("OK")
+        assertEquals(1, data.liveBoxes.size)
+    }
+
+    @Test
     fun inchesAreConvertedToCentimetres() {
         start()
         store.setMove { it.copy(useInches = true) }

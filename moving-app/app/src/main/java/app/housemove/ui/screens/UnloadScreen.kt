@@ -200,6 +200,7 @@ private fun MdArrivalPanel(m: Movable, already: Boolean, onDamage: () -> Unit, o
         Text(m.title, color = fg, style = MaterialTheme.typography.titleMedium)
         val flags = listOfNotNull(
             "FRAGILE".takeIf { m.fragile },
+            "KEEP UPRIGHT".takeIf { m.upright },
             "HEAVY".takeIf { m.heavy },
             "FIRST NIGHT".takeIf { m.priority == Priority.FIRST_NIGHT },
             "DAMAGE NOTED".takeIf { m.damaged },

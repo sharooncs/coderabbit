@@ -35,6 +35,7 @@ fun AppRoot(store: Store, startRoute: String? = null, onNav: (NavHostController)
                 composable("triage") { TriageScreen() }
                 composable("plan") { PlanScreen() }
                 composable("disposal") { DisposalScreen() }
+                composable("electronics") { ElectronicsScreen() }
 
                 composable("boxes") { BoxesScreen() }
                 composable("box/{id}") { BoxScreen(it.arguments?.getString("id") ?: "") }
