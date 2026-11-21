@@ -127,8 +127,16 @@ internal class Judge(val d: AppData) {
         return out
     }
 
-    /** May [x] be deleted, as it stands: by an Organiser then, or by whoever added it while nobody else had a hand in it. */
-    fun gone(x: Owned): Boolean {
+    /**
+     * May [x] be deleted, as it stands: by an Organiser then, or by whoever added it while nobody else had a hand in it.
+     * [alsoHands] are hands the other phone's copy of it knew of: a merge keeps those too.
+     */
+    fun gone(x: Owned, alsoHands: Collection<String> = emptyList()): Boolean {
+        if (alsoHands.any { it.isNotEmpty() && it != x.createdBy } && x.deleted && x.deletedBy.by.isNotEmpty() && book.at(x.deletedBy.by, x.deletedBy.at).let { it != null && it != Role.ORGANISER }) return false
+        return goneAsIs(x)
+    }
+
+    private fun goneAsIs(x: Owned): Boolean {
         if (!x.deleted) return true
         val s = x.deletedBy
         if (s.by.isEmpty()) return (s.sum.isEmpty() || s.sum == seal(true)) && (s.at == 0L || !book.anyOrganiser(s.at))
@@ -720,9 +728,10 @@ internal class SimChecks(private val sim: Simulation) {
             if (handsOut.toSet() != handsIn || handsOut != handsOut.distinct().sorted()) bad("lost or invented a hand on", k)
             if (r is Owned) {
                 // A deletion is kept only when it was allowed, and undone only when it was not.
-                if (r.deleted && !j.gone(r)) bad("kept a deletion its author had no right to make of", k)
+                fun about(x: Owned) = "deleted by ${x.deletedBy} (${j.book.at(x.deletedBy.by, x.deletedBy.at)} then), added by ${x.createdBy.take(8)}, hands ${x.hands.map { it.take(8) }}, others ${j.others(x).map { it.take(8) }}"
+                if (r.deleted && !j.gone(r)) broke(MERGE, "a merge on ${p.tag} kept a deletion its author had no right to make of $k: ${about(r)}", k.substringAfter(':'))
                 val dropped = listOfNotNull(a as Owned?, b as Owned?).firstOrNull { it.updatedAt == newest && it.deleted }
-                if (!r.deleted && dropped != null && j.gone(dropped)) bad("undid a deletion its author had the right to make of", k)
+                if (!r.deleted && dropped != null && j.gone(dropped, r.hands)) broke(MERGE, "a merge on ${p.tag} undid a deletion its author had the right to make of $k: ${about(dropped)}; kept hands ${r.hands.map { it.take(8) }}", k.substringAfter(':'))
             }
             if (r is Proposal) {
                 if (!j.withdrawal(r)) bad("deleted a suggestion that was not withdrawn by its author, or was approved or declined, at", k)

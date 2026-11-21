@@ -131,6 +131,20 @@ class NetworkTest {
         assertNotNull(hal.data.value.findByLabel("L001"))
     }
 
+    @Test
+    fun aConnectionThatDropsAtOnceIsNotTakenForAnotherVersion() {
+        // Before, a hello that went unanswered and then a second try that got nothing at all said "different versions".
+        val asha = phone("Asha")
+        val dropper = ServerSocket(0).also { servers += it }
+        thread(isDaemon = true) {
+            try {
+                while (true) dropper.accept().close()
+            } catch (_: Exception) {
+            }
+        }
+        assertEquals(WifiSync.CONNECTION_LOST, WifiSync.join(asha, WifiSync.Invite(local, dropper.localPort, "ABCDEFGH")).error)
+    }
+
     // ---- connections that drop ---------------------------------------------------------------
 
     @Test
