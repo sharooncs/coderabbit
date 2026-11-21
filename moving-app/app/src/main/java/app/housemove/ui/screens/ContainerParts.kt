@@ -8,6 +8,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -15,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -80,13 +82,33 @@ internal fun categoryPicture(category: String): ImageVector = when (category) {
     else -> Icons.Default.Category
 }
 
-internal fun containerCount(n: Int, one: String, many: String = one + "s") = "$n " + if (n == 1) one else many
-
 /** What a container is called on screen: its own name, or "Suitcase B2" when it has none. */
 internal fun Box.shownName(): String = name.ifBlank { "${kind.noun} $label" }
 
+/** A container's name with the code to look for: "Kitchen box 4 (L004)", or "Suitcase B2" when it has no name. */
+internal fun Box.nameAndCode(): String = if (name.isBlank()) "${kind.noun} $label" else "$name ($label)"
+
 /** "box L012", "suitcase B2": how one container is pointed at from another's row. */
 internal fun Box.pointer(): String = "${kind.word()} $label"
+
+/** The picture for anything that travels: its kind for a container, a piece of furniture for an item. */
+internal fun Movable.picture(): ImageVector = if (isBox) (kind ?: ContainerKind.CARTON).picture() else Pic.Item
+
+/** What to watch out for when carrying something, as a picture and a word: the same words in every list. */
+internal fun Movable.flags(): List<Pair<ImageVector, String>> = listOfNotNull(
+    (Pic.FirstNight to "First night").takeIf { priority == Priority.FIRST_NIGHT },
+    (Pic.Fragile to "Fragile").takeIf { fragile },
+    (Pic.Upright to if (isBox) "This way up" else "Keep upright").takeIf { upright },
+    (if (isBox) Pic.Heavy to "Heavy" else Pic.TwoPeople to "Two people").takeIf { heavy },
+)
+
+/**
+ * Furniture and appliances are catalogued as well, and nobody packs a wardrobe into a box:
+ * what plainly cannot go in a container is not offered one, on its own page or as a picture
+ * to tap on a container's. Scanning its label into a container still works.
+ */
+internal fun Item.couldBePacked(): Boolean =
+    !twoPerson && !needsDisassembly && !keepUpright && (volumeM3() ?: 0.0) <= ContainerKind.WARDROBE.m3
 
 /** The category a container counts under: the one chosen, else the one its room and contents suggest. */
 internal fun AppData.categoryOf(b: Box): String = b.category.ifBlank { suggestCategory(b) }
@@ -164,11 +186,6 @@ internal fun PackStateIcon(state: PackState, vehicle: String, modifier: Modifier
 }
 
 // ---- small pieces --------------------------------------------------------------------
-
-@Composable
-internal fun ContainerHeading(text: String, modifier: Modifier = Modifier) {
-    Text(text, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = modifier)
-}
 
 /** Why the app would not do what was just asked, in the Store's own words. */
 @Composable
@@ -251,6 +268,48 @@ internal fun ContainerThumb(box: Box, data: AppData, size: Dp, modifier: Modifie
 }
 
 /**
+ * Where something goes, as everywhere in the app: an arrow and the room in its colour.
+ * Tapping it opens the rooms to choose another; [open] says whether they are showing.
+ */
+@Composable
+internal fun GoingTo(dest: Room?, open: Boolean, onToggle: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier.clip(RoundedCornerShape(12.dp))
+            .clickable(role = Role.Button, onClickLabel = if (open) "Close the rooms" else "Choose another room", onClick = onToggle)
+            .heightIn(min = 48.dp).padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Going to", tint = Night.TextSoft, modifier = Modifier.size(18.dp))
+        RoomBadge(dest, Modifier.weight(1f, fill = false))
+        Icon(if (open) Icons.Default.ExpandLess else Icons.Default.ExpandMore, contentDescription = null, modifier = Modifier.size(20.dp))
+    }
+}
+
+/**
+ * The picture that leads a row, the same for a thing wherever it is listed: a container's
+ * photo with its kind marked on it, an item's own photo, and for anything else (a cost,
+ * say) its first photo. Until there is a photo, [icon] on glass stands in.
+ */
+@Composable
+internal fun ThingThumb(ownerId: String, icon: ImageVector, modifier: Modifier = Modifier, size: Dp = 56.dp) {
+    val data = appData()
+    val shape = RoundedCornerShape(size * 0.24f)
+    val box = data.box(ownerId)
+    when {
+        box != null -> ContainerThumb(box, data, size, modifier)
+        data.item(ownerId) != null -> ItemPhoto(ownerId, modifier.size(size), shape, iconSize = size * 0.46f)
+        else -> {
+            val photo = data.photosOf(ownerId).firstOrNull()
+            if (photo != null) PhotoThumb(photo, modifier.size(size).clip(shape).border(1.dp, Night.GlassRim, shape))
+            else Box(modifier.size(size).glass(shape, shadow = 0.dp), contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = null, tint = Night.Mint, modifier = Modifier.size(size * 0.46f))
+            }
+        }
+    }
+}
+
+/**
  * A square to photograph into: with no photo yet it is one "take a photo" target; with
  * one it shows it, opens it when tapped, and keeps a small camera button for more.
  */
@@ -284,13 +343,22 @@ internal fun ContainerPhoto(ownerId: String, kind: PhotoKind, emptyText: String,
                         .padding(horizontal = 7.dp, vertical = 2.dp),
                 )
             }
-            OverlayIconButton(onClick = { camera = true }, modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp).size(36.dp)) {
-                Icon(Pic.Camera, contentDescription = "Take another photo of what's inside", modifier = Modifier.size(18.dp))
+            // A full 48dp to touch in the corner of the photo, though the disc drawn in it is smaller.
+            Box(
+                Modifier.align(Alignment.BottomEnd).size(48.dp).clip(CircleShape)
+                    .clickable(role = Role.Button) { camera = true }
+                    .semantics { contentDescription = "Take another photo of what's inside" },
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    Modifier.size(34.dp).clip(CircleShape).background(Color(0xCC081220)).border(1.dp, Color.White.copy(alpha = 0.45f), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Pic.Camera, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp)) }
             }
         }
     }
     if (camera) {
-        CameraDialog(hint = kind.label, newFile = { store.newPhotoFile() }, onPhoto = { store.addPhoto(ownerId, kind, it) }, onClose = { camera = false })
+        PhotoCamera(hint = kind.label, onPhoto = { store.addPhoto(ownerId, kind, it) }, onClose = { camera = false })
     }
     viewing?.let { p -> PhotoViewer(p, onClose = { viewing = null }) }
 }
@@ -331,24 +399,22 @@ internal fun ContainerRow(
     onOpen: (Box) -> Unit,
 ) {
     val vehicle = data.vehicle()
-    val items = data.itemsIn(box.id)
+    // Counted as on every screen: the items in it, the containers inside it and what those hold.
+    val carried = data.carriedBy(box.id)
     val scanned = data.entriesOf(box.id).size
-    val within = data.childrenOf(box.id).size
     GlassCard(modifier.fillMaxWidth(), onClick = { onOpen(box) }, shape = RoundedCornerShape(22.dp)) {
         Row(Modifier.padding(start = 8.dp, top = 8.dp, bottom = 8.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             ContainerThumb(box, data, 64.dp)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        box.label, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
-                    )
+                    // The code is what people look for on the thing itself, so it is never cut short: the room's name gives way.
+                    Text(box.label, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
                     // Something inside another goes where that one goes, so it shows no room of its own.
-                    if (showRoom) RoomBadge(data.room(box.destRoomId))
+                    if (showRoom) RoomBadge(data.room(box.destRoomId), Modifier.weight(1f, fill = false))
                 }
                 val words = box.rowWords()
-                val nothing = words.isEmpty() && items.isEmpty() && scanned == 0 && within == 0
+                val nothing = words.isEmpty() && carried == 0 && scanned == 0
                 if (words.isNotEmpty() || nothing) {
                     Text(
                         words.ifEmpty { "Nothing written down yet" },
@@ -358,12 +424,11 @@ internal fun ContainerRow(
                     )
                 }
                 val flagged = box.priority != Priority.WHENEVER || box.fragile || box.heavy || box.thisWayUp || box.travelsWithMe || box.hazardous || box.damaged
-                if (flagged || inside != null || items.isNotEmpty() || scanned > 0 || within > children.size) {
+                if (flagged || inside != null || carried > 0 || scanned > 0) {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         if (inside != null) GlassChip("Inside ${inside.pointer()}", icon = Icons.Default.SubdirectoryArrowRight, tone = GlassTone.Amber)
-                        if (items.isNotEmpty()) GlassChip(containerCount(items.size, "item"), icon = Pic.Item)
+                        InsideChip(carried)
                         if (scanned > 0) GlassChip("$scanned scanned", icon = Icons.Default.QrCodeScanner)
-                        if (within > children.size) GlassChip("$within inside", icon = Icons.Default.SubdirectoryArrowRight)
                         if (box.priority != Priority.WHENEVER) IconFlag(box.priority.icon(), box.priority.label)
                         if (box.fragile) IconFlag(Pic.Fragile, "Fragile")
                         if (box.heavy) IconFlag(Pic.Heavy, "Heavy")
@@ -410,7 +475,7 @@ internal fun ContainerRow(
 internal fun ContainerItemRow(item: Item, modifier: Modifier = Modifier, onOpen: () -> Unit, trailing: @Composable () -> Unit) {
     GlassCard(modifier.fillMaxWidth(), onClick = onOpen, shape = RoundedCornerShape(18.dp)) {
         Row(Modifier.padding(start = 6.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            OwnerThumb(item.id, Modifier.size(48.dp))
+            ItemPhoto(item.id, Modifier.size(48.dp), RoundedCornerShape(12.dp), iconSize = 22.dp)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(item.title(), style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)

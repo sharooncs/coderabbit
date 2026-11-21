@@ -50,6 +50,7 @@ import app.housemove.ui.TopActions
 import app.housemove.ui.appData
 import app.housemove.ui.deviceInfo
 import app.housemove.ui.open
+import app.housemove.data.*
 import app.housemove.ui.*
 
 /** The steps of the day, in order: everything in the Move day phase, then Unpack. */
@@ -65,11 +66,13 @@ private fun mdStepRatio(route: String, data: AppData): Ratio? = when (route) {
     else -> null
 }
 
-/** Reconcile is finished once everything that travels has arrived and nothing was left behind. */
+/**
+ * Reconcile is finished once everything that went in the van has arrived and nothing was
+ * left behind, as Reconcile itself counts it: what travels with the person does not hold it up.
+ */
 private fun mdAllIn(data: AppData): Boolean {
     val all = data.movables()
-    return all.isNotEmpty() && all.all { mdArrived(it.stage) || (it.stage == Stage.AT_ORIGIN && it.travelsWithMe) } &&
-        all.any { mdArrived(it.stage) }
+    return all.isNotEmpty() && all.all { mdArrived(it.stage) || it.byHand() } && all.any { mdArrived(it.stage) }
 }
 
 /**
@@ -84,8 +87,8 @@ internal fun mdCurrentStep(data: AppData, routes: List<String>, finished: List<B
     if (firstOpen < 0) return -1
     fun open(vararg wanted: String): Int? = wanted.firstNotNullOfOrNull { r -> routes.indexOf(r).takeIf { it >= 0 && !finished[it] } }
     val all = data.movables()
-    val atOld = all.count { it.stage == Stage.AT_ORIGIN && !it.travelsWithMe }
-    val onVan = all.count { it.stage == Stage.LOADED }
+    val atOld = all.count { it.stage == Stage.AT_ORIGIN && !it.byHand() }
+    val onVan = all.count { it.stage == Stage.LOADED && !it.byHand() }
     val arrived = all.count { mdArrived(it.stage) }
     val moveDay = data.move.moveDay
     return when {
@@ -123,7 +126,7 @@ fun MoveDayScreen() {
                 // The date and how much of the day is done. With no date yet, tapping it sets one, as on Home.
                 val day = data.move.moveDay
                 val stepsDone = finished.count { it }
-                MdProgressHeader(
+                ProgressCard(
                     Ratio(stepsDone, steps.size),
                     if (day == null) "No move day set" else fmtDay(day),
                     Modifier.clip(RoundedCornerShape(14.dp)).clickable(enabled = day == null) { nav.open("settings") }.padding(4.dp),
@@ -163,7 +166,7 @@ fun MoveDayScreen() {
                         .takeIf { data.uses(Part.MOVE_DAY) && data.uses(Part.BOXES) },
                     (Icons.Default.FactCheck to "Check Reconcile before the $vehicle goes back.").takeIf { data.uses(Part.MOVE_DAY) },
                 )
-                Fold("Before you start", Icons.Default.Lightbulb, summary = mdCount(tips.size, "tip") + " for the day") {
+                Fold("Before you start", Icons.Default.Lightbulb, summary = countOf(tips.size, "tip") + " for the day") {
                     tips.forEach { (icon, text) -> MdTip(icon, text) }
                 }
             }

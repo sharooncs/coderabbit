@@ -84,9 +84,8 @@ import app.housemove.data.suggestSupplies
 import app.housemove.data.today
 import app.housemove.data.vehicle
 import app.housemove.data.waitingProposals
+import app.housemove.data.*
 import app.housemove.ui.*
-
-private fun mdMoney(currency: String, amount: Double): String = (currency.trim() + " " + fmtNum(amount)).trim()
 
 /** Change a supply using its latest saved copy, so quick taps never overwrite each other. */
 private fun mdEditSupply(store: Store, id: String, f: (Supply) -> Supply) {
@@ -114,7 +113,7 @@ private fun mdCostTitle(e: Expense, vehicle: String): String = e.title.ifBlank {
 /** What a suggested change to a cost would do, in a few words. */
 private fun mdCostChange(now: Expense, p: Expense, currency: String, vehicle: String): String {
     val parts = ArrayList<String>()
-    if (p.amount != now.amount) parts += mdMoney(currency, now.amount) + " → " + mdMoney(currency, p.amount)
+    if (p.amount != now.amount) parts += money(currency, now.amount) + " → " + money(currency, p.amount)
     if (p.category != now.category) parts += mdCategoryLabel(p.category, vehicle)
     if (p.title != now.title) parts += if (p.title.isBlank()) "No name" else "Name: " + p.title
     if (p.day != now.day) parts += fmtDayShort(p.day)
@@ -134,7 +133,7 @@ private const val MD_NEW = "new"
  */
 @Composable
 fun BudgetScreen() {
-    val seesCosts = mdCan(Action.SUGGEST)
+    val seesCosts = allowed(Action.SUGGEST)
     var tab by rememberSaveable { mutableStateOf(0) }
 
     Screen(if (seesCosts) "Supplies and costs" else "Supplies") {
@@ -158,6 +157,7 @@ private fun MdSupplies(modifier: Modifier) {
     var typing by rememberSaveable { mutableStateOf(false) }
     var newName by rememberSaveable { mutableStateOf("") }
     var removing by remember { mutableStateOf<Supply?>(null) }
+    val canDelete = mayDelete()
     fun add(said: String) {
         val name = said.trim().replaceFirstChar { it.uppercase() }
         if (name.isNotEmpty()) store.put(Supply(newId(), name, 1))
@@ -172,10 +172,10 @@ private fun MdSupplies(modifier: Modifier) {
                 onAction = { data.suggestSupplies().forEach { (name, need) -> store.put(Supply(newId(), name, need)) } },
             )
         } else item(key = "summary") {
-            MdProgressHeader(
+            ProgressCard(
                 Ratio(ready, supplies.size),
                 "$ready of ${supplies.size} ready",
-                Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
                 sub = if (toBuy == 0) "You have everything on the list" else "$toBuy still to buy",
             )
         }
@@ -205,7 +205,8 @@ private fun MdSupplies(modifier: Modifier) {
                         modifier = Modifier.weight(1f),
                     )
                     if (s.have < s.need) IconFlag(Icons.Default.ShoppingCart, "${s.need - s.have} to buy")
-                    GlassOrb(Icons.Default.Delete, "Remove ${s.name}", size = 36.dp, onClick = { removing = s })
+                    if (canDelete) GlassOrb(Icons.Default.Delete, "Remove ${s.name}", size = 36.dp, onClick = { removing = s })
+                    else Spacer(Modifier.width(10.dp))
                 }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     MdStepper("Need", s.need, s.name) { v -> mdEditSupply(store, s.id) { it.copy(need = v) } }
@@ -216,9 +217,17 @@ private fun MdSupplies(modifier: Modifier) {
         item(key = "add") {
             // Something not on the list: say it. The keyboard is one tap away for a phone with no speech.
             Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                MdAdder(
+                // What the suggested list has that this one does not: one tap each, with the suggested number.
+                val names = supplies.map { it.name.lowercase() }.toSet()
+                val missing = remember(data) { data.suggestSupplies() }.filter { (n, _) -> n.lowercase() !in names }
+                QuickAdd(
                     "Something else", "Add something else to the list",
-                    prompt = "What else do you need?", sayIt = "Say what else you need", onType = { typing = !typing }, onSaid = { add(it) },
+                    prompt = "What else do you need?", sayIt = "Say what else you need",
+                    chips = missing.map { it.first }, onType = { typing = !typing },
+                    onAdd = { picked ->
+                        val need = missing.firstOrNull { it.first == picked }?.second
+                        if (need != null) store.put(Supply(newId(), picked, need)) else add(picked)
+                    },
                 )
                 if (typing) Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
@@ -232,7 +241,7 @@ private fun MdSupplies(modifier: Modifier) {
                         modifier = Modifier.weight(1f),
                     )
                     Spacer(Modifier.width(8.dp))
-                    MdRowButton("Add", onClick = { add(newName); newName = "" }, modifier = Modifier.enabledLook(newName.isNotBlank()))
+                    RowButton("Add", onClick = { add(newName); newName = "" }, modifier = Modifier.enabledLook(newName.isNotBlank()))
                 }
             }
         }
@@ -276,7 +285,7 @@ private fun MdCosts(modifier: Modifier) {
     val data = appData()
     val currency = data.move.currency
     val vehicle = data.vehicle()
-    val mayPlan = mdCan(Action.DECIDE)
+    val mayPlan = allowed(Action.DECIDE)
     val expenses = data.liveExpenses.sortedWith(compareByDescending<Expense> { it.day }.thenBy { it.title })
     val paid = expenses.filter { !it.planned }.sumOf { it.amount }
     val quoted = expenses.filter { it.planned }.sumOf { it.amount }
@@ -285,6 +294,12 @@ private fun MdCosts(modifier: Modifier) {
     val waiting = data.waitingProposals().filter { it.kind == ProposalKind.COST && it.expense != null }
     val suggested = waiting.filter { it.targetId !in known }
     val changes = waiting.filter { it.targetId in known }.groupBy { it.targetId }
+    // What this person suggested and was turned down, until they have read why: a new cost is listed
+    // on its own, a change on the cost it was about.
+    val me = LocalStore.current.me
+    val seen = rememberSeenAnswers()
+    val declined = data.declinedFor(me, seen.ids, ProposalKind.COST).filter { it.expense != null }
+    val declinedNew = declined.filter { it.targetId !in known }
     // The cost being added or changed, in its place in the list: MD_NEW, an id, or none.
     var editing by rememberSaveable { mutableStateOf<String?>(null) }
 
@@ -298,9 +313,9 @@ private fun MdCosts(modifier: Modifier) {
                     }
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(mdMoney(currency, paid + quoted), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                        Text(money(currency, paid + quoted), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                         Text(
-                            "Paid ${mdMoney(currency, paid)} · still to pay ${mdMoney(currency, quoted)}",
+                            "Paid ${money(currency, paid)} · still to pay ${money(currency, quoted)}",
                             style = MaterialTheme.typography.bodyMedium, color = Night.TextSoft,
                         )
                     }
@@ -315,20 +330,28 @@ private fun MdCosts(modifier: Modifier) {
                 Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
             )
         }
+        items(declinedNew, key = { "d" + it.id }) { p -> MdSuggestedCost(p, onSeen = { seen.mark(p.id) }) }
         items(suggested, key = { "p" + it.id }) { p -> MdSuggestedCost(p) }
-        if (expenses.isEmpty() && suggested.isEmpty() && editing == null) item(key = "empty") {
+        if (expenses.isEmpty() && suggested.isEmpty() && declinedNew.isEmpty() && editing == null) item(key = "empty") {
             EmptyState(Icons.Default.ReceiptLong, "No costs yet")
         }
         items(expenses, key = { it.id }) { e ->
             if (editing == e.id) MdCostEditor(e, onClose = { editing = null })
-            else MdCostRow(e, changes[e.id].orEmpty(), onOpen = { editing = e.id })
+            else MdCostRow(
+                e, changes[e.id].orEmpty(), onOpen = { editing = e.id },
+                declined = data.declinedOn(e.id, me, seen.ids, ProposalKind.COST), onSeen = { seen.mark(it.id) },
+            )
         }
     }
 }
 
-/** A cost someone has suggested and that is not a cost yet, with the tag and, for an Organiser, the answer buttons. */
+/**
+ * A cost someone has suggested and that is not a cost yet. While it waits it carries the
+ * tag and, for an Organiser, the answer buttons. Once declined it is shown to the person
+ * who suggested it, with the reason, until they put it away ([onSeen]).
+ */
 @Composable
-private fun MdSuggestedCost(p: Proposal) {
+private fun MdSuggestedCost(p: Proposal, onSeen: (() -> Unit)? = null) {
     val data = appData()
     val e = p.expense ?: return
     val vehicle = data.vehicle()
@@ -337,16 +360,18 @@ private fun MdSuggestedCost(p: Proposal) {
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            MdThumb(e.id, mdCategoryIcon(e.category))
+            ThingThumb(e.id, mdCategoryIcon(e.category))
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(mdCostTitle(e, vehicle), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(fmtDayShort(e.day), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Spacer(Modifier.width(12.dp))
-            Text(mdMoney(data.move.currency, e.amount), style = MaterialTheme.typography.titleMedium)
+            Text(money(data.move.currency, e.amount), style = MaterialTheme.typography.titleMedium)
         }
-        MdApproval(p, Modifier.padding(start = 6.dp, end = 6.dp, bottom = 4.dp))
+        // The row above says what is suggested, so the tag only says who and that it waits.
+        if (p.state == ProposalState.DECLINED) DeclinedNote(p, data, onSeen = onSeen)
+        else Suggestion(p, data, what = null)
     }
 }
 
@@ -356,7 +381,7 @@ private fun MdSuggestedCost(p: Proposal) {
  * camera for the receipt right on the row. Tapping the row opens it for changes.
  */
 @Composable
-private fun MdCostRow(e: Expense, changes: List<Proposal>, onOpen: () -> Unit) {
+private fun MdCostRow(e: Expense, changes: List<Proposal>, onOpen: () -> Unit, declined: Proposal? = null, onSeen: (Proposal) -> Unit = {}) {
     val store = LocalStore.current
     val context = LocalContext.current
     val data = appData()
@@ -366,7 +391,7 @@ private fun MdCostRow(e: Expense, changes: List<Proposal>, onOpen: () -> Unit) {
     var camera by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).glass(RoundedCornerShape(22.dp), shadow = 4.dp)) {
         Row(Modifier.fillMaxWidth().clickable(onClickLabel = "Change", onClick = onOpen).padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            MdThumb(e.id, mdCategoryIcon(e.category))
+            ThingThumb(e.id, mdCategoryIcon(e.category))
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(mdCostTitle(e, vehicle), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -377,23 +402,27 @@ private fun MdCostRow(e: Expense, changes: List<Proposal>, onOpen: () -> Unit) {
                 if (e.planned) GlassChip("Not paid yet", icon = Icons.Default.Schedule, tone = GlassTone.Amber)
             }
             Spacer(Modifier.width(12.dp))
-            Text(mdMoney(currency, e.amount), style = MaterialTheme.typography.titleMedium)
+            Text(money(currency, e.amount), style = MaterialTheme.typography.titleMedium)
         }
         changes.forEach { p ->
-            MdApproval(p, Modifier.padding(start = 14.dp, end = 14.dp, bottom = 12.dp), what = p.expense?.let { mdCostChange(e, it, currency, vehicle) })
+            Suggestion(p, data, Modifier.padding(start = 10.dp, end = 10.dp, bottom = 10.dp), what = p.expense?.let { mdCostChange(e, it, currency, vehicle) })
+        }
+        // A change this person suggested was turned down: they are told why, once.
+        if (declined != null) {
+            DeclinedNote(
+                declined, data, Modifier.padding(start = 10.dp, end = 10.dp, bottom = 10.dp),
+                what = declined.expense?.let { mdCostChange(e, it, currency, vehicle) }, onSeen = { onSeen(declined) },
+            )
         }
         if (e.planned && mayPay) {
             Row(Modifier.padding(start = 8.dp, end = 8.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                MdRowButton("Mark paid", onClick = { mdTold(context, store.markPaid(e.id)) }, icon = Icons.Default.Check)
-                MdRowButton("Receipt", onClick = { camera = true }, forward = false, icon = Icons.Default.PhotoCamera)
+                RowButton("Mark paid", onClick = { store.markPaid(e.id).okOrSay(context) }, icon = Icons.Default.Check)
+                RowButton("Receipt", onClick = { camera = true }, forward = false, icon = Icons.Default.PhotoCamera)
             }
         }
     }
     if (camera) {
-        CameraDialog(
-            hint = "Receipt", newFile = { store.newPhotoFile() },
-            onPhoto = { mdTold(context, store.attachReceipt(e.id, it)) }, onClose = { camera = false },
-        )
+        PhotoCamera(hint = "Receipt", onPhoto = { store.attachReceipt(e.id, it).okOrSay(context) }, onClose = { camera = false })
     }
 }
 
@@ -410,7 +439,7 @@ private fun MdReceipts(expenseId: String, saved: Boolean, modifier: Modifier = M
     var camera by remember { mutableStateOf(false) }
     var viewing by remember { mutableStateOf<Photo?>(null) }
     fun keep(file: java.io.File) {
-        if (saved) mdTold(context, store.attachReceipt(expenseId, file)) else store.addPhoto(expenseId, PhotoKind.RECEIPT, file)
+        if (saved) store.attachReceipt(expenseId, file).okOrSay(context) else store.addPhoto(expenseId, PhotoKind.RECEIPT, file)
     }
     val gallery = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { uris ->
         uris.forEach { uri ->
@@ -433,43 +462,8 @@ private fun MdReceipts(expenseId: String, saved: Boolean, modifier: Modifier = M
         })
         photos.forEach { p -> PhotoThumb(p, Modifier.size(60.dp).clip(RoundedCornerShape(16.dp)).clickable { viewing = p }) }
     }
-    if (camera) CameraDialog(hint = "Receipt", newFile = { store.newPhotoFile() }, onPhoto = { keep(it) }, onClose = { camera = false })
+    if (camera) PhotoCamera(hint = "Receipt", onPhoto = { keep(it) }, onClose = { camera = false })
     viewing?.let { p -> PhotoViewer(p, onClose = { viewing = null }) }
-}
-
-/** How much: the amount large, four round buttons to nudge it, round sums to tap, and the keyboard behind "Other amount". */
-@Composable
-private fun MdAmount(amount: Double, currency: String, onChange: (Double) -> Unit) {
-    var other by rememberSaveable { mutableStateOf(false) }
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            MdNudge("−10", "10 less") { onChange((amount - 10).coerceAtLeast(0.0)) }
-            MdNudge("−1", "1 less") { onChange((amount - 1).coerceAtLeast(0.0)) }
-            Text(
-                mdMoney(currency, amount), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center, maxLines = 1, modifier = Modifier.weight(1f),
-            )
-            MdNudge("+1", "1 more") { onChange(amount + 1) }
-            MdNudge("+10", "10 more") { onChange(amount + 10) }
-        }
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-            MD_AMOUNTS.forEach { preset -> GlassChip(fmtNum(preset), selected = amount == preset, onClick = { onChange(preset) }) }
-            GlassChip("Other amount", icon = Icons.Default.Keyboard, selected = other, onClick = { other = !other })
-        }
-        if (other) {
-            NumberInput(
-                amount.takeIf { it != 0.0 }, { onChange(it ?: 0.0) },
-                if (currency.isBlank()) "Amount" else "Amount (${currency.trim()})", Modifier.fillMaxWidth(), key = "other",
-            )
-        }
-    }
-}
-
-@Composable
-private fun MdNudge(text: String, description: String, onClick: () -> Unit) {
-    GlassOrb(contentDescription = description, size = 42.dp, onClick = onClick) {
-        Text(text, style = MaterialTheme.typography.labelLarge, maxLines = 1)
-    }
 }
 
 /**
@@ -485,7 +479,7 @@ private fun MdCostEditor(existing: Expense?, onClose: () -> Unit) {
     val data = appData()
     val currency = data.move.currency
     val vehicle = data.vehicle()
-    val mayPlan = mdCan(Action.DECIDE)
+    val mayPlan = allowed(Action.DECIDE)
     val id = rememberSaveable { existing?.id ?: newId() }
     // A new cost starts as the last one did: the same kind of thing is often paid again.
     val last = remember { data.liveExpenses.maxByOrNull { it.updatedAt } }
@@ -511,8 +505,8 @@ private fun MdCostEditor(existing: Expense?, onClose: () -> Unit) {
         if (existing == null) {
             val e = Expense(id = id, title = title.trim(), amount = amount, category = category, day = day, planned = planned)
             if (!mayPlan) {
-                if (mdTold(context, store.suggestCost(e.copy(planned = true)))) close(keepPhotos = true)
-            } else if (mdMay(context, store, Action.DECIDE)) {
+                if (store.suggestCost(e.copy(planned = true)).okOrSay(context)) close(keepPhotos = true)
+            } else if (store.mayOrSay(context, Action.DECIDE)) {
                 store.put(e)
                 close(keepPhotos = true)
             }
@@ -521,8 +515,8 @@ private fun MdCostEditor(existing: Expense?, onClose: () -> Unit) {
             val next = now.copy(title = title.trim(), amount = amount, category = category, day = day)
             if (next == now) onClose()
             else if (!mayPlan) {
-                if (mdTold(context, store.suggestCost(next))) onClose()
-            } else if (mdMay(context, store, Action.DECIDE)) {
+                if (store.suggestCost(next).okOrSay(context)) onClose()
+            } else if (store.mayOrSay(context, Action.DECIDE)) {
                 store.put(next)
                 onClose()
             }
@@ -551,12 +545,13 @@ private fun MdCostEditor(existing: Expense?, onClose: () -> Unit) {
                 category = c
                 if (!touched) amount = mdLastAmount(data, c)
             },
-            columns = if (mdNarrow(310f)) 2 else 4,
+            columns = if (narrowScreen(310f)) 2 else 4,
         )
-        MdAmount(amount, currency) {
-            amount = it
-            touched = true
-        }
+        // The same picker as for prices; a cost is an exact sum, so it steps by ones and tens.
+        AmountPicker(
+            amount.takeIf { it > 0.0 }, { amount = it ?: 0.0; touched = true }, "Amount", currency,
+            presets = MD_AMOUNTS, fine = true,
+        )
         val unpaid = if (existing != null) existing.planned else planned
         if (mayPay) MdReceipts(id, saved = existing != null)
         else if (existing == null) Hint("An Organiser approves it. Then you can mark it paid and add the receipt.")
@@ -568,9 +563,9 @@ private fun MdCostEditor(existing: Expense?, onClose: () -> Unit) {
             ).joinToString(" · "),
             key = "costmore:$id",
         ) {
-            if (mayPay) Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            if (mayPay) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 fun setUnpaid(p: Boolean) {
-                    if (existing != null) mdTold(context, store.markPaid(id, paid = !p)) else planned = p
+                    if (existing != null) store.markPaid(id, paid = !p).okOrSay(context) else planned = p
                 }
                 GlassChip("Paid", selected = !unpaid, onClick = { setUnpaid(false) })
                 GlassChip("Not paid yet", selected = unpaid, onClick = { setUnpaid(true) })
@@ -586,23 +581,23 @@ private fun MdCostEditor(existing: Expense?, onClose: () -> Unit) {
             when {
                 amount <= 0.0 -> "Choose an amount"
                 untouched -> "Done"
-                existing != null && mayPlan -> "Save · " + mdMoney(currency, amount)
+                existing != null && mayPlan -> "Save · " + money(currency, amount)
                 existing != null -> "Suggest this change"
-                mayPlan -> "Add cost · " + mdMoney(currency, amount)
-                else -> "Suggest cost · " + mdMoney(currency, amount)
+                mayPlan -> "Add cost · " + money(currency, amount)
+                else -> "Suggest cost · " + money(currency, amount)
             },
             onClick = { save() }, primary = !untouched, enabled = amount > 0.0,
         )
         if (existing != null && mayPlan) {
-            GlassChip("Delete this cost", icon = Icons.Default.Delete, onClick = { confirmDelete = true })
+            DeleteButton("Delete this cost", onClick = { confirmDelete = true }, modifier = Modifier.align(Alignment.CenterHorizontally))
         }
     }
 
     if (confirmDelete && existing != null) ConfirmDialog(
         title = "Delete this cost?",
-        text = mdCostTitle(existing, vehicle) + " · " + mdMoney(currency, existing.amount),
+        text = mdCostTitle(existing, vehicle) + " · " + money(currency, existing.amount),
         onConfirm = {
-            if (mdMay(context, store, Action.DECIDE)) {
+            if (store.mayOrSay(context, Action.DECIDE)) {
                 store.data.value.photosOf(existing.id).forEach { store.delete(it) }
                 store.delete(existing)
                 onClose()

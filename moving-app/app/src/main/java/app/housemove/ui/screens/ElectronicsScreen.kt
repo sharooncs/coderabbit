@@ -54,12 +54,11 @@ fun ElectronicsScreen() {
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item(key = "head") {
-                SummaryCard(
+                ProgressCard(
                     Ratio(withSerial, devices.size),
                     if (withSerial == devices.size) "Every serial number recorded" else "$withSerial of ${devices.size} with a serial number",
-                ) {
-                    Hint("Insurers and the police ask for it.")
-                }
+                    sub = "Insurers and the police ask for it.",
+                )
             }
             items(devices, key = { it.id }) { d -> DeviceRow(d, data, onOpen = { nav.open("item/${d.id}") }, onScan = { scanning = d.id }) }
         }

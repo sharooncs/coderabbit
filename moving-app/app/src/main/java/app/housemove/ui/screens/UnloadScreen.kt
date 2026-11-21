@@ -58,6 +58,7 @@ import app.housemove.data.movables
 import app.housemove.data.roomColor
 import app.housemove.data.toMovable
 import app.housemove.data.vehicle
+import app.housemove.data.*
 import app.housemove.ui.*
 
 /**
@@ -99,13 +100,15 @@ fun UnloadScreen() {
 
     // Each thing once: a container stands for everything packed inside it.
     val all = data.movables()
-    val carried = remember(data) { mdCarried(data) }
+    val carried = remember(data) { data.carriedCounts() }
     val arrivedCount = all.count { mdArrived(it.stage) }
     val trips = data.liveTrips
     val filter = tripFilter?.takeIf { id -> trips.any { it.id == id } }
-    val stillOn = all.count { it.stage == Stage.LOADED }
-    val onVan = all.filter { it.stage == Stage.LOADED && (filter == null || it.tripId == filter) }
-        .sortedWith(compareBy<Movable>({ it.priority.ordinal }, { data.room(it.destRoomId)?.name ?: "~" }, { it.title }))
+    val order = compareBy<Movable>({ it.priority.ordinal }, { data.room(it.destRoomId)?.name ?: "~" }, { it.title })
+    // What travels with the person is not on the van: it is listed on its own, to be ticked off as it comes in.
+    val stillOn = all.count { it.stage == Stage.LOADED && !it.byHand() }
+    val onVan = all.filter { it.stage == Stage.LOADED && !it.byHand() && (filter == null || it.tripId == filter) }.sortedWith(order)
+    val withMe = if (filter != null) emptyList() else all.filter { it.stage == Stage.LOADED && it.byHand() }.sortedWith(order)
     val shown = arrival?.let { a -> if (a.isBox) data.box(a.id)?.toMovable() else data.item(a.id)?.toMovable() }
 
     Screen("Unload") {
@@ -115,21 +118,8 @@ fun UnloadScreen() {
                 text = "Boxes you pack and items marked Move appear here.",
             )
         } else {
-            MdProgressHeader(
-                Ratio(arrivedCount, all.size),
-                "$arrivedCount of ${all.size} delivered",
-                Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp),
-                sub = if (stillOn > 0) "$stillOn still on the $vehicle" else null,
-            ) {
-                if (trips.size > 1) Row(
-                    Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    GlassChip("All trips", selected = filter == null, onClick = { tripFilter = null })
-                    trips.forEach { t -> GlassChip(t.name, selected = filter == t.id, onClick = { tripFilter = t.id }) }
-                }
-            }
-            MdScanAction(scanning, if (mdNarrow()) "Scan labels" else "Scan labels at the door") { scanning = !scanning }
+            // Only the scan button stays put, as on Load: the count, the result and the list scroll under it.
+            MdScanAction(scanning, if (narrowScreen()) "Scan labels" else "Scan labels at the door") { scanning = !scanning }
             if (scanning) MdScanner(onScan)
 
             // Bring the result back into view if the list was scrolled down.
@@ -156,7 +146,23 @@ fun UnloadScreen() {
                         )
                     }
                 }
-                if (onVan.isNotEmpty() || filter != null) item(key = "hvan") { MdGroupHeader("Still on the $vehicle", onVan.size) }
+                item(key = "head") {
+                    ProgressCard(
+                        Ratio(arrivedCount, all.size),
+                        "$arrivedCount of ${all.size} delivered",
+                        Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp),
+                        sub = if (stillOn > 0) "$stillOn still on the $vehicle" else null,
+                    ) {
+                        if (trips.size > 1) Row(
+                            Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            GlassChip("All trips", selected = filter == null, onClick = { tripFilter = null })
+                            trips.forEach { t -> GlassChip(t.name, selected = filter == t.id, onClick = { tripFilter = t.id }) }
+                        }
+                    }
+                }
+                if (onVan.isNotEmpty() || filter != null) item(key = "hvan") { ListHeading("Still on the $vehicle", MdHeadingPadding, count = onVan.size) }
                 if (onVan.isEmpty()) item(key = "empty") {
                     when {
                         // Only the trip being looked at is empty.
@@ -174,7 +180,15 @@ fun UnloadScreen() {
                 }
                 items(onVan, key = { "m" + it.id }) { m ->
                     MdThingRow(m, carried = carried[m.id] ?: 0, onClick = { deliver(m) }) {
-                        MdRowButton("Here", onClick = { deliver(m) })
+                        RowButton("Here", onClick = { deliver(m) })
+                    }
+                }
+                if (withMe.isNotEmpty()) {
+                    item(key = "hwithme") { ListHeading("Travelling with you", MdHeadingPadding, count = withMe.size) }
+                    items(withMe, key = { "w" + it.id }) { m ->
+                        MdThingRow(m, carried = carried[m.id] ?: 0, onClick = { deliver(m) }) {
+                            RowButton("Here", onClick = { deliver(m) })
+                        }
                     }
                 }
             }
@@ -243,20 +257,15 @@ private fun MdArrivalPanel(m: Movable, arrival: MdArrival, carried: Int, onDamag
             if (where.isNotBlank()) Text(where, color = fg, style = MaterialTheme.typography.titleMedium)
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            MdThumb(m.id, mdKindIcon(if (m.isBox) m.kind ?: ContainerKind.CARTON else null), size = 60.dp)
+            ThingThumb(m.id, m.picture(), size = 60.dp)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(m.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                if (carried > 0) GlassChip(mdCount(carried, "thing") + " inside")
+                InsideChip(carried)
             }
         }
-        val flags = listOfNotNull<Pair<ImageVector, String>>(
-            (Pic.Fragile to "Fragile").takeIf { m.fragile },
-            (Pic.Upright to "Keep upright").takeIf { m.upright },
-            (if (m.isBox) Pic.Heavy to "Heavy" else Pic.TwoPeople to "2 people").takeIf { m.heavy },
-            (Pic.FirstNight to "First night").takeIf { m.priority == Priority.FIRST_NIGHT },
-            (Pic.Damage to "Damage noted").takeIf { m.damaged },
-        )
+        // The same warnings, in the same words, as on every list; larger here, to be read while carrying.
+        val flags = m.flags() + listOfNotNull((Pic.Damage to "Damage noted").takeIf { m.damaged })
         if (flags.isNotEmpty()) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 flags.forEach { (icon, label) ->
@@ -269,15 +278,16 @@ private fun MdArrivalPanel(m: Movable, arrival: MdArrival, carried: Int, onDamag
             }
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            MdRowButton("Report damage", onDamage, forward = false, icon = Pic.Damage)
-            if (!already) MdRowButton("Undo", onUndo, forward = false, icon = Icons.Default.Undo)
+            RowButton("Report damage", onDamage, forward = false, icon = Pic.Damage)
+            if (!already) RowButton("Undo", onUndo, forward = false, icon = Icons.Default.Undo)
         }
     }
 }
 
 /**
  * Reporting damage, in the place of the arrival panel: the photo comes first, as one
- * large camera target. A note is optional: say it, or tap the keyboard to type it.
+ * large camera target. What happened is optional, and entered as on the box's or item's
+ * own page: the usual words to tap, or said, or typed behind the pencil.
  */
 @Composable
 private fun MdDamagePanel(m: Movable, onClose: () -> Unit) {
@@ -285,7 +295,6 @@ private fun MdDamagePanel(m: Movable, onClose: () -> Unit) {
     val data = appData()
     val saved = (if (m.isBox) data.box(m.id)?.damageNote else data.item(m.id)?.damageNote) ?: ""
     var note by remember(m.id) { mutableStateOf(saved) }
-    var typing by remember(m.id) { mutableStateOf(false) }
     Column(
         Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth()
             .glass(RoundedCornerShape(28.dp), GlassTone.Red, sheen = true).padding(12.dp),
@@ -300,24 +309,11 @@ private fun MdDamagePanel(m: Movable, onClose: () -> Unit) {
             }
         }
         PhotoHero(m.id, PhotoKind.DAMAGE, label = "Damage", height = 160.dp, emptyText = "Photograph it")
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(
-                note.ifBlank { "No note" }, style = MaterialTheme.typography.bodyLarge,
-                color = if (note.isBlank()) Night.TextDim else Night.Text, modifier = Modifier.weight(1f),
-            )
-            SpeakButton("What is damaged?", contentDescription = "Say what is damaged") { said -> note = if (note.isBlank()) said else "$note, $said" }
-            GlassOrb(Icons.Default.Keyboard, "Type a note", onClick = { typing = !typing })
-        }
-        if (typing) {
-            OutlinedTextField(
-                value = note, onValueChange = { note = it }, label = { Text("What is damaged?") },
-                colors = glassFieldColors(), minLines = 2, modifier = Modifier.fillMaxWidth(),
-            )
-        }
+        DamageText(note, { note = it }, key = m.id + ":arrival-damage")
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            MdRowButton("Save", onClick = { mdSetDamage(store, m, true, note.trim()); onClose() }, icon = Icons.Default.Check)
-            if (m.damaged) MdRowButton("Not damaged", onClick = { mdSetDamage(store, m, false, ""); onClose() }, forward = false)
-            MdRowButton("Cancel", onClose, forward = false)
+            RowButton("Save", onClick = { mdSetDamage(store, m, true, note.trim()); onClose() }, icon = Icons.Default.Check, look = RowButtonLook.Primary)
+            if (m.damaged) RowButton("Not damaged", onClick = { mdSetDamage(store, m, false, ""); onClose() }, forward = false)
+            RowButton("Cancel", onClose, forward = false)
         }
     }
 }

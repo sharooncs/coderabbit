@@ -67,17 +67,8 @@ fun BoxesScreen() {
         back = false,
         tab = "boxes",
         actions = { TopActions() },
-        fab = {
-            // With no boxes yet, the picture in the middle of the page carries the one button.
-            if (boxes.isNotEmpty()) {
-                ExtendedFloatingActionButton(
-                    containerColor = Night.Mint, contentColor = Night.OnMint,
-                    onClick = { nav.open("pack") },
-                    icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                    text = { Text("Pack a box") },
-                )
-            }
-        },
+        // With no boxes yet, the picture in the middle of the page carries the one button.
+        fab = { if (boxes.isNotEmpty()) ListFab(Icons.Default.Add, "Pack a box") { nav.open("pack") } },
     ) {
         if (boxes.isEmpty()) {
             ScrollColumn {
@@ -87,11 +78,7 @@ fun BoxesScreen() {
                     action = "Pack the first box", onAction = { nav.open("pack") },
                 )
                 if (data.uses(Part.LABELS)) {
-                    TextButton(onClick = { nav.open("labels") }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
-                        Icon(Icons.Default.Print, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Print labels first")
-                    }
+                    GlassChip("Print labels first", Modifier.align(Alignment.CenterHorizontally), icon = Icons.Default.Print, onClick = { nav.open("labels") })
                 }
             }
         } else {
@@ -100,32 +87,27 @@ fun BoxesScreen() {
                 contentPadding = PaddingValues(top = 4.dp, bottom = 96.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                item(key = "header") {
-                    Column {
-                        if (duplicates.isNotEmpty()) {
-                            GlassCard(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp), tone = GlassTone.Red) {
-                                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.onErrorContainer)
-                                    Spacer(Modifier.width(12.dp))
-                                    Text(
-                                        "Label used twice: ${duplicates.joinToString()}. Open one and change its label.",
-                                        color = MaterialTheme.colorScheme.onErrorContainer,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                    )
-                                }
-                            }
+                if (duplicates.isNotEmpty()) item(key = "duplicates") {
+                    GlassCard(Modifier.padding(horizontal = 16.dp), tone = GlassTone.Red) {
+                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.onErrorContainer)
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                "Label used twice: ${duplicates.joinToString()}. Open one and change its label.",
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
                         }
-                        // Where it has got to: the room, then each state with how many are in it.
+                    }
+                }
+                // One line of filters that stays at the top as the list scrolls, as on Items. The room, then
+                // where things have got to, each state with how many are in it; what kind of container and
+                // what is in it are two chips that open a list, and only appear once there is more than one.
+                stickyHeader(key = "filters") {
+                    Column(Modifier.fillMaxWidth().groundBand()) {
                         ChipRow {
-                            if (destRooms.isNotEmpty()) RoomFilter(destRooms, room, onPick = { roomId = it })
+                            if (destRooms.isNotEmpty()) RoomFilterChip(destRooms, room?.id, onPick = { roomId = it })
                             GlassChip("All ${top.size}", selected = state == null, onClick = { state = null })
-                            // Right beside the total, so it is plain that these are extra to it, not part of it.
-                            if (nested.isNotEmpty() || state == "INSIDE") {
-                                GlassChip(
-                                    "Inside another ${nested.size}", icon = Icons.Default.SubdirectoryArrowRight,
-                                    selected = state == "INSIDE", onClick = { state = if (state == "INSIDE") null else "INSIDE" },
-                                )
-                            }
                             PackState.entries.forEach { s ->
                                 val n = top.count { it.packState() == s }
                                 if (n > 0 || state == s.name) {
@@ -133,33 +115,52 @@ fun BoxesScreen() {
                                     GlassChip("${s.label(vehicle)} $n", icon = s.picture(), selected = state == s.name, onClick = { state = if (state == s.name) null else s.name })
                                 }
                             }
-                        }
-                        // What it is: only worth a row once there is more than one kind.
-                        val kinds = ContainerKind.entries.filter { k -> boxes.any { it.kind == k } }
-                        if (kinds.size > 1 || kind != null) ChipRow {
-                            kinds.forEach { k ->
+                            // Extra to the total, not part of it: what is packed inside those.
+                            if (nested.isNotEmpty() || state == "INSIDE") {
                                 GlassChip(
-                                    "${k.groupLabel()} ${boxes.count { it.kind == k }}", icon = k.picture(),
-                                    selected = kind == k, onClick = { kindName = if (kind == k) null else k.name },
+                                    "Inside another ${nested.size}", icon = Icons.Default.SubdirectoryArrowRight,
+                                    selected = state == "INSIDE", onClick = { state = if (state == "INSIDE") null else "INSIDE" },
                                 )
                             }
-                        }
-                        // What is in it.
-                        val used = BOX_CATEGORIES.filter { c -> categories.values.any { it == c } }
-                        if (used.size > 1 || category != null) ChipRow {
-                            used.forEach { c ->
-                                GlassChip(
-                                    "$c ${categories.values.count { it == c }}", icon = categoryPicture(c),
-                                    selected = category == c, onClick = { category = if (category == c) null else c },
-                                )
+                            val kinds = ContainerKind.entries.filter { k -> boxes.any { it.kind == k } }
+                            if (kinds.size > 1 || kind != null) {
+                                MenuChip(
+                                    kind?.groupLabel() ?: "Kind", selected = kind != null, description = "Choose a kind of container",
+                                    leading = { Icon(kind?.picture() ?: Pic.Box, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                                ) { close ->
+                                    DropdownMenuItem(text = { Text("All kinds") }, onClick = { kindName = null; close() })
+                                    kinds.forEach { k ->
+                                        DropdownMenuItem(
+                                            text = { Text("${k.groupLabel()} ${boxes.count { it.kind == k }}") },
+                                            leadingIcon = { Icon(k.picture(), contentDescription = null, modifier = Modifier.size(18.dp)) },
+                                            onClick = { kindName = k.name; close() },
+                                        )
+                                    }
+                                }
+                            }
+                            val used = BOX_CATEGORIES.filter { c -> categories.values.any { it == c } }
+                            if (used.size > 1 || category != null) {
+                                MenuChip(
+                                    category ?: "Contents", selected = category != null, description = "Choose what is inside",
+                                    leading = { Icon(category?.let { categoryPicture(it) } ?: Icons.Default.Category, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                                ) { close ->
+                                    DropdownMenuItem(text = { Text("All contents") }, onClick = { category = null; close() })
+                                    used.forEach { c ->
+                                        DropdownMenuItem(
+                                            text = { Text("$c ${categories.values.count { it == c }}") },
+                                            leadingIcon = { Icon(categoryPicture(c), contentDescription = null, modifier = Modifier.size(18.dp)) },
+                                            onClick = { category = c; close() },
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
                 }
                 if (rows.isEmpty()) item(key = "none") {
                     EmptyState(
-                        Icons.Default.SearchOff, "No boxes match",
-                        action = "Show all boxes", onAction = { state = null; roomId = null; kindName = null; category = null },
+                        Icons.Default.SearchOff, "Nothing matches",
+                        action = "Show everything", onAction = { state = null; roomId = null; kindName = null; category = null },
                     )
                 }
                 items(rows, key = { it.box.id }) { r ->
@@ -182,47 +183,6 @@ private fun ChipRow(content: @Composable RowScope.() -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         content = content,
     )
-}
-
-/** The room filter as one chip that opens a list of rooms. */
-@Composable
-private fun RoomFilter(rooms: List<Room>, selected: Room?, onPick: (String?) -> Unit) {
-    var open by remember { mutableStateOf(false) }
-    Box {
-        // Built like a GlassChip, with room for the arrow that says it opens a list.
-        Box(
-            Modifier.minimumInteractiveComponentSize().clip(CircleShape).clickable(role = Role.DropdownList) { open = true },
-            contentAlignment = Alignment.Center,
-        ) {
-            Row(
-                Modifier.glass(CircleShape, if (selected != null) GlassTone.Mint else GlassTone.Plain, shadow = 0.dp)
-                    .heightIn(min = 34.dp).padding(start = 12.dp, end = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                if (selected != null) ColorDot(selected.color) else Icon(Pic.Room, contentDescription = null, tint = Night.Text, modifier = Modifier.size(16.dp))
-                Text(
-                    selected?.name ?: "All rooms", maxLines = 1, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium,
-                    color = if (selected != null) Night.MintPale else Night.Text,
-                )
-                Icon(Icons.Default.ArrowDropDown, contentDescription = "Choose a room", modifier = Modifier.size(18.dp))
-            }
-        }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            DropdownMenuItem(
-                text = { Text("All rooms") },
-                leadingIcon = { Icon(Pic.Room, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                onClick = { onPick(null); open = false },
-            )
-            rooms.forEach { r ->
-                DropdownMenuItem(
-                    text = { Text(r.name) },
-                    leadingIcon = { ColorDot(r.color) },
-                    onClick = { onPick(r.id); open = false },
-                )
-            }
-        }
-    }
 }
 
 /**
@@ -267,7 +227,7 @@ fun PackScreen() {
             item(key = "room") {
                 Column(Modifier.padding(horizontal = 16.dp)) {
                     Row(Modifier.heightIn(min = 28.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        ContainerHeading("Packing in", Modifier.weight(1f))
+                        ListHeading("Packing in", Modifier.weight(1f))
                         val to = room?.let { data.room(data.packDefaults(it.id).destRoomId) }
                         if (to != null) {
                             Hint("Goes to")
@@ -275,7 +235,7 @@ fun PackScreen() {
                         }
                     }
                     if (rooms.isEmpty()) {
-                        TextButton(onClick = { nav.open("rooms") }) { Text("Add rooms") }
+                        RowButton("Add rooms", onClick = { nav.open("rooms") }, forward = false)
                     } else {
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             rooms.forEach { r ->
@@ -309,7 +269,7 @@ fun PackScreen() {
             }
             if (fromRoom.isNotEmpty()) {
                 if (room == null) item(key = "list-title") {
-                    ContainerHeading("Packed with no room yet", Modifier.padding(horizontal = 16.dp))
+                    ListHeading("Packed with no room yet", Modifier.padding(horizontal = 16.dp))
                 }
                 items(fromRoom, key = { it.id }) { b ->
                     ContainerRow(b, data, Modifier.padding(horizontal = 16.dp), inside = data.parentOf(b), onOpen = { nav.open("box/${it.id}") })

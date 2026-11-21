@@ -64,8 +64,8 @@ fun TriageScreen() {
     val current = queue.firstOrNull { it.id !in skipped } ?: queue.firstOrNull()
 
     // On a small screen or with large text, the picture buttons go two to a row so their words fit.
-    val config = LocalConfiguration.current
-    val narrow = config.screenWidthDp / config.fontScale < 340
+    val narrow = narrowScreen()
+    val seen = rememberSeenAnswers()
 
     Screen("Triage") {
         when {
@@ -115,13 +115,17 @@ fun TriageScreen() {
                         },
                         style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f),
                     )
-                    TextButton(onClick = { nav.open("item/${current.id}") }) { Text("Open details") }
+                    GlassChip("Open details", onClick = { nav.open("item/${current.id}") })
                 }
 
                 TriagePhoto(current, data, narrow) { nav.open("item/${current.id}") }
 
                 // What others have suggested or asked: an Organiser settles it here, the rest see that it waits.
-                suggestions.forEach { p -> if (mayDecide) ProposalReview(p, data) else WaitingTag(p, data) }
+                suggestions.forEach { p -> Suggestion(p, data) }
+                // Back in the queue because what this person suggested was declined: they are told why, once.
+                data.declinedOn(current.id, store.me, seen.ids, ProposalKind.ITEM_DECISION, ProposalKind.QUESTION)?.let { p ->
+                    DeclinedNote(p, data, what = data.proposalText(p).takeIf { p.kind != ProposalKind.QUESTION }, onSeen = { seen.mark(p.id) })
+                }
 
                 fun done() {
                     skipped = skipped - current.id
@@ -136,7 +140,7 @@ fun TriageScreen() {
                             if (!store.decideOrSuggest(context, current.id, d, asking)) return
                             // An Organiser choosing what it already was has said no to what others suggested instead.
                             if (mayDecide && d == current.disposition) {
-                                store.data.value.waitingFor(current.id, ProposalKind.ITEM_DECISION).forEach { store.decline(it.id, "It stays as it is: ${d.label}") }
+                                store.data.value.waitingFor(current.id, ProposalKind.ITEM_DECISION).forEach { store.decline(it.id, "It stays as it is: ${d.label}").okOrSay(context) }
                             }
                             done()
                         }
@@ -148,7 +152,7 @@ fun TriageScreen() {
                                     Icons.Default.Sell, "Suggest selling" + (price?.let { " for " + money(data.move.currency, it) } ?: ""),
                                     onClick = { pick(Disposition.SELL, price) },
                                 )
-                                TextButton(onClick = { pricing = false }, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Something else") }
+                                GlassChip("Something else", modifier = Modifier.align(Alignment.CenterHorizontally), onClick = { pricing = false })
                             }
                         } else {
                             BigAction(Disposition.MOVE.icon(), Disposition.MOVE.label, onClick = { pick(Disposition.MOVE) })
@@ -164,17 +168,8 @@ fun TriageScreen() {
                         }
                     }
 
-                    else -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        // A Helper does not choose; one tap tells the Organisers this one needs them.
-                        BigAction(
-                            Icons.Default.QuestionMark, "Needs a decision",
-                            onClick = { if (store.ask(current.id).okOrSay(context)) done() },
-                            modifier = Modifier.weight(1f),
-                        )
-                        SpeakButton("What should they know about it?", contentDescription = "Ask with a spoken note", size = 56.dp) { said ->
-                            if (store.ask(current.id, said).okOrSay(context)) done()
-                        }
-                    }
+                    // A Helper does not choose; one tap tells the Organisers this one needs them.
+                    else -> AskForDecision(current.id, primary = true, onAsked = { done() })
                 }
 
                 if (queue.size > 1) {
