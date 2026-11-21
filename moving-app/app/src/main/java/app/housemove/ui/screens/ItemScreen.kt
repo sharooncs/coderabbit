@@ -119,12 +119,21 @@ fun ItemScreen(id: String) {
             // ---- what happens to it ------------------------------------------------------
 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (maySuggest) {
+                    Text(if (mayDecide) "What happens to it?" else "Suggest what happens to it", style = MaterialTheme.typography.titleMedium)
+                } else {
+                    // A Helper does not choose. They see how it stands and can say it needs deciding.
+                    val (state, tone) = data.itemState(item)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("What happens to it", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                        GlassChip(state, icon = item.disposition.icon(), tone = tone)
+                    }
+                }
                 // What others suggested or asked sits here, on the item: an Organiser settles it, the rest see it wait.
                 waitingDecision.forEach { p -> if (mayDecide) ProposalReview(p, data) else WaitingTag(p, data) }
                 if (!mayDecide && !item.gone && waitingDecision.none { it.by == me?.id }) MyLastAnswer(id, data)
 
                 if (maySuggest) {
-                    Text(if (mayDecide) "What happens to it?" else "Suggest what happens to it", style = MaterialTheme.typography.titleMedium)
                     IconChoice(
                         options = DECISIONS.map { Choice(it, it.label, it.icon()) },
                         selected = if (pricing && !mayDecide) Disposition.SELL else item.disposition,
@@ -149,23 +158,16 @@ fun ItemScreen(id: String) {
                             )
                         }
                     }
-                } else {
-                    // A Helper does not choose. They see how it stands and can say it needs deciding.
-                    val (state, tone) = data.itemState(item)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("What happens to it", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                        GlassChip(state, icon = item.disposition.icon(), tone = tone)
-                    }
-                    if (waitingDecision.none { it.by == me?.id }) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            BigAction(
-                                Icons.Default.QuestionMark, "Needs a decision",
-                                onClick = { store.ask(id).orSay(context) },
-                                modifier = Modifier.weight(1f), primary = item.disposition == Disposition.UNDECIDED,
-                            )
-                            SpeakButton("What should they know about it?", contentDescription = "Ask with a spoken note", size = 56.dp) { said ->
-                                store.ask(id, said).orSay(context)
-                            }
+                } else if (waitingDecision.none { it.by == me?.id }) {
+                    // One tap asks the Organisers; the microphone asks with a few words of why.
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        BigAction(
+                            Icons.Default.QuestionMark, "Needs a decision",
+                            onClick = { store.ask(id).orSay(context) },
+                            modifier = Modifier.weight(1f), primary = item.disposition == Disposition.UNDECIDED,
+                        )
+                        SpeakButton("What should they know about it?", contentDescription = "Ask with a spoken note", size = 56.dp) { said ->
+                            store.ask(id, said).orSay(context)
                         }
                     }
                 }

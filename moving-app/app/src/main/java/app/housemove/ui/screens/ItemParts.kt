@@ -102,7 +102,7 @@ internal fun AppData.waitingFor(itemId: String, vararg kinds: ProposalKind): Lis
 
 /** How an item stands, in a word or two, and the tone that goes with it. */
 internal fun AppData.itemState(x: Item): Pair<String, GlassTone> = when (x.disposition) {
-    Disposition.UNDECIDED -> "Not decided" to GlassTone.Amber
+    Disposition.UNDECIDED -> "Undecided" to GlassTone.Amber
     Disposition.MOVE -> when (x.stage) {
         Stage.AT_ORIGIN -> "Move" to GlassTone.Plain
         Stage.DONE -> "In place" to GlassTone.Mint
@@ -118,9 +118,10 @@ internal fun AppData.itemState(x: Item): Pair<String, GlassTone> = when (x.dispo
 
 /**
  * Decide what happens to an item, or suggest it, whichever this phone's person may do.
- * An Organiser's tap is the decision (and a thing marked Move gets the room its old room
- * points to). Anyone else's becomes a suggestion that waits for approval. A waiting
- * question about the item is answered by it. Says why when the Store refuses.
+ * An Organiser's tap is the decision, and a thing marked Move gets the room its old room
+ * is linked to (a room that is only a likely match is left for the room plan to offer).
+ * Anyone else's tap becomes a suggestion that waits for approval. A waiting question
+ * about the item is answered by it. Says why when the Store refuses.
  */
 internal fun Store.decideOrSuggest(context: Context, itemId: String, d: Disposition, price: Double? = null): Boolean {
     val now = data.value
@@ -131,7 +132,8 @@ internal fun Store.decideOrSuggest(context: Context, itemId: String, d: Disposit
         val out = if (question != null && d != Disposition.UNDECIDED) answer(question.id, d, asking) else decide(itemId, d, asking)
         if (out.ok && d == Disposition.MOVE) {
             val saved = data.value.item(itemId)
-            if (saved != null && saved.destRoomId == null) data.value.suggestDestRoom(saved.originRoomId)?.let { planRoom(itemId, it.id) }
+            val linked = data.value.room(saved?.originRoomId)?.mapsTo
+            if (saved != null && saved.destRoomId == null && linked != null) planRoom(itemId, linked)
         }
         return out.orSay(context)
     }
@@ -219,23 +221,24 @@ internal fun ProposalReview(p: Proposal, data: AppData, modifier: Modifier = Mod
                     if (p.note.isNotBlank()) Text("“${p.note}”", style = MaterialTheme.typography.bodySmall, color = Night.TextSoft)
                 }
             }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (question) {
                     Text("Choose what happens to it to answer.", style = MaterialTheme.typography.bodySmall, color = Night.TextSoft, modifier = Modifier.weight(1f))
                 } else {
-                    Button(onClick = { store.approve(p.id).orSay(context) }, modifier = Modifier.weight(1f).heightIn(min = 44.dp)) {
-                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Approve", maxLines = 1)
-                    }
+                    // Tight padding, so both words still fit side by side on a small phone with large text.
+                    Button(
+                        onClick = { store.approve(p.id).orSay(context) }, modifier = Modifier.weight(1f).heightIn(min = 44.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp),
+                    ) { Text("Approve", maxLines = 1) }
                 }
                 OutlinedButton(
                     onClick = { store.decline(p.id).orSay(context) },
                     modifier = (if (question) Modifier else Modifier.weight(1f)).heightIn(min = 44.dp),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Night.Text),
+                    contentPadding = PaddingValues(horizontal = if (question) 16.dp else 6.dp),
                 ) { Text(if (question) "Dismiss" else "Decline", maxLines = 1) }
                 if (!question) {
-                    SpeakButton("Why not?", contentDescription = "Decline and say why", size = 44.dp) { why -> store.decline(p.id, why).orSay(context) }
+                    SpeakButton("Why not?", contentDescription = "Decline and say why", size = 40.dp) { why -> store.decline(p.id, why).orSay(context) }
                 }
             }
         }

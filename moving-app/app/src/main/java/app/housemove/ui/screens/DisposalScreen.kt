@@ -14,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -153,7 +154,9 @@ private fun DisposalRow(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 // Something that has gone fades back, so what is still here stands out.
-                ItemPhoto(x.id, Modifier.size(68.dp).alpha(if (x.gone) 0.45f else 1f))
+                // On a small screen or with large text the picture gives way to the words, and the words get shorter.
+                val narrow = LocalConfiguration.current.let { it.screenWidthDp / it.fontScale < 340 }
+                ItemPhoto(x.id, Modifier.size(if (narrow) 48.dp else 68.dp).alpha(if (x.gone) 0.45f else 1f))
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
@@ -173,8 +176,8 @@ private fun DisposalRow(
                         )
                     }
                     if (selling) {
-                        val text = if (x.gone) "Sold for " + (x.soldFor?.let { money(currency, it) } ?: "?")
-                        else x.price?.let { "Asking " + money(currency, it) } ?: if (mayPrice) "Set a price" else "No price yet"
+                        val text = if (x.gone) (if (narrow) "" else "Sold for ") + (x.soldFor?.let { money(currency, it) } ?: "?")
+                        else x.price?.let { (if (narrow) "" else "Asking ") + money(currency, it) } ?: if (mayPrice) "Set a price" else "No price yet"
                         val icon = if (x.gone) Icons.Default.Payments else Icons.Default.Sell
                         if (mayPrice) GlassChip(text, icon = icon, selected = pricing, onClick = { pricing = !pricing })
                         else GlassChip(text, Modifier.padding(top = 6.dp), icon = icon, tone = if (x.gone) GlassTone.Mint else GlassTone.Plain)

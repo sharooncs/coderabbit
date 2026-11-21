@@ -133,7 +133,12 @@ fun TriageScreen() {
                         var pricing by remember(current.id) { mutableStateOf(false) }
                         var price by remember(current.id) { mutableStateOf(current.price) }
                         fun pick(d: Disposition, asking: Double? = null) {
-                            if (store.decideOrSuggest(context, current.id, d, asking)) done()
+                            if (!store.decideOrSuggest(context, current.id, d, asking)) return
+                            // An Organiser choosing what it already was has said no to what others suggested instead.
+                            if (mayDecide && d == current.disposition) {
+                                store.data.value.waitingFor(current.id, ProposalKind.ITEM_DECISION).forEach { store.decline(it.id, "It stays as it is: ${d.label}") }
+                            }
+                            done()
                         }
                         if (!mayDecide) Text("Suggest what happens to it", style = MaterialTheme.typography.titleMedium)
                         if (pricing) {
@@ -205,6 +210,11 @@ private fun TriagePhoto(x: Item, data: AppData, narrow: Boolean, onOpen: () -> U
                 .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xD9081220))))
         )
         RoomBadge(data.room(x.originRoomId), Modifier.align(Alignment.TopStart).padding(12.dp))
+        // Something already decided is here because someone suggests otherwise: say how it stands now.
+        if (x.disposition != Disposition.UNDECIDED) {
+            val (state, tone) = data.itemState(x)
+            PhotoMark(x.disposition.icon(), "Now: $state", Modifier.align(Alignment.TopEnd).padding(12.dp), tint = tone.onPhoto())
+        }
         Text(
             x.title(), color = Color.White, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
             modifier = Modifier.align(Alignment.BottomStart).padding(start = 16.dp, end = 16.dp, bottom = 12.dp),

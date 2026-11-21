@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -285,11 +286,14 @@ private fun RoomBlock(
                 Text(room.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text("${here.size} item${if (here.size == 1) "" else "s"}", color = Night.TextDim, style = MaterialTheme.typography.bodySmall, maxLines = 1)
             }
+            // On a small screen or with large text the room's name comes first, so the door says less.
+            val narrow = LocalConfiguration.current.let { it.screenWidthDp / it.fontScale < 340 }
             if (door != null) {
-                GlassChip(if (inches) "${fmtNum(door / 2.54)} in door" else "${fmtNum(door)} cm door", icon = Icons.Default.DoorFront)
+                val width = if (inches) "${fmtNum(door / 2.54)} in" else "${fmtNum(door)} cm"
+                GlassChip(if (narrow) width else "$width door", icon = Icons.Default.DoorFront)
                 Spacer(Modifier.width(6.dp))
             } else {
-                GlassChip("Add door width", icon = Icons.Default.DoorFront, onClick = onAddDoor)
+                GlassChip(if (narrow) "Door" else "Add door width", icon = if (narrow) Icons.Default.Add else Icons.Default.DoorFront, onClick = onAddDoor)
             }
         }
         Box(Modifier.fillMaxWidth().height(2.dp).background(Brush.horizontalGradient(listOf(colour, colour.copy(alpha = 0.12f)))))

@@ -34,6 +34,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import org.robolectric.shadows.ShadowToast
@@ -290,7 +291,7 @@ class ItemFlowsTest {
     fun aHelperSeesNoDecisionTilesAndAsksForADecision() {
         team()
         show(hal, "item/$sofa")
-        see("Not decided")
+        see("Undecided")
         for (choice in listOf("Move", "Sell", "Donate", "Bin", "Store")) cannotTap(choice)
         said += "one leg is broken"
         tapDesc("Ask with a spoken note")
@@ -360,6 +361,18 @@ class ItemFlowsTest {
         tap("Store") // declined, so it is still hers to decide
         see("All decided")
         assertTrue(asha.waiting().isEmpty())
+
+        // Later the Decider would rather sell the table that is marked Move. Choosing Move again keeps it and says no.
+        sync(asha, dee)
+        assertTrue(dee.suggestDecision(table, Disposition.SELL, 30.0).ok)
+        sync(asha, dee)
+        show(asha, "triage")
+        see("Now: Move")
+        see("Dee: Sell for £ 30")
+        tap("Move")
+        assertEquals(ProposalState.DECLINED, asha.data.value.proposalsFor(table).first().state)
+        assertEquals(Disposition.MOVE, asha.item(table).disposition)
+        see("All decided")
     }
 
     // ---- carrying out -------------------------------------------------------------------
@@ -558,7 +571,17 @@ class ItemFlowsTest {
      */
     @Test
     @Config(sdk = [34], qualifiers = "w411dp-h1300dp-mdpi")
-    fun picturesOfWhatEachRoleSees() {
+    fun picturesOfWhatEachRoleSees() = rolePictures("build/audit/roles", small = false)
+
+    /** The same states on a small, cheap phone with the system font enlarged: nothing may crash or lose its buttons. */
+    @Test
+    @Config(sdk = [34], qualifiers = "w320dp-h1100dp-xhdpi")
+    fun whatEachRoleSeesFitsASmallPhoneWithLargeText() {
+        RuntimeEnvironment.setFontScale(1.3f)
+        rolePictures("build/audit/roles-small", small = true)
+    }
+
+    private fun rolePictures(dir: String, small: Boolean) {
         team()
         val tv = asha.createItem("Television", oldLounge.id).id
         val chair = asha.createItem(asha.data.value.defaultItemName(oldLounge.id), oldLounge.id).id
@@ -573,7 +596,7 @@ class ItemFlowsTest {
         fun shot(name: String) {
             Thread.sleep(150) // photos are decoded on another thread
             rule.waitForIdle()
-            rule.onRoot().captureRoboImage("build/audit/roles/$name.png")
+            rule.onRoot().captureRoboImage("$dir/$name.png")
         }
 
         show(dee, "item/$sofa")
@@ -614,7 +637,7 @@ class ItemFlowsTest {
         sync(asha, dee)
         show(dee, "disposal")
         tapDesc("Gone: Sofa")
-        tap("Sold for £ 50")
+        tap(if (small) "£ 50" else "Sold for £ 50") // a small screen says it shorter
         shot("disposal-decider-approved")
         show(dee, "item/$sofa")
         shot("item-decider-approved")
