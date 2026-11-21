@@ -103,7 +103,7 @@ fun ItemsScreen() {
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item(key = "shortcuts") {
-                val tiles = shortcuts(data, store.can(Action.SUGGEST))
+                val tiles = shortcuts(data, store.can(Action.SUGGEST), store.can(Action.APPROVE))
                 TileGrid(tiles, Modifier.padding(horizontal = 16.dp), columns = tiles.size.coerceAtMost(if (narrow) 2 else 3)) { s, m ->
                     Tile(s.icon, s.title, onClick = { nav.open(s.route) }, modifier = m, status = s.status, done = s.done, alert = s.alert)
                 }
@@ -174,29 +174,35 @@ fun ItemsScreen() {
  * The other ways into the catalogue, each with how far along it is. Parts that are switched
  * off are left out, and so are deciding and planning for someone who may do neither.
  */
-private fun shortcuts(data: AppData, maySuggest: Boolean): List<Shortcut> {
+private fun shortcuts(data: AppData, maySuggest: Boolean, mayApprove: Boolean): List<Shortcut> {
     val out = ArrayList<Shortcut>()
     out += Shortcut(Pic.Camera, "Walk-through", "walk", status = "Add by photo")
+    // An Organiser is told first of what others are waiting on them for.
+    val asked = if (mayApprove) data.waitingProposals() else emptyList()
     if (data.uses(Part.TRIAGE) && maySuggest) {
         val undecided = data.liveItems.count { it.disposition == Disposition.UNDECIDED }
+        val toApprove = asked.count { it.kind == ProposalKind.ITEM_DECISION || it.kind == ProposalKind.QUESTION }
         out += Shortcut(
             Icons.Default.Rule, "Triage", "triage",
-            status = if (undecided > 0) "$undecided to decide" else "All decided", done = undecided == 0,
+            status = if (toApprove > 0) "$toApprove to approve" else if (undecided > 0) "$undecided to decide" else "All decided",
+            done = undecided == 0 && toApprove == 0,
         )
     }
     if (data.uses(Part.PLAN) && maySuggest) {
         val moving = data.movingItems()
         val noRoom = moving.count { data.room(it.destRoomId) == null }
         val wontFit = moving.count { data.fitOf(it) == Fit.NO && !it.needsDisassembly }
+        val toApprove = asked.count { it.kind == ProposalKind.ITEM_ROOM }
         out += Shortcut(
             Icons.Default.Map, "Plan rooms", "plan",
             status = when {
                 wontFit > 0 -> "$wontFit won't fit"
+                toApprove > 0 -> "$toApprove to approve"
                 noRoom > 0 -> "$noRoom need a room"
                 moving.isEmpty() -> null
                 else -> "All placed"
             },
-            done = moving.isNotEmpty() && noRoom == 0 && wontFit == 0,
+            done = moving.isNotEmpty() && noRoom == 0 && wontFit == 0 && toApprove == 0,
             alert = wontFit > 0,
         )
     }

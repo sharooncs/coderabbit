@@ -390,7 +390,7 @@ class FlowsTest {
         tap("Damaged in the move")
         assertTrue(it().damaged)
 
-        tapDesc("Delete item")
+        tap("Delete item") // at the very end of the page
         tap("Delete")
         assertNull(data.item(item.id))
         go("item/${item.id}")

@@ -106,8 +106,7 @@ fun ItemScreen(id: String) {
     Screen(
         title = item.title(),
         actions = {
-            TopAction(if (naming) Icons.Default.Check else Icons.Default.Edit, if (naming) "Done renaming" else "Rename") { naming = !naming }
-            TopAction(Icons.Default.Delete, "Delete item") { confirmDelete = true }
+            TopAction(if (naming) Icons.Default.Check else Icons.Default.Edit, if (naming) "Done editing the name" else "Edit the name") { naming = !naming }
         },
     ) {
         ScrollColumn {
@@ -128,7 +127,7 @@ fun ItemScreen(id: String) {
                     Text(if (mayDecide) "What happens to it?" else "Suggest what happens to it", style = MaterialTheme.typography.titleMedium)
                     IconChoice(
                         options = DECISIONS.map { Choice(it, it.label, it.icon()) },
-                        selected = item.disposition,
+                        selected = if (pricing && !mayDecide) Disposition.SELL else item.disposition,
                         onPick = { d ->
                             when {
                                 mayDecide -> store.decideOrSuggest(context, id, if (item.disposition == d) Disposition.UNDECIDED else d)
@@ -478,7 +477,15 @@ fun ItemScreen(id: String) {
                 })
             }
 
-            Spacer(Modifier.height(12.dp))
+            // Rarely wanted and not undone: at the very end, out of the way of everything else.
+            TextButton(
+                onClick = { confirmDelete = true }, modifier = Modifier.align(Alignment.CenterHorizontally),
+                colors = ButtonDefaults.textButtonColors(contentColor = Night.Red),
+            ) {
+                Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Delete item")
+            }
         }
     }
 
