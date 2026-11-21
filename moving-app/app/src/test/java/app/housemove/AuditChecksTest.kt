@@ -19,7 +19,6 @@ import androidx.navigation.NavHostController
 import app.housemove.data.*
 import app.housemove.ui.AppRoot
 import com.github.takahirom.roborazzi.captureRoboImage
-import org.junit.After
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -35,12 +34,14 @@ import kotlin.math.roundToInt
 
 /**
  * One screen for the checks to open: a route, and optionally a change to the data
- * made just before it is opened (undone afterwards).
+ * made just before it is opened (undone afterwards). [routeFor] gives the route when
+ * it depends on the sample data, such as the page of one person.
  */
 internal class AuditScreen(
     val route: String,
     val name: String = route,
     val from: String = "",
+    val routeFor: ((Store) -> String)? = null,
     val prepare: ((Store) -> Unit)? = null,
 ) {
     /** Name of its picture file: the route with / replaced by _. */
@@ -48,22 +49,22 @@ internal class AuditScreen(
 }
 
 /**
- * THE LIST OF SCREENS. Every check opens each of these. To cover a new screen, add its
- * route here; give routes with an argument an id that exists in the sample data.
+ * THE LIST OF SCREENS. Every check opens each of these: the screens of the picture
+ * sheets (AuditSampleData.ROUTES), and the few below that need something more than a
+ * route. To cover a new screen, add its route to AuditSampleData.ROUTES; give routes
+ * with an argument an id that exists in the sample data.
  *
- * Two kinds of route are picked up without being listed, so a newly added screen is
- * not missed: routes that AuditShotsTest renders, and routes in the navigation graph
- * that take no argument. The report names them, and names any route with an argument
- * that has no example here.
+ * Routes in the navigation graph that take no argument are picked up without being
+ * listed, so a newly added screen is not missed. The report names them, and names any
+ * route with an argument that has no example here.
  */
-internal val AUDIT_SCREENS: List<AuditScreen> = listOf(
-    "home", "items", "item/wardrobe", "item/fridge", "item/sofa", "walk", "triage", "plan", "disposal", "electronics",
-    "boxes", "box/box1", "box/box2", "box/box5", "pack", "labels", "lists", "packorder", "tasks",
-    "moveday", "load", "unload", "reconcile", "sweep", "records/ORIGIN", "unpack", "budget", "reports",
-    "rooms", "more", "sync", "settings", "search", "scan",
-).map { AuditScreen(it) } + listOf(
+internal val AUDIT_SCREENS: List<AuditScreen> = AuditSampleData.ROUTES.map { AuditScreen(it) } + listOf(
+    // One person: somebody who has not joined yet, with their invite showing.
+    AuditScreen("person/{id}?invite={invite}", name = "person", routeFor = { s ->
+        "person/" + s.data.value.people.first { it.joinedAt == 0L && !it.removed }.id + "?invite=true"
+    }),
     // The first-run screen only shows while the move is not set up yet.
-    AuditScreen("setup") { s -> s.setMove { it.copy(setupDone = false) } },
+    AuditScreen("setup", prepare = { s -> s.setMove { it.copy(setupDone = false) } }),
 )
 
 /** Screens timed with the large move, and the ones where a search word is typed as well. */
@@ -108,9 +109,6 @@ class AuditChecksTest {
         const val MAX_VIEWS = 6
     }
 
-    @After
-    fun tidy() = AuditSampleData.cleanUp()
-
     // ---- opening screens -----------------------------------------------------------
 
     private fun show(s: Store) {
@@ -134,11 +132,10 @@ class AuditChecksTest {
         return out
     }
 
-    /** The listed screens, plus routes found in AuditShotsTest and in the navigation graph. */
+    /** The listed screens, plus routes found in the navigation graph. */
     private fun screens(): List<AuditScreen> {
         val known = AUDIT_SCREENS.map { it.route }.toMutableSet()
         val extra = ArrayList<AuditScreen>()
-        for (r in AuditSampleData.shotsRoutes()) if (known.add(r)) extra += AuditScreen(r, from = "rendered by AuditShotsTest")
         for (r in graphRoutes()) if ('{' !in r && known.add(r)) extra += AuditScreen(r, from = "found in the navigation graph")
         return AUDIT_SCREENS.filter { it.prepare == null } + extra + AUDIT_SCREENS.filter { it.prepare != null }
     }
@@ -151,8 +148,9 @@ class AuditChecksTest {
         }
     }
 
+    /** Does [route] open the destination [pattern]? What follows a "?" is optional in both ("sync" opens "sync?code={code}"). */
     private fun fits(pattern: String, route: String): Boolean =
-        Regex(pattern.split(Regex("\\{[^}]*\\}")).joinToString("[^/]+") { Regex.escape(it) }).matches(route)
+        Regex(pattern.substringBefore('?').split(Regex("\\{[^}]*\\}")).joinToString("[^/]+") { Regex.escape(it) }).matches(route.substringBefore('?'))
 
     /**
      * Open [screen]. The answer says whether it is now on show; if not, why.
@@ -171,9 +169,10 @@ class AuditChecksTest {
             rule.waitForIdle()
         }
         var note = ""
+        val route = screen.routeFor?.invoke(store) ?: screen.route
         rule.runOnUiThread {
             try {
-                nav!!.navigate(screen.route)
+                nav!!.navigate(route)
             } catch (_: IllegalArgumentException) {
                 note = "there is no such route in this build"
             }
@@ -181,7 +180,7 @@ class AuditChecksTest {
         rule.waitForIdle()
         var pattern = ""
         rule.runOnUiThread { pattern = nav!!.currentBackStackEntry?.destination?.route.orEmpty() }
-        if (note.isEmpty() && !fits(pattern, screen.route)) note = "it opens `$pattern` instead (the screen sends you on)"
+        if (note.isEmpty() && !fits(pattern, route)) note = "it opens `$pattern` instead (the screen sends you on)"
         return ScreenRun(screen.name, screen.route, if (note.isEmpty()) pattern else "", checked = note.isEmpty(), note = note, from = screen.from) to undo
     }
 
@@ -238,7 +237,7 @@ class AuditChecksTest {
     @Config(sdk = [34], qualifiers = PHONE)
     fun phone() {
         val t0 = System.nanoTime()
-        show(AuditSampleData.seeded(tmp.newFolder("audit")))
+        show(AuditSampleData.seeded(tmp))
         val runs = ArrayList<ScreenRun>()
         val touch = ArrayList<TouchTarget>()
         val noName = ArrayList<Unnamed>()
@@ -317,7 +316,7 @@ class AuditChecksTest {
 
     private fun otherSize(key: String, title: String) {
         val t0 = System.nanoTime()
-        show(AuditSampleData.seeded(tmp.newFolder("audit")))
+        show(AuditSampleData.seeded(tmp))
         val runs = ArrayList<ScreenRun>()
         val cuts = ArrayList<CutOff>()
         val pictures = "sizes/$key"
@@ -448,7 +447,7 @@ class AuditChecksTest {
 
         // Screens: first with the small sample move, then with the large one, in the same warm state.
         // The screens asked for come first; then every other screen, since any of them may be the slow one.
-        val small = AuditSampleData.seeded(tmp.newFolder("audit"))
+        val small = AuditSampleData.seeded(tmp)
         show(small)
         val others = (screens().filter { it.prepare == null && '/' !in it.route }.map { it.route } + AuditSampleData.LARGE_EXAMPLES) - AUDIT_SPEED_SCREENS.toSet()
         val plans = AUDIT_SPEED_SCREENS.map { it to null as String? } + AUDIT_SPEED_TYPE_INTO.map { it to AuditSampleData.COMMON_WORD } + others.map { it to null }

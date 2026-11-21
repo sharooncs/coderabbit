@@ -12,6 +12,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -23,22 +24,30 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.LocalShipping
 import androidx.compose.material3.*
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.navigation.NavHostController
 import app.housemove.data.*
 
@@ -185,17 +194,23 @@ fun ScrollColumn(modifier: Modifier = Modifier, content: @Composable ColumnScope
 }
 
 /**
- * Tabs across the top of a screen's content, on the open ground: no slab behind them,
- * a mint line under the chosen one. Use in place of Material's TabRow.
+ * Tabs across the top of a screen's content: one glass pill, with the chosen tab lit
+ * in mint glass inside it. Use in place of Material's TabRow.
  */
 @Composable
 fun GlassTabRow(selected: Int, modifier: Modifier = Modifier, tabs: @Composable () -> Unit) {
     TabRow(
         selectedTabIndex = selected,
-        modifier = modifier,
+        modifier = modifier.padding(horizontal = 16.dp, vertical = 4.dp).glass(CircleShape, shadow = 4.dp),
         containerColor = Color.Transparent,
-        contentColor = MaterialTheme.colorScheme.primary,
-        divider = { HorizontalDivider(color = Night.Hairline) },
+        contentColor = Night.Text,
+        // The chosen tab: mint glass behind its words (which Material itself announces as selected).
+        indicator = { positions ->
+            if (selected < positions.size) {
+                Box(Modifier.tabIndicatorOffset(positions[selected]).fillMaxHeight().zIndex(-1f).padding(4.dp).glass(CircleShape, GlassTone.Mint, shadow = 0.dp))
+            }
+        },
+        divider = {},
         tabs = tabs,
     )
 }
@@ -340,27 +355,35 @@ fun NumberInput(
     )
 }
 
+/**
+ * A switch with its label. The whole row is the switch: one thing to tap, and one stop
+ * for a screen reader, which says the label and whether it is on.
+ */
 @Composable
 fun SwitchRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit, sub: String? = null) {
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onChange(!checked) }.padding(vertical = 2.dp),
+        Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            .toggleable(value = checked, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = onChange).padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
             Text(label, style = MaterialTheme.typography.bodyLarge)
             if (sub != null) Hint(sub)
         }
-        Switch(checked = checked, onCheckedChange = onChange)
+        Spacer(Modifier.width(12.dp))
+        Switch(checked = checked, onCheckedChange = null)
     }
 }
 
+/** A tick box with its label. Like [SwitchRow], the whole row is the tick box. */
 @Composable
 fun CheckRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit, sub: String? = null) {
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onChange(!checked) },
+        Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            .toggleable(value = checked, role = androidx.compose.ui.semantics.Role.Checkbox, onValueChange = onChange),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Checkbox(checked = checked, onCheckedChange = onChange)
+        Checkbox(checked = checked, onCheckedChange = null, modifier = Modifier.padding(14.dp))
         Column(Modifier.weight(1f)) {
             Text(label, style = MaterialTheme.typography.bodyLarge)
             if (sub != null) Hint(sub)
@@ -388,14 +411,17 @@ fun <T> ChipPicker(
 @Composable
 fun DateButton(day: Long?, onPick: (Long?) -> Unit, label: String, modifier: Modifier = Modifier, allowClear: Boolean = true) {
     var open by remember { mutableStateOf(false) }
-    OutlinedButton(onClick = { open = true }, modifier = modifier) {
-        Icon(Icons.Default.Event, contentDescription = null, modifier = Modifier.size(18.dp))
+    GlassPill(modifier, onClick = { open = true }, sheen = true, horizontalArrangement = Arrangement.Center) {
+        Icon(Icons.Default.Event, contentDescription = null, tint = Night.Mint, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(8.dp))
-        Text(if (day == null) label else "$label: ${fmtDay(day)}")
+        Text(if (day == null) label else "$label: ${fmtDay(day)}", style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center)
     }
     if (open) {
         val state = rememberDatePickerState(initialSelectedDateMillis = (day ?: today()) * 86_400_000L)
+        // Material's calendar is 360dp wide whatever the screen: on a narrower phone it is drawn smaller, not cut off.
+        val fit = ((LocalConfiguration.current.screenWidthDp - 8) / 360f).coerceAtMost(1f)
         DatePickerDialog(
+            modifier = if (fit < 1f) Modifier.scale(fit) else Modifier,
             onDismissRequest = { open = false },
             confirmButton = {
                 TextButton(onClick = {
@@ -455,6 +481,9 @@ fun RoomColor.onColor() = if (darkText) Color.Black else Color.White
  * Coloured pill showing a room. Shows "No room" when null. The colour is the one on the
  * tape and the door sign, so it is not adjusted for the dark ground; a light rim keeps
  * the darker ones (navy, brown, grey) visible against it.
+ *
+ * Squeezed into a narrow space it never dwindles to "…": it shows the room's short code
+ * (the one on its labels, "KIT") and, with no room even for that, its colour alone.
  */
 @Composable
 fun RoomBadge(room: Room?, modifier: Modifier = Modifier) {
@@ -462,15 +491,29 @@ fun RoomBadge(room: Room?, modifier: Modifier = Modifier) {
     val bg = c?.color() ?: Color(0xFF26364B)
     val fg = c?.onColor() ?: Night.TextDim
     val shape = RoundedCornerShape(8.dp)
-    Text(
-        room?.name ?: "No room",
-        color = fg,
-        style = MaterialTheme.typography.labelMedium,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
+    val name = room?.name ?: "No room"
+    val code = room?.let { r -> r.code.ifBlank { suggestRoomCode(r.name) } } ?: "–"
+    val style = MaterialTheme.typography.labelMedium
+    Layout(
+        content = {
+            Text(name, color = fg, style = style, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // The stand-in is read out as the room's name, and is not a second text for anything that looks for texts.
+            Text(code, color = fg, style = style, maxLines = 1, softWrap = false, modifier = Modifier.clearAndSetSemantics { contentDescription = name })
+        },
         modifier = modifier.clip(shape).background(bg).border(1.dp, Color.White.copy(alpha = if (c != null) 0.42f else 0.2f), shape)
             .padding(horizontal = 8.dp, vertical = 3.dp),
-    )
+    ) { measurables, constraints ->
+        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        val (full, short) = measurables
+        // The whole name where it fits; a shortened name only where enough of it is left to read.
+        val shown = when {
+            full.maxIntrinsicWidth(constraints.maxHeight) <= constraints.maxWidth || constraints.maxWidth >= 56.dp.roundToPx() -> full.measure(loose)
+            short.maxIntrinsicWidth(constraints.maxHeight) <= constraints.maxWidth -> short.measure(loose)
+            else -> null
+        }
+        val height = shown?.height ?: short.measure(loose).height
+        layout(maxOf(shown?.width ?: 0, constraints.minWidth), maxOf(height, constraints.minHeight)) { shown?.place(0, 0) }
+    }
 }
 
 @Composable

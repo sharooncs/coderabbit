@@ -3,12 +3,14 @@ package app.housemove.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.CheckCircle
@@ -18,6 +20,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.housemove.data.*
@@ -139,14 +144,19 @@ private fun RoomDialog(room: Room, onClose: () -> Unit) {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         ROOM_COLORS.forEachIndexed { i, c ->
                             Box(
-                                Modifier.size(36.dp).clip(CircleShape).background(c.color())
+                                Modifier.size(40.dp).clip(CircleShape).background(c.color())
                                     .border(
-                                        if (room.color == i) 3.dp else 0.dp,
-                                        if (room.color == i) MaterialTheme.colorScheme.onSurface else c.color(),
+                                        if (room.color == i) 3.dp else 1.dp,
+                                        if (room.color == i) MaterialTheme.colorScheme.onSurface else Color.White.copy(alpha = 0.35f),
                                         CircleShape,
                                     )
-                                    .clickable { store.put(room.copy(color = i)) },
-                            )
+                                    .selectable(selected = room.color == i, role = androidx.compose.ui.semantics.Role.RadioButton) { store.put(room.copy(color = i)) }
+                                    .semantics { contentDescription = c.name },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                // The chosen colour has a tick as well as a ring.
+                                if (room.color == i) Icon(Icons.Default.Check, contentDescription = null, tint = c.onColor(), modifier = Modifier.size(20.dp))
+                            }
                         }
                     }
                     Hint("Selected: ${roomColor(room.color).name}. Matching coloured tape on boxes makes unloading faster.")

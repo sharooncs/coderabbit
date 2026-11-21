@@ -435,18 +435,41 @@ fun GlassOrb(
         if (badge != null) {
             Box(
                 Modifier.align(Alignment.TopEnd).offset(x = 4.dp, y = (-4).dp).defaultMinSize(minWidth = 22.dp, minHeight = 22.dp)
-                    .drawBehind { drawOrb(OrbKind.Primary, ring = false) }.padding(horizontal = 5.dp),
+                    .drawBehind { drawCountBadge() }.padding(horizontal = 5.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(badge, color = Night.OnMint, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                Text(badge, color = Night.OnMint, fontSize = 13.sp, lineHeight = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
             }
         }
     }
 }
 
 /**
+ * The small mint disc a count sits on. It is lit like the primary orb but stays pale to
+ * its edge, so the dark number on it keeps its contrast everywhere (the orb's own shaded
+ * underside would not).
+ */
+private fun DrawScope.drawCountBadge() {
+    val corner = CornerRadius(size.height / 2f)
+    val glow = 3.dp.toPx()
+    drawRoundRect(
+        Color(0xFF28DCAA).copy(alpha = 0.30f), topLeft = Offset(-glow, -glow),
+        size = Size(size.width + 2 * glow, size.height + 2 * glow), cornerRadius = CornerRadius(size.height / 2f + glow),
+    )
+    drawRoundRect(Brush.verticalGradient(0f to Color(0xFFD8FFF2), 0.5f to Night.MintLight, 1f to Night.Mint), cornerRadius = corner)
+    drawRoundRect(
+        Brush.verticalGradient(0f to Color.White.copy(alpha = 0.9f), 0.6f to Color.White.copy(alpha = 0f)),
+        cornerRadius = corner, style = Stroke(1.dp.toPx()),
+    )
+}
+
+/**
  * A callout: a small bright orb and two lines, in a glass pill. Used over the house
  * drawings to say what a glowing marker means ("Kitchen is next", "6 boxes left").
+ *
+ * [compact] is the same callout drawn smaller, for a card in a grid or a row of a list:
+ * the first line then takes the colour of the orb, since at that size it is the line
+ * that says what the callout is ("Waiting for approval").
  */
 @Composable
 fun GlassTag(
@@ -456,20 +479,48 @@ fun GlassTag(
     modifier: Modifier = Modifier,
     kind: OrbKind = OrbKind.Amber,
     onClick: (() -> Unit)? = null,
+    compact: Boolean = false,
 ) {
+    val tap = if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier
+    if (compact && onClick != null) {
+        // Drawn small, but still a full-size thing to touch.
+        Box(modifier.minimumInteractiveComponentSize().clip(CircleShape).then(tap), contentAlignment = Alignment.Center) {
+            GlassTagBody(title, value, icon, Modifier, kind, compact = true)
+        }
+    } else {
+        GlassTagBody(title, value, icon, modifier, kind, compact, tap)
+    }
+}
+
+@Composable
+private fun GlassTagBody(
+    title: String, value: String, icon: ImageVector, modifier: Modifier, kind: OrbKind, compact: Boolean, tap: Modifier = Modifier,
+) {
+    val orb = if (compact) 24.dp else 36.dp
+    val pad = if (compact) 4.dp else 6.dp
     Row(
-        modifier.glass(CircleShape, shadow = 12.dp)
-            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
-            .padding(start = 6.dp, top = 6.dp, bottom = 6.dp, end = 16.dp),
+        modifier.glass(CircleShape, shadow = if (compact) 4.dp else 12.dp)
+            .then(tap)
+            .padding(start = pad, top = pad, bottom = pad, end = if (compact) 10.dp else 16.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 8.dp),
     ) {
-        Box(Modifier.size(36.dp).drawBehind { drawOrb(kind, ring = false) }, contentAlignment = Alignment.Center) {
-            Icon(icon, contentDescription = null, tint = kind.content(), modifier = Modifier.size(18.dp))
+        Box(Modifier.size(orb).drawBehind { drawOrb(kind, halo = !compact, ring = false) }, contentAlignment = Alignment.Center) {
+            Icon(icon, contentDescription = null, tint = kind.content(), modifier = Modifier.size(orb * 0.52f))
         }
         Column(Modifier.weight(1f, fill = false)) {
-            Text(title, color = Night.TextSoft, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(value, color = Night.Text, style = MaterialTheme.typography.titleSmall, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (compact) {
+                val accent = when (kind) {
+                    OrbKind.Amber -> Night.AmberPale
+                    OrbKind.Primary -> Night.MintPale
+                    else -> Night.TextSoft
+                }
+                Text(title, color = accent, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(value, color = Night.Text, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            } else {
+                Text(title, color = Night.TextSoft, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(value, color = Night.Text, style = MaterialTheme.typography.titleSmall, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
     }
 }

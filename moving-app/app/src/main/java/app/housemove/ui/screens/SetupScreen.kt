@@ -11,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
@@ -69,7 +70,7 @@ fun KindPicker(modifier: Modifier = Modifier, large: Boolean = false) {
 /**
  * First-run wizard: what it is for, the move, the rooms. Every page can be passed with
  * "Next" alone: names have defaults, the date can wait, rooms are tapped. A second phone
- * for a move that already exists joins it here instead, by scanning its invite.
+ * for a move that already exists joins it here instead: one tap opens the scanner for its invite.
  */
 @Composable
 fun SetupScreen() {
@@ -153,10 +154,11 @@ fun SetupScreen() {
                 0 -> {
                     if (report != null) SyncReportCard(report)
                     KindPicker(large = true)
-                    Fold("Second phone for the same move?", Icons.Default.Sync, summary = "Join it instead of setting up again", open = report != null) {
-                        Text("On the phone that has the move: People, add you, and show your invite.", style = MaterialTheme.typography.bodyMedium)
-                        BigAction(Icons.Default.QrCodeScanner, "Scan the invite", onClick = { scanning = true }, primary = false, enabled = !joiner.busy)
-                    }
+                    // Joining a move that exists is one tap from here: straight to the scanner.
+                    ActionPill(
+                        Icons.Default.QrCodeScanner, "Second phone for the same move?", "Scan your invite: on the first phone, People, then you",
+                        Modifier.enabledLook(!joiner.busy),
+                    ) { if (!joiner.busy) scanning = true }
                 }
                 1 -> MoveDetails(inventoryOnly)
                 2 -> RoomSetup(Home.ORIGIN)
@@ -277,10 +279,10 @@ internal fun RoomAdder(home: Home, modifier: Modifier = Modifier) {
                     modifier = Modifier.weight(1f),
                 )
                 Spacer(Modifier.width(8.dp))
-                FilledIconButton(
-                    enabled = custom.isNotBlank(),
-                    onClick = { store.createRoom(home, custom); custom = "" },
-                ) { Icon(Icons.Default.Add, contentDescription = "Add room") }
+                GlassOrb(
+                    Icons.Default.Add, "Add room", Modifier.alpha(if (custom.isNotBlank()) 1f else 0.45f), kind = OrbKind.Primary,
+                    onClick = { if (custom.isNotBlank()) { store.createRoom(home, custom); custom = "" } },
+                )
             }
         }
     }

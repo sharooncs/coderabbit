@@ -1,15 +1,25 @@
 package app.housemove.ui
 
 import android.content.Context
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.FrontHand
 import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.QuestionMark
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -28,11 +38,12 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import app.housemove.data.Action
 import app.housemove.data.AppData
 import app.housemove.data.Outcome
@@ -52,10 +63,12 @@ import app.housemove.sync.WifiSync
  *   Role.icon(), Role.line()   the picture of a role, and one line on what it can do
  *   PersonOrb                  someone's initial in a coloured ball (white for this phone's person)
  *   RoleChip                   a role as a small pill
- *   WaitingTag                 the amber "Waiting for approval" callout for a suggestion's target
+ *   PersonPill                 a wide pill about one person: who this phone is, and the way to People
+ *   WaitingTag                 the amber "Waiting for approval" callout for a suggestion's target, full size or compact
  *   allowed(), myRole(), myPerson()  what the Store's rules say, re-read whenever people or roles change
  *   AppData.shared()           more than one person on the move, so roles are worth showing
- *   Outcome.orSay(context)     shows why the Store refused something
+ *   Outcome.orSay(context)     shows why the Store refused something, and hands back what it saved otherwise
+ *   Outcome.okOrSay(context)   the same, for callers that only ask whether it went through
  *   tightScreen()              a narrow screen or large text: stack what would otherwise sit side by side
  *
  * Screens never work out a rule themselves: they ask with [allowed] (or `store.can`).
@@ -103,6 +116,12 @@ fun tightScreen(): Boolean = LocalConfiguration.current.let { it.screenWidthDp /
 fun <T> Outcome<T>.orSay(context: Context): T? {
     if (this is Outcome.Refused) toast(context, reason)
     return valueOrNull()
+}
+
+/** Shows why the Store refused. True when the call went through. */
+fun <T> Outcome<T>.okOrSay(context: Context): Boolean {
+    if (this is Outcome.Refused) toast(context, reason)
+    return ok
 }
 
 /**
@@ -165,12 +184,14 @@ fun PersonOrb(person: Person?, modifier: Modifier = Modifier, size: Dp = 44.dp, 
     val gone = person?.removed == true
     // Someone removed is a dull slate ball: drawn that way, not faded, so its shadow stays whole.
     val tint = if (gone) Night.SlateDeep else personTint(person)
-    val ink = if (gone) Night.TextDim else Night.OnWhite
+    val ink = if (gone) Night.Text else Night.OnWhite
+    // The letter is sized to the ball, not to the phone's text size: the ball does not grow with large text.
+    val letter = with(LocalDensity.current) { (size * 0.4f).toSp() }
     Box(
         modifier.size(size).drawBehind { if (me && !gone) drawOrb(OrbKind.Selected, halo = false) else drawTintedOrb(tint, lit = !gone) },
         contentAlignment = Alignment.Center,
     ) {
-        if (initial != null) Text(initial.toString(), color = ink, fontSize = (size.value * 0.4f).sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        if (initial != null) Text(initial.toString(), color = ink, fontSize = letter, lineHeight = letter * 1.25f, fontWeight = FontWeight.SemiBold, maxLines = 1)
         else Icon(Icons.Default.Person, contentDescription = null, tint = ink, modifier = Modifier.size(size * 0.5f))
     }
 }
@@ -182,16 +203,60 @@ fun RoleChip(role: Role, modifier: Modifier = Modifier, tone: GlassTone = GlassT
 }
 
 /**
- * The amber callout that marks the target of a suggestion nobody has decided on yet:
- * "Waiting for approval", and who suggested it. Tapping it opens Approvals.
+ * A wide glass pill about one person: their ball, a line or two, and their role. On a
+ * narrow screen or with large text the role moves under the lines, so nothing is cut
+ * short. With [onClick] it is the way to somewhere (People, usually) and ends in an arrow.
  */
 @Composable
-fun WaitingTag(proposal: Proposal, modifier: Modifier = Modifier) {
+fun PersonPill(
+    person: Person?,
+    title: String,
+    sub: String,
+    modifier: Modifier = Modifier,
+    me: Boolean = true,
+    role: Role? = person?.role,
+    sheen: Boolean = false,
+    onClick: (() -> Unit)? = null,
+) {
+    val tight = tightScreen()
+    GlassPill(
+        modifier.fillMaxWidth(), onClick = onClick, sheen = sheen,
+        contentPadding = PaddingValues(start = 8.dp, top = 8.dp, bottom = 8.dp, end = 12.dp),
+    ) {
+        PersonOrb(person, size = 44.dp, me = me)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (sub.isNotBlank()) Text(sub, style = MaterialTheme.typography.bodySmall, color = Night.TextDim, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            if (tight && role != null) RoleChip(role, Modifier.padding(top = 2.dp))
+        }
+        if (!tight && role != null) {
+            Spacer(Modifier.width(8.dp))
+            RoleChip(role)
+        }
+        if (onClick != null) Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Night.TextDim, modifier = Modifier.padding(start = 2.dp))
+    }
+}
+
+/**
+ * The amber callout that marks the target of a suggestion nobody has decided on yet:
+ * "Waiting for approval" and who suggested it, or with [what] who suggested what
+ * ("Priya: Sell for £ 40"). Tapping it opens Approvals unless [opens] is false.
+ * [compact] draws it smaller, for a card in a grid or a row of a list.
+ */
+@Composable
+fun WaitingTag(proposal: Proposal, modifier: Modifier = Modifier, compact: Boolean = false, what: String? = null, opens: Boolean = true) {
     val nav = LocalNav.current
-    val who = if (proposal.by == deviceInfo().personId) "you" else appData().personName(proposal.by).ifBlank { "someone" }
+    val mine = proposal.by == deviceInfo().personId
+    val name = appData().personName(proposal.by)
     val question = proposal.kind == ProposalKind.QUESTION
+    val value = when {
+        what != null -> (if (mine) "You" else name.ifBlank { "Someone" }) + ": " + what
+        else -> (if (question) "Asked by " else "Suggested by ") + (if (mine) "you" else name.ifBlank { "someone" })
+    }
     GlassTag(
-        if (question) "Waiting for an answer" else "Waiting for approval", if (question) "Asked by $who" else "Suggested by $who",
-        Icons.Default.HourglassTop, modifier, kind = OrbKind.Amber, onClick = { nav.open("approvals") },
+        if (question) "Waiting for an answer" else "Waiting for approval", value,
+        if (question) Icons.Default.QuestionMark else Icons.Default.HourglassTop, modifier, kind = OrbKind.Amber,
+        onClick = if (opens) ({ nav.open("approvals") }) else null, compact = compact,
     )
 }

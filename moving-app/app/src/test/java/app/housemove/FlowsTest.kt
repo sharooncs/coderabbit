@@ -181,9 +181,6 @@ class FlowsTest {
             tap(label)
             assertEquals(where, route())
         }
-        tapDesc("Menu")
-        assertEquals("more", route())
-        tap("Home")
         tap("Pack a box") // the glowing button in the middle of Home's dock
         assertEquals("pack", route())
     }
@@ -249,17 +246,22 @@ class FlowsTest {
         store.put(data.item(item.id)!!.copy(label = "L002", disposition = Disposition.MOVE))
 
         go("scan")
+        // The camera has the screen to itself: there is no text field until the typed way is asked for.
+        rule.onAllNodes(hasSetTextAction()).assertCountEquals(0)
+        tap("Type the code")
         type("Or type the code on the label", "l001") // case does not matter
         tap("Open")
         assertEquals("box/{id}", route())
         see("Seal box")
 
         go("scan")
+        tap("Type the code")
         type("Or type the code on the label", "HM:L002") // exactly what the sticker's square code contains
         tap("Open")
         assertEquals("item/{id}", route())
 
         go("scan")
+        tap("Type the code")
         type("Or type the code on the label", "L777")
         tap("Open")
         see("Label L777 is not in use")
@@ -272,6 +274,7 @@ class FlowsTest {
         assertNotNull(data.findByLabel("L777"))
 
         go("scan")
+        tap("Type the code")
         type("Or type the code on the label", "HMSYNC:192.168.1.9:4000:ABCD2345")
         tap("Open")
         assertEquals("sync?code={code}", route()) // the sync screen, handed the code so it is not scanned twice
@@ -444,6 +447,7 @@ class FlowsTest {
         see("ZX81-0042")
 
         go("scan")
+        tap("Type the code")
         type("Or type the code on the label", "zx81-0042")
         tap("Open")
         assertEquals("item/{id}", route())
@@ -489,10 +493,12 @@ class FlowsTest {
         type("What are you looking for?", "mr fox")
         see("Box L001")
         go("scan")
+        tap("Type the code")
         type("Or type the code on the label", "9780140328721")
         tap("Open")
         assertEquals("box/{id}", route())
         go("scan")
+        tap("Type the code")
         type("Or type the code on the label", "5012345678900") // a product nobody scanned in
         tap("Open")
         see("is not recorded")
@@ -837,7 +843,7 @@ class FlowsTest {
         back()
         tap("Show everything")
         assertFalse(store.device.value.helper)
-        see("Walk-through")
+        see("Next step")
     }
 
     @Test
