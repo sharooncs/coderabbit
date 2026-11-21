@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -130,10 +131,14 @@ fun BoxScreen(id: String) {
     ) {
         ScrollColumn(Modifier.weight(1f)) {
             Ticket(
-                box, dest, handwritten, labelClash,
+                box, dest, handwritten, labelClash, narrow,
+                // With no room chosen (and none to inherit from an outer container) the rooms are open already.
                 destOpen = destOpen || (dest == null && parent == null && data.roomsOf(Home.DEST).isNotEmpty()),
                 onToggleDest = { destOpen = !destOpen },
-                onDest = { r -> edit { it.copy(destRoomId = r) } },
+                onDest = { r ->
+                    edit { it.copy(destRoomId = r) }
+                    destOpen = false
+                },
             )
             if (parent != null) {
                 GlassPill(Modifier.fillMaxWidth(), tone = GlassTone.Amber, contentPadding = PaddingValues(start = 16.dp, end = 4.dp)) {
@@ -465,6 +470,7 @@ private fun Ticket(
     dest: Room?,
     handwritten: Boolean,
     clash: Boolean,
+    narrow: Boolean,
     destOpen: Boolean,
     onToggleDest: () -> Unit,
     onDest: (String?) -> Unit,
@@ -472,7 +478,7 @@ private fun Ticket(
     val luggage = box.kind == ContainerKind.SUITCASE || box.kind == ContainerKind.BAG
     GlassCard(Modifier.fillMaxWidth(), tone = GlassTone.Mint, shape = RoundedCornerShape(26.dp), sheen = true) {
         Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            ContainerPhoto(box.id, PhotoKind.CONTENTS, "Photo of what's inside", Modifier.size(104.dp))
+            ContainerPhoto(box.id, PhotoKind.CONTENTS, "Photo of what's inside", Modifier.size(if (narrow) 88.dp else 104.dp))
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(
@@ -495,17 +501,17 @@ private fun Ticket(
                         style = MaterialTheme.typography.bodySmall, color = Night.TextSoft, maxLines = 2,
                     )
                 }
+                // Where it goes, as everywhere in the app: an arrow and the room in its colour. Tapping it opens the rooms.
                 Row(
-                    Modifier.padding(top = 2.dp).clip(RoundedCornerShape(12.dp)).clickable(role = Role.Button, onClick = onToggleDest).heightIn(min = 40.dp),
+                    Modifier.padding(top = 2.dp).clip(RoundedCornerShape(12.dp))
+                        .clickable(role = Role.Button, onClickLabel = if (destOpen) "Close the rooms" else "Choose another room", onClick = onToggleDest)
+                        .heightIn(min = 40.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Text("Going to", style = MaterialTheme.typography.labelLarge, color = Night.TextSoft)
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Going to", tint = Night.TextSoft, modifier = Modifier.size(18.dp))
                     RoomBadge(dest, Modifier.weight(1f, fill = false))
-                    Icon(
-                        if (destOpen) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                        contentDescription = if (destOpen) "Close the rooms" else "Choose another room", modifier = Modifier.size(20.dp),
-                    )
+                    Icon(if (destOpen) Icons.Default.ExpandLess else Icons.Default.ExpandMore, contentDescription = null, modifier = Modifier.size(20.dp))
                 }
             }
         }

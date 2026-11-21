@@ -188,11 +188,13 @@ class DeviceTest {
         waitFor("the new box") { data.liveBoxes.size == 1 }
         val box = data.liveBoxes.single()
         assertEquals("T1", box.label)
-        type("Contents", "Mugs and plates")
+        assertEquals("Kitchen box 1", box.name) // filled in from the room: nothing to type
+        tap("Mugs") // what is usually in a kitchen box, one tap each
+        tap("Plates")
         shot("03-box")
         tap("Seal box")
         assertTrue(data.box(box.id)!!.sealed)
-        assertEquals("Mugs and plates", data.box(box.id)!!.contents)
+        assertEquals("Mugs, Plates", data.box(box.id)!!.contents)
         tapDesc("Back")
         tapDesc("Back")
 
@@ -266,7 +268,8 @@ class DeviceTest {
         shot("12-scan")
         type("Or type the code on the label", "L001")
         tap("Open")
-        see("Kettle and mugs")
+        see("Box L001") // the box's own page, with what is in it as chips
+        see("Kettle")
         tapDesc("Back")
         type("Or type the code on the label", "L555")
         tap("Open")
@@ -356,16 +359,17 @@ class DeviceTest {
     fun booksGoIntoABoxAndSerialNumbersOntoADevice() {
         tap("Boxes")
         tap("L001", sub = true)
-        tap("Scan books and products into this box")
+        tapDesc("Scan barcodes of books and products")
         Thread.sleep(3000) // the camera looks for book and product barcodes, upright and sideways
         rule.waitForIdle()
         shot("30-scan-into-box")
-        type("Or type a barcode number or a name", "9780140328721")
+        tap("Type it") // in place of the camera; the field is not shown until it is asked for
+        type("A barcode number or a name", "9780140328721")
         tap("Add")
         see("Look up book titles online?")
         tap("No, stay offline")
         assertEquals("9780140328721", data.entriesOf("box1").single().code)
-        type("Or type a barcode number or a name", "Photo albums")
+        type("A barcode number or a name", "Photo albums")
         tap("Add")
         assertEquals(2, data.entriesOf("box1").size)
         tap("Done")
@@ -396,7 +400,8 @@ class DeviceTest {
         tapDesc("Back")
         type("Or type the code on the label", "9780140328721")
         tap("Open")
-        see("Kettle and mugs")
+        see("Box L001") // the box the book was scanned into
+        see("Scanned in (2)")
     }
 
     /** The one online feature, against the real public catalogue. Skipped, not failed, when there is no connection. */
@@ -416,8 +421,9 @@ class DeviceTest {
         store.setDevice { it.copy(bookLookup = true) }
         tap("Boxes")
         tap("L001", sub = true)
-        tap("Scan books and products into this box")
-        type("Or type a barcode number or a name", "9780140328721")
+        tapDesc("Scan barcodes of books and products")
+        tap("Type it")
+        type("A barcode number or a name", "9780140328721")
         tap("Add")
         waitFor("the title to arrive", 25_000) { data.entriesOf("box1").firstOrNull()?.title?.contains("Fox", ignoreCase = true) == true }
         shot("33-book-title")
@@ -429,7 +435,8 @@ class DeviceTest {
     fun editsSurviveTheScreenBeingRebuiltAndTheAppBeingStopped() {
         tap("Boxes")
         tap("L001", sub = true)
-        type("Contents", "Changed on the device")
+        tapDesc("Edit what's inside") // the one place on this page with a text field
+        type("What's inside", "Changed on the device")
         rule.activityRule.scenario.recreate()
         rule.waitForIdle()
         assertEquals("Changed on the device", data.box("box1")!!.contents)

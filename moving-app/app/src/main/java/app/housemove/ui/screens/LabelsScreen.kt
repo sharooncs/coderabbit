@@ -44,6 +44,17 @@ fun interface TagPrinter {
 
 val LocalTagPrinter = staticCompositionLocalOf { TagPrinter { context, codes, sheet -> Pdf.hangTags(context, codes, sheet) } }
 
+/**
+ * The number the next printed code gets: one after the last made, and after any printed-style
+ * code already on something (typed in by hand, say), so no code is ever printed twice.
+ */
+internal fun AppData.nextLabelNumber(): Int {
+    val inUse = (liveBoxes.map { it.label } + liveItems.mapNotNull { it.label })
+        .mapNotNull { c -> c.trim().takeIf { PRINTED_CODE.matches(it) }?.drop(1)?.take(9)?.toIntOrNull() }
+        .maxOrNull() ?: 0
+    return maxOf(move.labelsPrinted, inUse) + 1
+}
+
 /** One printing of hang tags: the luggage that gets a tag with its own code, then new numbers that fill the page. */
 internal class TagRun(val luggage: List<Box>, val fresh: List<String>, val lastNumber: Int) {
     val codes: List<String> get() = luggage.map { it.label } + fresh
@@ -54,7 +65,7 @@ internal class TagRun(val luggage: List<Box>, val fresh: List<String>, val lastN
  * sticker does not stay on it) gets a proper tag with that same code; the rest of the
  * page is new numbers from [first] on, for the luggage still to be packed.
  */
-internal fun AppData.hangTagRun(sheet: TagSheet, first: Int = move.labelsPrinted + 1): TagRun {
+internal fun AppData.hangTagRun(sheet: TagSheet, first: Int = nextLabelNumber()): TagRun {
     val luggage = liveBoxes
         .filter { (it.kind == ContainerKind.SUITCASE || it.kind == ContainerKind.BAG) && !PRINTED_CODE.matches(it.label) && it.stage != Stage.DONE }
         .sortedWith(CODE_ORDER).distinctBy { it.label.uppercase() }
@@ -132,7 +143,7 @@ fun LabelsScreen() {
         }
     }
 
-    val printed = data.move.labelsPrinted
+    val next = data.nextLabelNumber()
 
     Screen("Labels and door signs") {
         ScrollColumn {
@@ -143,7 +154,7 @@ fun LabelsScreen() {
 
             // ---- box labels: what will be printed, the buttons, then the options ----
             Section {
-                val s = if (badStart) null else fixedStart ?: (printed + 1)
+                val s = if (badStart) null else fixedStart ?: next
                 val n = if (badCount) null else exact ?: (sheets * sheet.perPage / copies).coerceIn(1, 500)
                 val ready = s != null && n != null
                 val last = if (s != null && n != null) s + n - 1 else 0
@@ -166,9 +177,9 @@ fun LabelsScreen() {
                     onPrint = { produce("labels", share = false, after = markPrinted) { Pdf.labels(context, codes, sheet, copies) } },
                     onShare = { produce("labels", share = true, after = markPrinted) { Pdf.labels(context, codes, sheet, copies) } },
                 )
-                if (s != null && s <= printed) {
+                if (s != null && s < next) {
                     GlassChip(
-                        "These are made. Next: from ${labelCode(printed + 1)}", icon = Icons.Default.SkipNext, tone = GlassTone.Amber,
+                        "These are made. Next: from ${labelCode(next)}", icon = Icons.Default.SkipNext, tone = GlassTone.Amber,
                         onClick = { fixedStart = null; badStart = false; round++ },
                     )
                 }
@@ -225,7 +236,7 @@ fun LabelsScreen() {
             // ---- hang tags: a sticker does not stay on a suitcase or a bag ----
             Section {
                 val tagSheet = if (letter) TagSheet.LETTER_TAGS else TagSheet.A4_TAGS
-                val first = tagStart ?: (printed + 1)
+                val first = tagStart ?: next
                 val run = data.hangTagRun(tagSheet, first)
                 val codes = run.codes
                 val pages = ceil(codes.size / tagSheet.perPage.toDouble()).toInt()
@@ -251,9 +262,9 @@ fun LabelsScreen() {
                     onPrint = { produce("tags", share = false, after = markPrinted) { tagPrinter.make(context, codes, tagSheet) } },
                     onShare = { produce("tags", share = true, after = markPrinted) { tagPrinter.make(context, codes, tagSheet) } },
                 )
-                if (run.fresh.isNotEmpty() && first <= printed) {
+                if (run.fresh.isNotEmpty() && first < next) {
                     GlassChip(
-                        "These are made. Next: from ${labelCode(printed + 1)}", icon = Icons.Default.SkipNext, tone = GlassTone.Amber,
+                        "These are made. Next: from ${labelCode(next)}", icon = Icons.Default.SkipNext, tone = GlassTone.Amber,
                         onClick = { tagStart = null },
                     )
                 }

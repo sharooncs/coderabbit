@@ -324,7 +324,7 @@ class FlowsTest {
         tap("First night")
         tap("Box size") // rarely changed, so it is folded away
         tap("Small")
-        tap("Going to") // the room it goes to is filled in already; this opens the others
+        tapDesc("Going to") // the room it goes to is filled in already; this opens the others
         tap("Bedroom") // send it to a different room than the default
         var b = data.box(a.id)!!
         assertEquals("Glasses, mugs", b.contents)

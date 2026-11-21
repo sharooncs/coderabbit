@@ -119,18 +119,19 @@ fun BoxesScreen() {
                         ChipRow {
                             if (destRooms.isNotEmpty()) RoomFilter(destRooms, room, onPick = { roomId = it })
                             GlassChip("All ${top.size}", selected = state == null, onClick = { state = null })
+                            // Right beside the total, so it is plain that these are extra to it, not part of it.
+                            if (nested.isNotEmpty() || state == "INSIDE") {
+                                GlassChip(
+                                    "Inside another ${nested.size}", icon = Icons.Default.SubdirectoryArrowRight,
+                                    selected = state == "INSIDE", onClick = { state = if (state == "INSIDE") null else "INSIDE" },
+                                )
+                            }
                             PackState.entries.forEach { s ->
                                 val n = top.count { it.packState() == s }
                                 if (n > 0 || state == s.name) {
                                     // The same pictures mark each row of the list below.
                                     GlassChip("${s.label(vehicle)} $n", icon = s.picture(), selected = state == s.name, onClick = { state = if (state == s.name) null else s.name })
                                 }
-                            }
-                            if (nested.isNotEmpty() || state == "INSIDE") {
-                                GlassChip(
-                                    "Inside another ${nested.size}", icon = Icons.Default.SubdirectoryArrowRight,
-                                    selected = state == "INSIDE", onClick = { state = if (state == "INSIDE") null else "INSIDE" },
-                                )
                             }
                         }
                         // What it is: only worth a row once there is more than one kind.
