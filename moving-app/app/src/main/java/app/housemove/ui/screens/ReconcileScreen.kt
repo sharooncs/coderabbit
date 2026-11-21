@@ -3,23 +3,22 @@ package app.housemove.ui.screens
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FactCheck
-import androidx.compose.material3.OutlinedCard
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -31,14 +30,6 @@ import app.housemove.data.Ratio
 import app.housemove.data.Stage
 import app.housemove.data.movables
 import app.housemove.data.vehicle
-import app.housemove.ui.EmptyState
-import app.housemove.ui.Hint
-import app.housemove.ui.LocalNav
-import app.housemove.ui.LocalStore
-import app.housemove.ui.Ring
-import app.housemove.ui.Screen
-import app.housemove.ui.appData
-import app.housemove.ui.open
 import app.housemove.ui.*
 
 /** Before the van or truck goes back: is everything that left the old home now in the new one? */
@@ -48,7 +39,9 @@ fun ReconcileScreen() {
     val nav = LocalNav.current
     val data = appData()
     val vehicle = data.vehicle()
+    // Each thing once: a container stands for everything packed inside it.
     val all = data.movables()
+    val carried = remember(data) { mdCarried(data) }
     val onVan = all.filter { it.stage == Stage.LOADED }.sortedBy { it.title }
     val neverLoaded = all.filter { it.stage == Stage.AT_ORIGIN && !it.travelsWithMe }.sortedBy { it.title }
     val withMe = all.filter { it.stage == Stage.AT_ORIGIN && it.travelsWithMe }.sortedBy { it.title }
@@ -61,34 +54,44 @@ fun ReconcileScreen() {
     val noTrip = left.filter { it.tripId == null || it.tripId !in tripIds }
 
     Screen("Reconcile") {
-        LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
+        LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(top = 4.dp, bottom = 16.dp)) {
             item(key = "status") {
+                val banner = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                 when {
                     all.isEmpty() -> EmptyState(
                         Icons.Default.FactCheck, "Nothing to check yet",
                         text = "Boxes you pack and items marked Move appear here.",
                     )
                     allIn -> MdBanner(
-                        MdResult(MdTone.GOOD, "Everything is accounted for", "$arrived delivered. Nothing left on the $vehicle or at the old home.")
+                        MdResult(MdTone.GOOD, "Everything is accounted for", "$arrived delivered. Nothing left on the $vehicle or at the old home."),
+                        banner,
                     )
                     else -> MdBanner(
                         MdResult(
                             if (onVan.isNotEmpty() && arrived > 0) MdTone.BAD else MdTone.WARN,
                             "Not everything is in yet",
                             "${onVan.size} still on the $vehicle · ${neverLoaded.size} still at the old home",
-                        )
+                        ),
+                        banner,
                     )
                 }
             }
+            // With things still on the van, getting them off is the thing to do.
+            if (onVan.isNotEmpty()) item(key = "unload") {
+                MdMainAction(
+                    Icons.Default.Download, "Unload the $vehicle", onClick = { nav.open("unload") },
+                    Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                )
+            }
             if (all.isNotEmpty()) item(key = "counts") {
-                GlassCard(Modifier.fillMaxWidth().padding(16.dp)) {
+                GlassCard(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), sheen = true) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Row(Modifier.fillMaxWidth()) {
                             MdRingStat(Ratio(left.size, all.size), "Left the old home", 76.dp, Modifier.weight(1f))
                             MdRingStat(Ratio(arrived, all.size), "Delivered", 76.dp, Modifier.weight(1f))
                         }
                         if (trips.isNotEmpty() || noTrip.isNotEmpty()) {
-                            HorizontalDivider()
+                            HorizontalDivider(color = Night.Hairline)
                             Text("Delivered, trip by trip", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 trips.forEach { t ->
@@ -107,26 +110,22 @@ fun ReconcileScreen() {
             if (onVan.isNotEmpty()) {
                 item(key = "hvan") { MdGroupHeader("Still on the $vehicle", onVan.size) }
                 items(onVan, key = { "v" + it.id }) { m ->
-                    MdThingRow(m) {
-                        FilledTonalButton(onClick = { mdSetStage(store, m, Stage.DELIVERED) }, modifier = Modifier.heightIn(min = 48.dp)) {
-                            Text("Delivered")
-                        }
+                    MdThingRow(m, carried = carried[m.id] ?: 0) {
+                        MdRowButton("Delivered", onClick = { mdSetStage(store, m, Stage.DELIVERED) })
                     }
                 }
             }
 
             if (neverLoaded.isNotEmpty()) {
                 item(key = "hnever") { MdGroupHeader("Never loaded, still at the old home", neverLoaded.size) }
-                items(neverLoaded, key = { "n" + it.id }) { m -> MdThingRow(m) }
+                items(neverLoaded, key = { "n" + it.id }) { m -> MdThingRow(m, carried = carried[m.id] ?: 0) }
             }
 
             if (withMe.isNotEmpty()) {
                 item(key = "hwithme") { MdGroupHeader("Travelling with you, not arrived yet", withMe.size) }
                 items(withMe, key = { "w" + it.id }) { m ->
-                    MdThingRow(m) {
-                        FilledTonalButton(onClick = { mdSetStage(store, m, Stage.DELIVERED) }, modifier = Modifier.heightIn(min = 48.dp)) {
-                            Text("Arrived")
-                        }
+                    MdThingRow(m, carried = carried[m.id] ?: 0) {
+                        MdRowButton("Arrived", onClick = { mdSetStage(store, m, Stage.DELIVERED) })
                     }
                 }
             }
@@ -134,14 +133,13 @@ fun ReconcileScreen() {
             if (damaged.isNotEmpty()) {
                 item(key = "hdamaged") {
                     MdGroupHeader("Damaged", damaged.size) {
-                        TextButton(onClick = { nav.open("reports") }) { Text("Damage report") }
+                        MdRowButton("Damage report", onClick = { nav.open("reports") }, forward = false)
                     }
                 }
                 items(damaged, key = { "d" + it.id }) { m ->
                     val note = (if (m.isBox) data.box(m.id)?.damageNote else data.item(m.id)?.damageNote).orEmpty()
-                    MdThingRow(m, showStage = true, note = note)
+                    MdThingRow(m, showStage = true, note = note, carried = carried[m.id] ?: 0)
                 }
-                item(key = "damagehint") { Hint("Tap one to add photos and a note.", Modifier.padding(16.dp)) }
             }
         }
     }

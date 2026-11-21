@@ -582,7 +582,8 @@ class FlowsTest {
         go("unload")
         tap("Here")
         val first = data.liveBoxes.first { it.stage == Stage.DELIVERED }
-        tap("Report damage")
+        tap("Report damage") // opens in place of the arrival panel: the photo first, the note optional
+        tapDesc("Type a note")
         type("What is damaged?", "Corner crushed")
         tap("Save")
         assertTrue(data.box(first.id)!!.damaged)
@@ -644,20 +645,21 @@ class FlowsTest {
     @Test
     @Config(sdk = [34], qualifiers = NARROW)
     fun timelineOwnTasksAddEditDelete() {
+        // A job is normally spoken (MoveDayFlowsTest). This is the keyboard's way, which sits behind a tap.
         start("tasks")
         tapDesc("Add a task")
         tap("Cancel")
         assertTrue(data.liveTasks.isEmpty())
         tapDesc("Add a task")
         type("What needs doing", "Return the neighbour's ladder")
-        tap("Save")
+        tap("Add")
         val mine = data.liveTasks.single()
         assertEquals("Return the neighbour's ladder", mine.title)
-        tap("Return the neighbour's ladder")
+        tap("Return the neighbour's ladder") // opens the job in its place
+        tap("Edit")
         type("What needs doing", "Return the ladder")
         tap("Save")
         assertEquals("Return the ladder", data.liveTasks.single().title)
-        tap("Return the ladder")
         tap("Delete this job")
         tap("Delete")
         assertTrue(data.liveTasks.isEmpty())
@@ -673,11 +675,14 @@ class FlowsTest {
         val first = supplies.first()
         tapDesc("Have one more: ${first.name}")
         assertEquals(1, data.liveSupplies.first { it.id == first.id }.have)
+        // A cost is normally tapped in (MoveDayFlowsTest). This is the keyboard's way: an odd sum and a name.
         tap("Costs")
         tap("Add a cost")
-        type("What was it for?", "Van hire")
+        tap("Other amount")
         type("Amount", "180.50")
-        tap("Done")
+        tap("Name and date")
+        type("Name", "Van hire")
+        tap("Add cost", sub = true)
         val e = data.liveExpenses.single()
         assertEquals("Van hire", e.title)
         assertEquals(180.5, e.amount, 0.001)

@@ -17,19 +17,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -38,8 +35,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.housemove.data.Home
@@ -49,22 +48,12 @@ import app.housemove.data.Priority
 import app.housemove.data.Ratio
 import app.housemove.data.Room
 import app.housemove.data.Stage
-import app.housemove.data.movingItems
+import app.housemove.data.childrenOf
+import app.housemove.data.itemsIn
+import app.housemove.data.looseItems
 import app.housemove.data.title
+import app.housemove.data.topBoxes
 import app.housemove.data.uses
-import app.housemove.ui.ColorDot
-import app.housemove.ui.EmptyState
-import app.housemove.ui.IconFlag
-import app.housemove.ui.LocalNav
-import app.housemove.ui.LocalStore
-import app.housemove.ui.OwnerThumb
-import app.housemove.ui.Pic
-import app.housemove.ui.RoomBadge
-import app.housemove.ui.Screen
-import app.housemove.ui.TopActions
-import app.housemove.ui.appData
-import app.housemove.ui.icon
-import app.housemove.ui.open
 import app.housemove.ui.*
 
 /** After the move: what to open first, and which furniture still needs putting together. */
@@ -72,8 +61,9 @@ import app.housemove.ui.*
 fun UnpackScreen() {
     val data = appData()
     var tab by rememberSaveable { mutableStateOf(0) }
-    val boxesWaiting = data.liveBoxes.count { it.stage == Stage.DELIVERED }
-    val itemsWaiting = data.movingItems().count { it.stage == Stage.DELIVERED }
+    // A container inside another, and an item packed in a container, come out with it: they are not counted on their own.
+    val boxesWaiting = data.topBoxes().count { it.stage == Stage.DELIVERED }
+    val itemsWaiting = data.looseItems().count { it.stage == Stage.DELIVERED }
     // Someone who does not pack boxes with the app sees only the furniture.
     val showBoxes = data.uses(Part.BOXES) || data.liveBoxes.isNotEmpty()
     Screen("Unpack", actions = { TopActions() }) {
@@ -85,6 +75,13 @@ fun UnpackScreen() {
     }
 }
 
+/** Something that should come out of a container: an item packed in it, or a container inside it. */
+private class MdInside(val id: String, val name: String, val icon: ImageVector, val route: String)
+
+/** A container by its own name if it has one, otherwise by what it is and its code: "Suitcase B2". */
+private fun mdBoxName(box: app.housemove.data.Box): String =
+    if (box.name.isBlank()) "${box.kind.noun} ${box.label}" else "${box.name} (${box.label})"
+
 @Composable
 private fun MdUnpackBoxes(modifier: Modifier) {
     val store = LocalStore.current
@@ -93,7 +90,7 @@ private fun MdUnpackBoxes(modifier: Modifier) {
     var roomFilter by rememberSaveable { mutableStateOf<String?>(null) }
     var showDone by rememberSaveable { mutableStateOf(false) }
 
-    val arrived = data.liveBoxes.filter { mdArrived(it.stage) }
+    val arrived = data.topBoxes().filter { mdArrived(it.stage) }
     val rooms = data.roomsOf(Home.DEST).filter { r -> arrived.any { it.destRoomId == r.id } }
     val filter = roomFilter?.takeIf { id -> rooms.any { it.id == id } }
     val shown = arrived.filter { filter == null || it.destRoomId == filter }
@@ -109,18 +106,14 @@ private fun MdUnpackBoxes(modifier: Modifier) {
                 Ratio(done.size, shown.size),
                 "${done.size} of ${shown.size} unpacked",
                 Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 6.dp),
-                sub = "Looking for something? Search at the top finds its box.",
             ) {
                 if (rooms.size > 1) Row(
                     Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
-                    FilterChip(selected = filter == null, onClick = { roomFilter = null }, label = { Text("All rooms") })
+                    GlassChip("All rooms", selected = filter == null, onClick = { roomFilter = null })
                     rooms.forEach { r ->
-                        FilterChip(
-                            selected = filter == r.id, onClick = { roomFilter = r.id },
-                            label = { Text(r.name) }, leadingIcon = { ColorDot(r.color) },
-                        )
+                        GlassChip(r.name, selected = filter == r.id, onClick = { roomFilter = r.id }, leading = { ColorDot(r.color) })
                     }
                 }
             }
@@ -129,11 +122,21 @@ private fun MdUnpackBoxes(modifier: Modifier) {
             EmptyState(Icons.Default.CheckCircle, "Every box here is unpacked")
         }
         items(waiting, key = { "b" + it.id }) { box ->
+            // What should come out of it: the items packed in it and the containers inside it, then what those hold.
+            val inner = data.childrenOf(box.id)
+            val inside = data.itemsIn(box.id).map { MdInside(it.id, it.title(), mdKindIcon(null), "item/${it.id}") } +
+                inner.map { MdInside(it.id, mdBoxName(it), mdKindIcon(it.kind), "box/${it.id}") } +
+                inner.flatMap { c -> data.itemsIn(c.id).map { MdInside(it.id, it.title(), mdKindIcon(null), "item/${it.id}") } }
+            val scanned = data.entriesOf(box.id).map { it.title.ifBlank { it.code } }
             MdUnpackCard(
                 ownerId = box.id,
-                isBox = true,
-                title = "Box ${box.label}",
-                detail = box.contents,
+                icon = mdKindIcon(box.kind),
+                title = mdBoxName(box),
+                detail = listOf(
+                    box.contents,
+                    scanned.take(3).joinToString(", ") + if (scanned.size > 3) " and ${scanned.size - 3} more" else "",
+                ).filter { it.isNotBlank() }.joinToString(" · "),
+                inside = inside,
                 room = data.room(box.destRoomId),
                 flags = listOfNotNull(
                     (box.priority.icon() to box.priority.label).takeIf { box.priority != Priority.WHENEVER },
@@ -150,8 +153,8 @@ private fun MdUnpackBoxes(modifier: Modifier) {
             if (showDone) items(done, key = { "d" + it.id }) { box ->
                 MdDoneRow(
                     ownerId = box.id,
-                    isBox = true,
-                    title = "Box ${box.label}",
+                    icon = mdKindIcon(box.kind),
+                    title = mdBoxName(box),
                     detail = box.contents,
                     room = data.room(box.destRoomId),
                     onOpen = { nav.open("box/${box.id}") },
@@ -169,7 +172,8 @@ private fun MdUnpackFurniture(modifier: Modifier) {
     val data = appData()
     var showDone by rememberSaveable { mutableStateOf(false) }
 
-    val arrived = data.movingItems().filter { mdArrived(it.stage) }
+    // Items packed in a container come out with it, on the other tab.
+    val arrived = data.looseItems().filter { mdArrived(it.stage) }
     val waiting = arrived.filter { it.stage == Stage.DELIVERED }
         .sortedWith(compareBy<Item>({ !it.firstNight }, { data.room(it.destRoomId)?.name ?: "~" }, { it.title() }))
     val done = arrived.filter { it.stage == Stage.DONE }.sortedBy { it.title() }
@@ -182,7 +186,6 @@ private fun MdUnpackFurniture(modifier: Modifier) {
                 Ratio(done.size, arrived.size),
                 "${done.size} of ${arrived.size} in place",
                 Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 6.dp),
-                sub = "Beds first. Tap a thing for its take-apart photos.",
             )
         }
         if (arrived.isNotEmpty() && waiting.isEmpty()) item(key = "alldone") {
@@ -192,7 +195,7 @@ private fun MdUnpackFurniture(modifier: Modifier) {
             val needsBuilding = item.needsDisassembly && !item.reassembled
             MdUnpackCard(
                 ownerId = item.id,
-                isBox = false,
+                icon = mdKindIcon(null),
                 title = item.title(),
                 detail = if (needsBuilding) "Needs putting back together" else "",
                 detailIsWarning = needsBuilding,
@@ -222,15 +225,9 @@ private fun MdUnpackFurniture(modifier: Modifier) {
                                 Checkbox(checked = item.reassembled, onCheckedChange = null, modifier = Modifier.padding(horizontal = 12.dp))
                                 Text("Put back together", style = MaterialTheme.typography.bodyLarge)
                             }
-                            if (needsBuilding) OutlinedButton(
-                                onClick = { nav.open("item/${item.id}") },
-                                contentPadding = PaddingValues(horizontal = 12.dp),
-                                modifier = Modifier.heightIn(min = 48.dp),
-                            ) {
-                                Icon(Pic.TakeApart, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("Photos and fittings", maxLines = 1)
-                            }
+                            if (needsBuilding) MdRowButton(
+                                "Photos and fittings", onClick = { nav.open("item/${item.id}") }, forward = false, icon = Pic.TakeApart,
+                            )
                         }
                     }
                 },
@@ -241,7 +238,7 @@ private fun MdUnpackFurniture(modifier: Modifier) {
             if (showDone) items(done, key = { "d" + it.id }) { item ->
                 MdDoneRow(
                     ownerId = item.id,
-                    isBox = false,
+                    icon = mdKindIcon(null),
                     title = item.title(),
                     detail = "",
                     room = data.room(item.destRoomId),
@@ -255,12 +252,13 @@ private fun MdUnpackFurniture(modifier: Modifier) {
 
 /**
  * One thing waiting to be unpacked, led by its photo: what it is, what is inside,
- * the room it belongs in, and one large button to say it is done.
+ * the room it belongs in, and one large button to say it is done. For a container,
+ * [inside] is what should come out of it, each with its photo.
  */
 @Composable
 private fun MdUnpackCard(
     ownerId: String,
-    isBox: Boolean,
+    icon: ImageVector,
     title: String,
     detail: String,
     room: Room?,
@@ -269,14 +267,20 @@ private fun MdUnpackCard(
     action: String,
     onAction: () -> Unit,
     detailIsWarning: Boolean = false,
+    inside: List<MdInside> = emptyList(),
     extra: (@Composable () -> Unit)? = null,
 ) {
-    GlassCard(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
+    val nav = LocalNav.current
+    GlassCard(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), sheen = true) {
         Row(Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(12.dp)) {
-            OwnerThumb(ownerId, Modifier.size(104.dp), isBox = isBox)
+            MdThumb(ownerId, icon, size = 104.dp)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(icon, contentDescription = null, tint = Night.TextDim, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
                 if (detail.isNotBlank()) {
                     Text(
                         detail,
@@ -288,7 +292,7 @@ private fun MdUnpackCard(
                 }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     RoomBadge(room)
-                    flags.forEach { (icon, label) -> IconFlag(icon, label) }
+                    flags.forEach { (picture, label) -> IconFlag(picture, label) }
                 }
                 Button(
                     onClick = onAction,
@@ -301,6 +305,31 @@ private fun MdUnpackCard(
                 }
             }
         }
+        if (inside.isNotEmpty()) {
+            Text(
+                mdCount(inside.size, "thing") + " to come out",
+                style = MaterialTheme.typography.labelLarge, color = Night.TextSoft,
+                modifier = Modifier.padding(horizontal = 14.dp),
+            )
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                inside.forEach { thing ->
+                    Column(
+                        Modifier.width(76.dp).clip(RoundedCornerShape(16.dp)).clickable(onClickLabel = "Open") { nav.open(thing.route) },
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        MdThumb(thing.id, thing.icon, size = 68.dp)
+                        Text(
+                            thing.name, style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+        }
         extra?.invoke()
     }
 }
@@ -309,7 +338,7 @@ private fun MdUnpackCard(
 @Composable
 private fun MdDoneRow(
     ownerId: String,
-    isBox: Boolean,
+    icon: ImageVector,
     title: String,
     detail: String,
     room: Room?,
@@ -317,10 +346,11 @@ private fun MdDoneRow(
     onUndo: () -> Unit,
 ) {
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(horizontal = 16.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).glass(RoundedCornerShape(22.dp), shadow = 4.dp)
+            .clickable(onClick = onOpen).padding(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        OwnerThumb(ownerId, Modifier.size(52.dp), isBox = isBox)
+        MdThumb(ownerId, icon, size = 52.dp)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -333,7 +363,7 @@ private fun MdDoneRow(
             RoomBadge(room)
         }
         Spacer(Modifier.width(8.dp))
-        OutlinedButton(onClick = onUndo, modifier = Modifier.heightIn(min = 48.dp)) { Text("Undo") }
+        MdRowButton("Undo", onClick = onUndo, forward = false)
     }
 }
 
@@ -341,7 +371,7 @@ private fun MdDoneRow(
 @Composable
 private fun MdDoneHeader(title: String, count: Int, open: Boolean, onToggle: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onToggle).heightIn(min = 52.dp).padding(horizontal = 16.dp),
+        Modifier.fillMaxWidth().clickable(onClick = onToggle).heightIn(min = 52.dp).padding(horizontal = 22.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(20.dp))

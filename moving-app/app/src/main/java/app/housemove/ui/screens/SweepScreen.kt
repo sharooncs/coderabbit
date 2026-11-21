@@ -16,14 +16,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -68,10 +66,7 @@ fun SweepScreen() {
             } else {
                 MdProgressHeader(Ratio(swept, rooms.size), "$swept of ${rooms.size} rooms checked")
                 if (swept == rooms.size && stillHere.isEmpty()) {
-                    MdBanner(
-                        MdResult(MdTone.GOOD, "Sweep complete", "Read the meters, lock up and hand over the keys."),
-                        Modifier.clip(RoundedCornerShape(14.dp)),
-                    )
+                    MdBanner(MdResult(MdTone.GOOD, "Sweep complete", "Read the meters, lock up and hand over the keys."))
                 }
                 TileGrid(rooms) { room, m ->
                     val left = stillHere.count { it.originRoomId == room.id }
@@ -83,20 +78,16 @@ fun SweepScreen() {
                         modifier = m,
                     )
                 }
-                Hint("Tick a room once it is empty and every cupboard is checked.")
             }
             if (noRoom > 0) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        if (noRoom == 1) "1 thing with no room is still at the old home." else "$noRoom things with no room are still at the old home.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error,
+                MdBanner(
+                    MdResult(
+                        MdTone.BAD,
+                        if (noRoom == 1) "1 thing with no room is still here" else "$noRoom things with no room are still here",
                     )
-                }
+                )
             }
-            Fold("Places people forget", Icons.Default.Search, summary = "Cupboards, loft, shed, chargers, keys") {
+            Fold("Places people forget", Icons.Default.Search, summary = "Cupboards, loft, shed, keys") {
                 SWEEP_HINTS.forEach { hint ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
