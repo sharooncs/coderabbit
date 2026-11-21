@@ -291,18 +291,21 @@ class FlowsTest {
         tap("Move")
         assertEquals(Disposition.MOVE, it().disposition)
         assertEquals(newBedroom.id, it().destRoomId)
-        tap("Kitchen", index = 1) // new-home picker; index 0 is the old-home picker
+        tap("Kitchen") // new-home picker; the old-home picker is inside "Notes and old room"
         assertEquals(newKitchen.id, it().destRoomId)
 
+        tap("Size and handling") // sections other than the decision open when tapped
         type("Width cm", "80"); type("Depth cm", "30"); type("Height cm", "190")
         assertEquals(80.0, it().widthCm!!, 0.001)
         assertEquals(190.0, it().heightCm!!, 0.001)
 
+        tap("Label")
         tap("Use a handwritten code")
         assertEquals("S1", it().label)
         tap("Remove label")
         assertNull(it().label)
 
+        tap("Damage")
         tap("Damaged in the move")
         assertTrue(it().damaged)
 
@@ -330,12 +333,16 @@ class FlowsTest {
 
         // A TV is recognised by its name.
         go("item/${tv.id}")
+        tap("Make, model and serial number") // each section opens when tapped
         type("Make", "Samsung")
         type("Model", "QE55Q60")
         type("Serial number", "0AB3HCPT500123X")
+        tap("What travels with it")
         type("Remote, leads, stand, screws…", "Remote, power lead, stand and 4 screws")
         tap("Bagged and marked with this item's name")
+        tap("Size and handling")
         tap("Keep upright")
+        tap("Getting it ready")
         tap("Cables labelled and bagged")
         assertEquals("Samsung QE55Q60", it().makeModel())
         assertEquals("0AB3HCPT500123X", it().serial)
@@ -411,6 +418,7 @@ class FlowsTest {
         val item = store.createItem("Table", oldKitchen.id)
         store.put(data.item(item.id)!!.copy(disposition = Disposition.MOVE))
         go("item/${item.id}")
+        tap("Size and handling")
         type("Width in", "10")
         assertEquals(25.4, data.item(item.id)!!.widthCm!!, 0.01)
     }

@@ -1,13 +1,22 @@
 package app.housemove.ui.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.housemove.data.*
@@ -39,71 +48,73 @@ fun DisposalScreen() {
     }
 
     Screen("Sell, donate, bin") {
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 12.dp)) {
-            if (everything.isEmpty()) {
-                item(key = "empty") {
-                    Column(Modifier.padding(horizontal = 16.dp)) {
-                        Section("Nothing is leaving yet") {
-                            Text("Items you mark as Sell, Donate or Bin show up here, so you can track them until they are actually gone.")
-                            Button(onClick = { nav.open("triage") }) { Text("Decide in Triage") }
-                        }
-                    }
-                }
-            } else {
-                item(key = "totals") {
-                    Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp)) {
-                        Section("Summary") {
-                            ProgressRow("Gone", Ratio(everything.count { it.gone }, everything.size))
-                            if (selling.isNotEmpty()) {
-                                Row {
-                                    Text("Asking total", modifier = Modifier.weight(1f))
-                                    Text(money(currency, selling.sumOf { it.price ?: 0.0 }), style = MaterialTheme.typography.titleMedium)
-                                }
-                                Row {
-                                    Text("Sold so far", modifier = Modifier.weight(1f))
-                                    Text(money(currency, selling.filter { it.gone }.sumOf { it.price ?: 0.0 }), style = MaterialTheme.typography.titleMedium)
-                                }
-                            }
-                            val late = everything.count { !it.gone && (it.deadlineDay ?: Long.MAX_VALUE) < now }
-                            if (late > 0) {
-                                Text(
-                                    "$late past ${if (late == 1) "its" else "their"} date and still here.",
-                                    color = MaterialTheme.colorScheme.error,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
-                            }
-                        }
-                    }
-                }
-                groups.forEach { (d, title, list) ->
-                    if (list.isNotEmpty()) {
-                        item(key = "head-" + d.name) {
+        if (everything.isEmpty()) {
+            ScrollColumn {
+                EmptyState(
+                    Icons.Default.Sell, "Nothing is leaving yet",
+                    text = "Things you mark Sell, Donate or Bin are tracked here until they are gone.",
+                    action = if (data.uses(Part.TRIAGE)) "Decide what to keep" else null,
+                    onAction = { nav.open("triage") },
+                )
+            }
+        } else LazyColumn(
+            Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            item(key = "totals") {
+                val gone = everything.count { it.gone }
+                val late = everything.count { !it.gone && (it.deadlineDay ?: Long.MAX_VALUE) < now }
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surface)
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(14.dp)).padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Ring(Ratio(gone, everything.size), size = 64.dp, color = MaterialTheme.colorScheme.tertiary)
+                    Spacer(Modifier.width(16.dp))
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("$gone of ${everything.size} gone", style = MaterialTheme.typography.titleMedium)
+                        if (selling.isNotEmpty()) {
                             Text(
-                                "$title (${list.count { it.gone }} of ${list.size} gone)",
-                                style = MaterialTheme.typography.titleMedium,
-                                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
+                                "Asking " + money(currency, selling.sumOf { it.price ?: 0.0 }) +
+                                    " · sold " + money(currency, selling.filter { it.gone }.sumOf { it.price ?: 0.0 }),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        items(list, key = { it.id }) { x ->
-                            DisposalRow(
-                                x = x,
-                                selling = d == Disposition.SELL,
-                                currency = currency,
-                                now = now,
-                                onOpen = { nav.open("item/${x.id}") },
-                                onListed = { v -> edit(x.id) { it.copy(listed = v) } },
-                                onGone = { v -> edit(x.id) { it.copy(gone = v) } },
-                            )
-                            HorizontalDivider(Modifier.padding(start = 76.dp))
-                        }
+                        if (late > 0) IconFlag(Icons.Default.Schedule, "$late past ${if (late == 1) "its" else "their"} date", error = true)
                     }
                 }
-                item(key = "tip") {
-                    Hint(
-                        "Set a date on each item (open it to add one). Anything unsold a week before the move is usually better donated than carried.",
-                        Modifier.padding(16.dp),
-                    )
+            }
+            groups.forEach { (d, title, list) ->
+                if (list.isNotEmpty()) {
+                    item(key = "head-" + d.name) {
+                        Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(d.icon(), contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                            Text(
+                                "${list.count { it.gone }} of ${list.size} gone",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    items(list, key = { it.id }) { x ->
+                        DisposalRow(
+                            x = x,
+                            selling = d == Disposition.SELL,
+                            currency = currency,
+                            now = now,
+                            onOpen = { nav.open("item/${x.id}") },
+                            onListed = { v -> edit(x.id) { it.copy(listed = v) } },
+                            onGone = { v -> edit(x.id) { it.copy(gone = v) } },
+                        )
+                    }
                 }
+            }
+            item(key = "tip") {
+                Hint("Still unsold a week before the move? Donate it instead.", Modifier.padding(top = 8.dp))
             }
         }
     }
@@ -119,43 +130,74 @@ private fun DisposalRow(
     onListed: (Boolean) -> Unit,
     onGone: (Boolean) -> Unit,
 ) {
+    val scheme = MaterialTheme.colorScheme
     val deadline = x.deadlineDay
     val late = !x.gone && deadline != null && deadline < now
+    val price = x.price
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(scheme.surface)
+            .border(1.dp, if (late) scheme.error else scheme.outlineVariant, RoundedCornerShape(14.dp))
+            .clickable(onClick = onOpen)
+            .padding(start = 8.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        OwnerThumb(x.id, Modifier.size(48.dp))
+        // Something that has gone fades back, so what is still here stands out.
+        OwnerThumb(x.id, Modifier.size(64.dp).alpha(if (x.gone) 0.45f else 1f))
         Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(x.title(), style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            val price = x.price
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                x.title(), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                color = if (x.gone) scheme.onSurfaceVariant else scheme.onSurface,
+            )
             if (selling) {
                 Text(
                     if (price != null) money(currency, price) else "No price yet",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = if (price != null) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (price != null) scheme.onSurface else scheme.onSurfaceVariant,
                 )
             }
-            Text(
-                if (deadline == null) "No date set" else "By ${fmtDayShort(deadline)} (${relDay(deadline, now)})",
-                style = MaterialTheme.typography.bodySmall,
-                color = if (late) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (late) IconFlag(Icons.Default.Schedule, "Late", error = true)
+                Text(
+                    if (deadline == null) "No date" else "By ${fmtDayShort(deadline)} (${relDay(deadline, now)})",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (late) scheme.error else scheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
-        if (selling) TickBox("Listed", x.listed, onListed)
-        TickBox("Gone", x.gone, onGone)
+        if (selling) StateButton(Icons.Default.Campaign, "Listed", x.listed, "Listed for sale: ${x.title()}", scheme.primary, scheme.onPrimary, onListed)
+        StateButton(
+            if (x.gone) Icons.Default.Check else Icons.Default.RadioButtonUnchecked, "Gone", x.gone, "Gone: ${x.title()}",
+            scheme.tertiary, scheme.onTertiary, onGone,
+        )
     }
 }
 
-/** A small labelled checkbox stacked vertically, for the end of a row. */
+/** A round on/off button with a picture and one word under it, for the end of a row. */
 @Composable
-private fun TickBox(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Column(
-        Modifier.clickable { onChange(!checked) }.padding(horizontal = 4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Checkbox(checked = checked, onCheckedChange = onChange)
-        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun StateButton(
+    icon: ImageVector,
+    label: String,
+    checked: Boolean,
+    description: String,
+    onColor: androidx.compose.ui.graphics.Color,
+    onContent: androidx.compose.ui.graphics.Color,
+    onChange: (Boolean) -> Unit,
+) {
+    Column(Modifier.width(56.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        FilledIconToggleButton(
+            checked = checked,
+            onCheckedChange = onChange,
+            colors = IconButtonDefaults.filledIconToggleButtonColors(checkedContainerColor = onColor, checkedContentColor = onContent),
+        ) { Icon(icon, contentDescription = description) }
+        Text(
+            label, style = MaterialTheme.typography.labelSmall,
+            color = if (checked) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }

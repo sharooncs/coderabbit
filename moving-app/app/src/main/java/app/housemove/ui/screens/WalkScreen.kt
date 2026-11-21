@@ -1,14 +1,21 @@
 package app.housemove.ui.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import app.housemove.data.*
 import app.housemove.ui.*
@@ -36,73 +43,83 @@ fun WalkScreen() {
     val canShoot = roomId != null || rooms.isEmpty()
 
     Screen("Walk-through") {
-        LazyColumn(
-            Modifier.fillMaxSize(),
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item(key = "room") {
-                Section("Which room are you in?") {
+            item(key = "room", span = { GridItemSpan(maxLineSpan) }) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Which room are you in?", style = MaterialTheme.typography.titleMedium)
                     if (rooms.isEmpty()) {
-                        Hint("You have not added the rooms of your old home yet. You can still take photos now and sort them into rooms later.")
-                        OutlinedButton(onClick = { nav.open("rooms") }) { Text("Add rooms") }
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Hint("No rooms yet. Photos can be sorted into rooms later.", Modifier.weight(1f))
+                            OutlinedButton(onClick = { nav.open("rooms") }) { Text("Add rooms") }
+                        }
                     } else {
-                        RoomPicker(
+                        RoomTiles(
                             Home.ORIGIN, roomId,
                             onPick = { picked -> store.setDevice { it.copy(currentRoomId = picked) } },
                             allowNone = false,
                         )
-                        if (roomId == null) Hint("Pick the room first, so everything you photograph is filed under it.")
                     }
                 }
             }
-            item(key = "shoot") {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = { camera = true },
-                        enabled = canShoot,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
-                    ) {
-                        Icon(Icons.Default.PhotoCamera, contentDescription = null)
-                        Spacer(Modifier.width(12.dp))
-                        Text("Start shooting", style = MaterialTheme.typography.titleMedium)
-                    }
-                    Hint("One photo per big thing. Keep tapping the shutter as you go round the room, then press Done.")
-                    Hint("Only furniture, appliances, electronics, valuables and awkward things. Small stuff is recorded by box when you pack.")
+            item(key = "shoot", span = { GridItemSpan(maxLineSpan) }) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    BigAction(Pic.Camera, "Start shooting", onClick = { camera = true }, enabled = canShoot)
+                    Hint(
+                        if (canShoot) "One photo per big thing. Small things are recorded by box."
+                        else "Pick the room first, so the photos are filed under it."
+                    )
                 }
             }
-            item(key = "count") {
+            item(key = "count", span = { GridItemSpan(maxLineSpan) }) {
                 Text(
                     if (room != null) "In ${room.name} (${inRoom.size})" else "Not in a room yet (${inRoom.size})",
                     style = MaterialTheme.typography.titleMedium,
                 )
             }
             if (inRoom.isEmpty()) {
-                item(key = "none") { Hint("Nothing here yet. Photos you take will appear in this list, ready to be named.") }
+                item(key = "none", span = { GridItemSpan(maxLineSpan) }) {
+                    EmptyState(Pic.Item, "Nothing here yet", text = "Each photo you take appears here, ready to be named.")
+                }
             }
             items(inRoom, key = { it.id }) { x ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    OwnerThumb(x.id, Modifier.size(56.dp))
-                    Spacer(Modifier.width(10.dp))
+                val scheme = MaterialTheme.colorScheme
+                Column(
+                    Modifier
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(scheme.surface)
+                        .border(1.dp, scheme.outlineVariant, RoundedCornerShape(14.dp))
+                        .padding(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Box {
+                        OwnerThumb(
+                            x.id,
+                            Modifier.fillMaxWidth().aspectRatio(4f / 3f)
+                                .clickable(onClickLabel = "Open item details") { nav.open("item/${x.id}") },
+                        )
+                        FilledTonalIconButton(
+                            onClick = { nav.open("item/${x.id}") },
+                            modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(36.dp),
+                        ) { Icon(Icons.Default.ChevronRight, contentDescription = "Open item details") }
+                    }
                     TextInput(
                         value = x.name,
                         onChange = { v -> store.data.value.item(x.id)?.let { store.put(it.copy(name = v)) } },
                         label = "What is it?",
-                        modifier = Modifier.weight(1f),
                         key = x.id,
                         mic = true,
                     )
-                    IconButton(onClick = { nav.open("item/${x.id}") }) {
-                        Icon(Icons.Default.ChevronRight, contentDescription = "Open item details")
-                    }
                 }
             }
-            if (inRoom.isNotEmpty()) {
-                item(key = "next") {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Hint("Names can wait. When every room is done, go through the items and decide what moves, sells, goes to charity or gets binned.")
-                        OutlinedButton(onClick = { nav.open("triage") }, modifier = Modifier.fillMaxWidth()) { Text("Decide what to keep (Triage)") }
-                    }
+            if (inRoom.isNotEmpty() && data.uses(Part.TRIAGE)) {
+                item(key = "next", span = { GridItemSpan(maxLineSpan) }) {
+                    BigAction(Icons.Default.Rule, "Decide what to keep", onClick = { nav.open("triage") }, primary = false)
                 }
             }
         }
