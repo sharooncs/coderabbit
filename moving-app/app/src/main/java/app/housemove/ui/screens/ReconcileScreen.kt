@@ -30,6 +30,7 @@ import app.housemove.data.Ratio
 import app.housemove.data.Stage
 import app.housemove.data.movables
 import app.housemove.data.vehicle
+import app.housemove.data.*
 import app.housemove.ui.*
 
 /** Before the van or truck goes back: is everything that left the old home now in the new one? */
@@ -111,7 +112,7 @@ fun ReconcileScreen() {
                 item(key = "hvan") { MdGroupHeader("Still on the $vehicle", onVan.size) }
                 items(onVan, key = { "v" + it.id }) { m ->
                     MdThingRow(m, carried = carried[m.id] ?: 0) {
-                        MdRowButton("Delivered", onClick = { mdSetStage(store, m, Stage.DELIVERED) })
+                        RowButton("Delivered", onClick = { mdSetStage(store, m, Stage.DELIVERED) })
                     }
                 }
             }
@@ -125,7 +126,7 @@ fun ReconcileScreen() {
                 item(key = "hwithme") { MdGroupHeader("Travelling with you, not arrived yet", withMe.size) }
                 items(withMe, key = { "w" + it.id }) { m ->
                     MdThingRow(m, carried = carried[m.id] ?: 0) {
-                        MdRowButton("Arrived", onClick = { mdSetStage(store, m, Stage.DELIVERED) })
+                        RowButton("Arrived", onClick = { mdSetStage(store, m, Stage.DELIVERED) })
                     }
                 }
             }
@@ -133,7 +134,7 @@ fun ReconcileScreen() {
             if (damaged.isNotEmpty()) {
                 item(key = "hdamaged") {
                     MdGroupHeader("Damaged", damaged.size) {
-                        MdRowButton("Damage report", onClick = { nav.open("reports") }, forward = false)
+                        RowButton("Damage report", onClick = { nav.open("reports") }, forward = false)
                     }
                 }
                 items(damaged, key = { "d" + it.id }) { m ->

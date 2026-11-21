@@ -78,6 +78,9 @@ class ItemFlowsTest {
 
     /** What the stand-in microphone hears next. */
     private val said = ArrayDeque<String>()
+
+    /** False for a phone with no speech service: the microphone is then not shown anywhere. */
+    private var canSpeak = true
     private var pictures = 0
 
     /** A move of one: nobody to ask, nothing about roles. The old rooms are not linked to the new ones, only named alike. */
@@ -96,7 +99,7 @@ class ItemFlowsTest {
             val s = phone
             if (s != null) key(s) {
                 CompositionLocalProvider(
-                    LocalSpeech provides Speech { _, onText -> said.removeFirstOrNull()?.let(onText) },
+                    LocalSpeech provides if (canSpeak) Speech { _, onText -> said.removeFirstOrNull()?.let(onText) } else null,
                     LocalWalkCamera provides { file -> picture(file, pictures++) },
                 ) { AppRoot(s, startRoute = "home", onNav = { nav = it }) }
             }
@@ -264,8 +267,10 @@ class ItemFlowsTest {
         // The lamp stays: declined, with the reason spoken.
         show(asha, "item/$lamp")
         see("Dee: Donate")
+        tap("Decline")
+        see("We're keeping it") // a few reasons to tap, as in the Approvals inbox
         said += "we still use it"
-        tapDesc("Decline and say why")
+        tapDesc("Say why not")
         val declined = asha.data.value.proposalsFor(lamp).single()
         assertEquals(ProposalState.DECLINED, declined.state)
         assertEquals("we still use it", declined.reason)
@@ -322,7 +327,8 @@ class ItemFlowsTest {
         // The questions come first in the Organiser's triage, and can be dismissed as well.
         show(asha, "triage")
         see("Hal asked")
-        tap("Dismiss")
+        tap("Not now")
+        tap("Not sure yet")
         assertEquals(1, asha.waiting().size)
         sync(asha, hal)
         show(hal, "item/$sofa")
@@ -357,6 +363,7 @@ class ItemFlowsTest {
         assertEquals(Disposition.DONATE, asha.item(sofa).disposition)
         assertEquals(ProposalState.OVERTAKEN, asha.data.value.proposalsFor(sofa).single().state)
         tap("Decline")
+        tap("No reason")
         assertEquals(Disposition.UNDECIDED, asha.item(lamp).disposition)
         tap("Store") // declined, so it is still hers to decide
         see("All decided")
@@ -451,7 +458,7 @@ class ItemFlowsTest {
         dontSee("L002")
         tap("Lounge box 1 (L001)")
         assertEquals(box.id, asha.item(lamp).boxId)
-        see("In Lounge box 1 (L001)")
+        see("Inside Lounge box 1 (L001)")
         cannotTap("Put in a container")
         tap("Take out")
         assertNull(asha.item(lamp).boxId)
@@ -561,6 +568,114 @@ class ItemFlowsTest {
         said += "samsung QE55 Q60"
         tapDesc("Say the make and model")
         assertEquals("Samsung QE55 Q60", asha.item(tv).makeModel())
+    }
+
+    // ---- what a role is not offered, and what became of a suggestion -------------------------------
+
+    @Test
+    fun deletingAnItemIsNotOfferedToAHelperInASharedMove() {
+        team()
+        // The Store has no rule for deleting, so the screen leaves it out for a Helper.
+        show(hal, "item/$sofa")
+        tap("More")
+        see("Room in the old home")
+        dontSee("Delete item")
+        show(dee, "item/$sofa")
+        tap("More")
+        see("Delete item")
+        show(asha, "item/$sofa")
+        tap("More")
+        tap("Delete item")
+        tap("Delete")
+        assertNull(asha.data.value.item(sofa))
+    }
+
+    @Test
+    fun aDeclinedSuggestionSaysWhyOnTheListsUntilItHasBeenRead() {
+        team()
+        assertTrue(asha.decide(lamp, Disposition.MOVE).ok)
+        sync(asha, dee)
+        // Dee suggests selling the sofa, and a room for the lamp. Asha says no to both, with a reason each.
+        val sell = dee.suggestDecision(sofa, Disposition.SELL, 40.0).valueOrNull()!!
+        val room = dee.suggestRoom(lamp, newKitchen.id).valueOrNull()!!
+        sync(asha, dee)
+        assertTrue(asha.decline(sell.id, "We're keeping it").ok)
+        assertTrue(asha.decline(room.id, "Won't fit there").ok)
+        sync(asha, dee)
+
+        // The room plan says why, on the lamp, until it is put away with OK.
+        show(dee, "plan")
+        see("Declined by Asha: Won't fit there")
+        see("You suggested: To Kitchen")
+        tap("OK")
+        dontSee("Declined by Asha")
+        // Triage brings the sofa back with the reason.
+        show(dee, "triage")
+        tap("Skip for now") // the dining table comes first
+        see("Declined by Asha: We're keeping it")
+        see("You suggested: Sell for £ 40")
+        tap("OK")
+        dontSee("Declined by Asha")
+        // Having been read is remembered on the phone: it does not come back on the next visit.
+        show(dee, "plan")
+        dontSee("Declined by Asha")
+        show(dee, "disposal")
+        dontSee("Declined by Asha")
+        // The item's own page keeps saying how her last suggestion about it ended.
+        show(dee, "item/$sofa")
+        see("Declined by Asha: We're keeping it")
+        // Nobody else is shown it.
+        show(asha, "plan")
+        dontSee("Declined by")
+    }
+
+    @Test
+    fun withNoSpeechOnThePhoneTheKeyboardTakesTheMicrophonesPlace() {
+        canSpeak = false
+        team()
+        // A Helper's question: one tap still asks; the few words of why are typed where they would be said.
+        show(hal, "item/$sofa")
+        rule.onAllNodes(hasContentDescription("Ask with a spoken note")).assertCountEquals(0)
+        noKeyboardNeeded() // the field is not there until it is asked for
+        tapDesc("Ask with a typed note")
+        type("What should they know about it?", "one leg is broken")
+        tap("Ask")
+        assertEquals("one leg is broken", hal.waiting().single().note)
+        // Naming a thing: no microphone, and the pencil in the bar opens the field.
+        val chair = hal.createItem(hal.data.value.defaultItemName(oldLounge.id), oldLounge.id).id
+        show(hal, "item/$chair")
+        rule.onAllNodes(hasContentDescription("Say the name", substring = true)).assertCountEquals(0)
+        tap("Armchair") // the chips need neither
+        assertEquals("Armchair", hal.item(chair).name)
+        tapDesc("Edit the name")
+        type("Armchair", "Blue armchair")
+        assertEquals("Blue armchair", hal.item(chair).name)
+
+        // An Organiser's own reason for declining is typed too.
+        assertTrue(dee.suggestDecision(lamp, Disposition.BIN).ok)
+        sync(asha, dee)
+        show(asha, "item/$lamp")
+        tap("Decline")
+        rule.onAllNodes(hasContentDescription("Say why not")).assertCountEquals(0)
+        tapDesc("Type why not")
+        type("Why not?", "it was a present")
+        tap("Decline")
+        assertEquals("it was a present", asha.data.value.proposalsFor(lamp).single().reason)
+    }
+
+    @Test
+    fun someoneWhoWasRemovedStillHasTheirNameOnWhatTheySuggested() {
+        team()
+        val p = dee.suggestDecision(sofa, Disposition.SELL, 60.0).valueOrNull()!!
+        sync(asha, dee)
+        assertTrue(asha.removePerson(dee.me!!.id).ok)
+        show(asha, "item/$sofa")
+        see("Dee: Sell for £ 60")
+        show(asha, "items")
+        see("Dee: Sell for £ 60")
+        tap("Sofa")
+        tap("Approve")
+        assertEquals(ProposalState.APPROVED, asha.proposal(p.id).state)
     }
 
     // ---- pictures for review --------------------------------------------------------------------

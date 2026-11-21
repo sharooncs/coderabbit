@@ -1,6 +1,12 @@
 package app.housemove.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -52,6 +58,7 @@ import app.housemove.data.Store
 import app.housemove.data.fmtDay
 import app.housemove.data.newId
 import app.housemove.data.today
+import app.housemove.data.*
 import app.housemove.ui.*
 
 /** Change a reading using its latest saved copy, so quick edits never overwrite each other. */
@@ -101,7 +108,7 @@ fun RecordsScreen(home: Home) {
 
             // A photo of each meter is enough. Tapping one opens the camera; the reading is made by the photo.
             item(key = "meters") {
-                TileGrid(METER_KINDS, columns = if (mdNarrow()) 2 else 4) { kind, m ->
+                TileGrid(METER_KINDS, columns = if (narrowScreen()) 2 else 4) { kind, m ->
                     val reading = readings.filter { it.kind == kind }.maxByOrNull { it.updatedAt }
                     MdMeterTile(kind, reading, m) { shooting = kind }
                 }
@@ -133,16 +140,15 @@ fun RecordsScreen(home: Home) {
                         "No rooms for this home yet.", style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f),
                     )
-                    MdRowButton("Add rooms", onClick = { nav.open("rooms") }, forward = false)
+                    RowButton("Add rooms", onClick = { nav.open("rooms") }, forward = false)
                 }
             }
         }
     }
 
     shooting?.let { kind ->
-        CameraDialog(
+        PhotoCamera(
             hint = "$kind meter",
-            newFile = { store.newPhotoFile() },
             onPhoto = { file ->
                 // The first photo of a meter makes its reading, dated today. The number can follow, or never.
                 val reading = mdReadingOf(store, home, kind) ?: Reading(id = newId(), home = home, kind = kind, day = today()).also { store.put(it) }
@@ -223,20 +229,48 @@ private fun MdReadingEditor(r: Reading, onDelete: () -> Unit) {
     HorizontalDivider(color = Night.Hairline)
 }
 
-/** The photos of one place: its name, the camera, then what has been taken, with a tick once there is one. */
+/**
+ * The photos of one place as one glass row: a tick once it has been photographed, its
+ * name and how many photos there are, the gallery and, brightest, the camera. What has
+ * been taken follows underneath; tapping a photo opens it.
+ */
 @Composable
 private fun MdRecordStrip(ownerId: String, name: String) {
-    val done = appData().photosOf(ownerId, PhotoKind.ROOM).isNotEmpty()
-    GlassCard(Modifier.fillMaxWidth(), tone = if (done) GlassTone.Mint else GlassTone.Plain) {
-        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.Top) {
-            PhotoStrip(ownerId, PhotoKind.ROOM, Modifier.weight(1f), label = name)
-            if (done) {
-                Spacer(Modifier.width(8.dp))
-                Icon(
-                    Icons.Default.CheckCircle, contentDescription = "Photographed",
-                    tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(22.dp),
-                )
+    val store = LocalStore.current
+    val context = LocalContext.current
+    val photos = appData().photosOf(ownerId, PhotoKind.ROOM)
+    val done = photos.isNotEmpty()
+    var camera by remember { mutableStateOf(false) }
+    var viewing by remember { mutableStateOf<Photo?>(null) }
+    val gallery = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { uris ->
+        uris.forEach { uri ->
+            val f = store.newPhotoFile()
+            if (importImage(context, uri, f)) store.addPhoto(ownerId, PhotoKind.ROOM, f)
+        }
+    }
+    GlassCard(Modifier.fillMaxWidth(), tone = if (done) GlassTone.Mint else GlassTone.Plain, shape = RoundedCornerShape(22.dp)) {
+        Row(Modifier.padding(start = 14.dp, end = 8.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                if (done) Icons.Default.CheckCircle else Pic.Room, contentDescription = if (done) "Photographed" else null,
+                tint = if (done) Night.MintLight else Night.TextDim, modifier = Modifier.size(22.dp),
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(name, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(if (done) countOf(photos.size, "photo") else "No photos yet", style = MaterialTheme.typography.bodySmall, color = Night.TextDim)
+            }
+            GlassOrb(Icons.Default.PhotoLibrary, "Add photos of $name from the gallery", size = 40.dp, onClick = {
+                gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            })
+            Spacer(Modifier.width(4.dp))
+            GlassOrb(Icons.Default.PhotoCamera, "Photograph $name", kind = if (done) OrbKind.Plain else OrbKind.Selected, onClick = { camera = true })
+        }
+        if (done) {
+            LazyRow(contentPadding = PaddingValues(start = 14.dp, end = 14.dp, bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(photos, key = { it.id }) { p -> PhotoThumb(p, Modifier.size(64.dp).clip(RoundedCornerShape(14.dp)).clickable { viewing = p }) }
             }
         }
     }
+    if (camera) PhotoCamera(hint = name, onPhoto = { store.addPhoto(ownerId, PhotoKind.ROOM, it) }, onClose = { camera = false })
+    viewing?.let { p -> PhotoViewer(p, onClose = { viewing = null }) }
 }

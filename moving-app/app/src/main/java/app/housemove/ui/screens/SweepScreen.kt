@@ -39,6 +39,7 @@ import app.housemove.ui.ScrollColumn
 import app.housemove.ui.TileGrid
 import app.housemove.ui.appData
 import app.housemove.ui.open
+import app.housemove.data.*
 import app.housemove.ui.*
 
 /** Last walk round the old home: tick each room once it is empty and checked. */
@@ -71,7 +72,7 @@ fun SweepScreen() {
                     MdSweepTile(
                         name = room.name,
                         checked = room.swept,
-                        warning = if (left == 0) null else mdCount(left, "thing") + " still here",
+                        warning = if (left == 0) null else countOf(left, "thing") + " still here",
                         onChange = { store.put(room.copy(swept = it)) },
                         modifier = m,
                     )

@@ -47,7 +47,10 @@ fun PlanScreen() {
     val maySuggest = store.can(Action.SUGGEST)
     val me = store.me?.id
 
-    val moving = data.movingItems()
+    // Counted as Home and the Items tab count them: something packed in a container goes where
+    // that goes, so it needs no room of its own and is not listed here.
+    val moving = data.looseItems()
+    val seen = rememberSeenAnswers()
     val destRooms = data.roomsOf(Home.DEST)
     val homeless = moving.filter { data.room(it.destRoomId) == null }.sortedBy { it.createdAt }
     val waiting = data.waitingProposals().filter { it.kind == ProposalKind.ITEM_ROOM }.groupBy { it.targetId }
@@ -124,7 +127,8 @@ fun PlanScreen() {
                         data = data,
                         suggestion = suggested[x.id],
                         waiting = waiting[x.id].orEmpty(),
-                        mayDecide = mayDecide,
+                        declined = data.declinedOn(x.id, store.me, seen.ids, ProposalKind.ITEM_ROOM),
+                        onSeen = { seen.mark(it.id) },
                         maySuggest = maySuggest && destRooms.isNotEmpty(),
                         onOpen = { nav.open("item/${x.id}") },
                         onPick = { rid -> store.planOrSuggestRoom(context, x.id, rid) },
@@ -143,7 +147,8 @@ fun PlanScreen() {
                         data = data,
                         inches = inches,
                         waiting = waiting,
-                        mayDecide = mayDecide,
+                        declined = { x -> data.declinedOn(x.id, store.me, seen.ids, ProposalKind.ITEM_ROOM) },
+                        onSeen = { seen.mark(it.id) },
                         onOpen = { nav.open("item/${it.id}") },
                         onTakeApart = { x -> edit(x.id) { it.copy(needsDisassembly = true) } },
                         onAddDoor = { nav.open("rooms") },
@@ -203,11 +208,13 @@ private fun HomelessCard(
     data: AppData,
     suggestion: Room?,
     waiting: List<Proposal>,
-    mayDecide: Boolean,
+    declined: Proposal?,
+    onSeen: (Proposal) -> Unit,
     maySuggest: Boolean,
     onOpen: () -> Unit,
     onPick: (String) -> Unit,
 ) {
+    val mayDecide = allowed(Action.DECIDE)
     var choosing by rememberSaveable(x.id) { mutableStateOf(false) }
     GlassCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp)) {
         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -226,7 +233,9 @@ private fun HomelessCard(
                 }
                 Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Night.TextDim)
             }
-            waiting.forEach { p -> if (mayDecide) ProposalReview(p, data) else WaitingTag(p, data) }
+            waiting.forEach { p -> Suggestion(p, data) }
+            // The room this person put forward was turned down: they are told why, once.
+            if (declined != null) DeclinedNote(declined, data, what = data.proposalText(declined), onSeen = { onSeen(declined) })
             if (maySuggest) {
                 // Someone has already put a room forward: that is the thing to settle, so the likely room steps back.
                 val settled = waiting.isNotEmpty()
@@ -268,7 +277,8 @@ private fun RoomBlock(
     data: AppData,
     inches: Boolean,
     waiting: Map<String, List<Proposal>>,
-    mayDecide: Boolean,
+    declined: (Item) -> Proposal?,
+    onSeen: (Proposal) -> Unit,
     onOpen: (Item) -> Unit,
     onTakeApart: (Item) -> Unit,
     onAddDoor: () -> Unit,
@@ -283,11 +293,11 @@ private fun RoomBlock(
             Box(Modifier.size(width = 10.dp, height = 36.dp).clip(CircleShape).background(colour).border(1.dp, Color.White.copy(alpha = 0.45f), CircleShape))
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(room.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(room.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text("${here.size} item${if (here.size == 1) "" else "s"}", color = Night.TextDim, style = MaterialTheme.typography.bodySmall, maxLines = 1)
             }
             // On a small screen or with large text the room's name comes first, so the door says less.
-            val narrow = LocalConfiguration.current.let { it.screenWidthDp / it.fontScale < 340 }
+            val narrow = narrowScreen()
             if (door != null) {
                 val width = if (inches) "${fmtNum(door / 2.54)} in" else "${fmtNum(door)} cm"
                 GlassChip(if (narrow) width else "$width door", icon = Icons.Default.DoorFront)
@@ -321,18 +331,17 @@ private fun RoomBlock(
                     }
                     if (stuck) {
                         Row(Modifier.fillMaxWidth().padding(end = 4.dp), horizontalArrangement = Arrangement.End) {
-                            TextButton(onClick = { onTakeApart(x) }) {
-                                Icon(Pic.TakeApart, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("Mark: take apart")
-                            }
+                            GlassChip("Mark: take apart", icon = Pic.TakeApart, onClick = { onTakeApart(x) })
                         }
                     }
                     // Someone would rather it went elsewhere: the suggestion sits on the item it is about.
                     waiting[x.id].orEmpty().forEach { p ->
                         Box(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
-                            if (mayDecide) ProposalReview(p, data) else WaitingTag(p, data)
+                            Suggestion(p, data)
                         }
+                    }
+                    declined(x)?.let { p ->
+                        DeclinedNote(p, data, Modifier.padding(horizontal = 12.dp, vertical = 4.dp), what = data.proposalText(p), onSeen = { onSeen(p) })
                     }
                 }
             }

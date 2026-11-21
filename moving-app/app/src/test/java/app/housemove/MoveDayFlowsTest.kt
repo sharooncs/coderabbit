@@ -31,7 +31,7 @@ import app.housemove.ui.Speech
 import app.housemove.ui.screens.LocalMdScans
 import app.housemove.ui.screens.MdScans
 import app.housemove.ui.screens.mdCurrentStep
-import app.housemove.ui.screens.mdTold
+import app.housemove.ui.screens.okOrSay
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Assert.*
 import org.junit.Rule
@@ -335,7 +335,7 @@ class MoveDayFlowsTest {
         noKeyboardNeeded()
         see("Choose an amount")
         tap("Fuel")
-        tap("50")
+        tap("£ 50")
         tap("+10")
         tap("−1")
         see("£ 59")
@@ -383,7 +383,7 @@ class MoveDayFlowsTest {
         dontSee("Add a cost")
         tap("Suggest a cost")
         tap("Storage")
-        tap("100")
+        tap("£ 100")
         dontSee("Photograph the receipt") // not hers to add until it is approved
         noKeyboardNeeded()
         tap("Suggest cost · £ 100")
@@ -391,7 +391,7 @@ class MoveDayFlowsTest {
         assertEquals(ProposalKind.COST, p.kind)
         assertNull(data.expense(p.targetId)) // not a cost yet
         see("Waiting for approval")
-        see("You suggested this")
+        see("Suggested by you")
         dontSee("Approve")
         dontSee("Mark paid")
         shot("cost-decider-waiting")
@@ -419,7 +419,7 @@ class MoveDayFlowsTest {
         tap("Storage")
         see("Photograph the receipt")
         see("Done") // nothing changed yet
-        tap("200")
+        tap("£ 200")
         see("Suggest this change") // changing it is still a suggestion
         shot("cost-decider-approved")
         tap("Suggest this change")
@@ -450,6 +450,20 @@ class MoveDayFlowsTest {
         assertEquals("Not needed", data.proposal(p.id)!!.reason)
         dontSee("Waiting for approval")
         assertTrue(data.liveExpenses.isEmpty())
+
+        // The Decider is told what became of it, with the reason, where she suggested it; "OK" puts it away.
+        sync(asha, dee)
+        pickUp(dee, "budget")
+        tap("Costs")
+        see("Declined by Asha: Not needed")
+        see("£ 30")
+        dontSee("Waiting for approval")
+        shot("cost-decider-declined")
+        tap("OK")
+        dontSee("Declined by Asha")
+        pickUp(asha, "budget") // nobody else is shown it
+        tap("Costs")
+        dontSee("Declined by")
     }
 
     @Test
@@ -578,6 +592,22 @@ class MoveDayFlowsTest {
         assertTrue(asha.approve(change.id).ok)
         sync(asha, dee)
         rule.onAllNodes(isToggleable()).assertCountEquals(1) // hers to tick now
+
+        // A job and a change that are declined come back to her with the reason, on the timeline.
+        val job = dee.suggestTask(Task(id = newId(), title = "Hire a skip")).valueOrNull()!!
+        val later = dee.suggestTask(data.task(p.targetId)!!.copy(dueDay = today() + 20)).valueOrNull()!!
+        sync(asha, dee)
+        assertTrue(asha.decline(job.id, "Already planned").ok)
+        assertTrue(asha.decline(later.id, "Let's talk first").ok)
+        sync(asha, dee)
+        see("Hire a skip")
+        see("Declined by Asha: Already planned")
+        see("Declined by Asha: Let's talk first")
+        shot("tasks-decider-declined")
+        tap("OK")
+        tap("OK")
+        dontSee("Declined by Asha")
+        dontSee("Hire a skip")
     }
 
     // ---- records and damage -----------------------------------------------------------------------
@@ -592,13 +622,14 @@ class MoveDayFlowsTest {
         tap("Report damage")
         see("Photograph it") // the photo comes first
         noKeyboardNeeded()
+        tap("Dented") // the usual words are there to tap, as on the box's own page
         say("corner crushed")
-        tapDesc("Say what is damaged")
-        see("corner crushed")
+        tapDesc("Say: What happened?")
+        see("Dented, Corner crushed")
         shot("damage")
         tap("Save")
         assertTrue(data.box(box.id)!!.damaged)
-        assertEquals("corner crushed", data.box(box.id)!!.damageNote)
+        assertEquals("Dented, Corner crushed", data.box(box.id)!!.damageNote)
         see("Damage noted")
 
         // Meters: four tiles to photograph, and no number asked for.
@@ -659,8 +690,8 @@ class MoveDayFlowsTest {
         val asha = organiser()
         val hal = joined(asha, "Hal", Role.HELPER)
         val refused = hal.suggestTask(Task(id = newId(), title = "Tidy up"))
-        assertFalse(mdTold(RuntimeEnvironment.getApplication(), refused))
+        assertFalse(refused.okOrSay(RuntimeEnvironment.getApplication()))
         assertEquals("Helpers cannot suggest this. You can ask for a decision instead.", ShadowToast.getTextOfLatestToast())
-        assertTrue(mdTold(RuntimeEnvironment.getApplication(), asha.addPerson("Kit", Role.HELPER)))
+        assertTrue(asha.addPerson("Kit", Role.HELPER).okOrSay(RuntimeEnvironment.getApplication()))
     }
 }

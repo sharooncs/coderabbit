@@ -68,6 +68,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import app.housemove.data.*
 import app.housemove.ui.*
 
 /** Paperwork at the end: inventory, damage report and the last few jobs. */
@@ -80,9 +81,11 @@ fun ReportsScreen() {
     val data = appData()
     var busy by remember { mutableStateOf(false) }
 
+    // Counted as everywhere else: what is carried. A container inside another, and an item
+    // packed in a container, arrive with it and are not counted again.
     val all = data.movables()
-    val items = data.movingItems()
-    val boxes = data.liveBoxes
+    val items = data.looseItems()
+    val boxes = data.topBoxes()
     val damaged = all.filter { it.damaged }
     val paid = data.liveExpenses.filter { !it.planned }.sumOf { it.amount }
     val tasks = data.liveTasks
@@ -90,7 +93,7 @@ fun ReportsScreen() {
     val damagePhoto = damaged.firstNotNullOfOrNull { m -> data.photosOf(m.id, PhotoKind.DAMAGE).firstOrNull() }
     val device = deviceInfo()
     // A Helper is not shown costs, and their phone is not sent them.
-    val seesCosts = mdCan(Action.SUGGEST)
+    val seesCosts = allowed(Action.SUGGEST)
 
     // Build the file off the main thread, then hand it to another app.
     fun produce(mime: String, open: Boolean, make: () -> File) {
@@ -119,11 +122,11 @@ fun ReportsScreen() {
                 MdStatOf("Boxes moved") { MdStatRing(Ratio(boxes.count { mdArrived(it.stage) }, boxes.size)) }
                     .takeIf { boxes.isNotEmpty() || data.uses(Part.BOXES) },
                 MdStatOf("Damaged") { MdStatIcon(Pic.Damage, damaged.size.toString(), error = damaged.isNotEmpty()) },
-                MdStatOf("Total paid") { MdStatIcon(Icons.Default.Payments, (data.move.currency.trim() + " " + fmtNum(paid)).trim()) }
+                MdStatOf("Total paid") { MdStatIcon(Icons.Default.Payments, money(data.move.currency, paid)) }
                     .takeIf { seesCosts && (paid != 0.0 || data.uses(Part.BUDGET)) },
             )
             // Four in a row; two rows of two on a small phone, so no number is cut short.
-            TileGrid(stats, columns = if (mdNarrow()) 2 else stats.size) { stat, m -> MdStat(stat.label, m, stat.picture) }
+            TileGrid(stats, columns = if (narrowScreen()) 2 else stats.size) { stat, m -> MdStat(stat.label, m, stat.picture) }
 
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
 
@@ -157,7 +160,7 @@ fun ReportsScreen() {
                 Column(Modifier.padding(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     if (data.uses(Part.TIMELINE)) StepRow(
                         Icons.Default.Checklist,
-                        if (tasksLeft == 0) "All tasks done" else mdCount(tasksLeft, "task") + " left",
+                        if (tasksLeft == 0) "All tasks done" else countOf(tasksLeft, "task") + " left",
                         onClick = { nav.open("tasks") },
                         ratio = Ratio(tasks.size - tasksLeft, tasks.size),
                         status = "Address, deposit, final bills",
@@ -231,18 +234,7 @@ private fun MdReport(
                     Text(purpose, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (onOpen != null) Button(enabled = enabled, onClick = onOpen, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
-                    Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Open")
-                }
-                OutlinedButton(enabled = enabled, onClick = onShare, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
-                    Icon(Icons.Default.ShareIcon, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Share")
-                }
-            }
+            FileButtons("Open", enabled, onOpen = onOpen, onShare = onShare)
         }
     }
 }
