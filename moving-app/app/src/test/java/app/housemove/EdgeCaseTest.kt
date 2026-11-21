@@ -205,8 +205,10 @@ class EdgeCaseTest {
             server.accept().use { s ->
                 val din = DataInputStream(s.getInputStream().buffered())
                 val out = DataOutputStream(s.getOutputStream().buffered())
-                repeat(4) { din.readUTF() }
-                out.writeUTF("OK"); out.writeUTF("Flaky"); out.writeUTF("F"); out.flush()
+                // Hello: magic, code, name, letter, schema, who they are, who the invite is for.
+                repeat(4) { din.readUTF() }; din.readInt(); repeat(2) { din.readUTF() }
+                out.writeUTF("OK"); out.writeUTF("Flaky"); out.writeUTF("F"); out.writeUTF(""); out.flush()
+                assertEquals("GO", din.readUTF())
                 val data = ByteArray(din.readInt()).also { din.readFully(it) }
                 out.writeInt(data.size); out.write(data); out.flush()
                 repeat(din.readInt()) { din.readUTF() }

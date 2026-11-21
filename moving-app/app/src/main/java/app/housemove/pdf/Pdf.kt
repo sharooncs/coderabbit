@@ -34,6 +34,32 @@ enum class LabelSheet(
     val perPage get() = cols * rows
 }
 
+/**
+ * Sheets of hang tags for suitcases and bags, which a sticker does not stay on.
+ * Printed on paper or card, cut out along the outline, punched at the mark and
+ * tied to the handle. They carry the same codes and QR as the sticker sheets.
+ */
+enum class TagSheet(
+    val label: String,
+    val pageW: Int, val pageH: Int,
+    val cols: Int, val rows: Int,
+    val left: Float, val top: Float,
+    val cellW: Float, val cellH: Float,
+) {
+    A4_TAGS("A4 hang tags · 8 per page, cut out, punch and tie on", 595, 842, 2, 4, 24f, 25f, 273.5f, 198f),
+    LETTER_TAGS("Letter hang tags · 8 per page, cut out, punch and tie on", 612, 792, 2, 4, 24f, 24f, 282f, 186f);
+
+    val perPage get() = cols * rows
+
+    /** Centre of the punch-hole mark of tag [index] on the page, in points. */
+    fun hole(index: Int): Pair<Float, Float> =
+        (left + (index % cols) * cellW + TAG_HOLE_X) to (top + (index / cols) * cellH + cellH / 2f)
+}
+
+/** Distance of the punch-hole mark from the left edge of a tag, and its radius, in points. */
+const val TAG_HOLE_X = 24f
+const val TAG_HOLE_R = 8f
+
 fun labelCode(n: Int): String = "L" + n.toString().padStart(3, '0')
 
 /** QR code as a bitmap with a quiet zone, black on white. */
@@ -105,6 +131,59 @@ object Pdf {
             c.drawText("Room:", textX, y + sheet.cellH * 0.70f, small)
             c.drawLine(textX + 26f, y + sheet.cellH * 0.71f, x + sheet.cellW - pad, y + sheet.cellH * 0.71f, line)
             c.drawText("HouseMove", textX, y + sheet.cellH - pad - 1f, small)
+        }
+    }
+
+    /** Sheets of hang tags for the given codes, for suitcases and bags; each code is repeated [copies] times. */
+    fun hangTags(context: Context, codes: List<String>, sheet: TagSheet, copies: Int = 1): File {
+        val doc = PdfDocument()
+        val all = codes.flatMap { c -> List(copies.coerceAtLeast(1)) { c } }
+        all.chunked(sheet.perPage).forEachIndexed { pageIndex, chunk ->
+            val page = doc.startPage(PdfDocument.PageInfo.Builder(sheet.pageW, sheet.pageH, pageIndex + 1).create())
+            drawTagPage(page.canvas, sheet, chunk)
+            doc.finishPage(page)
+        }
+        return write(doc, outFile(context, "housemove-hang-tags.pdf"))
+    }
+
+    /**
+     * Draw one page of hang tags. Each tag has a cut line, a punch-hole mark at
+     * the left, the QR code, the code in large type and a line to write on.
+     */
+    fun drawTagPage(c: Canvas, sheet: TagSheet, codes: List<String>) {
+        val codePaint = textPaint(40f, bold = true)
+        val small = textPaint(8f, color = Color.DKGRAY)
+        val cut = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.GRAY; style = Paint.Style.STROKE; strokeWidth = 0.7f
+            pathEffect = android.graphics.DashPathEffect(floatArrayOf(4f, 3f), 0f)
+        }
+        val mark = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK; style = Paint.Style.STROKE; strokeWidth = 1f }
+        val line = Paint().apply { color = Color.GRAY; style = Paint.Style.STROKE; strokeWidth = 0.7f }
+        codes.take(sheet.perPage).forEachIndexed { i, code ->
+            val x = sheet.left + (i % sheet.cols) * sheet.cellW
+            val y = sheet.top + (i / sheet.cols) * sheet.cellH
+            val pad = 10f
+            c.drawRoundRect(RectF(x + 3f, y + 3f, x + sheet.cellW - 3f, y + sheet.cellH - 3f), 14f, 14f, cut)
+            // Where to punch the hole for the string: a circle with a cross through its middle.
+            val (hx, hy) = sheet.hole(i)
+            c.drawCircle(hx, hy, TAG_HOLE_R, mark)
+            c.drawLine(hx - TAG_HOLE_R - 3f, hy, hx + TAG_HOLE_R + 3f, hy, mark)
+            c.drawLine(hx, hy - TAG_HOLE_R - 3f, hx, hy + TAG_HOLE_R + 3f, mark)
+
+            val bodyX = x + TAG_HOLE_X * 2f
+            val writeY = y + sheet.cellH - 18f
+            val qrSize = (writeY - 22f - (y + pad)).coerceAtMost(sheet.cellW * 0.48f)
+            val qr = qrBitmap(QR_PREFIX + code, 240)
+            // No filtering: the squares of the code must stay sharp when scaled.
+            c.drawBitmap(qr, null, RectF(bodyX, y + pad, bodyX + qrSize, y + pad + qrSize), Paint().apply { isFilterBitmap = false })
+            val textX = bodyX + qrSize + 8f
+            val textW = x + sheet.cellW - pad - textX
+            codePaint.textSize = 40f
+            fitText(codePaint, code, textW, minSize = 12f)
+            c.drawText(code, textX, y + pad + qrSize * 0.55f, codePaint)
+            c.drawText("HouseMove", textX, y + pad + qrSize * 0.55f + 14f, small)
+            c.drawText("Name / what's inside:", bodyX, writeY - 8f, small)
+            c.drawLine(bodyX, writeY + 4f, x + sheet.cellW - pad, writeY + 4f, line)
         }
     }
 
@@ -233,7 +312,7 @@ object Pdf {
             p.row(
                 itemCols.zip(
                     listOf(
-                        (i.label?.let { "[$it] " } ?: "") + i.title(),
+                        (i.label?.let { "[$it] " } ?: "") + i.title() + (data.containerOf(i)?.let { " (in ${it.label})" } ?: ""),
                         data.room(i.originRoomId)?.name ?: "–",
                         data.room(i.destRoomId)?.name ?: "–",
                         dims(i), i.disposition.label, flags,
@@ -259,19 +338,22 @@ object Pdf {
             p.space(12f)
         }
 
-        p.text("Boxes", 14f, bold = true, gap = 6f)
-        val boxCols = listOf(0f, 50f, 140f, 230f, 300f)
-        p.row(boxCols.zip(listOf("Box", "From", "To", "Priority", "Contents")), bold = true)
+        p.text("Boxes and other containers", 14f, bold = true, gap = 6f)
+        val boxCols = listOf(0f, 46f, 112f, 176f, 248f, 320f, 378f)
+        p.row(boxCols.zip(listOf("Code", "Kind", "Category", "From", "To", "Priority", "Contents")), bold = true)
         p.rule()
         val boxes = data.liveBoxes.sortedBy { it.label }
         for (b in boxes) {
             val flags = listOfNotNull("FRAGILE".takeIf { b.fragile }, "HEAVY".takeIf { b.heavy }, "DAMAGED".takeIf { b.damaged }).joinToString(" ")
+            val inside = data.parentOf(b)?.let { "(in ${it.label}) " } ?: ""
+            val holds = data.itemsIn(b.id).takeIf { it.isNotEmpty() }?.let { list -> " · holds: " + list.joinToString(", ") { it.title() } } ?: ""
             p.row(
                 boxCols.zip(
                     listOf(
-                        b.label, data.room(b.originRoomId)?.name ?: "–", data.room(b.destRoomId)?.name ?: "–",
+                        b.label, b.kind.label, b.category.ifBlank { "–" },
+                        data.room(b.originRoomId)?.name ?: "–", data.room(b.destRoomId)?.name ?: "–",
                         b.priority.label,
-                        (flags + " " + b.contents.replace('\n', ' ') + scannedSummary(data, b.id)).trim(),
+                        (flags + " " + inside + listOf(b.name, b.contents.replace('\n', ' ')).filter { it.isNotBlank() }.joinToString(": ") + holds + scannedSummary(data, b.id)).trim(),
                     )
                 )
             )
@@ -353,23 +435,30 @@ object Csv {
     /** Items and boxes as one spreadsheet-friendly file. */
     fun inventory(context: Context, data: AppData): File {
         val sb = StringBuilder()
-        sb.append("Type,Label,Name / contents,From room,To room,Decision,Status,Width cm,Depth cm,Height cm,Value,Fragile,Damaged,Notes,Make,Model,Serial number,Warranty until,Travels with it\n")
+        // The last three columns were added in 2.0, after the ones a spreadsheet may already rely on:
+        // what kind of container a row is (or is in), its category, and the container something is packed in.
+        sb.append("Type,Label,Name / contents,From room,To room,Decision,Status,Width cm,Depth cm,Height cm,Value,Fragile,Damaged,Notes,Make,Model,Serial number,Warranty until,Travels with it,Container kind,Category,Packed in\n")
         for (i in data.liveItems) {
+            val container = data.containerOf(i)
             sb.append(
                 listOf(
                     "Item", i.label, i.title(), data.room(i.originRoomId)?.name, data.room(i.destRoomId)?.name,
                     i.disposition.label, i.stage.label, fmtNum(i.widthCm), fmtNum(i.depthCm), fmtNum(i.heightCm), fmtNum(i.value),
                     if (i.fragile) "yes" else "", if (i.damaged) "yes: ${i.damageNote}" else "", i.notes,
                     i.make, i.model, i.serial, i.warrantyDay?.let { fmtDay(it) } ?: "", i.accessories,
+                    container?.kind?.label, container?.category, container?.label,
                 ).joinToString(",") { cell(it) }
             ).append('\n')
         }
         for (b in data.liveBoxes) {
             sb.append(
                 listOf(
-                    "Box", b.label, b.contents, data.room(b.originRoomId)?.name, data.room(b.destRoomId)?.name,
+                    "Box", b.label, listOf(b.name, b.contents).filter { it.isNotBlank() }.joinToString(": "),
+                    data.room(b.originRoomId)?.name, data.room(b.destRoomId)?.name,
                     "Move", b.stage.label, "", "", "", "",
                     if (b.fragile) "yes" else "", if (b.damaged) "yes: ${b.damageNote}" else "", b.notes,
+                    "", "", "", "", "",
+                    b.kind.label, b.category, data.parentOf(b)?.label,
                 ).joinToString(",") { cell(it) }
             ).append('\n')
         }
@@ -379,6 +468,8 @@ object Csv {
                 listOf(
                     "In box", b.label, e.title.ifBlank { "Barcode ${e.code}" }, data.room(b.originRoomId)?.name, data.room(b.destRoomId)?.name,
                     "Move", b.stage.label, "", "", "", "", "", "", listOf(e.author, e.code).filter { it.isNotBlank() }.joinToString(" / "),
+                    "", "", "", "", "",
+                    b.kind.label, b.category, b.label,
                 ).joinToString(",") { cell(it) }
             ).append('\n')
         }

@@ -132,3 +132,27 @@ val PACK_ORDER = listOf(
 
 val EXPENSE_CATEGORIES = listOf("Van", "Fuel", "Supplies", "Helpers", "Storage", "Cleaning", "Fees", "Other")
 val METER_KINDS = listOf("Electricity", "Gas", "Water", "Other")
+
+/** Categories offered for a container. [suggestCategory] picks one from the room and the contents. */
+val BOX_CATEGORIES = listOf(
+    "Kitchen", "Clothes", "Books", "Documents", "Toys", "Bathroom", "Tools", "Electronics", "Decor", "Bedding", "Food", "Other",
+)
+
+/**
+ * Things commonly packed, per category, offered as one-tap chips so contents need not be typed.
+ * See [contentsChips]. Each is one thing, with no "and" or comma, so it stays one line of contents.
+ */
+val COMMON_CONTENTS: Map<String, List<String>> = mapOf(
+    "Kitchen" to listOf("Plates", "Bowls", "Glasses", "Mugs", "Cutlery", "Pans", "Baking trays", "Utensils", "Food containers", "Kettle", "Toaster", "Tea towels"),
+    "Clothes" to listOf("T-shirts", "Shirts", "Jumpers", "Trousers", "Dresses", "Coats", "Underwear", "Socks", "Shoes", "Sportswear", "Hats", "Scarves"),
+    "Books" to listOf("Novels", "Cookbooks", "Children's books", "Textbooks", "Magazines", "Photo albums", "Comics", "Notebooks"),
+    "Documents" to listOf("Passports", "Certificates", "Bank papers", "Bills", "Contracts", "Medical records", "School papers", "Manuals", "Warranties"),
+    "Toys" to listOf("Soft toys", "Building bricks", "Board games", "Puzzles", "Dolls", "Toy cars", "Craft things", "Outdoor toys", "Picture books"),
+    "Bathroom" to listOf("Towels", "Toiletries", "Medicines", "Make-up", "Hair dryer", "Bath mat", "Cleaning things", "Toilet rolls", "First-aid kit"),
+    "Tools" to listOf("Hand tools", "Power tools", "Screws", "Nails", "Paint", "Brushes", "Garden tools", "Extension leads", "Tape", "Torch"),
+    "Electronics" to listOf("Cables", "Chargers", "Router", "Games console", "Controllers", "Headphones", "Speakers", "Keyboard", "Mouse", "Camera", "Remotes"),
+    "Decor" to listOf("Pictures", "Photo frames", "Vases", "Ornaments", "Candles", "Lamps", "Cushions", "Mirrors", "Clocks", "Plants"),
+    "Bedding" to listOf("Duvets", "Pillows", "Sheets", "Duvet covers", "Pillowcases", "Blankets", "Mattress protector", "Throws"),
+    "Food" to listOf("Tins", "Pasta", "Rice", "Cereal", "Tea", "Coffee", "Spices", "Jars", "Snacks", "Baking things", "Sauces"),
+    "Other" to listOf("Books", "Clothes", "Cables", "Toys", "Shoes", "Papers", "Ornaments", "Cleaning things", "Keepsakes"),
+)

@@ -213,8 +213,18 @@ class BarcodeTest {
             Socket("127.0.0.1", host.port).use { s ->
                 val out = DataOutputStream(s.getOutputStream())
                 val din = DataInputStream(s.getInputStream())
-                out.writeUTF("HMSYNC2"); out.writeUTF(host.token); out.writeUTF("Future"); out.writeUTF("F"); out.writeInt(SCHEMA + 1); out.flush()
+                out.writeUTF("HMSYNC3"); out.writeUTF(host.token); out.writeUTF("Future"); out.writeUTF("F"); out.writeInt(SCHEMA + 1)
+                out.writeUTF(""); out.writeUTF(""); out.flush()
                 assertEquals("VERSION", din.readUTF())
+            }
+            Thread.sleep(200)
+            assertEquals(WifiSync.VERSION_MISMATCH, hostError)
+            // A phone on version 1.3: it says hello the old way, and must get the answer it shows as "different versions".
+            hostError = null
+            Socket("127.0.0.1", host.port).use { s ->
+                val out = DataOutputStream(s.getOutputStream())
+                out.writeUTF("HMSYNC2"); out.writeUTF(host.token); out.writeUTF("Old phone"); out.writeUTF("O"); out.writeInt(3); out.flush()
+                assertEquals("VERSION", DataInputStream(s.getInputStream()).readUTF())
             }
             Thread.sleep(200)
             assertEquals(WifiSync.VERSION_MISMATCH, hostError)

@@ -36,8 +36,13 @@ object Backup {
 
     data class Result(val records: Int, val photos: Int)
 
-    /** Merge a backup into [store]. With [replace] the current data is discarded first. */
+    /**
+     * Merge a backup into [store]. With [replace] the current data is discarded first.
+     * Only an Organiser may restore one; anyone else gets an IllegalArgumentException saying so.
+     * A backup made before version 2.0 is brought up to date first ([migrate]), so nothing in it is lost.
+     */
     fun import(store: Store, input: InputStream, replace: Boolean = false): Result {
+        store.data.value.refusal(store.me, Action.RESTORE_BACKUP)?.let { throw IllegalArgumentException(it) }
         var data: AppData? = null
         var photos = 0
         ZipInputStream(input.buffered()).use { zip ->
@@ -65,7 +70,10 @@ object Backup {
         if (d.version > SCHEMA) {
             throw IllegalArgumentException("This backup was made by a newer version of HouseMove. Update the app, then restore it.")
         }
-        if (replace) store.replaceAll(d) else store.mergeIn(d)
+        // A backup is restored by an Organiser who chose the file, so parts of it that carry no stamp
+        // (anything saved before 2.0) are taken as they stand rather than turned away as a sync would.
+        val current = migrate(d)
+        if (replace) store.replaceAll(current) else store.mergeIn(current)
         store.flush()
         return Result(d.items.size + d.boxes.size + d.rooms.size + d.tasks.size, photos)
     }

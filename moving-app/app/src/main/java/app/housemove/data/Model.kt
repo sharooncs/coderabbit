@@ -8,7 +8,7 @@ import kotlinx.serialization.Serializable
  * Version of the saved data layout. Two phones must be on the same one to sync,
  * so fields added by a newer version are never dropped by an older one.
  */
-const val SCHEMA = 3
+const val SCHEMA = 4
 
 /**
  * Every record carries an id, a last-modified time and a tombstone flag.
@@ -52,6 +52,48 @@ enum class BoxSize(val label: String, val m3: Double) {
     S("Small", 0.035), M("Medium", 0.06), L("Large", 0.10), XL("Extra large", 0.15)
 }
 
+/** What someone may do in a move. See [can] for the table. */
+enum class Role(val label: String) { ORGANISER("Organiser"), DECIDER("Decider"), HELPER("Helper") }
+
+/**
+ * Anything things are packed into. A [Box] record is used for all of them.
+ * [m3] is a typical volume (a carton uses its [BoxSize] instead); [noun] is the
+ * word used in titles ("Suitcase B2").
+ */
+enum class ContainerKind(val label: String, val noun: String, val m3: Double, val travelsWithMe: Boolean = false) {
+    CARTON("Carton", "Box", 0.06),
+    SUITCASE("Suitcase", "Suitcase", 0.09, travelsWithMe = true),
+    BAG("Bag", "Bag", 0.05),
+    CRATE("Crate or tub", "Crate", 0.07),
+    WARDROBE("Wardrobe box", "Wardrobe box", 0.30),
+    OTHER("Other", "Container", 0.06),
+}
+
+/** What a suggestion is about. */
+enum class ProposalKind(val label: String) {
+    ITEM_DECISION("Keep, sell, donate, bin or store"), ITEM_ROOM("Which room it goes to"),
+    COST("A cost"), TASK("A task"), QUESTION("A question")
+}
+
+enum class ProposalState(val label: String) {
+    WAITING("Waiting"), APPROVED("Approved"), DECLINED("Declined"),
+
+    /** An Organiser changed the same thing directly while the suggestion waited. */
+    OVERTAKEN("Changed meanwhile"),
+
+    /** Another suggestion for the same thing was approved instead. */
+    NOT_CHOSEN("Another one was chosen")
+}
+
+/**
+ * Who last set a protected part of a record, and when. [by] is a person id, or
+ * blank when it was set while the move had no Organiser (which includes all
+ * data from before version 2.0). [sum] is a check value over what was set, so
+ * a change made without a new stamp is noticed when phones merge.
+ */
+@Serializable
+data class Stamp(val by: String = "", val at: Long = 0, val sum: String = "")
+
 enum class PhotoKind(val label: String) {
     GENERAL("Photo"), CONTENTS("Contents"), CONDITION("Condition before"), DISASSEMBLY("Disassembly"),
     CABLES("Cables"), DAMAGE("Damage"), ROOM("Room"), METER("Meter"), RECEIPT("Receipt"),
@@ -75,6 +117,8 @@ data class MoveInfo(
     val off: List<String> = emptyList(),
     val setupDone: Boolean = false,
     val updatedAt: Long = 0,
+    /** Who last changed these settings (everything here except [labelsPrinted]). */
+    val changedBy: Stamp = Stamp(),
 )
 
 @Serializable
@@ -154,6 +198,16 @@ data class Item(
     val keepUpright: Boolean = false,
     val prepCablesLabelled: Boolean = false,
     val prepSignedOut: Boolean = false,
+    /** The container it is packed in, if any. While inside it travels with that container. */
+    val boxId: String? = null,
+    /** Sell: what it actually went for. [price] is the asking price. */
+    val soldFor: Double? = null,
+    /** Who decided [disposition], [price] and [deadlineDay]. */
+    val decisionBy: Stamp = Stamp(),
+    /** Who chose [destRoomId]. */
+    val roomBy: Stamp = Stamp(),
+    /** Who carried the decision out: [listed], [gone], [soldFor]. */
+    val outcomeBy: Stamp = Stamp(),
     val createdAt: Long = 0,
     override val updatedAt: Long = 0,
     override val deleted: Boolean = false,
@@ -195,6 +249,14 @@ data class Box(
     val damageNote: String = "",
     val packedBy: String = "",
     val notes: String = "",
+    /** What kind of container this is. A carton unless said otherwise. */
+    val kind: ContainerKind = ContainerKind.CARTON,
+    /** One of [BOX_CATEGORIES], or blank. */
+    val category: String = "",
+    /** Optional name shown instead of "Box L001", e.g. "Kitchen box 4". */
+    val name: String = "",
+    /** The container this one is inside, if any. One level only: see [parentOf]. */
+    val parentId: String? = null,
     val createdAt: Long = 0,
     override val updatedAt: Long = 0,
     override val deleted: Boolean = false,
@@ -209,6 +271,8 @@ data class Photo(
     /** File name inside the photo directory. */
     val file: String,
     val note: String = "",
+    /** Person who took or attached it. Blank for photos from before version 2.0. */
+    val by: String = "",
     val createdAt: Long = 0,
     override val updatedAt: Long = 0,
     override val deleted: Boolean = false,
@@ -225,6 +289,12 @@ data class Task(
     val category: String = "",
     val done: Boolean = false,
     val notes: String = "",
+    /** Person who is to do it, if anyone in particular. They may tick it off whatever their role. */
+    val assignedTo: String? = null,
+    /** Who created or last changed the task itself (everything except [done]). */
+    val planBy: Stamp = Stamp(),
+    /** Who ticked or unticked it. */
+    val doneBy: Stamp = Stamp(),
     override val updatedAt: Long = 0,
     override val deleted: Boolean = false,
 ) : Rec
@@ -238,6 +308,10 @@ data class Expense(
     val day: Long = 0,
     /** True for a quote or planned cost, false once actually paid. */
     val planned: Boolean = false,
+    /** Who created or last changed the cost itself (everything except [planned]). */
+    val costBy: Stamp = Stamp(),
+    /** Who marked it paid or not paid. */
+    val paidBy: Stamp = Stamp(),
     override val updatedAt: Long = 0,
     override val deleted: Boolean = false,
 ) : Rec
@@ -274,6 +348,85 @@ data class Reading(
     override val deleted: Boolean = false,
 ) : Rec
 
+/** One change of someone's role, or their removal from the move. [by] is blank when there was no Organiser to ask. */
+@Serializable
+data class Grant(val role: Role = Role.HELPER, val removed: Boolean = false, val at: Long = 0, val by: String = "")
+
+/**
+ * Someone taking part in the move. [role] and [removed] are worked out from
+ * [grants] (see [Roles]), so they cannot be changed by rewriting the two fields.
+ */
+@Serializable
+data class Person(
+    override val id: String,
+    val name: String = "",
+    val role: Role = Role.HELPER,
+    /** Prefix for this person's handwritten box codes. No two people share one. */
+    val letter: String = "",
+    /** When their phone joined. 0 while they have been added but have not joined yet. */
+    val joinedAt: Long = 0,
+    val removed: Boolean = false,
+    /** Every role change and removal, oldest first. */
+    val grants: List<Grant> = emptyList(),
+    override val updatedAt: Long = 0,
+    /** Not used: people are removed, never deleted. */
+    override val deleted: Boolean = false,
+) : Rec
+
+/**
+ * A suggestion waiting for an Organiser, or a question about an item.
+ * What is proposed never changes after it is made; only [state], [reason] and
+ * [decided] do, and only an Organiser may set those.
+ */
+@Serializable
+data class Proposal(
+    override val id: String,
+    val kind: ProposalKind = ProposalKind.QUESTION,
+    /** The item, cost or task it is about. For a new cost or task: the id it gets when approved. */
+    val targetId: String = "",
+    /** Person who suggested or asked. */
+    val by: String = "",
+    val note: String = "",
+    /** ITEM_DECISION: the decision proposed. */
+    val disposition: Disposition? = null,
+    /** ITEM_DECISION: asking price proposed, if any. */
+    val price: Double? = null,
+    /** ITEM_ROOM: the new-home room proposed. */
+    val roomId: String? = null,
+    /** COST: the cost as proposed. */
+    val expense: Expense? = null,
+    /** TASK: the task as proposed. */
+    val task: Task? = null,
+    /** A suggestion made as the answer to a QUESTION: that question's id. */
+    val answers: String? = null,
+    val state: ProposalState = ProposalState.WAITING,
+    /** Why it was declined, or what the Organiser said when answering a question. */
+    val reason: String = "",
+    /** Who approved, declined or overtook it, and when. */
+    val decided: Stamp = Stamp(),
+    val createdAt: Long = 0,
+    override val updatedAt: Long = 0,
+    override val deleted: Boolean = false,
+) : Rec {
+    val decidedBy: String get() = decided.by
+    val decidedAt: Long get() = decided.at
+}
+
+/** One line of the shared log of who did what, e.g. "sealed L012". */
+@Serializable
+data class Activity(
+    override val id: String,
+    /** Person who did it. */
+    val by: String = "",
+    val at: Long = 0,
+    /** Short and in the past tense, to read after the person's name. */
+    val text: String = "",
+    /** Id of the box, item, person or suggestion it was about, if any. */
+    val refId: String? = null,
+    override val updatedAt: Long = 0,
+    override val deleted: Boolean = false,
+) : Rec
+
 /** The whole dataset. Lists include tombstones; use the `live*` views for display. */
 @OptIn(ExperimentalSerializationApi::class)
 @Serializable
@@ -290,6 +443,9 @@ data class AppData(
     val trips: List<Trip> = emptyList(),
     val readings: List<Reading> = emptyList(),
     val entries: List<BoxEntry> = emptyList(),
+    val people: List<Person> = emptyList(),
+    val proposals: List<Proposal> = emptyList(),
+    val activity: List<Activity> = emptyList(),
 ) {
     val liveRooms get() = rooms.filter { !it.deleted }.sortedWith(compareBy({ it.sort }, { it.name }))
     val liveItems get() = items.filter { !it.deleted }
@@ -302,6 +458,10 @@ data class AppData(
     val liveReadings get() = readings.filter { !it.deleted }
     val liveEntries get() = entries.filter { !it.deleted }
 
+    /** Everyone in the move who has not been removed, Organisers first. */
+    val livePeople get() = people.filter { !it.removed }.sortedWith(compareBy({ it.role.ordinal }, { it.name.lowercase() }, { it.id }))
+    val liveProposals get() = proposals.filter { !it.deleted }
+
     /** Things scanned into a box, newest first. */
     fun entriesOf(boxId: String) = entries.filter { !it.deleted && it.boxId == boxId }.sortedByDescending { it.createdAt }
 
@@ -310,6 +470,12 @@ data class AppData(
     fun item(id: String?) = if (id == null) null else items.firstOrNull { it.id == id && !it.deleted }
     fun box(id: String?) = if (id == null) null else boxes.firstOrNull { it.id == id && !it.deleted }
     fun trip(id: String?) = if (id == null) null else trips.firstOrNull { it.id == id && !it.deleted }
+    fun task(id: String?) = if (id == null) null else tasks.firstOrNull { it.id == id && !it.deleted }
+    fun expense(id: String?) = if (id == null) null else expenses.firstOrNull { it.id == id && !it.deleted }
+
+    /** A person by id, including people who have been removed. */
+    fun person(id: String?) = if (id.isNullOrEmpty()) null else people.firstOrNull { it.id == id }
+    fun proposal(id: String?) = if (id == null) null else proposals.firstOrNull { it.id == id && !it.deleted }
     fun photosOf(ownerId: String, kind: PhotoKind? = null) =
         photos.filter { !it.deleted && it.ownerId == ownerId && (kind == null || it.kind == kind) }
             .sortedBy { it.createdAt }
