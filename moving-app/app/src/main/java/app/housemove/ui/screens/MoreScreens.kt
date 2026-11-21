@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -15,6 +16,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -30,18 +33,22 @@ fun MoreScreen() {
     val device = deviceInfo()
     Screen("Everything", back = false, tab = "more", actions = { TopActions() }) {
         ScrollColumn {
-            // Every screen once, grouped by the phase of the move it belongs to.
+            // Every screen once, grouped by the phase of the move it belongs to. Three tiles to a row,
+            // two on a narrow screen or with large text, so titles and statuses stay whole.
+            val columns = if (tightScreen()) 2 else 3
             val seen = HashSet<String>()
             shownPhases(data).forEach { (_, phase) ->
                 val skip = phase.steps.map { it.route }.filter { !seen.add(it) }.toSet()
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(phase.icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                // A phase none of whose screens are for this person is left out, heading and all.
+                if (phase.steps.none { it.route !in skip && it.shownFor(data, device) }) return@forEach
+                Row(Modifier.semantics(mergeDescendants = true) { heading() }, verticalAlignment = Alignment.CenterVertically) {
+                    Icon(phase.icon, contentDescription = null, tint = Night.Mint, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text(phase.name, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                    Text(phase.name, style = MaterialTheme.typography.titleSmall, color = Night.MintPale)
                     Spacer(Modifier.width(8.dp))
                     Text(phase.timing, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                PhaseTiles(phase, data, device, columns = 3, skipRoutes = skip)
+                PhaseTiles(phase, data, device, columns = columns, skipRoutes = skip)
             }
         }
     }
@@ -84,26 +91,12 @@ fun SettingsScreen() {
         ScrollColumn {
             // On a shared move: who this phone is and what its role can do. An Organiser changes roles under People.
             if (shared && mine != null) {
-                GlassPill(
-                    Modifier.fillMaxWidth(), onClick = { nav.open("people") }, sheen = true,
-                    contentPadding = PaddingValues(start = 8.dp, top = 8.dp, bottom = 8.dp, end = 14.dp),
-                ) {
-                    PersonOrb(mine, size = 44.dp, me = true)
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("You are ${mine.shownName()}", style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(mine.role.line(), style = MaterialTheme.typography.bodySmall, color = Night.TextDim, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    }
-                    Spacer(Modifier.width(8.dp))
-                    RoleChip(mine.role)
-                }
+                PersonPill(mine, "You are ${mine.shownName()}", mine.role.line(), sheen = true, onClick = { nav.open("people") })
             }
 
             if (mayChangeMove) {
                 if (move.kind != MoveKind.INVENTORY) {
-                    Section("The move") {
-                        DateButton(move.moveDay, { d -> change { it.copy(moveDay = d) } }, "Move day", Modifier.fillMaxWidth())
-                    }
+                    DateButton(move.moveDay, { d -> change { it.copy(moveDay = d) } }, "Move day", Modifier.fillMaxWidth().heightIn(min = 56.dp))
                 }
                 Fold(
                     "Names", Icons.Default.Edit,
@@ -228,7 +221,7 @@ fun SettingsScreen() {
             if (mayErase) {
                 Fold("Start again", Icons.Default.DeleteForever, summary = "Erase everything on this phone") {
                     Hint("Removes every room, item, box, task and photo from this phone only.")
-                    OutlinedButton(onClick = { confirmErase = true }) { Text("Erase all data on this phone") }
+                    PillButton("Erase all data on this phone", onClick = { confirmErase = true }, icon = Icons.Default.DeleteForever, primary = false, tone = GlassTone.Red)
                 }
             }
         }
@@ -268,8 +261,14 @@ fun SearchScreen() {
         }
     }
     val hits = remember(query, data) { data.search(query) }
+    // Rooms to look in by a tap, most things first. A room that is in both homes is offered once.
+    val rooms = remember(data) {
+        val used = data.movables().flatMap { listOfNotNull(it.originRoomId, it.destRoomId) }.groupingBy { it }.eachCount()
+        data.liveRooms.filter { (used[it.id] ?: 0) > 0 }.groupBy { it.name }.map { (name, same) -> name to same.sumOf { used[it.id] ?: 0 } }
+            .sortedByDescending { it.second }.map { it.first }.take(8)
+    }
     Screen("Find anything") {
-        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
                 colors = glassFieldColors(),
                 value = query,
@@ -288,23 +287,61 @@ fun SearchScreen() {
             SpeakButton("What are you looking for?", Modifier.padding(start = 8.dp), contentDescription = "Say what you are looking for") { query = it }
         }
         when {
-            query.isBlank() -> EmptyState(Icons.Default.Search, "Find a box or an item", text = "Say or type what is in it, its name, its label or its room.")
-            hits.isEmpty() -> EmptyState(Icons.Default.SearchOff, "Nothing matches \"$query\"", text = "Try one word. If another phone packed it, sync first.")
-            else -> LazyColumn(Modifier.weight(1f)) {
-                items(hits, key = { it.movable.id }) { hit ->
-                    Row(Modifier.fillMaxWidth()) {
-                        OwnerThumb(hit.movable.id, Modifier.padding(start = 16.dp, top = 10.dp).size(48.dp), isBox = hit.movable.isBox)
-                        Column(Modifier.weight(1f)) {
-                            MovableRow(hit.movable, onClick = { nav.openMovable(hit.movable) })
-                            Hint(
-                                "Now: " + data.whereIs(hit.movable) + if (hit.detail.isBlank()) "" else "\n" + hit.detail.take(120),
-                                Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
-                            )
-                        }
+            query.isBlank() -> ScrollColumn {
+                if (rooms.isNotEmpty()) {
+                    // No keyboard needed for the commonest question: what is in, or going to, this room?
+                    Text("Or look in a room", style = MaterialTheme.typography.labelLarge, color = Night.TextDim)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        rooms.forEach { name -> GlassChip(name, icon = Pic.Room, onClick = { query = name }) }
                     }
-                    HorizontalDivider()
+                }
+                EmptyState(Icons.Default.Search, "Find a box or an item", text = "Say or type what is in it, its name, its label or its room.")
+            }
+            hits.isEmpty() -> EmptyState(Icons.Default.SearchOff, "Nothing matches \"$query\"", text = "Try one word. If another phone packed it, sync first.")
+            else -> LazyColumn(
+                Modifier.weight(1f), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                items(hits, key = { it.movable.id }) { hit -> SearchHit(hit, data) { nav.openMovable(hit.movable) } }
+            }
+        }
+    }
+}
+
+/** One thing that was found: its picture, what it is, where it is right now, and what matched. */
+@Composable
+private fun SearchHit(hit: Hit, data: AppData, onClick: () -> Unit) {
+    val m = hit.movable
+    val dest = data.room(m.destRoomId)
+    GlassCard(Modifier.fillMaxWidth(), onClick = onClick, shape = RoundedCornerShape(22.dp)) {
+        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            OwnerThumb(m.id, Modifier.size(60.dp), isBox = m.isBox)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                // A box is named by what is in it, which is what was searched for: two lines, so it is read whole.
+                Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(m.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                    if (dest != null) RoomBadge(dest, Modifier.padding(top = 2.dp))
+                }
+                // Where it is at this moment is the answer most searches are after.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(m.stage.icon(), contentDescription = null, tint = Night.MintLight, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text(data.whereIs(m), style = MaterialTheme.typography.bodySmall, color = Night.TextSoft, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+                // A box's title already starts with what is in it; the detail is shown when it says more.
+                if (hit.detail.isNotBlank() && !m.title.contains(hit.detail.take(40))) {
+                    Text(hit.detail.take(120), style = MaterialTheme.typography.bodySmall, color = Night.TextDim, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+                if (m.fragile || m.damaged || m.priority == Priority.FIRST_NIGHT) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (m.priority == Priority.FIRST_NIGHT) Flag("First night")
+                        if (m.fragile) Flag("Fragile")
+                        if (m.damaged) Flag("Damaged", error = true)
+                    }
                 }
             }
+            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Night.TextDim)
         }
     }
 }
@@ -320,6 +357,8 @@ fun ScanScreen() {
     var unknown by remember { mutableStateOf<String?>(null) }
     var notRecorded by remember { mutableStateOf<String?>(null) }
     var typed by remember { mutableStateOf("") }
+    // Typing a code is the way round the camera, for a handwritten label: it stays out of sight until asked for.
+    var typing by rememberSaveable { mutableStateOf(false) }
 
     fun handle(text: String) {
         if (WifiSync.Invite.parse(text) != null) {
@@ -341,24 +380,29 @@ fun ScanScreen() {
     Screen("Scan a label") {
         QrScanner(
             onText = { if (unknown == null && notRecorded == null) handle(it) },
-            modifier = Modifier.fillMaxWidth().weight(1f),
+            modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 16.dp).scannerFrame(),
             formats = ScanFormats.ANY,
         )
-        Hint(
-            "Scan a HouseMove label, a book or product barcode you scanned into a box, or a device's serial number.",
-            Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-        )
-        Row(Modifier.padding(12.dp)) {
-            OutlinedTextField(
-                colors = glassFieldColors(),
-                value = typed,
-                onValueChange = { typed = it },
-                label = { Text("Or type the code on the label") },
-                singleLine = true,
-                modifier = Modifier.weight(1f),
-            )
-            Spacer(Modifier.width(8.dp))
-            Button(enabled = typed.isNotBlank(), onClick = { handle(typed); typed = "" }) { Text("Open") }
+        Row(
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = if (typing) 4.dp else 14.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Hint("A HouseMove label, a book or product barcode, or a serial number.", Modifier.weight(1f))
+            GlassChip("Type the code", icon = Icons.Default.Keyboard, selected = typing, onClick = { typing = !typing })
+        }
+        if (typing) {
+            Row(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    colors = glassFieldColors(),
+                    value = typed,
+                    onValueChange = { typed = it },
+                    label = { Text("Or type the code on the label") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(8.dp))
+                PillButton("Open", onClick = { handle(typed); typed = "" }, enabled = typed.isNotBlank())
+            }
         }
     }
 

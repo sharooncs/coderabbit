@@ -6,13 +6,25 @@ import android.content.Intent
 import android.speech.RecognizerIntent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -33,6 +45,17 @@ private fun speechIntent(prompt: String) = Intent(RecognizerIntent.ACTION_RECOGN
 }
 
 /**
+ * Can this phone take spoken words? When it cannot, [SpeakButton] draws nothing, so words
+ * beside it ("Say their name") should say "type" instead.
+ */
+@Composable
+fun canSpeak(): Boolean {
+    if (LocalSpeech.current != null) return true
+    val context = LocalContext.current
+    return remember { speechIntent("").resolveActivity(context.packageManager) != null }
+}
+
+/**
  * A round microphone button: say it instead of typing it.
  *
  * It opens the phone's own speech sheet, so the app itself needs no microphone
@@ -40,6 +63,8 @@ private fun speechIntent(prompt: String) = Intent(RecognizerIntent.ACTION_RECOGN
  * is why it must never be the only way to enter something.
  *
  * @param prompt what the speech sheet asks, e.g. "What is in the box?"
+ * @param label words to show beside the microphone ("Say why"). The button is then a
+ *   glass pill, for places where a bare microphone would not say what it is for.
  * @param onText the words that were heard, never blank
  */
 @Composable
@@ -48,11 +73,12 @@ fun SpeakButton(
     modifier: Modifier = Modifier,
     contentDescription: String = "Say it",
     size: Dp = 48.dp,
+    label: String? = null,
     onText: (String) -> Unit,
 ) {
     val fake = LocalSpeech.current
     if (fake != null) {
-        GlassOrb(Icons.Default.Mic, contentDescription, modifier, size = size) { fake.listen(prompt, onText) }
+        Microphone(label, contentDescription, modifier, size) { fake.listen(prompt, onText) }
         return
     }
     val context = LocalContext.current
@@ -64,11 +90,29 @@ fun SpeakButton(
         }
     }
     if (!available) return
-    GlassOrb(Icons.Default.Mic, contentDescription, modifier, size = size) {
+    Microphone(label, contentDescription, modifier, size) {
         try {
             launcher.launch(speechIntent(prompt))
         } catch (e: ActivityNotFoundException) {
             // The speech service vanished between the check and the tap; typing still works.
         }
+    }
+}
+
+/** The button itself: an orb, or with a [label] a pill that says what to say. */
+@Composable
+private fun Microphone(label: String?, contentDescription: String, modifier: Modifier, size: Dp, onClick: () -> Unit) {
+    if (label == null) {
+        GlassOrb(Icons.Default.Mic, contentDescription, modifier, size = size, onClick = onClick)
+        return
+    }
+    GlassPill(
+        modifier.heightIn(min = size).semantics { this.contentDescription = contentDescription }, onClick = onClick,
+        contentPadding = PaddingValues(start = 12.dp, end = 16.dp, top = 6.dp, bottom = 6.dp),
+    ) {
+        Icon(Icons.Default.Mic, contentDescription = null, tint = Night.Mint, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(8.dp))
+        // The description above already names the button: the words are not read a second time.
+        Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.clearAndSetSemantics { })
     }
 }

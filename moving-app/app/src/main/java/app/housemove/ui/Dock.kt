@@ -14,7 +14,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.Color
@@ -66,6 +68,9 @@ fun dockTabs(data: AppData): List<Tab> = TABS.filter { t ->
 }
 
 private val ORB = 48.dp
+
+/** How far a count badge reaches above the orb it sits on. */
+private val BADGE_RISE = 6.dp
 private val ACTION_ORB = 84.dp
 
 /** Where everything in the dock goes, for one screen width. All distances from the dock's top-left. */
@@ -138,7 +143,8 @@ internal fun Dock(current: String, tabs: List<Tab>, plan: DockPlan, action: Dock
             val selected = t.route == current
             val badge = if (t.route == "home" && waiting > 0 && nav.currentDestination?.route != "home") "$waiting" else null
             Column(
-                Modifier.offset(x = plan.tabX[i], y = plan.tabY[i]).width(plan.column)
+                // The button starts a little above its orb, so the count on the Home orb is inside what is tapped.
+                Modifier.offset(x = plan.tabX[i], y = plan.tabY[i] - BADGE_RISE).width(plan.column)
                     .selectable(
                         selected = selected,
                         interactionSource = remember { MutableInteractionSource() },
@@ -151,7 +157,8 @@ internal fun Dock(current: String, tabs: List<Tab>, plan: DockPlan, action: Dock
                             if (nav.currentDestination?.route != t.route) nav.goTab(t.route)
                         },
                     )
-                    .then(if (badge != null) Modifier.semantics { stateDescription = "$badge waiting for approval" } else Modifier),
+                    .then(if (badge != null) Modifier.semantics { stateDescription = "$badge waiting for approval" } else Modifier)
+                    .padding(top = BADGE_RISE),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 GlassOrb(t.icon, null, kind = if (selected) OrbKind.Selected else OrbKind.Plain, size = ORB, badge = badge)
@@ -181,6 +188,15 @@ internal fun Dock(current: String, tabs: List<Tab>, plan: DockPlan, action: Dock
                 Text(
                     action.label, style = MaterialTheme.typography.labelLarge, fontSize = 13.sp, lineHeight = 16.sp,
                     fontWeight = FontWeight.Medium, color = Night.Text, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    // The mint light is brightest right here: a quiet dark pill keeps the words readable on it.
+                    modifier = Modifier.padding(horizontal = 10.dp).drawBehind {
+                        val grow = 10.dp.toPx()
+                        val rise = 2.dp.toPx()
+                        drawRoundRect(
+                            Color(0xFF052A24).copy(alpha = 0.55f), topLeft = Offset(-grow, -rise),
+                            size = Size(size.width + 2 * grow, size.height + 2 * rise), cornerRadius = CornerRadius(size.height),
+                        )
+                    },
                 )
             }
         }

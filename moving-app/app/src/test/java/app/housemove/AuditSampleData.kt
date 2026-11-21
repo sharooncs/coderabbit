@@ -16,65 +16,32 @@ import org.junit.rules.TemporaryFolder
 import java.io.File
 
 /**
- * The data the audit checks run on. It is the only file of the checks that knows
- * the data model, so it is the one to touch when the model changes.
+ * The data the audit checks, the picture sheets and the role walk run on. It is the only
+ * file of theirs that knows the data model, so it is the one to touch when the model changes.
  *
- *  - [seeded] is the mid-move sample the picture sheets use (AuditShotsTest).
+ *  - [phones] is the mid-move sample: the same move on an Organiser's, a Decider's and a Helper's phone.
+ *  - [alone] is that move with nobody else on it.
  *  - [largeMoveJson] is a big move written as a saved file, for the speed check.
  */
 internal object AuditSampleData {
 
     /** Says which sample the screens were opened with; printed in the report. */
-    var source: String = ""
-        private set
-
-    private val borrowed = ArrayList<TemporaryFolder>()
-
-    /** Delete what [seeded] left in the temp directory. */
-    fun cleanUp() {
-        borrowed.forEach { runCatching { it.delete() } }
-        borrowed.clear()
-    }
+    const val source: String = "AuditSampleData.phones(), the same data as the picture sheets"
 
     /**
-     * The sample move. AuditShotsTest's own (private) seeding is used when it can be
-     * reached, so the checks and the picture sheets always show the same data, also
-     * after that seeding grows. If it cannot be reached, the copy below is used.
+     * Every screen the picture sheets show, by route. The checks open these too, so a
+     * screen added here is checked as well.
      */
-    fun seeded(dir: File): Store {
-        fromAuditShots()?.let {
-            source = "AuditShotsTest.seeded(), the same data as the picture sheets"
-            return it
-        }
-        source = "the checks' own copy of the sample move (AuditShotsTest.seeded() could not be called)"
-        return ownSeed(dir)
-    }
+    val ROUTES = listOf(
+        "home", "overview", "items", "item/wardrobe", "item/fridge", "item/sofa", "walk", "triage", "plan", "disposal", "electronics",
+        "boxes", "box/box1", "box/box2", "box/box5", "pack", "labels", "lists", "packorder", "tasks",
+        "moveday", "load", "unload", "reconcile", "sweep", "records/ORIGIN", "unpack", "budget", "reports",
+        "rooms", "more", "sync", "settings", "search", "scan",
+        "people", "people/add", "approvals", "activity",
+    )
 
-    private fun fromAuditShots(): Store? = try {
-        val cls = Class.forName("app.housemove.AuditShotsTest")
-        val shots = cls.getDeclaredConstructor().newInstance()
-        val folder = cls.getMethod("getTmp").invoke(shots) as TemporaryFolder
-        folder.create()
-        borrowed += folder
-        val seeded = cls.getDeclaredMethod("seeded")
-        seeded.isAccessible = true
-        seeded.invoke(shots) as Store
-    } catch (_: Throwable) {
-        null
-    }
-
-    /**
-     * The routes AuditShotsTest renders, read from its (private) list, so that a route
-     * added there is checked here too. Empty when the list cannot be reached.
-     */
-    fun shotsRoutes(): List<String> = try {
-        val cls = Class.forName("app.housemove.AuditShotsTest")
-        val routes = cls.getDeclaredField("routes")
-        routes.isAccessible = true
-        (routes.get(cls.getDeclaredConstructor().newInstance()) as List<*>).filterIsInstance<String>()
-    } catch (_: Throwable) {
-        emptyList()
-    }
+    /** The same move on three phones: the Organiser's (Sam), a Decider's (Priya) and a Helper's (Tom). */
+    class Phones(val organiser: Store, val decider: Store, val helper: Store)
 
     /** A stand-in photograph: a coloured room with an object in it, different for every seed. */
     private fun picture(file: File, seed: Int) {
@@ -97,8 +64,8 @@ internal object AuditSampleData {
         file.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 85, it) }
     }
 
-    /** Copied from AuditShotsTest.seeded() as it was when the checks were written. */
-    private fun ownSeed(dir: File): Store {
+    /** One phone with a move that is mid-way through: rooms, furniture, boxes, tasks, costs, photos. Nobody else is on it. */
+    fun alone(dir: File): Store {
         val s = Store(dir)
         var n = 0
         fun photo(owner: String, kind: PhotoKind) {
@@ -156,9 +123,53 @@ internal object AuditSampleData {
         s.put(Supply(id = "s1", name = "Medium boxes", need = 30, have = 12))
         s.put(Supply(id = "s2", name = "Packing tape rolls", need = 4, have = 4))
         s.put(Reading(id = "r1", home = Home.ORIGIN, kind = "Electricity", value = "48213", day = today()))
+        s.put(Item(id = "mirror", name = "Hall mirror", originRoomId = living.id))
+        photo("mirror", PhotoKind.GENERAL)
         s.flush()
         return s
     }
+
+    /** Someone added to [host]'s move whose phone has joined. Returns that phone. */
+    private fun joined(host: Store, dir: File, name: String, role: Role): Store {
+        val p = host.addPerson(name, role).valueOrNull()!!
+        val phone = Store(dir)
+        phone.joinAs(p.id, host.data.value.visibleTo(role))
+        host.mergeIn(phone.data.value)
+        return phone
+    }
+
+    /**
+     * The sample move with people on it: Sam organises, Priya may suggest, Tom helps, Gran
+     * has not joined yet and Alex was removed. Two of their suggestions are already decided
+     * (one approved, one declined with a reason) and three still wait. [newFolder] gives an
+     * empty directory for each phone.
+     */
+    fun phones(newFolder: () -> File): Phones {
+        val s = alone(newFolder())
+        val office = s.data.value.roomsOf(Home.DEST).first { it.name == "Office" }
+        val priya = joined(s, newFolder(), "Priya", Role.DECIDER)
+        val tom = joined(s, newFolder(), "Tom", Role.HELPER)
+        s.addPerson("Gran", Role.HELPER)
+        s.addPerson("Alex", Role.HELPER).valueOrNull()?.let { s.removePerson(it.id) }
+        val toOffice = priya.suggestRoom("tv", office.id).valueOrNull()!!
+        val donateBike = priya.suggestDecision("bike", Disposition.DONATE).valueOrNull()!!
+        priya.suggestDecision("table", Disposition.SELL, 40.0, note = "Too big for the new kitchen")
+        priya.suggestCost(Expense(id = "e3", title = "20 more boxes", amount = 35.0, category = "Supplies", day = today()))
+        tom.ask("mirror", note = "Is this coming with us?")
+        for (phone in listOf(priya, tom)) s.mergeIn(phone.data.value)
+        s.approve(toOffice.id)
+        s.decline(donateBike.id, "Too worn to give away")
+        for (phone in listOf(priya, tom)) {
+            phone.mergeIn(s.data.value.visibleTo(phone.myRole))
+            s.photoDir.listFiles()?.forEach { f -> f.copyTo(File(phone.photoDir, f.name), overwrite = true) }
+            phone.flush()
+        }
+        s.flush()
+        return Phones(s, priya, tom)
+    }
+
+    /** The Organiser's phone of the sample move, for checks that look at one phone only. */
+    fun seeded(tmp: TemporaryFolder): Store = phones { tmp.newFolder() }.organiser
 
     // ---- a large move ------------------------------------------------------------
 
@@ -168,8 +179,33 @@ internal object AuditSampleData {
     /** Screens of single records of the large move, for the speed check. */
     val LARGE_EXAMPLES = listOf("item/item0", "box/box0")
 
-    /** How many records of each kind the large move holds. */
-    val LARGE = mapOf("rooms" to 40, "items" to 2000, "boxes" to 300, "entries" to 3000, "photos" to 1500, "tasks" to 200)
+    /** How many records of each kind the large move holds (people and proposals once [crowd] has run). */
+    val LARGE = mapOf("rooms" to 40, "items" to 2000, "boxes" to 300, "entries" to 3000, "photos" to 1500, "tasks" to 200, "people" to 12, "proposals" to 200)
+
+    /**
+     * People on the large move, and a busy inbox, so that Approvals, People and Activity are
+     * timed with something in them: three Deciders and two Helpers whose phones have joined,
+     * five people still to join and one removed; the Deciders suggest what happens to 160
+     * things, the Helpers ask about 40 more, and the Organiser ([host]) has already approved
+     * 40 and declined 30. [newFolder] gives an empty directory for each phone.
+     */
+    fun crowd(host: Store, newFolder: () -> File) {
+        val deciders = (1..3).map { joined(host, newFolder(), "Decider $it", Role.DECIDER) }
+        val helpers = (1..2).map { joined(host, newFolder(), "Helper $it", Role.HELPER) }
+        for (n in 3..7) host.addPerson("Helper $n", Role.HELPER)
+        host.addPerson("Gone", Role.HELPER).valueOrNull()?.let { host.removePerson(it.id) }
+        val items = host.data.value.liveItems.map { it.id }
+        val choices = listOf(Disposition.SELL, Disposition.DONATE, Disposition.BIN, Disposition.MOVE)
+        val made = ArrayList<String>()
+        for (i in 0 until 160) {
+            deciders[i % 3].suggestDecision(items[i], choices[i % 4], if (i % 4 == 0) 10.0 + i else null).valueOrNull()?.let { made += it.id }
+        }
+        for (i in 160 until 200) helpers[i % 2].ask(items[i], note = if (i % 3 == 0) "Is this coming with us?" else "")
+        for (phone in deciders + helpers) host.mergeIn(phone.data.value)
+        made.take(40).forEach { host.approve(it) }
+        made.drop(40).take(30).forEachIndexed { i, id -> host.decline(id, if (i % 2 == 0) "Not yet" else "") }
+        host.flush()
+    }
 
     private val THINGS = listOf(
         "lamp", "chair", "table", "bookcase", "mirror", "rug", "desk", "sofa", "wardrobe", "chest of drawers",
