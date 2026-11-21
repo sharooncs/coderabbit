@@ -167,7 +167,7 @@ internal object AuditReport {
             body.appendLine("|---|---|---:|---:|---|---|")
             for ((k, list) in small.groupBy { listOf(it.screen, it.role, size(it.widthDp, it.heightDp), it.onTopOf.toString(), it.crowdedBy.isEmpty().toString()) }) {
                 val t = list.first()
-                val what = if (list.size == 1) "${t.role} ${q(t.label)}" else "${list.size} × ${t.role}: ${examples(list.map { it.label })}"
+                val what = if (list.size == 1) "${t.role} ${q(t.label)}" else "${list.size} × ${t.role}: ${examples(list.map { it.label }, 12)}"
                 val why = when {
                     list.any { it.onTopOf } -> "sits on top of " + examples(list.flatMap { it.crowdedBy }, 2) + ", which can be tapped too and gets every touch around it"
                     list.any { it.crowdedBy.isNotEmpty() } -> "next to " + examples(list.flatMap { it.crowdedBy }, 2)
@@ -304,6 +304,18 @@ internal object AuditReport {
             body.appendLine()
         } else {
             table(low)
+            body.appendLine("Each of these texts:")
+            body.appendLine()
+            body.appendLine("| Screen | Text | Text colour | Background | Contrast | Needs | Size |")
+            body.appendLine("|---|---|---|---|---:|---:|---|")
+            for (f in low.sortedBy { it.ratio / it.required }.take(60)) {
+                body.appendLine(
+                    "| ${f.screen} | ${cell(q(f.text))} | `${f.textColor}` | `${f.background}` | ${"%.2f".format(f.ratio)}${if (f.borderline) " (borderline)" else ""} | ${f.required} | " +
+                        "${if (f.sizeSp > 0f) num(f.sizeSp) + "sp" else "?"}${if (f.bold) " bold" else ""} |",
+                )
+            }
+            if (low.size > 60) body.appendLine("| … | and ${low.size - 60} more, in `report.json` | | | | | |")
+            body.appendLine()
             val byPixels = low.count { it.method == METHOD_PIXELS }
             if (byPixels > 0) {
                 body.appendLine(
@@ -382,7 +394,8 @@ internal object AuditReport {
             "Every screen is opened again on other screens and with larger system text. Listed are texts that do not fit (the text layout itself says so), " +
                 "and texts and controls that leave the screen or are cut by the area they sit in. Things that are only scrolled out of view are not listed. " +
                 "Shortening a long name with … in a list is often intended; those are listed so that the ones that matter can be picked out, with how much of the text is left. " +
-                "Only each screen as it opens is checked, and dialogs are not opened. Crowding and awkward wrapping do not show in numbers: look at the pictures for those.",
+                "Each screen is checked as it opens, without scrolling: everything in a scrolling page is included, but rows further down a long list that are not built yet are not. " +
+                "Dialogs are not opened. Crowding, overlap and awkward wrapping do not show in numbers: look at the pictures for those.",
         )
         body.appendLine()
         val normal = phone?.cutOffs.orEmpty().map { Triple(it.screen, it.kind, it.text) }.toSet()

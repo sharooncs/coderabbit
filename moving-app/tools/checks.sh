@@ -1,11 +1,17 @@
 #!/bin/bash
 # Runs the automated audit checks (AuditChecksTest) and says where the report is.
 #   tools/checks.sh            every check
-#   tools/checks.sh speed      only one: phone, smallPhone, narrowTallPhone, largeText or speed
+#   tools/checks.sh speed      only one: phone, smallPhone, narrowTallPhone, largeText, speed or selfCheck
 #                              (the report is then rewritten from that check and the parts kept from before)
 # The report is app/build/audit/report.md, with the same data in report.json beside it.
-# Pictures of the screens as they were checked are under app/build/audit/checks/ and
-# app/build/audit/sizes/. Findings do not fail this script; only a broken run does.
+# Also under app/build/audit/:
+#   checks/phone/    every screen as it was checked (long screens also scrolled: name-2.png, ...)
+#   checks/marked/   the same pictures with a box round each finding
+#   checks/contrast.csv  every contrast measurement
+#   sizes/<size>/    every screen on a small phone, a tall narrow phone and with large text
+# Findings do not fail this script. It fails only when the checks themselves break,
+# which includes their self-check on a made-up screen with planted problems.
+# To check a new screen, add its route to AUDIT_SCREENS in AuditChecksTest.kt.
 cd "$(dirname "$0")/.." || exit 1
 out=app/build/audit
 filter='app.housemove.AuditChecksTest'

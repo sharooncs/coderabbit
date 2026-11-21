@@ -54,6 +54,21 @@ import kotlin.math.abs
 
 private val Dusk = Brush.horizontalGradient(listOf(Color(0xFF101030), Color(0xFF503070)))
 
+/** A tight glow, as a glass look has behind a lit control: the background changes fast under the text. */
+private val Glow = Brush.radialGradient(listOf(Color(0xFF1F6F60), Color(0xFF101828)), radius = 90f)
+
+/** Stripes of many colours: no single background to measure against. */
+private fun Modifier.stripes() = drawBehind {
+    val colours = listOf(0xFF204060, 0xFFE0C080, 0xFF80A040, 0xFFC04040, 0xFF6040A0, 0xFFD8D8D8, 0xFF303030)
+    val w = 5.dp.toPx()
+    var x = 0f
+    var i = 0
+    while (x < size.width) {
+        drawRect(Color(colours[i++ % colours.size]), Offset(x, 0f), Size(w, size.height))
+        x += w
+    }
+}
+
 @Composable
 internal fun PlantedProblems() {
     MaterialTheme {
@@ -72,19 +87,9 @@ internal fun PlantedProblems() {
                 Text("Same grey small is low", color = Color(0xFF8A8A8A)) // 3.45:1, not enough for small text
                 Box(Modifier.background(Dusk)) { Text("Light on a gradient is fine", color = Color.White) }
                 Box(Modifier.background(Dusk)) { Text("Dim on a gradient is low", color = Color(0xFF5A5A7A)) } // 1.6 to 2.8:1
-                Box(
-                    Modifier.drawBehind {
-                        // Stripes of many colours: no single background to measure against.
-                        val colours = listOf(0xFF204060, 0xFFE0C080, 0xFF80A040, 0xFFC04040, 0xFF6040A0, 0xFFF0F0F0, 0xFF303030)
-                        val w = 5.dp.toPx()
-                        var x = 0f
-                        var i = 0
-                        while (x < size.width) {
-                            drawRect(Color(colours[i++ % colours.size]), Offset(x, 0f), Size(w, size.height))
-                            x += w
-                        }
-                    },
-                ) { Text("Over a pattern cannot be measured", color = Color.White) }
+                Box(Modifier.background(Glow)) { Text("Light on a glow is fine", color = Color.White) }
+                Box(Modifier.stripes()) { Text("Over a pattern is low", color = Color.White) } // two stripes in seven are too light for white
+                Box(Modifier.stripes()) { Text("See-through over a pattern cannot be measured", color = Color.White.copy(alpha = 0.7f)) }
                 Box {
                     Text("Under a see-through bar cannot be measured", color = Color.Black)
                     Box(Modifier.matchParentSize().background(Color.White.copy(alpha = 0.7f)).semantics { contentDescription = "A bar drawn over the text" })
@@ -149,13 +154,16 @@ internal fun selfCheck(tree: AuditTree, px: Pixels): List<String> {
     }
 
     val found = ContrastResult()
-    contrast(tree, px, "self-check", 1, HashSet(), found)
+    contrast(tree, px, "self-check", 1, found)
     found.settle()
     same(
         "contrast", found.low.map { it.text },
-        listOf("Pale grey is low", "White on yellow is low", "Faded by a layer is low", "Faint see-through colour is low", "Same grey small is low", "Dim on a gradient is low"),
+        listOf(
+            "Pale grey is low", "White on yellow is low", "Faded by a layer is low", "Faint see-through colour is low", "Same grey small is low",
+            "Dim on a gradient is low", "Over a pattern is low",
+        ),
     )
-    same("contrast, not measurable", found.notMeasured.map { it.text }, listOf("Over a pattern cannot be measured", "Under a see-through bar cannot be measured"))
+    same("contrast, not measurable", found.notMeasured.map { it.text }, listOf("See-through over a pattern cannot be measured", "Under a see-through bar cannot be measured"))
     fun ratio(text: String, wanted: Double, slack: Double) {
         val got = found.low.firstOrNull { it.text.startsWith(text) }?.ratio ?: return
         if (abs(got - wanted) > slack) wrong += "contrast: \"$text\" measured $got:1, should be about $wanted:1"
@@ -165,7 +173,8 @@ internal fun selfCheck(tree: AuditTree, px: Pixels): List<String> {
     ratio("Faded by a layer is low", 2.85, 0.3) // from pixels alone
     ratio("Faint see-through colour is low", 2.09, 0.1)
     ratio("Same grey small is low", 3.45, 0.05)
-    if (found.measured < 12) wrong += "contrast: only ${found.measured} texts measured"
+    ratio("Over a pattern is low", 1.72, 0.15) // the second lightest stripe: a fifth of the background is that light or lighter
+    if (found.measured < 14) wrong += "contrast: only ${found.measured} texts measured"
 
     val touch = touchTargets(tree, "self-check", 1)
     same("touch targets", touch.filter { it.tooSmall }.map { it.label }, listOf("Tiny and crowded one", "Tiny and crowded two", "Button on the picture"))

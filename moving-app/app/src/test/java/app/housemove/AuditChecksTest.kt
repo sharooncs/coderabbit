@@ -260,7 +260,6 @@ class AuditChecksTest {
                     continue
                 }
                 val seen = HashSet<String>()
-                val textDone = HashSet<String>()
                 val found = ContrastResult()
                 val marks = HashMap<Int, MutableList<Mark>>()
                 var density = 1f
@@ -275,7 +274,7 @@ class AuditChecksTest {
                     noName += newNoName
                     fields += textFields(tree, screen.name).filter { seen.add("field " + it.key) }
                     if (view == 1) cuts += cutOffs(tree, screen.name)
-                    contrast(tree, readPixels(picture), screen.name, view, textDone, found)
+                    contrast(tree, readPixels(picture), screen.name, view, found)
                     density = tree.density
                     marks.getOrPut(view) { ArrayList() } += newTouch.filter { it.tooSmall }.map { Mark(it.xDp, it.yDp, it.widthDp, it.heightDp, MARK_TOUCH) } +
                         newNoName.map { Mark(it.xDp, it.yDp, it.widthDp, it.heightDp, MARK_NAME) }
@@ -304,6 +303,7 @@ class AuditChecksTest {
             }
         }
         runs += unexampled(runs)
+        File(AuditReport.dir, "checks").mkdirs()
         File(AuditReport.dir, "checks/contrast.csv").writeText(
             "screen,view,contrast,needed,text colour,background,colour given,size sp,weight,how,text\n" + measurements.joinToString("\n") + "\n",
         )
