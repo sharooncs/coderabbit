@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -53,14 +54,13 @@ private val SIZE_ICONS: Map<BoxSize, ImageVector> by lazy {
 }
 
 /**
- * Furniture and appliances are catalogued as well, and nobody packs a wardrobe into a box:
- * what plainly cannot go in a container is not offered as a picture to tap.
+ * How many chips "What's inside" shows before "more": what is in it already first, then the
+ * usual things to add, about three rows in all, so the items and Seal stay in reach. Of
+ * the usual things a few always show, however long the list of what is inside.
  */
-private fun Item.couldBePacked(): Boolean =
-    !twoPerson && !needsDisassembly && !keepUpright && (volumeM3() ?: 0.0) <= ContainerKind.WARDROBE.m3
-
-/** How many of the usual things are offered as chips before "more": about two rows of them. */
-private const val CHIPS_SHOWN = 8
+private const val CHIPS_SHOWN = 9
+private const val CHIPS_SHOWN_NARROW = 6
+private const val USUAL_KEPT = 3
 
 /**
  * One container, laid out for packing it without the keyboard. Everything about it is
@@ -126,9 +126,7 @@ fun BoxScreen(id: String) {
         "what's inside".takeIf { box.contents.isBlank() && entries.isEmpty() && items.isEmpty() && children.isEmpty() && photos == 0 },
     )
     val narrow = narrowScreen(360f)
-    // The Store has no rule for deleting. Where several people share the move, taking a container
-    // off the list for everyone is not for a Helper: they are not offered it.
-    val mayDelete = !data.shared() || store.can(Action.SUGGEST)
+    val mayDelete = mayDelete()
 
     fun setContents(f: (String) -> String) {
         edit { it.copy(contents = f(it.contents)) }
@@ -193,7 +191,7 @@ fun BoxScreen(id: String) {
             // ---- what's inside ----
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    ContainerHeading("What's inside", Modifier.weight(1f))
+                    ListHeading("What's inside", Modifier.weight(1f))
                     SpeakButton("What is in the $word?", contentDescription = "Say what's inside", size = 40.dp) { said ->
                         setContents { addContents(it, *contentsLines(said).map { l -> l.replaceFirstChar(Char::uppercase) }.toTypedArray()) }
                     }
@@ -203,14 +201,15 @@ fun BoxScreen(id: String) {
                 // What is in it already, ticked; then the usual things for this category, one tap each.
                 // A long list is cut short behind "more", so what comes below stays in reach.
                 val usual = contentsChips(category, data.room(box.originRoomId)?.name, box.contents)
-                val shownLines = if (allChips) lines else lines.take(CHIPS_SHOWN)
-                val shownUsual = if (allChips) usual else usual.take(CHIPS_SHOWN)
+                val budget = if (narrow) CHIPS_SHOWN_NARROW else CHIPS_SHOWN
+                val shownLines = if (allChips) lines else lines.take(budget - minOf(USUAL_KEPT, usual.size))
+                val shownUsual = if (allChips) usual else usual.take((budget - shownLines.size).coerceAtLeast(0))
                 val hidden = lines.size - shownLines.size + usual.size - shownUsual.size
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     shownLines.forEach { line -> GlassChip(line, selected = true, onClick = { setContents { removeContents(it, line) } }) }
                     shownUsual.forEach { chip -> GlassChip(chip, onClick = { setContents { addContents(it, chip) } }) }
                     if (hidden > 0) GlassChip("$hidden more", icon = Icons.Default.ExpandMore, tone = GlassTone.Amber, onClick = { allChips = true })
-                    else if (allChips && (lines.size > CHIPS_SHOWN || usual.size > CHIPS_SHOWN)) {
+                    else if (allChips && lines.size + usual.size > budget) {
                         GlassChip("Fewer", icon = Icons.Default.ExpandLess, tone = GlassTone.Amber, onClick = { allChips = false })
                     }
                 }
@@ -223,25 +222,23 @@ fun BoxScreen(id: String) {
                         singleLine = false,
                     )
                 }
-                if (entries.isNotEmpty()) {
-                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { scanIn = true }.padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text("Scanned in (${entries.size})", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        entries.take(3).forEach { e ->
-                            Text(
-                                e.title.ifBlank { "Barcode ${e.code}" } + if (e.author.isBlank()) "" else " · ${e.author}",
-                                style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                        if (entries.size > 3) Text("and ${entries.size - 3} more", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-                    }
-                }
+                if (entries.isNotEmpty()) ScannedInRow(entries) { scanIn = true }
             }
 
             // ---- catalogued items packed in it ----
-            if (items.isNotEmpty() || anyLoose) {
+            if (items.isEmpty() && loose.isEmpty() && anyLoose) {
+                // Nothing from this room to tap: one line, as for putting it in another container.
+                GlassPill(Modifier.fillMaxWidth(), onClick = { scanItem = true }) {
+                    Icon(Pic.Item, contentDescription = null, tint = Night.Mint)
+                    Spacer(Modifier.width(14.dp))
+                    Text("Put an item in", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    Icon(Icons.Default.QrCodeScanner, contentDescription = null, tint = Night.TextDim, modifier = Modifier.size(20.dp))
+                }
+                itemTrouble?.let { ContainerRefusal(it) { itemTrouble = null } }
+            } else if (items.isNotEmpty() || anyLoose) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        ContainerHeading(if (items.isEmpty()) "Items inside" else "Items inside (${items.size})", Modifier.weight(1f))
+                        ListHeading(if (items.isEmpty()) "Items inside" else "Items inside (${items.size})", Modifier.weight(1f))
                         GlassOrb(Icons.Default.QrCodeScanner, "Scan an item's label to put it in", size = 40.dp) { scanItem = true }
                     }
                     items.forEach { i ->
@@ -264,7 +261,7 @@ fun BoxScreen(id: String) {
             // ---- other containers packed in it ----
             if (children.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ContainerHeading("Containers inside (${children.size})")
+                    ListHeading("Containers inside (${children.size})")
                     children.forEach { c ->
                         ContainerRow(
                             c, data, showRoom = false, onOpen = { nav.open("box/${it.id}") },
@@ -301,12 +298,13 @@ fun BoxScreen(id: String) {
 
                 Fold(
                     "Packing details", Pic.More, key = "packing",
+                    // What is set, most telling first; the usual "unpack whenever" goes without saying.
                     summary = listOfNotNull(
-                        "From " + (data.room(box.originRoomId)?.name ?: "no room"),
                         box.size.label,
-                        "Unpack: " + box.priority.label.lowercase(),
-                        "Travels with me".takeIf { box.travelsWithMe },
+                        ("Unpack " + box.priority.label.lowercase()).takeIf { box.priority != Priority.WHENEVER },
+                        "With me".takeIf { box.travelsWithMe },
                         "Hazardous".takeIf { box.hazardous },
+                        "from " + (data.room(box.originRoomId)?.name ?: "no room"),
                     ).joinToString(" · "),
                 ) {
                     FoldLabel("When to unpack it")
@@ -335,10 +333,10 @@ fun BoxScreen(id: String) {
                     RoomTiles(Home.ORIGIN, box.originRoomId, onPick = { r -> edit { it.copy(originRoomId = r) } })
                 }
 
-                Fold(
-                    "On the move", Pic.Where, open = box.damaged, key = "move",
-                    summary = stageText(box.stage, isBox = true, vehicle) + if (box.damaged) " · " + box.damageNote.ifBlank { "Damaged" } else "",
-                ) {
+                // Where it is now and any damage: a section of its own once it has left the old home or was
+                // damaged. Before that it is rarely wanted, and waits at the end of "More".
+                val travelled = box.stage != Stage.AT_ORIGIN || box.damaged
+                val onTheMove: @Composable ColumnScope.() -> Unit = {
                     FoldLabel("Where it is now")
                     IconChoice(
                         Stage.entries.map { Choice(it, stageText(it, isBox = true, vehicle), it.icon()) },
@@ -353,6 +351,10 @@ fun BoxScreen(id: String) {
                         PhotoStrip(box.id, PhotoKind.DAMAGE, label = "Damage photos")
                     }
                 }
+                if (travelled) Fold(
+                    "On the move", Pic.Where, open = box.damaged, key = "move",
+                    summary = stageText(box.stage, isBox = true, vehicle) + if (box.damaged) " · " + box.damageNote.ifBlank { "Damaged" } else "",
+                ) { onTheMove() }
 
                 // The name, the label, the photos, and what is not undone: deleting it.
                 Fold(
@@ -378,16 +380,13 @@ fun BoxScreen(id: String) {
                     if (box.packedBy.isNotBlank()) Hint("Packed by ${box.packedBy}")
                     PhotoStrip(box.id, PhotoKind.CONTENTS, label = "Photos of what's inside")
                     BigAction(Icons.Default.QrCodeScanner, "Change label", onClick = { relabel = true }, primary = false)
+                    if (!travelled) {
+                        HorizontalDivider(color = Night.Hairline)
+                        onTheMove()
+                    }
                     if (mayDelete) {
                         HorizontalDivider(color = Night.Hairline)
-                        TextButton(
-                            onClick = { confirmDelete = true }, modifier = Modifier.align(Alignment.CenterHorizontally),
-                            colors = ButtonDefaults.textButtonColors(contentColor = Night.Red),
-                        ) {
-                            Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Delete this $word")
-                        }
+                        DeleteButton("Delete this $word", onClick = { confirmDelete = true }, modifier = Modifier.align(Alignment.CenterHorizontally))
                     }
                 }
             }
@@ -572,6 +571,33 @@ private fun Ticket(
         if (destOpen) {
             RoomTiles(Home.DEST, box.destRoomId, onPick = onDest, modifier = Modifier.padding(start = 10.dp, end = 10.dp, bottom = 10.dp))
         }
+    }
+}
+
+/**
+ * The books and products scanned into it, as one glass row: the picture of a book, how
+ * many, and the first few titles. Tapping it opens the scanner with the whole list.
+ */
+@Composable
+private fun ScannedInRow(entries: List<BoxEntry>, onOpen: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), shadow = 4.dp)
+            .clickable(role = Role.Button, onClickLabel = "Open the list", onClick = onOpen)
+            .heightIn(min = 56.dp).padding(start = 8.dp, end = 10.dp, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(40.dp).glass(RoundedCornerShape(12.dp), shadow = 0.dp), contentAlignment = Alignment.Center) {
+            Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null, tint = Night.Mint, modifier = Modifier.size(22.dp))
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text("Scanned in (${entries.size})", style = MaterialTheme.typography.titleSmall, maxLines = 1)
+            Text(
+                entries.take(3).joinToString(" · ") { it.title.ifBlank { "Barcode ${it.code}" } } + if (entries.size > 3) " and ${entries.size - 3} more" else "",
+                style = MaterialTheme.typography.bodySmall, color = Night.TextSoft, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Night.TextDim)
     }
 }
 

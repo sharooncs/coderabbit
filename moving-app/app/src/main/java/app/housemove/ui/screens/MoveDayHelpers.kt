@@ -89,6 +89,12 @@ internal data class MdResult(val tone: MdTone, val title: String, val detail: St
 /** True once something has reached the new home. */
 internal fun mdArrived(stage: Stage) = stage == Stage.DELIVERED || stage == Stage.DONE
 
+/**
+ * Carried by hand, not in the van: it travels with the person ("With me" on Load) and was
+ * not put on a trip. Such things are never "still on the van", on any screen.
+ */
+internal fun Movable.byHand(): Boolean = travelsWithMe && tripId == null
+
 /** Move one box or item to [stage]. The trip is kept unless [tripId] is given. */
 internal fun mdSetStage(store: Store, m: Movable, stage: Stage, tripId: String? = m.tripId) {
     if (m.isBox) store.updateBoxes(listOf(m.id)) { it.copy(stage = stage, tripId = tripId) }
@@ -127,29 +133,6 @@ internal fun mdShort(m: Movable): String = when {
     !m.isBox || m.label.isNullOrBlank() -> m.title
     m.kind == null || m.kind == ContainerKind.CARTON -> m.label
     else -> m.kind.noun.lowercase() + " " + m.label
-}
-
-/**
- * How many things each container carries: the items packed in it, the containers inside it
- * and what those hold. Worked out once per screen, so a long list stays quick.
- */
-internal fun mdCarried(data: AppData): Map<String, Int> {
-    if (data.items.none { it.boxId != null && !it.deleted } && data.boxes.none { it.parentId != null && !it.deleted }) return emptyMap()
-    val out = HashMap<String, Int>()
-    val outer = HashMap<String, String>()
-    val boxes = data.liveBoxes
-    for (b in boxes) {
-        val p = data.parentOf(b) ?: continue
-        outer[b.id] = p.id
-        out.merge(p.id, 1, Int::plus)
-    }
-    val ids = boxes.map { it.id }.toSet()
-    for (i in data.liveItems) {
-        val b = i.boxId?.takeIf { it in ids } ?: continue
-        out.merge(b, 1, Int::plus)
-        outer[b]?.let { out.merge(it, 1, Int::plus) }
-    }
-    return out
 }
 
 /**
@@ -235,56 +218,8 @@ internal fun MdBanner(result: MdResult, modifier: Modifier = Modifier) {
     }
 }
 
-/** The heading above a group of rows, on the open ground: its name, how many, and an optional button on the right. */
-@Composable
-internal fun MdGroupHeader(title: String, count: Int, action: (@Composable () -> Unit)? = null) {
-    Row(
-        Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(start = 22.dp, end = 16.dp, top = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                title, style = MaterialTheme.typography.titleSmall, color = Night.TextSoft, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false).semantics { heading() },
-            )
-            Spacer(Modifier.width(8.dp))
-            GlassChip(count.toString())
-        }
-        if (action != null) {
-            Spacer(Modifier.width(8.dp))
-            action()
-        }
-    }
-}
-
-/**
- * The top of a move-day screen: how far along it is, as a ring with the count in
- * the middle, and one line saying what is counted. [below] holds chips that belong
- * with the count (trips, rooms).
- */
-@Composable
-internal fun MdProgressHeader(
-    ratio: Ratio,
-    title: String,
-    modifier: Modifier = Modifier,
-    sub: String? = null,
-    below: (@Composable () -> Unit)? = null,
-) {
-    val scheme = MaterialTheme.colorScheme
-    val done = ratio.total > 0 && ratio.done >= ratio.total
-    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Ring(ratio, size = 64.dp, stroke = 7.dp, color = if (done) scheme.tertiary else scheme.primary) {
-            if (done) Icon(Icons.Default.Check, contentDescription = "Done", tint = scheme.tertiary, modifier = Modifier.size(30.dp))
-            else Text("${ratio.done}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        }
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            if (!sub.isNullOrBlank()) Text(sub, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
-            below?.invoke()
-        }
-    }
-}
+/** Where a heading over a group of rows sits on a move-day list: in line with the rows' text. */
+internal val MdHeadingPadding = Modifier.padding(start = 22.dp, end = 16.dp, top = 6.dp)
 
 // ---- actions --------------------------------------------------------------------------------
 
@@ -363,7 +298,7 @@ internal fun MdScanner(onText: (String) -> Unit) {
 /**
  * One box or item on a move-day list, as a glass row led by its photo: what kind of
  * thing it is, the room it goes to in that room's colour, how many things it carries
- * ([carried], from [mdCarried]) and a picture for each warning. Tapping it opens the
+ * ([carried], from [carriedCounts]) and a picture for each warning. Tapping it opens the
  * box or item unless [onClick] is given. [open] marks a box that is not sealed yet,
  * [showStage] adds where it is now, [note] is shown underneath.
  */
@@ -395,7 +330,7 @@ internal fun MdThingRow(
             Text(m.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 RoomBadge(data.room(m.destRoomId))
-                if (carried > 0) GlassChip(countOf(carried, "thing") + " inside")
+                InsideChip(carried)
                 if (showStage) IconFlag(m.stage.icon(), stageText(m.stage, m.isBox, data.vehicle()))
                 m.flags().forEach { (picture, word) -> IconFlag(picture, word) }
                 if (open) IconFlag(Icons.Default.LockOpen, "Open")

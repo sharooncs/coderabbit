@@ -72,7 +72,7 @@ fun DisposalScreen() {
             item(key = "totals") {
                 val gone = everything.count { it.gone }
                 val late = everything.count { !it.gone && (it.deadlineDay ?: Long.MAX_VALUE) < now }
-                SummaryCard(Ratio(gone, everything.size), if (gone == everything.size) "All gone" else "$gone of ${everything.size} gone") {
+                ProgressCard(Ratio(gone, everything.size), if (gone == everything.size) "All gone" else "$gone of ${everything.size} gone") {
                     if (selling.isNotEmpty()) {
                         Text(
                             "Asking " + money(currency, selling.sumOf { it.price ?: 0.0 }) +
@@ -87,7 +87,7 @@ fun DisposalScreen() {
             groups.forEach { (d, title, list) ->
                 if (list.isNotEmpty()) {
                     item(key = "head-" + d.name) {
-                        GroupHeading(d.icon(), title, trailing = "${list.count { it.gone }} of ${list.size} gone")
+                        ListHeading(title, icon = d.icon(), trailing = "${list.count { it.gone }} of ${list.size} gone")
                     }
                     items(list, key = { it.id }) { x ->
                         val declined = data.declinedOn(x.id, me, seen.ids, ProposalKind.ITEM_DECISION)

@@ -91,7 +91,7 @@ fun PlanScreen() {
                 item(key = "summary") {
                     val wontFit = moving.count { data.fitOf(it) == Fit.NO && !it.needsDisassembly }
                     val asked = waiting.values.sumOf { it.size }
-                    SummaryCard(
+                    ProgressCard(
                         Ratio(moving.size - homeless.size, moving.size),
                         if (homeless.isEmpty()) "Everything has a room" else "${moving.size - homeless.size} of ${moving.size} have a room",
                     ) {
@@ -119,7 +119,7 @@ fun PlanScreen() {
                     }
                 }
                 item(key = "needs") {
-                    GroupHeading(Pic.Room, "Needs a room (${homeless.size})")
+                    ListHeading("Needs a room", icon = Pic.Room, count = homeless.size)
                 }
                 items(homeless, key = { "h-" + it.id }) { x ->
                     HomelessCard(

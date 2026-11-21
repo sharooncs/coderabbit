@@ -70,6 +70,12 @@ private fun changeText(data: AppData, now: Task, p: Task, me: Person?): String {
 
 private class TaskGroup(val key: String, val title: String, val icon: ImageVector, val tasks: List<Task>)
 
+/** Short jobs that come up in most moves and are not in the ready-made checklist: offered as chips to add with one tap. */
+private val QUICK_JOBS = listOf(
+    "Book a skip", "Collect the keys", "Hand back the keys", "Read the meters", "Clean the oven",
+    "Defrost the freezer", "Measure the doorways", "Arrange parking for the van", "Return borrowed things", "Cancel deliveries",
+)
+
 /**
  * The jobs of the move, by when they are due. Each person sees the jobs given to them
  * first. An Organiser adds and changes jobs; a Decider's additions and changes are
@@ -132,7 +138,7 @@ fun TasksScreen() {
                     onAction = { if (store.mayOrSay(context, Action.DECIDE)) seedTasks(data.move.kind).forEach { store.put(it) } },
                 ) else EmptyState(Icons.Default.Checklist, "Nothing on the timeline yet", text = "Jobs appear here once an Organiser adds them.")
             } else item(key = "progress") {
-                SummaryCard(
+                ProgressCard(
                     Ratio(done.size, tasks.size), "${done.size} of ${countOf(tasks.size, "job")} done",
                     Modifier.padding(horizontal = 16.dp, vertical = 6.dp), tone = GlassTone.Mint,
                 ) {
@@ -207,10 +213,14 @@ private fun TaskAdder(mayPlan: Boolean) {
         text = ""
         typing = false
     }
+    // Jobs most moves have that are not on this one's list yet: one tap each, no typing.
+    val data = appData()
+    val titles = (data.liveTasks.map { it.title } + data.waitingProposals().mapNotNull { it.task?.title }).map { it.lowercase() }.toSet()
+    val usual = QUICK_JOBS.filter { it.lowercase() !in titles }
     Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        MdAdder(
+        QuickAdd(
             if (mayPlan) "New job" else "Suggest a job", if (mayPlan) "Add a task" else "Suggest a task",
-            prompt = "What needs doing?", sayIt = "Say a new job", onType = { typing = !typing }, onSaid = { add(it) },
+            prompt = "What needs doing?", sayIt = "Say a new job", chips = usual, onType = { typing = !typing }, onAdd = { add(it) },
         )
         if (typing) {
             OutlinedTextField(

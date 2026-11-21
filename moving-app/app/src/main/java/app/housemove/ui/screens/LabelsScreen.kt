@@ -148,7 +148,7 @@ fun LabelsScreen() {
     Screen("Labels and door signs") {
         ScrollColumn {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                ContainerHeading("Paper")
+                ListHeading("Paper")
                 ChipPicker(listOf(false, true), letter, label = { if (it) "Letter" else "A4" }, onPick = { letter = it })
             }
 

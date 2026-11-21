@@ -266,35 +266,6 @@ internal fun MarkButton(icon: ImageVector, label: String, checked: Boolean, desc
     }
 }
 
-/**
- * The number a list screen is about: a ring with how many are done in the middle (a tick
- * once all are), the same said as a sentence beside it, and room for a few marks.
- * [tone] tints the panel; mint is for the screens that are about getting something finished.
- */
-@Composable
-internal fun SummaryCard(
-    ratio: Ratio,
-    title: String,
-    modifier: Modifier = Modifier,
-    tone: GlassTone = GlassTone.Plain,
-    extra: @Composable ColumnScope.() -> Unit = {},
-) {
-    GlassCard(modifier.fillMaxWidth(), tone = tone, shape = RoundedCornerShape(26.dp), sheen = true) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            val done = ratio.total > 0 && ratio.done >= ratio.total
-            Ring(ratio, size = 64.dp, stroke = 7.dp, color = if (done) Night.MintLight else Night.Mint) {
-                if (done) Icon(Icons.Default.Check, contentDescription = "Done", tint = Night.MintLight, modifier = Modifier.size(30.dp))
-                else Text("${ratio.done}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1)
-            }
-            Spacer(Modifier.width(16.dp))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
-                extra()
-            }
-        }
-    }
-}
-
 // ---- entering things without the keyboard ------------------------------------------------
 
 /** A row of one-tap chips that scrolls sideways when there are more than fit. */
@@ -448,13 +419,3 @@ internal fun DateChip(day: Long?, label: String, modifier: Modifier = Modifier, 
     }
 }
 
-/** A small heading over a group of rows, with a picture and an optional count at the end. */
-@Composable
-internal fun GroupHeading(icon: ImageVector, title: String, modifier: Modifier = Modifier, trailing: String? = null) {
-    Row(modifier.fillMaxWidth().padding(top = 6.dp, start = 4.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, contentDescription = null, tint = Night.Mint, modifier = Modifier.size(20.dp))
-        Spacer(Modifier.width(8.dp))
-        Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-        if (trailing != null) Text(trailing, style = MaterialTheme.typography.labelMedium, color = Night.TextDim, textAlign = TextAlign.End)
-    }
-}

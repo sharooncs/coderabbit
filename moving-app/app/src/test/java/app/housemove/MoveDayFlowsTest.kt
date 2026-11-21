@@ -370,7 +370,7 @@ class MoveDayFlowsTest {
         tap("Other amount")
         rule.onAllNodes(hasSetTextAction()).onFirst().performTextReplacement("180.50")
         settle()
-        tap("Add cost · £ 180.5")
+        tap("Add cost · £ 180.50") // pence are written in full
         assertTrue(data.liveExpenses.any { it.amount == 180.5 })
     }
 

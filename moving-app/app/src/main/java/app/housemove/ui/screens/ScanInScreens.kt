@@ -171,7 +171,7 @@ fun ScanInDialog(box: Box, onClose: () -> Unit) {
                     }
                     val untitled = entries.filter { it.title.isBlank() && isIsbn(it.code) }
                     Row(Modifier.padding(start = 20.dp, end = 16.dp).heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
-                        ContainerHeading(if (entries.isEmpty()) "Nothing scanned in yet" else "Scanned in (${entries.size})", Modifier.weight(1f))
+                        ListHeading(if (entries.isEmpty()) "Nothing scanned in yet" else "Scanned in (${entries.size})", Modifier.weight(1f))
                         if (untitled.isNotEmpty() && device.bookLookup == true) {
                             GlassChip(
                                 "Look up ${untitled.size} missing title${if (untitled.size == 1) "" else "s"}", icon = Icons.Default.Search,

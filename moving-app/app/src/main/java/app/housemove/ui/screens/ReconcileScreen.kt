@@ -42,10 +42,11 @@ fun ReconcileScreen() {
     val vehicle = data.vehicle()
     // Each thing once: a container stands for everything packed inside it.
     val all = data.movables()
-    val carried = remember(data) { mdCarried(data) }
-    val onVan = all.filter { it.stage == Stage.LOADED }.sortedBy { it.title }
-    val neverLoaded = all.filter { it.stage == Stage.AT_ORIGIN && !it.travelsWithMe }.sortedBy { it.title }
-    val withMe = all.filter { it.stage == Stage.AT_ORIGIN && it.travelsWithMe }.sortedBy { it.title }
+    val carried = remember(data) { data.carriedCounts() }
+    // What travels with the person is never "on the van", whether or not Load marked it as gone with them.
+    val onVan = all.filter { it.stage == Stage.LOADED && !it.byHand() }.sortedBy { it.title }
+    val neverLoaded = all.filter { it.stage == Stage.AT_ORIGIN && !it.byHand() }.sortedBy { it.title }
+    val withMe = all.filter { it.byHand() && !mdArrived(it.stage) }.sortedBy { it.title }
     val damaged = all.filter { it.damaged }.sortedBy { it.title }
     val arrived = all.count { mdArrived(it.stage) }
     val allIn = onVan.isEmpty() && neverLoaded.isEmpty() && arrived > 0
@@ -109,7 +110,7 @@ fun ReconcileScreen() {
             }
 
             if (onVan.isNotEmpty()) {
-                item(key = "hvan") { MdGroupHeader("Still on the $vehicle", onVan.size) }
+                item(key = "hvan") { ListHeading("Still on the $vehicle", MdHeadingPadding, count = onVan.size) }
                 items(onVan, key = { "v" + it.id }) { m ->
                     MdThingRow(m, carried = carried[m.id] ?: 0) {
                         RowButton("Delivered", onClick = { mdSetStage(store, m, Stage.DELIVERED) })
@@ -118,12 +119,12 @@ fun ReconcileScreen() {
             }
 
             if (neverLoaded.isNotEmpty()) {
-                item(key = "hnever") { MdGroupHeader("Never loaded, still at the old home", neverLoaded.size) }
+                item(key = "hnever") { ListHeading("Never loaded, still at the old home", MdHeadingPadding, count = neverLoaded.size) }
                 items(neverLoaded, key = { "n" + it.id }) { m -> MdThingRow(m, carried = carried[m.id] ?: 0) }
             }
 
             if (withMe.isNotEmpty()) {
-                item(key = "hwithme") { MdGroupHeader("Travelling with you, not arrived yet", withMe.size) }
+                item(key = "hwithme") { ListHeading("Travelling with you, not arrived yet", MdHeadingPadding, count = withMe.size) }
                 items(withMe, key = { "w" + it.id }) { m ->
                     MdThingRow(m, carried = carried[m.id] ?: 0) {
                         RowButton("Arrived", onClick = { mdSetStage(store, m, Stage.DELIVERED) })
@@ -133,7 +134,7 @@ fun ReconcileScreen() {
 
             if (damaged.isNotEmpty()) {
                 item(key = "hdamaged") {
-                    MdGroupHeader("Damaged", damaged.size) {
+                    ListHeading("Damaged", MdHeadingPadding, count = damaged.size) {
                         RowButton("Damage report", onClick = { nav.open("reports") }, forward = false)
                     }
                 }

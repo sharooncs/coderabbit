@@ -32,6 +32,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -49,10 +50,12 @@ import java.io.File
  * reads the same wherever it turns up:
  *
  *   Words        money, countOf, whoIs
- *   Rules        okOrSay, mayOrSay: when the Store says no, its reason is always shown
+ *   Counting     carriedBy, carriedCounts, InsideChip: what a container holds, counted one way
+ *   Rules        okOrSay, mayOrSay, mayDelete: when the Store says no, its reason is always shown
  *   Suggestions  WaitingTag, ProposalReview, DeclinedNote: shown on the thing they are about
- *   Entry        AmountPicker: a sum of money without the keyboard
- *   Lists        MenuChip, RoomFilterChip, ListFab, RowButton, narrowScreen
+ *   Entry        AmountPicker: a sum of money; QuickAdd: a name, both without the keyboard
+ *   Lists        ProgressCard, ListHeading, MenuChip, RoomFilterChip, ListFab, RowButton,
+ *                DeleteButton, narrowScreen
  *
  * Who may do what is always asked of the Store (allowed(), store.can, mayCarryOut and
  * the like), never worked out on a screen.
@@ -60,8 +63,12 @@ import java.io.File
 
 // ---- words ---------------------------------------------------------------------------
 
-/** "£ 80", or "80" when the move has no currency. */
-internal fun money(currency: String, amount: Double): String = (currency.trim() + " " + fmtNum(amount)).trim()
+/** "£ 80", "£ 62.50", or "80" when the move has no currency. Pence are shown in full once there are any. */
+internal fun money(currency: String, amount: Double): String {
+    val whole = amount == Math.rint(amount)
+    val number = if (whole) fmtNum(amount) else String.format(java.util.Locale.ROOT, "%.2f", amount)
+    return (currency.trim() + " " + number).trim()
+}
 
 /** "1 thing", "3 things". */
 internal fun countOf(n: Int, one: String, many: String = one + "s") = "$n " + if (n == 1) one else many
@@ -69,6 +76,43 @@ internal fun countOf(n: Int, one: String, many: String = one + "s") = "$n " + if
 /** A person as others are named on this phone: "you" for its own person. Someone removed keeps their name. */
 internal fun whoIs(data: AppData, personId: String?, me: Person?): String =
     if (personId != null && personId == me?.id) "you" else data.personName(personId).ifBlank { "someone" }
+
+// ---- counting what a container holds -----------------------------------------------------
+
+/**
+ * How many catalogued things a container carries, counted the same way on every screen:
+ * the items packed in it, the containers inside it, and the items in those. Books and
+ * products scanned in are counted on their own ("2 scanned"); the written list of what is
+ * inside is not counted at all. Each thing is counted once, under the container it is in.
+ */
+internal fun AppData.carriedBy(boxId: String): Int =
+    itemsIn(boxId).size + childrenOf(boxId).sumOf { 1 + itemsIn(it.id).size }
+
+/** [carriedBy] for every container at once, in one pass, so a long list stays quick. */
+internal fun AppData.carriedCounts(): Map<String, Int> {
+    if (items.none { it.boxId != null && !it.deleted } && boxes.none { it.parentId != null && !it.deleted }) return emptyMap()
+    val out = HashMap<String, Int>()
+    val outer = HashMap<String, String>()
+    val live = liveBoxes
+    for (b in live) {
+        val p = parentOf(b) ?: continue
+        outer[b.id] = p.id
+        out.merge(p.id, 1, Int::plus)
+    }
+    val ids = live.map { it.id }.toSet()
+    for (i in liveItems) {
+        val b = i.boxId?.takeIf { it in ids } ?: continue
+        out.merge(b, 1, Int::plus)
+        outer[b]?.let { out.merge(it, 1, Int::plus) }
+    }
+    return out
+}
+
+/** "3 things inside": what a container carries, as [carriedBy] counts it. Nothing when it carries nothing. */
+@Composable
+internal fun InsideChip(n: Int, modifier: Modifier = Modifier) {
+    if (n > 0) GlassChip(countOf(n, "thing") + " inside", modifier, icon = Icons.Default.Layers)
+}
 
 /**
  * A small phone, or large text on a medium one: things side by side go one under the other,
@@ -110,7 +154,59 @@ internal fun TypedLine(label: String, send: String, modifier: Modifier = Modifie
             value = text, onValueChange = { text = it }, label = { Text(label, maxLines = 1) }, singleLine = true,
             colors = glassFieldColors(), modifier = Modifier.weight(1f),
         )
-        RowButton(send, onClick = { if (text.isNotBlank()) onText(text.trim()) }, modifier = Modifier.enabledLook(text.isNotBlank()))
+        RowButton(
+            send,
+            onClick = {
+                if (text.isNotBlank()) {
+                    onText(text.trim())
+                    text = ""
+                }
+            },
+            modifier = Modifier.enabledLook(text.isNotBlank()),
+        )
+    }
+}
+
+/**
+ * Adding something by name without the keyboard. One line reads [label]: tapping it opens
+ * the keyboard's way ([onType]), for a phone with no speech or a name that is hard to say;
+ * the microphone beside it takes a spoken name. Under the line, [chips] offers the names
+ * most likely wanted, one tap each, so the usual things need neither. [name] is what a
+ * screen reader calls the line.
+ */
+@Composable
+internal fun QuickAdd(
+    label: String,
+    name: String,
+    prompt: String,
+    sayIt: String,
+    chips: List<String>,
+    onType: () -> Unit,
+    modifier: Modifier = Modifier,
+    onAdd: (String) -> Unit,
+) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        GlassPill(Modifier.fillMaxWidth(), sheen = true, contentPadding = PaddingValues(4.dp)) {
+            Row(
+                Modifier.weight(1f).clip(CircleShape).clickable(role = Role.Button, onClick = onType)
+                    .semantics { contentDescription = name }.heightIn(min = 48.dp).padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null, tint = Night.Mint)
+                Spacer(Modifier.width(10.dp))
+                Text(label, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Icon(Icons.Default.Keyboard, contentDescription = null, tint = Night.TextDim, modifier = Modifier.size(20.dp))
+            }
+            if (canSpeak()) {
+                Spacer(Modifier.width(6.dp))
+                SpeakButton(prompt, contentDescription = sayIt, onText = onAdd)
+            }
+        }
+        if (chips.isNotEmpty()) {
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                chips.forEach { c -> GlassChip(c, icon = Icons.Default.Add, onClick = { onAdd(c) }) }
+            }
+        }
     }
 }
 
@@ -196,6 +292,14 @@ internal fun Store.mayOrSay(context: Context, action: Action): Boolean {
     return false
 }
 
+/**
+ * Whether deleting a record is offered. The Store has no rule for deleting; where several
+ * people share the move, taking something off the list for everyone is not offered to a
+ * Helper. With one person, or with nobody an Organiser, it is always offered.
+ */
+@Composable
+internal fun mayDelete(): Boolean = !appData().shared() || allowed(Action.SUGGEST)
+
 // ---- buttons ---------------------------------------------------------------------------
 
 /** How a [RowButton] is drawn: the thing to do, something that carries a row forward, or a step back. */
@@ -252,6 +356,103 @@ internal fun ListFab(icon: ImageVector, text: String, onClick: () -> Unit) {
         Icon(icon, contentDescription = null, tint = Night.OnMint)
         Spacer(Modifier.width(10.dp))
         Text(text, style = MaterialTheme.typography.titleMedium, color = Night.OnMint, maxLines = 1)
+    }
+}
+
+/**
+ * Taking a record off the list for everyone ("Delete item"): red words and a bin on red
+ * glass, the same on every page and always the last thing on it. It is not undone, so
+ * [onClick] should ask first. Whether it is offered at all is [mayDelete]'s answer.
+ */
+@Composable
+internal fun DeleteButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier.glass(CircleShape, GlassTone.Red, shadow = 0.dp).clickable(role = Role.Button, onClick = onClick)
+            .heightIn(min = 48.dp).padding(horizontal = 18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        Icon(Icons.Default.Delete, contentDescription = null, tint = Night.RedPale, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(text, style = MaterialTheme.typography.labelLarge, color = Night.RedPale, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+// ---- the tops and headings of lists ------------------------------------------------------
+
+/**
+ * The number a screen is about: a glass panel with a ring that has how many are done in
+ * the middle (a tick once all are), the same said as a sentence beside it, an optional
+ * [sub] line, and room [below] for chips that belong with the count (trips, rooms).
+ * [tone] tints the panel. Every list screen opens with this one, whichever part of the
+ * app it is in.
+ */
+@Composable
+internal fun ProgressCard(
+    ratio: Ratio,
+    title: String,
+    modifier: Modifier = Modifier,
+    sub: String? = null,
+    tone: GlassTone = GlassTone.Plain,
+    below: @Composable ColumnScope.() -> Unit = {},
+) {
+    GlassCard(modifier.fillMaxWidth(), tone = tone, shape = RoundedCornerShape(26.dp), sheen = true) {
+        Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            val done = ratio.total > 0 && ratio.done >= ratio.total
+            Ring(ratio, size = 60.dp, stroke = 7.dp, color = if (done) Night.MintLight else Night.Mint) {
+                if (done) Icon(Icons.Default.Check, contentDescription = "Done", tint = Night.MintLight, modifier = Modifier.size(28.dp))
+                else Text("${ratio.done}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1)
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                if (!sub.isNullOrBlank()) Text(sub, style = MaterialTheme.typography.bodySmall, color = Night.TextSoft)
+                below()
+            }
+        }
+    }
+}
+
+/**
+ * The heading over a group of rows, on the open ground: an optional picture, the name, how
+ * many there are as a small chip, and a line or a button at the end. The same for rooms on
+ * Load, decisions on the leaving list, and what is inside a container.
+ */
+@Composable
+internal fun ListHeading(
+    title: String,
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    count: Int? = null,
+    trailing: String? = null,
+    tint: androidx.compose.ui.graphics.Color = Night.Mint,
+    action: (@Composable () -> Unit)? = null,
+) {
+    // Only as wide as its words, unless something at the end has to be pushed to the far side.
+    val pushed = trailing != null || action != null
+    Row(modifier.heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(if (pushed) Modifier.weight(1f) else Modifier, verticalAlignment = Alignment.CenterVertically) {
+            if (icon != null) {
+                Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+            }
+            Text(
+                title, style = MaterialTheme.typography.titleSmall, color = Night.Text, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                modifier = (if (pushed || count != null) Modifier.weight(1f, fill = false) else Modifier).semantics { heading() },
+            )
+            if (count != null) {
+                Spacer(Modifier.width(8.dp))
+                GlassChip(count.toString())
+            }
+        }
+        if (trailing != null) {
+            Spacer(Modifier.width(8.dp))
+            Text(trailing, style = MaterialTheme.typography.labelMedium, color = Night.TextDim, textAlign = TextAlign.End, maxLines = 1)
+        }
+        if (action != null) {
+            Spacer(Modifier.width(8.dp))
+            action()
+        }
     }
 }
 

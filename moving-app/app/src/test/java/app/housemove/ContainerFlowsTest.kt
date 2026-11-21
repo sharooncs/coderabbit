@@ -17,7 +17,9 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.isSelectable
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onRoot
@@ -420,7 +422,7 @@ class ContainerFlowsTest {
 
         // From the outer side: scanning a container's label where items are scanned puts it in.
         go("box/${suitcase.id}")
-        tapDesc("Scan an item's label to put it in")
+        tap("Put an item in") // nothing loose in this room to tap: one line, which opens the scanner
         scan("B2")
         assertEquals(suitcase.id, data.parentOf(box("B2"))!!.id)
         tapDesc("Take Bag 1 out")
@@ -434,11 +436,12 @@ class ContainerFlowsTest {
         val things = (1..30).map { "Thing $it" }
         store.put(data.box(b.id)!!.copy(contents = things.joinToString(", ")))
         go("box/${b.id}")
-        // Thirty things written down: the first few show, the rest and the usual chips wait behind "more".
-        see("Thing 1"); see("Thing 8")
-        dontSee("Thing 9")
+        // Thirty things written down: the first few show with three of the usual things to add,
+        // and the rest wait behind "more", so the items and Seal stay in reach.
+        see("Thing 1"); see("Thing 6")
+        dontSee("Thing 7")
         rule.onAllNodes(hasText("Seal box") and hasClickAction()).onFirst().assertIsDisplayed()
-        tap("26 more") // 22 more of its own, and 4 of the usual kitchen things
+        tap("33 more") // 24 more of its own, and 9 of the usual kitchen things
         see("Thing 30"); see("Tea towels")
         tap("Fewer")
         dontSee("Thing 30")
@@ -484,7 +487,8 @@ class ContainerFlowsTest {
         // Each row says what kind it is with a picture, and the bag sits under its suitcase.
         rule.onAllNodes(hasContentDescription("Suitcase")).onFirst().assertExists()
         rule.onAllNodes(hasContentDescription("Inside suitcase B1")).onFirst().assertExists()
-        see("B2"); see("1 item"); see("Plates")
+        // The suitcase carries the camera and the bag: counted as everywhere else, each thing once.
+        see("B2"); see("2 things inside"); see("Plates")
 
         filter("Choose a kind of container", "Bags 1")
         see("B2"); see("Inside suitcase B1")
@@ -493,7 +497,7 @@ class ContainerFlowsTest {
         see("L001")
 
         filter("Choose a kind of container", "Suitcases 1")
-        see("B1"); see("1 inside")
+        see("B1"); see("2 things inside")
         dontSee("L002"); dontSee("B2")
         filter("Choose a kind of container", "All kinds")
 
@@ -701,6 +705,11 @@ class ContainerFlowsTest {
         go("box/${ids["b1"]}"); shot("c_box_suitcase")
         go("box/${ids["b2"]}"); shot("c_box_inside")
         go("box/${ids["l1"]}"); shot("c_box_sealed")
+        // The scanner for books and products opens over the page, in a window of its own.
+        tapDesc("Scan barcodes of books and products")
+        settle()
+        rule.onAllNodes(isRoot()).onLast().captureRoboImage("build/audit/$kind/c_scanin.png")
+        tap("Done")
         go("labels"); shot("c_labels")
         go("lists"); shot("c_lists")
         go("packorder"); shot("c_packorder")
@@ -713,4 +722,9 @@ class ContainerFlowsTest {
     @Test
     @Config(sdk = [34], qualifiers = "w411dp-h2300dp-mdpi")
     fun picturesOfWholeScreens() = shots("tall")
+
+    /** The same screens on a 360dp phone, the most common small size: what is inside must not push the items under Seal. */
+    @Test
+    @Config(sdk = [34], qualifiers = "w360dp-h740dp-xhdpi")
+    fun picturesOnA360dpPhone() = shots("c-360")
 }

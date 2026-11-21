@@ -98,7 +98,7 @@ fun RecordsScreen(home: Home) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item(key = "head") {
-                MdProgressHeader(
+                ProgressCard(
                     Ratio(photographed, rooms.size),
                     if (rooms.isEmpty()) homeName else "$photographed of ${rooms.size} rooms photographed",
                     sub = (if (rooms.isEmpty()) "" else "$homeName · ") +
@@ -223,7 +223,7 @@ private fun MdReadingEditor(r: Reading, onDelete: () -> Unit) {
             mdEditReading(store, r.id) { it.copy(value = number) }
             said = number
         }
-        GlassOrb(Icons.Default.Delete, "Delete this ${r.kind} reading", size = 40.dp, onClick = onDelete)
+        if (mayDelete()) GlassOrb(Icons.Default.Delete, "Delete this ${r.kind} reading", size = 40.dp, onClick = onDelete)
     }
     PhotoStrip(r.id, PhotoKind.METER, label = "${r.kind} meter, ${fmtDay(r.day)}")
     HorizontalDivider(color = Night.Hairline)

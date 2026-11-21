@@ -87,24 +87,24 @@ fun BoxesScreen() {
                 contentPadding = PaddingValues(top = 4.dp, bottom = 96.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                item(key = "header") {
-                    Column {
-                        if (duplicates.isNotEmpty()) {
-                            GlassCard(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp), tone = GlassTone.Red) {
-                                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.onErrorContainer)
-                                    Spacer(Modifier.width(12.dp))
-                                    Text(
-                                        "Label used twice: ${duplicates.joinToString()}. Open one and change its label.",
-                                        color = MaterialTheme.colorScheme.onErrorContainer,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                    )
-                                }
-                            }
+                if (duplicates.isNotEmpty()) item(key = "duplicates") {
+                    GlassCard(Modifier.padding(horizontal = 16.dp), tone = GlassTone.Red) {
+                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.onErrorContainer)
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                "Label used twice: ${duplicates.joinToString()}. Open one and change its label.",
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
                         }
-                        // One line of filters. The room, then where things have got to, each state with how many
-                        // are in it; what kind of container and what is in it are two chips that open a list,
-                        // and only appear once there is more than one to choose from.
+                    }
+                }
+                // One line of filters that stays at the top as the list scrolls, as on Items. The room, then
+                // where things have got to, each state with how many are in it; what kind of container and
+                // what is in it are two chips that open a list, and only appear once there is more than one.
+                stickyHeader(key = "filters") {
+                    Column(Modifier.fillMaxWidth().groundBand()) {
                         ChipRow {
                             if (destRooms.isNotEmpty()) RoomFilterChip(destRooms, room?.id, onPick = { roomId = it })
                             GlassChip("All ${top.size}", selected = state == null, onClick = { state = null })
@@ -227,7 +227,7 @@ fun PackScreen() {
             item(key = "room") {
                 Column(Modifier.padding(horizontal = 16.dp)) {
                     Row(Modifier.heightIn(min = 28.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        ContainerHeading("Packing in", Modifier.weight(1f))
+                        ListHeading("Packing in", Modifier.weight(1f))
                         val to = room?.let { data.room(data.packDefaults(it.id).destRoomId) }
                         if (to != null) {
                             Hint("Goes to")
@@ -269,7 +269,7 @@ fun PackScreen() {
             }
             if (fromRoom.isNotEmpty()) {
                 if (room == null) item(key = "list-title") {
-                    ContainerHeading("Packed with no room yet", Modifier.padding(horizontal = 16.dp))
+                    ListHeading("Packed with no room yet", Modifier.padding(horizontal = 16.dp))
                 }
                 items(fromRoom, key = { it.id }) { b ->
                     ContainerRow(b, data, Modifier.padding(horizontal = 16.dp), inside = data.parentOf(b), onOpen = { nav.open("box/${it.id}") })

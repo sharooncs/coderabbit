@@ -157,6 +157,7 @@ private fun MdSupplies(modifier: Modifier) {
     var typing by rememberSaveable { mutableStateOf(false) }
     var newName by rememberSaveable { mutableStateOf("") }
     var removing by remember { mutableStateOf<Supply?>(null) }
+    val canDelete = mayDelete()
     fun add(said: String) {
         val name = said.trim().replaceFirstChar { it.uppercase() }
         if (name.isNotEmpty()) store.put(Supply(newId(), name, 1))
@@ -171,10 +172,10 @@ private fun MdSupplies(modifier: Modifier) {
                 onAction = { data.suggestSupplies().forEach { (name, need) -> store.put(Supply(newId(), name, need)) } },
             )
         } else item(key = "summary") {
-            MdProgressHeader(
+            ProgressCard(
                 Ratio(ready, supplies.size),
                 "$ready of ${supplies.size} ready",
-                Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
                 sub = if (toBuy == 0) "You have everything on the list" else "$toBuy still to buy",
             )
         }
@@ -204,7 +205,8 @@ private fun MdSupplies(modifier: Modifier) {
                         modifier = Modifier.weight(1f),
                     )
                     if (s.have < s.need) IconFlag(Icons.Default.ShoppingCart, "${s.need - s.have} to buy")
-                    GlassOrb(Icons.Default.Delete, "Remove ${s.name}", size = 36.dp, onClick = { removing = s })
+                    if (canDelete) GlassOrb(Icons.Default.Delete, "Remove ${s.name}", size = 36.dp, onClick = { removing = s })
+                    else Spacer(Modifier.width(10.dp))
                 }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     MdStepper("Need", s.need, s.name) { v -> mdEditSupply(store, s.id) { it.copy(need = v) } }
@@ -215,9 +217,17 @@ private fun MdSupplies(modifier: Modifier) {
         item(key = "add") {
             // Something not on the list: say it. The keyboard is one tap away for a phone with no speech.
             Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                MdAdder(
+                // What the suggested list has that this one does not: one tap each, with the suggested number.
+                val names = supplies.map { it.name.lowercase() }.toSet()
+                val missing = remember(data) { data.suggestSupplies() }.filter { (n, _) -> n.lowercase() !in names }
+                QuickAdd(
                     "Something else", "Add something else to the list",
-                    prompt = "What else do you need?", sayIt = "Say what else you need", onType = { typing = !typing }, onSaid = { add(it) },
+                    prompt = "What else do you need?", sayIt = "Say what else you need",
+                    chips = missing.map { it.first }, onType = { typing = !typing },
+                    onAdd = { picked ->
+                        val need = missing.firstOrNull { it.first == picked }?.second
+                        if (need != null) store.put(Supply(newId(), picked, need)) else add(picked)
+                    },
                 )
                 if (typing) Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
@@ -579,7 +589,7 @@ private fun MdCostEditor(existing: Expense?, onClose: () -> Unit) {
             onClick = { save() }, primary = !untouched, enabled = amount > 0.0,
         )
         if (existing != null && mayPlan) {
-            GlassChip("Delete this cost", icon = Icons.Default.Delete, onClick = { confirmDelete = true })
+            DeleteButton("Delete this cost", onClick = { confirmDelete = true }, modifier = Modifier.align(Alignment.CenterHorizontally))
         }
     }
 

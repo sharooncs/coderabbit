@@ -102,6 +102,14 @@ internal fun Movable.flags(): List<Pair<ImageVector, String>> = listOfNotNull(
     (if (isBox) Pic.Heavy to "Heavy" else Pic.TwoPeople to "Two people").takeIf { heavy },
 )
 
+/**
+ * Furniture and appliances are catalogued as well, and nobody packs a wardrobe into a box:
+ * what plainly cannot go in a container is not offered one, on its own page or as a picture
+ * to tap on a container's. Scanning its label into a container still works.
+ */
+internal fun Item.couldBePacked(): Boolean =
+    !twoPerson && !needsDisassembly && !keepUpright && (volumeM3() ?: 0.0) <= ContainerKind.WARDROBE.m3
+
 /** The category a container counts under: the one chosen, else the one its room and contents suggest. */
 internal fun AppData.categoryOf(b: Box): String = b.category.ifBlank { suggestCategory(b) }
 
@@ -178,11 +186,6 @@ internal fun PackStateIcon(state: PackState, vehicle: String, modifier: Modifier
 }
 
 // ---- small pieces --------------------------------------------------------------------
-
-@Composable
-internal fun ContainerHeading(text: String, modifier: Modifier = Modifier) {
-    Text(text, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = modifier)
-}
 
 /** Why the app would not do what was just asked, in the Store's own words. */
 @Composable
@@ -396,9 +399,9 @@ internal fun ContainerRow(
     onOpen: (Box) -> Unit,
 ) {
     val vehicle = data.vehicle()
-    val items = data.itemsIn(box.id)
+    // Counted as on every screen: the items in it, the containers inside it and what those hold.
+    val carried = data.carriedBy(box.id)
     val scanned = data.entriesOf(box.id).size
-    val within = data.childrenOf(box.id).size
     GlassCard(modifier.fillMaxWidth(), onClick = { onOpen(box) }, shape = RoundedCornerShape(22.dp)) {
         Row(Modifier.padding(start = 8.dp, top = 8.dp, bottom = 8.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             ContainerThumb(box, data, 64.dp)
@@ -411,7 +414,7 @@ internal fun ContainerRow(
                     if (showRoom) RoomBadge(data.room(box.destRoomId), Modifier.weight(1f, fill = false))
                 }
                 val words = box.rowWords()
-                val nothing = words.isEmpty() && items.isEmpty() && scanned == 0 && within == 0
+                val nothing = words.isEmpty() && carried == 0 && scanned == 0
                 if (words.isNotEmpty() || nothing) {
                     Text(
                         words.ifEmpty { "Nothing written down yet" },
@@ -421,12 +424,11 @@ internal fun ContainerRow(
                     )
                 }
                 val flagged = box.priority != Priority.WHENEVER || box.fragile || box.heavy || box.thisWayUp || box.travelsWithMe || box.hazardous || box.damaged
-                if (flagged || inside != null || items.isNotEmpty() || scanned > 0 || within > children.size) {
+                if (flagged || inside != null || carried > 0 || scanned > 0) {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         if (inside != null) GlassChip("Inside ${inside.pointer()}", icon = Icons.Default.SubdirectoryArrowRight, tone = GlassTone.Amber)
-                        if (items.isNotEmpty()) GlassChip(countOf(items.size, "item"), icon = Pic.Item)
+                        InsideChip(carried)
                         if (scanned > 0) GlassChip("$scanned scanned", icon = Icons.Default.QrCodeScanner)
-                        if (within > children.size) GlassChip("$within inside", icon = Icons.Default.SubdirectoryArrowRight)
                         if (box.priority != Priority.WHENEVER) IconFlag(box.priority.icon(), box.priority.label)
                         if (box.fragile) IconFlag(Pic.Fragile, "Fragile")
                         if (box.heavy) IconFlag(Pic.Heavy, "Heavy")

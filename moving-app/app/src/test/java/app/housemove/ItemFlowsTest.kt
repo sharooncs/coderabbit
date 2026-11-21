@@ -505,7 +505,7 @@ class ItemFlowsTest {
 
         // The likely room is already picked for each thing: "Lounge" goes to "Living room".
         show(dee, "plan")
-        see("Needs a room (3)")
+        see("Needs a room"); see("3")
         tap("Other room", index = 1) // she would rather have the lamp in the kitchen
         tap("Kitchen")
         val first = dee.waiting().single()

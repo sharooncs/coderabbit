@@ -140,7 +140,7 @@ fun TriageScreen() {
                             if (!store.decideOrSuggest(context, current.id, d, asking)) return
                             // An Organiser choosing what it already was has said no to what others suggested instead.
                             if (mayDecide && d == current.disposition) {
-                                store.data.value.waitingFor(current.id, ProposalKind.ITEM_DECISION).forEach { store.decline(it.id, "It stays as it is: ${d.label}") }
+                                store.data.value.waitingFor(current.id, ProposalKind.ITEM_DECISION).forEach { store.decline(it.id, "It stays as it is: ${d.label}").okOrSay(context) }
                             }
                             done()
                         }

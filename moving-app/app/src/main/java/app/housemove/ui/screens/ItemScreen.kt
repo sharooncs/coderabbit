@@ -58,9 +58,7 @@ fun ItemScreen(id: String) {
     val mayDecide = store.can(Action.DECIDE)
     val maySuggest = store.can(Action.SUGGEST)
     val mayCarryOut = data.mayCarryOut(me, item)
-    // The Store has no rule for deleting. Where several people share the move, taking something off
-    // the list for everyone is not for a Helper: they are not offered it.
-    val mayDelete = !data.shared() || maySuggest
+    val mayDelete = mayDelete()
     val waitingDecision = data.waitingFor(id, ProposalKind.ITEM_DECISION, ProposalKind.QUESTION)
     val waitingRoom = data.waitingFor(id, ProposalKind.ITEM_ROOM)
 
@@ -245,7 +243,8 @@ fun ItemScreen(id: String) {
 
             // ---- what it is packed in -----------------------------------------------------
 
-            if (container != null || (data.uses(Part.BOXES) && !leaving)) {
+            // A wardrobe or a fridge goes in no container: what plainly cannot be packed is not offered it.
+            if (container != null || (data.uses(Part.BOXES) && !leaving && item.couldBePacked())) {
                 ContainerBlock(
                     item, container, data,
                     onScan = { scanningContainer = true },
@@ -357,6 +356,30 @@ fun ItemScreen(id: String) {
                 AmountPicker(item.value, { v -> edit { it.copy(value = v) } }, "What it is worth", currency, presets = WORTH_PRESETS)
             }
 
+            // Where it is now and any damage. Until it leaves the old home this is rarely wanted, so it
+            // waits at the end of "More" instead of being a section of its own.
+            val trip = data.trip(item.tripId)?.takeIf { item.stage != Stage.AT_ORIGIN }
+            val travelled = item.stage != Stage.AT_ORIGIN || item.damaged
+            val onTheMove: @Composable ColumnScope.() -> Unit = {
+                Text("Where it is now", style = MaterialTheme.typography.labelLarge, color = Night.TextDim)
+                IconChoice(
+                    options = Stage.entries.map { Choice(it, stageText(it, isBox = false, vehicle), it.icon()) },
+                    selected = item.stage,
+                    onPick = { s -> edit { it.copy(stage = s) } },
+                    columns = 2,
+                )
+                if (trip != null) Hint("Travelled on ${trip.name}")
+                if (item.needsDisassembly && travelled) {
+                    CheckRow("Put back together", item.reassembled, { v -> edit { it.copy(reassembled = v) } })
+                }
+                HorizontalDivider(color = Night.Hairline)
+                SwitchRow("Damaged in the move", item.damaged, { v -> edit { it.copy(damaged = v) } })
+                if (item.damaged) {
+                    DamageText(item.damageNote, { v -> edit { it.copy(damageNote = v) } }, key = "$id-damage")
+                    PhotoStrip(item.id, PhotoKind.DAMAGE, label = "Damage photos")
+                }
+            }
+
             if (moving) {
                 val steps = listOfNotNull(
                     item.prepEmptied, item.prepPhotos, item.prepDisassembled.takeIf { item.needsDisassembly },
@@ -411,30 +434,13 @@ fun ItemScreen(id: String) {
                     }
                 }
 
-                val trip = data.trip(item.tripId)?.takeIf { item.stage != Stage.AT_ORIGIN }
-                if (movesHouse || item.stage != Stage.AT_ORIGIN || item.damaged) Fold(
-                    "On the move", Pic.Where,
+                // Once it has left the old home, or was damaged, how it fares is a section of its own.
+                // Opened when it first appears because damage was just reported, so what happened can be added at once.
+                if (travelled) Fold(
+                    "On the move", Pic.Where, open = item.damaged, key = "move",
                     summary = stageText(item.stage, isBox = false, vehicle) + (trip?.let { " · ${it.name}" } ?: "") +
                         if (item.damaged) " · " + item.damageNote.ifBlank { "Damaged" } else "",
-                ) {
-                    Text("Where it is now", style = MaterialTheme.typography.labelLarge, color = Night.TextDim)
-                    IconChoice(
-                        options = Stage.entries.map { Choice(it, stageText(it, isBox = false, vehicle), it.icon()) },
-                        selected = item.stage,
-                        onPick = { s -> edit { it.copy(stage = s) } },
-                        columns = 2,
-                    )
-                    if (trip != null) Hint("Travelled on ${trip.name}")
-                    if (item.needsDisassembly) {
-                        CheckRow("Put back together", item.reassembled, { v -> edit { it.copy(reassembled = v) } })
-                    }
-                    HorizontalDivider(color = Night.Hairline)
-                    SwitchRow("Damaged in the move", item.damaged, { v -> edit { it.copy(damaged = v) } })
-                    if (item.damaged) {
-                        DamageText(item.damageNote, { v -> edit { it.copy(damageNote = v) } }, key = "$id-damage")
-                        PhotoStrip(item.id, PhotoKind.DAMAGE, label = "Damage photos")
-                    }
-                }
+                ) { onTheMove() }
             }
 
             // Notes, and what is rarely wanted: the room it came from, whether it is a device, deleting it.
@@ -463,17 +469,14 @@ fun ItemScreen(id: String) {
                 if (offerDevice && !electronic) {
                     SwitchRow("It has a serial number", false, { v -> deviceJustOn = v; edit { it.copy(electronic = v) } }, sub = "Adds make, model and serial number")
                 }
+                if (moving && movesHouse && !travelled) {
+                    HorizontalDivider(color = Night.Hairline)
+                    onTheMove()
+                }
                 // Not undone, so it is the last thing in the last section.
                 if (mayDelete) {
                     HorizontalDivider(color = Night.Hairline)
-                    TextButton(
-                        onClick = { confirmDelete = true }, modifier = Modifier.align(Alignment.CenterHorizontally),
-                        colors = ButtonDefaults.textButtonColors(contentColor = Night.Red),
-                    ) {
-                        Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Delete item")
-                    }
+                    DeleteButton("Delete item", onClick = { confirmDelete = true }, modifier = Modifier.align(Alignment.CenterHorizontally))
                 }
             }
         }
@@ -677,14 +680,18 @@ private fun FitLine(item: Item, dest: Room?, fit: Fit, inches: Boolean, onTakeAp
     val door = dest.doorWidthCm
     val doorText = door?.let { if (inches) "${fmtNum(it / 2.54)} in" else "${fmtNum(it)} cm" } ?: ""
     val scheme = MaterialTheme.colorScheme
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    // Words and the one thing to do side by side where they fit; the button goes under them on a small phone.
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp),
+        itemVerticalAlignment = Alignment.CenterVertically,
+    ) {
         when (fit) {
             Fit.UNKNOWN -> if (door == null || door <= 0) {
-                Hint("No door width for ${dest.name} yet, so the fit is not checked.", Modifier.weight(1f))
+                Hint("No door width for ${dest.name} yet, so the fit is not checked.")
                 GlassChip("Add it", onClick = onAddDoor)
             } else {
                 IconFlag(Pic.Size, "Fit not checked")
-                Hint("Add its size to check the $doorText door.", Modifier.weight(1f))
+                Hint("Add its size to check the $doorText door.")
             }
             Fit.OK -> {
                 Icon(Icons.Default.CheckCircle, contentDescription = null, tint = scheme.tertiary, modifier = Modifier.size(18.dp))
@@ -692,14 +699,14 @@ private fun FitLine(item: Item, dest: Room?, fit: Fit, inches: Boolean, onTakeAp
             }
             Fit.TIGHT -> {
                 IconFlag(Icons.Default.Warning, "Tight fit")
-                Text("through the $doorText door", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                Text("through the $doorText door", style = MaterialTheme.typography.bodyMedium)
             }
             Fit.NO -> if (item.needsDisassembly) {
                 IconFlag(Pic.TakeApart, "Take apart")
-                Text("to get through the $doorText door", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                Text("to get through the $doorText door", style = MaterialTheme.typography.bodyMedium)
             } else {
                 IconFlag(Icons.Default.Warning, "Won't fit", error = true)
-                Text("the $doorText door", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                Text("through the $doorText door", style = MaterialTheme.typography.bodyMedium)
                 GlassChip("Mark: take apart", icon = Pic.TakeApart, onClick = onTakeApart)
             }
         }

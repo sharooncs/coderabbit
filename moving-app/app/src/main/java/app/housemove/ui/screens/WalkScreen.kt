@@ -102,9 +102,9 @@ fun WalkScreen() {
                 }
             } else {
                 item(key = "count") {
-                    GroupHeading(
-                        Pic.Room, if (room != null) "In ${room.name}" else "Not in a room yet",
-                        trailing = if (unnamed > 0) "${inRoom.size} · $unnamed to name" else "${inRoom.size}",
+                    ListHeading(
+                        if (room != null) "In ${room.name}" else "Not in a room yet", icon = Pic.Room, count = inRoom.size,
+                        trailing = if (unnamed > 0) "$unnamed to name" else null,
                     )
                 }
             }

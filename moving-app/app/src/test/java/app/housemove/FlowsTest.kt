@@ -389,12 +389,12 @@ class FlowsTest {
         tap("Remove label")
         assertNull(it().label)
 
-        tap("On the move")
+        tap("More") // before it leaves the old home, where it is and any damage wait in the last section
         tap("Damaged in the move")
         assertTrue(it().damaged)
+        see("On the move") // once damaged, they have a section of their own
 
-        tap("More")
-        tap("Delete item") // at the very end of the last section
+        tap("Delete item") // at the very end of the last section, which is still open
         tap("Delete")
         assertNull(data.item(item.id))
         go("item/${item.id}")
@@ -541,7 +541,7 @@ class FlowsTest {
         val wardrobe = store.createItem("Wardrobe", oldBedroom.id)
         store.put(data.item(wardrobe.id)!!.copy(disposition = Disposition.MOVE, widthCm = 120.0, depthCm = 80.0, heightCm = 200.0))
         go("plan")
-        see("Needs a room (1)")
+        see("Needs a room")
         tap("Kitchen")
         assertEquals(newKitchen.id, data.item(desk.id)!!.destRoomId)
         assertTrue(data.issues().any { it.route == "plan" && it.severe })

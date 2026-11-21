@@ -78,7 +78,7 @@ fun LoadScreen() {
     val trip = data.trip(device.currentTripId) ?: trips.firstOrNull()
     // Each thing once: a container stands for everything packed inside it.
     val all = data.movables()
-    val carried = remember(data) { mdCarried(data) }
+    val carried = remember(data) { data.carriedCounts() }
     val loadedCount = all.count { it.stage != Stage.AT_ORIGIN }
     val waiting = all.filter { it.stage == Stage.AT_ORIGIN }
     val forVan = waiting.filter { !it.travelsWithMe }
@@ -129,7 +129,7 @@ fun LoadScreen() {
             LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = listState, contentPadding = PaddingValues(top = 2.dp, bottom = 16.dp)) {
                 result?.let { r -> item(key = "result") { MdBanner(r, Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) } }
                 item(key = "head") {
-                    MdProgressHeader(
+                    ProgressCard(
                         Ratio(loadedCount, all.size),
                         "$loadedCount of ${all.size} loaded",
                         Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp),
@@ -165,7 +165,7 @@ fun LoadScreen() {
                     if (waiting.isEmpty()) item(key = "empty") { EmptyState(Icons.Default.CheckCircle, "Everything is on the $vehicle") }
                     groups.forEach { (room, list) ->
                         item(key = "h" + (room?.id ?: "none")) {
-                            MdGroupHeader(room?.name ?: "No room", list.size) {
+                            ListHeading(room?.name ?: "No room", MdHeadingPadding, count = list.size) {
                                 RowButton(
                                     "Load all",
                                     onClick = {
@@ -183,7 +183,7 @@ fun LoadScreen() {
                         }
                     }
                     if (withMe.isNotEmpty()) {
-                        item(key = "hwithme") { MdGroupHeader("Travels with me, not in the $vehicle", withMe.size) }
+                        item(key = "hwithme") { ListHeading("Travels with me, not in the $vehicle", MdHeadingPadding, count = withMe.size) }
                         items(withMe, key = { "w" + it.id }) { m ->
                             MdThingRow(m, open = m.id in openBoxes, carried = carried[m.id] ?: 0) {
                                 RowButton(

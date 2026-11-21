@@ -192,7 +192,7 @@ fun PackOrderScreen() {
             if (rooms.isNotEmpty()) {
                 item(key = "progress") {
                     val packed = rooms.count { it.packed }
-                    SummaryCard(
+                    ProgressCard(
                         Ratio(packed, rooms.size), "$packed of ${countOf(rooms.size, "room")} fully packed",
                         Modifier.padding(horizontal = 16.dp), tone = GlassTone.Mint,
                     ) {

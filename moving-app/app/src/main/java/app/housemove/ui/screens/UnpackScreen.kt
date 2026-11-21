@@ -98,7 +98,7 @@ private fun MdUnpackBoxes(modifier: Modifier) {
         if (arrived.isEmpty()) item(key = "empty") {
             EmptyState(Pic.Box, "No boxes here yet", text = "They appear once they are scanned in at the new home.")
         } else item(key = "head") {
-            MdProgressHeader(
+            ProgressCard(
                 Ratio(done.size, shown.size),
                 "${done.size} of ${shown.size} unpacked",
                 Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 6.dp),
@@ -171,7 +171,7 @@ private fun MdUnpackFurniture(modifier: Modifier) {
         if (arrived.isEmpty()) item(key = "empty") {
             EmptyState(Pic.Item, "No furniture here yet", text = "It appears once it is scanned in at the new home.")
         } else item(key = "head") {
-            MdProgressHeader(
+            ProgressCard(
                 Ratio(done.size, arrived.size),
                 "${done.size} of ${arrived.size} in place",
                 Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 6.dp),

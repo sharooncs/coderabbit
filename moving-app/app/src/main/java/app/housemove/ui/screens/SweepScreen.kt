@@ -63,7 +63,7 @@ fun SweepScreen() {
                     action = "Add rooms", onAction = { nav.open("rooms") },
                 )
             } else {
-                MdProgressHeader(Ratio(swept, rooms.size), "$swept of ${rooms.size} rooms checked")
+                ProgressCard(Ratio(swept, rooms.size), "$swept of ${rooms.size} rooms checked")
                 if (swept == rooms.size && stillHere.isEmpty()) {
                     MdBanner(MdResult(MdTone.GOOD, "Sweep complete", "Read the meters, lock up and hand over the keys."))
                 }

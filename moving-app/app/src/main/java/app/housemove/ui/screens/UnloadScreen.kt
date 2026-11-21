@@ -100,13 +100,15 @@ fun UnloadScreen() {
 
     // Each thing once: a container stands for everything packed inside it.
     val all = data.movables()
-    val carried = remember(data) { mdCarried(data) }
+    val carried = remember(data) { data.carriedCounts() }
     val arrivedCount = all.count { mdArrived(it.stage) }
     val trips = data.liveTrips
     val filter = tripFilter?.takeIf { id -> trips.any { it.id == id } }
-    val stillOn = all.count { it.stage == Stage.LOADED }
-    val onVan = all.filter { it.stage == Stage.LOADED && (filter == null || it.tripId == filter) }
-        .sortedWith(compareBy<Movable>({ it.priority.ordinal }, { data.room(it.destRoomId)?.name ?: "~" }, { it.title }))
+    val order = compareBy<Movable>({ it.priority.ordinal }, { data.room(it.destRoomId)?.name ?: "~" }, { it.title })
+    // What travels with the person is not on the van: it is listed on its own, to be ticked off as it comes in.
+    val stillOn = all.count { it.stage == Stage.LOADED && !it.byHand() }
+    val onVan = all.filter { it.stage == Stage.LOADED && !it.byHand() && (filter == null || it.tripId == filter) }.sortedWith(order)
+    val withMe = if (filter != null) emptyList() else all.filter { it.stage == Stage.LOADED && it.byHand() }.sortedWith(order)
     val shown = arrival?.let { a -> if (a.isBox) data.box(a.id)?.toMovable() else data.item(a.id)?.toMovable() }
 
     Screen("Unload") {
@@ -145,7 +147,7 @@ fun UnloadScreen() {
                     }
                 }
                 item(key = "head") {
-                    MdProgressHeader(
+                    ProgressCard(
                         Ratio(arrivedCount, all.size),
                         "$arrivedCount of ${all.size} delivered",
                         Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp),
@@ -160,7 +162,7 @@ fun UnloadScreen() {
                         }
                     }
                 }
-                if (onVan.isNotEmpty() || filter != null) item(key = "hvan") { MdGroupHeader("Still on the $vehicle", onVan.size) }
+                if (onVan.isNotEmpty() || filter != null) item(key = "hvan") { ListHeading("Still on the $vehicle", MdHeadingPadding, count = onVan.size) }
                 if (onVan.isEmpty()) item(key = "empty") {
                     when {
                         // Only the trip being looked at is empty.
@@ -179,6 +181,14 @@ fun UnloadScreen() {
                 items(onVan, key = { "m" + it.id }) { m ->
                     MdThingRow(m, carried = carried[m.id] ?: 0, onClick = { deliver(m) }) {
                         RowButton("Here", onClick = { deliver(m) })
+                    }
+                }
+                if (withMe.isNotEmpty()) {
+                    item(key = "hwithme") { ListHeading("Travelling with you", MdHeadingPadding, count = withMe.size) }
+                    items(withMe, key = { "w" + it.id }) { m ->
+                        MdThingRow(m, carried = carried[m.id] ?: 0, onClick = { deliver(m) }) {
+                            RowButton("Here", onClick = { deliver(m) })
+                        }
                     }
                 }
             }
@@ -251,7 +261,7 @@ private fun MdArrivalPanel(m: Movable, arrival: MdArrival, carried: Int, onDamag
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(m.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                if (carried > 0) GlassChip(countOf(carried, "thing") + " inside")
+                InsideChip(carried)
             }
         }
         // The same warnings, in the same words, as on every list; larger here, to be read while carrying.
