@@ -154,5 +154,5 @@ val COMMON_CONTENTS: Map<String, List<String>> = mapOf(
     "Decor" to listOf("Pictures", "Photo frames", "Vases", "Ornaments", "Candles", "Lamps", "Cushions", "Mirrors", "Clocks", "Plants"),
     "Bedding" to listOf("Duvets", "Pillows", "Sheets", "Duvet covers", "Pillowcases", "Blankets", "Mattress protector", "Throws"),
     "Food" to listOf("Tins", "Pasta", "Rice", "Cereal", "Tea", "Coffee", "Spices", "Jars", "Snacks", "Baking things", "Sauces"),
-    "Other" to listOf("Books", "Clothes", "Cables", "Toys", "Shoes", "Papers", "Ornaments", "Cleaning things", "Odds and ends"),
+    "Other" to listOf("Books", "Clothes", "Cables", "Toys", "Shoes", "Papers", "Ornaments", "Cleaning things", "Keepsakes"),
 )

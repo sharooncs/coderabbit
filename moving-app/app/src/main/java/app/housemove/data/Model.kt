@@ -400,7 +400,7 @@ data class Proposal(
     /** A suggestion made as the answer to a QUESTION: that question's id. */
     val answers: String? = null,
     val state: ProposalState = ProposalState.WAITING,
-    /** Why it was declined. */
+    /** Why it was declined, or what the Organiser said when answering a question. */
     val reason: String = "",
     /** Who approved, declined or overtook it, and when. */
     val decided: Stamp = Stamp(),

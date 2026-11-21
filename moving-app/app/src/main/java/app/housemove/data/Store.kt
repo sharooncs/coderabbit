@@ -669,7 +669,7 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
         val seen = maxStamp(incoming)
         lastStamp.updateAndGet { maxOf(it, seen) }
         val mine = _data.value.let { d -> if (isAlone() && dev.personId != personId) d.copy(people = emptyList()) else d }
-        val merged = merge(mine, incoming)
+        val merged = merge(distrustUnstamped(mine), incoming)
         val t = now()
         _data.value = merged.copy(people = merged.people.map { if (it.id == personId) it.copy(joinedAt = t, updatedAt = t) else it })
         scheduleSave()
@@ -917,7 +917,7 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
         synchronized(lock) {
             val seen = maxStamp(remote)
             lastStamp.updateAndGet { maxOf(it, seen) }
-            _data.value = merge(_data.value, distrustUnstamped(remote))
+            _data.value = merge(distrustUnstamped(_data.value), distrustUnstamped(remote))
             mirrorMe()
         }
         scheduleSave()

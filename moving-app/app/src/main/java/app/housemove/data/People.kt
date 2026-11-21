@@ -105,14 +105,17 @@ fun AppData.personName(id: String?): String = person(id)?.name?.ifBlank { null }
  * Everyone's role at any moment, worked out from the [Grant]s on the people.
  *
  * A grant counts when it was made by someone who was an Organiser at that
- * time, or when it is open ([Grant.by] blank: made while there was no Organiser
- * to ask, as when a phone starts its own move). Anything else, such as a
- * Decider's phone writing itself a promotion, is ignored. Because past roles
- * are kept, a decision made by an Organiser stays good after they are demoted
- * or removed.
+ * time. An open grant ([Grant.by] blank) counts when it is how the person
+ * first appears (a phone starting its own move) or when the move had no
+ * Organiser at that time, so there was nobody to ask. Anything else, such as
+ * a Decider's phone writing itself a promotion, is ignored. Because past
+ * roles are kept, a decision made by an Organiser stays good after they are
+ * demoted or removed.
  */
 class Roles(people: Collection<Person>) {
-    private class Step(val at: Long, val role: Role, val removed: Boolean, val by: String)
+    private class Step(val at: Long, val role: Role, val removed: Boolean, val by: String) {
+        val organiser get() = role == Role.ORGANISER && !removed
+    }
 
     private val steps = HashMap<String, ArrayList<Step>>()
 
@@ -120,9 +123,14 @@ class Roles(people: Collection<Person>) {
         val all = ArrayList<Pair<String, Grant>>()
         for (p in people) for (g in p.grants) all += p.id to g
         all.sortWith(compareBy({ it.second.at }, { it.first }, { it.second.by }, { it.second.role.ordinal }, { it.second.removed }))
+        var organisers = 0
         for ((id, g) in all) {
-            val ok = g.by.isEmpty() || steps[g.by]?.lastOrNull()?.let { it.role == Role.ORGANISER && !it.removed } == true
-            if (ok) steps.getOrPut(id) { ArrayList() }.add(Step(g.at, g.role, g.removed, g.by))
+            val mine = steps[id]
+            val ok = if (g.by.isEmpty()) mine == null || organisers == 0 else steps[g.by]?.lastOrNull()?.organiser == true
+            if (!ok) continue
+            val step = Step(g.at, g.role, g.removed, g.by)
+            organisers += (if (step.organiser) 1 else 0) - (if (mine?.lastOrNull()?.organiser == true) 1 else 0)
+            steps.getOrPut(id) { ArrayList() }.add(step)
         }
     }
 
