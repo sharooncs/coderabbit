@@ -389,6 +389,9 @@ object WifiSync {
                     onResult(Result(peer, letter, sent, received, peerPersonId = peerId, joinedAs = if (invited != null) store.data.value.person(peerId) else null))
                 }
             } catch (e: Exception) {
+                // Let go of the invite before saying the join failed, so a retry made the moment the failure shows is not
+                // told the invite is in use.
+                mine?.let { synchronized(personal) { it.busy = false } }
                 onResult(Result(peer, letter, 0, 0, whatWentWrong(e, listsDone), peerPersonId = peerId))
             } finally {
                 mine?.let { synchronized(personal) { it.busy = false } }

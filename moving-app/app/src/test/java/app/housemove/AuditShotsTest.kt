@@ -13,6 +13,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -81,7 +82,9 @@ class AuditShotsTest {
     @Composable
     private fun App(store: Store, onNav: (NavHostController) -> Unit) {
         CompositionLocalProvider(LocalSpeech provides Speech { _, _ -> }, LocalSyncAddresses provides { listOf("127.0.0.1") }) {
-            AppRoot(store, startRoute = if (store.data.value.move.setupDone) "home" else null, onNav = onNav)
+            // Where the app opens is read once, as the real app does at start.
+            val start = remember(store) { if (store.data.value.move.setupDone) "home" else null }
+            AppRoot(store, startRoute = start, onNav = onNav)
         }
     }
 
