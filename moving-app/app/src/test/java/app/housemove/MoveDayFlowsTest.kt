@@ -418,8 +418,14 @@ class MoveDayFlowsTest {
         dontSee("Mark paid")
         tap("Storage")
         see("Photograph the receipt")
+        see("Done") // nothing changed yet
+        tap("200")
         see("Suggest this change") // changing it is still a suggestion
         shot("cost-decider-approved")
+        tap("Suggest this change")
+        assertEquals(100.0, data.expense(p.targetId)!!.amount, 0.0) // unchanged until an Organiser says so
+        see("Waiting for approval")
+        see("£ 100 → £ 200")
         val receipt = dee.newPhotoFile().apply { writeBytes(ByteArray(64) { 5 }) }
         assertTrue(dee.attachReceipt(p.targetId, receipt).ok)
         sync(asha, dee)
@@ -438,6 +444,7 @@ class MoveDayFlowsTest {
         see("pizza for the helpers")
         tap("Decline")
         noKeyboardNeeded()
+        shot("cost-organiser-declines")
         tap("Not needed")
         assertEquals(ProposalState.DECLINED, data.proposal(p.id)!!.state)
         assertEquals("Not needed", data.proposal(p.id)!!.reason)

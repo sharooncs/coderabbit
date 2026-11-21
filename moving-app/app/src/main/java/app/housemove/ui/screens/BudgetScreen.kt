@@ -519,8 +519,9 @@ private fun MdCostEditor(existing: Expense?, onClose: () -> Unit) {
         } else {
             val now = store.data.value.expense(id) ?: existing
             val next = now.copy(title = title.trim(), amount = amount, category = category, day = day)
-            if (!mayPlan) {
-                if (next == now || mdTold(context, store.suggestCost(next))) onClose()
+            if (next == now) onClose()
+            else if (!mayPlan) {
+                if (mdTold(context, store.suggestCost(next))) onClose()
             } else if (mdMay(context, store, Action.DECIDE)) {
                 store.put(next)
                 onClose()
@@ -577,16 +578,20 @@ private fun MdCostEditor(existing: Expense?, onClose: () -> Unit) {
             TextInput(title, { title = it }, "Name", key = id)
             DateButton(day, { d -> if (d != null) day = d }, "Date", allowClear = false)
         }
+        // Nothing changed on a cost that is already there: the button only closes, and is not the bright one.
+        val untouched = existing != null && title.trim() == existing.title && amount == existing.amount &&
+            category == existing.category && day == existing.day
         BigAction(
-            if (mayPlan) Icons.Default.Check else Icons.Default.Send,
+            if (mayPlan || untouched) Icons.Default.Check else Icons.Default.Send,
             when {
                 amount <= 0.0 -> "Choose an amount"
+                untouched -> "Done"
                 existing != null && mayPlan -> "Save · " + mdMoney(currency, amount)
                 existing != null -> "Suggest this change"
                 mayPlan -> "Add cost · " + mdMoney(currency, amount)
                 else -> "Suggest cost · " + mdMoney(currency, amount)
             },
-            onClick = { save() }, enabled = amount > 0.0,
+            onClick = { save() }, primary = !untouched, enabled = amount > 0.0,
         )
         if (existing != null && mayPlan) {
             GlassChip("Delete this cost", icon = Icons.Default.Delete, onClick = { confirmDelete = true })

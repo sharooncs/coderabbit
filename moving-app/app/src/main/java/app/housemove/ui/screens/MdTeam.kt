@@ -121,6 +121,7 @@ internal fun MdApproval(p: Proposal, modifier: Modifier = Modifier, what: String
                     GlassChip(reason, onClick = { mdTold(context, store.decline(p.id, if (reason == "No reason") "" else reason)) })
                 }
                 SpeakButton("Why not?", contentDescription = "Say why not") { mdTold(context, store.decline(p.id, it)) }
+                GlassChip("Do not decline", tone = GlassTone.Amber, onClick = { declining = false })
             }
         }
     }
