@@ -428,7 +428,8 @@ fun PersonScreen(id: String, showInvite: Boolean = false) {
                     IconChoice(ROLE_CHOICES, p.role, { r -> store.setRole(id, r).orSay(context) }, columns = 3)
                     Text(p.role.line(), style = MaterialTheme.typography.bodySmall, color = Night.TextDim)
                 }
-                if (data.shared()) Fold("Remove from the move", Icons.Default.PersonRemove, summary = "Their phone can no longer sync", key = "remove-$id") {
+                // Nobody removes themselves by a slip of the finger: that is for another Organiser to do.
+                if (data.shared() && !isMe) Fold("Remove from the move", Icons.Default.PersonRemove, summary = "Their phone can no longer sync", key = "remove-$id") {
                     Text("What $name did stays, and you can add them back.", style = MaterialTheme.typography.bodyMedium)
                     BigAction(
                         Icons.Default.PersonRemove, "Remove $name",
