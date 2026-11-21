@@ -98,14 +98,14 @@ fun DisposalScreen() {
                             maySuggest = maySuggest,
                             mayCarryOut = data.mayCarryOut(me, x),
                             onOpen = { nav.open("item/${x.id}") },
-                            onListed = { v -> store.carryOut(x.id, listed = v).orSay(context) },
+                            onListed = { v -> store.carryOut(x.id, listed = v).okOrSay(context) },
                             onGone = { v ->
                                 // What it went for starts at the asking price: right most of the time, one tap to change.
-                                store.carryOut(x.id, gone = v, soldFor = if (v && x.disposition == Disposition.SELL) x.soldFor ?: x.price else null).orSay(context)
+                                store.carryOut(x.id, gone = v, soldFor = if (v && x.disposition == Disposition.SELL) x.soldFor ?: x.price else null).okOrSay(context)
                             },
-                            onSoldFor = { v -> if (v != null) store.carryOut(x.id, soldFor = v).orSay(context) },
+                            onSoldFor = { v -> if (v != null) store.carryOut(x.id, soldFor = v).okOrSay(context) },
                             onAsking = { v ->
-                                if (mayDecide) store.decide(x.id, Disposition.SELL, v).orSay(context)
+                                if (mayDecide) store.decide(x.id, Disposition.SELL, v).okOrSay(context)
                                 else store.decideOrSuggest(context, x.id, Disposition.SELL, v)
                             },
                         )

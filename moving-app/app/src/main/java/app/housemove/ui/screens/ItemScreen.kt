@@ -163,11 +163,11 @@ fun ItemScreen(id: String) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         BigAction(
                             Icons.Default.QuestionMark, "Needs a decision",
-                            onClick = { store.ask(id).orSay(context) },
+                            onClick = { store.ask(id).okOrSay(context) },
                             modifier = Modifier.weight(1f), primary = item.disposition == Disposition.UNDECIDED,
                         )
                         SpeakButton("What should they know about it?", contentDescription = "Ask with a spoken note", size = 56.dp) { said ->
-                            store.ask(id, said).orSay(context)
+                            store.ask(id, said).okOrSay(context)
                         }
                     }
                 }
@@ -178,20 +178,20 @@ fun ItemScreen(id: String) {
                         if (mayCarryOut) {
                             ToggleTiles(
                                 listOf(
-                                    Toggle("Listed for sale", Icons.Default.Campaign, item.listed) { v -> store.carryOut(id, listed = v).orSay(context) },
+                                    Toggle("Listed for sale", Icons.Default.Campaign, item.listed) { v -> store.carryOut(id, listed = v).okOrSay(context) },
                                     Toggle("Sold and gone", goneIcon(item.gone), item.gone) { v ->
                                         // What it went for starts at the asking price: right most of the time, one tap to change.
-                                        store.carryOut(id, gone = v, soldFor = if (v) item.soldFor ?: item.price else null).orSay(context)
+                                        store.carryOut(id, gone = v, soldFor = if (v) item.soldFor ?: item.price else null).okOrSay(context)
                                     },
                                 )
                             )
                         }
                         when {
                             item.gone && mayCarryOut -> AmountPicker(
-                                item.soldFor, { v -> if (v != null) store.carryOut(id, soldFor = v).orSay(context) }, "Sold for", currency,
+                                item.soldFor, { v -> if (v != null) store.carryOut(id, soldFor = v).okOrSay(context) }, "Sold for", currency,
                                 presets = soldPresets(item.price),
                             )
-                            mayDecide && !item.gone -> AmountPicker(item.price, { v -> store.decide(id, Disposition.SELL, v).orSay(context) }, "Asking price", currency)
+                            mayDecide && !item.gone -> AmountPicker(item.price, { v -> store.decide(id, Disposition.SELL, v).okOrSay(context) }, "Asking price", currency)
                         }
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             if (!mayDecide || item.gone) GlassChip(item.price?.let { "Asking " + money(currency, it) } ?: "No price yet", icon = Icons.Default.Sell)
@@ -202,7 +202,7 @@ fun ItemScreen(id: String) {
                     }
                     Disposition.DONATE, Disposition.BIN -> {
                         if (mayCarryOut) {
-                            ToggleTiles(listOf(Toggle("Gone", goneIcon(item.gone), item.gone) { v -> store.carryOut(id, gone = v).orSay(context) }))
+                            ToggleTiles(listOf(Toggle("Gone", goneIcon(item.gone), item.gone) { v -> store.carryOut(id, gone = v).okOrSay(context) }))
                         } else if (item.gone) GlassChip(data.itemState(item).first, icon = Icons.Default.Check, tone = GlassTone.Mint)
                         if (mayDecide && !item.gone) {
                             DateChip(item.deadlineDay, if (item.disposition == Disposition.DONATE) "Donate by" else "Gone by") { d -> edit { it.copy(deadlineDay = d) } }
@@ -543,7 +543,7 @@ fun ItemScreen(id: String) {
                         scanningContainer = false
                     }
                     !hit.isBox -> toast(context, "Label $code is on ${hit.title}, which is not a container.")
-                    else -> if (store.putInto(id, hit.id).orSay(context)) scanningContainer = false
+                    else -> if (store.putInto(id, hit.id).okOrSay(context)) scanningContainer = false
                 }
             },
             onClose = { scanningContainer = false },
@@ -557,7 +557,7 @@ fun ItemScreen(id: String) {
             confirm = "Start it",
             onConfirm = {
                 val box = store.createContainer(code, item.originRoomId)
-                store.putInto(id, box.id).orSay(context)
+                store.putInto(id, box.id).okOrSay(context)
             },
             onDismiss = { newContainer = null },
         )
@@ -658,7 +658,7 @@ private fun ContainerBlock(item: Item, container: Box?, data: AppData, onScan: (
                         )
                     }
                 }
-                OutlinedButton(onClick = { store.takeOut(item.id).orSay(context) }, colors = ButtonDefaults.outlinedButtonColors(contentColor = Night.Text)) {
+                OutlinedButton(onClick = { store.takeOut(item.id).okOrSay(context) }, colors = ButtonDefaults.outlinedButtonColors(contentColor = Night.Text)) {
                     Text("Take out")
                 }
             }
@@ -694,7 +694,7 @@ private fun ContainerBlock(item: Item, container: Box?, data: AppData, onScan: (
                     near.forEach { b ->
                         Row(
                             Modifier.fillMaxWidth().glass(RoundedCornerShape(16.dp), shadow = 0.dp)
-                                .clickable { if (store.putInto(item.id, b.id).orSay(context)) choosing = false }
+                                .clickable { if (store.putInto(item.id, b.id).okOrSay(context)) choosing = false }
                                 .heightIn(min = 52.dp).padding(horizontal = 12.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {

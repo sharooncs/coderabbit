@@ -54,7 +54,7 @@ import app.housemove.ui.*
 internal fun money(currency: String, amount: Double): String = (currency.trim() + " " + fmtNum(amount)).trim()
 
 /** The Store said no: tell the person why. Returns true when the call went through. */
-internal fun <T> Outcome<T>.orSay(context: Context): Boolean {
+internal fun <T> Outcome<T>.okOrSay(context: Context): Boolean {
     reason?.let { toast(context, it) }
     return ok
 }
@@ -135,7 +135,7 @@ internal fun Store.decideOrSuggest(context: Context, itemId: String, d: Disposit
             val linked = data.value.room(saved?.originRoomId)?.mapsTo
             if (saved != null && saved.destRoomId == null && linked != null) planRoom(itemId, linked)
         }
-        return out.orSay(context)
+        return out.okOrSay(context)
     }
     val mine = now.waitingFor(itemId, ProposalKind.ITEM_DECISION).any { it.by == me?.id && it.disposition == d && it.price == price }
     if (mine) {
@@ -143,18 +143,18 @@ internal fun Store.decideOrSuggest(context: Context, itemId: String, d: Disposit
         return false
     }
     val out = if (question != null) answer(question.id, d, price) else suggestDecision(itemId, d, price)
-    return out.orSay(context)
+    return out.okOrSay(context)
 }
 
 /** Choose the new-home room of an item, or suggest it, whichever this phone's person may do. */
 internal fun Store.planOrSuggestRoom(context: Context, itemId: String, roomId: String?): Boolean {
-    if (can(Action.DECIDE)) return planRoom(itemId, roomId).orSay(context)
+    if (can(Action.DECIDE)) return planRoom(itemId, roomId).okOrSay(context)
     val mine = data.value.waitingFor(itemId, ProposalKind.ITEM_ROOM).any { it.by == me?.id && it.roomId == roomId }
     if (mine) {
         toast(context, "You have already suggested that. It is waiting for approval.")
         return false
     }
-    return suggestRoom(itemId, roomId).orSay(context)
+    return suggestRoom(itemId, roomId).okOrSay(context)
 }
 
 // ---- suggestions on the thing they are about --------------------------------------------
@@ -227,18 +227,18 @@ internal fun ProposalReview(p: Proposal, data: AppData, modifier: Modifier = Mod
                 } else {
                     // Tight padding, so both words still fit side by side on a small phone with large text.
                     Button(
-                        onClick = { store.approve(p.id).orSay(context) }, modifier = Modifier.weight(1f).heightIn(min = 44.dp),
+                        onClick = { store.approve(p.id).okOrSay(context) }, modifier = Modifier.weight(1f).heightIn(min = 44.dp),
                         contentPadding = PaddingValues(horizontal = 6.dp),
                     ) { Text("Approve", maxLines = 1) }
                 }
                 OutlinedButton(
-                    onClick = { store.decline(p.id).orSay(context) },
+                    onClick = { store.decline(p.id).okOrSay(context) },
                     modifier = (if (question) Modifier else Modifier.weight(1f)).heightIn(min = 44.dp),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Night.Text),
                     contentPadding = PaddingValues(horizontal = if (question) 16.dp else 6.dp),
                 ) { Text(if (question) "Dismiss" else "Decline", maxLines = 1) }
                 if (!question) {
-                    SpeakButton("Why not?", contentDescription = "Decline and say why", size = 40.dp) { why -> store.decline(p.id, why).orSay(context) }
+                    SpeakButton("Why not?", contentDescription = "Decline and say why", size = 40.dp) { why -> store.decline(p.id, why).okOrSay(context) }
                 }
             }
         }

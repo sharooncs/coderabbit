@@ -168,11 +168,11 @@ fun TriageScreen() {
                         // A Helper does not choose; one tap tells the Organisers this one needs them.
                         BigAction(
                             Icons.Default.QuestionMark, "Needs a decision",
-                            onClick = { if (store.ask(current.id).orSay(context)) done() },
+                            onClick = { if (store.ask(current.id).okOrSay(context)) done() },
                             modifier = Modifier.weight(1f),
                         )
                         SpeakButton("What should they know about it?", contentDescription = "Ask with a spoken note", size = 56.dp) { said ->
-                            if (store.ask(current.id, said).orSay(context)) done()
+                            if (store.ask(current.id, said).okOrSay(context)) done()
                         }
                     }
                 }
