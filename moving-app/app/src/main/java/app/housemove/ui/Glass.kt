@@ -64,6 +64,7 @@ import androidx.compose.ui.unit.sp
  *   GlassChip         a small pill with a word or two: states and filters
  *   GlassOrb          a round glass button: plain, selected (white) or primary (glowing mint)
  *   GlassTag          an orb with two lines of text: a callout over a drawing
+ *   dialogPanel       the solid glass panel a dialog floats on (GlassDialog in Common.kt)
  */
 
 /** What a glass surface is tinted with. Plain for almost everything; the others say something. */
@@ -525,6 +526,20 @@ private fun GlassTagBody(
         }
     }
 }
+
+/** The corners of everything that floats over a screen: dialogs, the date picker, a question from the camera. */
+val DialogShape: Shape = RoundedCornerShape(28.dp)
+
+/**
+ * The panel a dialog floats on: solid navy, so nothing behind it shows through, with the
+ * tint, sheen and rim of glass over it. It needs no shadow: the dimmed screen behind is enough.
+ */
+fun Modifier.dialogPanel(shape: Shape = DialogShape): Modifier = this
+    .drawWithCache {
+        val outline = shape.createOutline(size, layoutDirection, this)
+        onDrawBehind { drawOutline(outline, Night.Panel) }
+    }
+    .glass(shape, sheen = true, shadow = 0.dp)
 
 /**
  * An almost solid strip of the ground, for a header that stays put while a list scrolls

@@ -144,10 +144,11 @@ internal val CODE_ORDER = compareBy<Box>(
 
 // ---- where a container has got to ----------------------------------------------------
 
-/** The states a container goes through, as lists show and filter them. */
-internal enum class PackState { OPEN, SEALED, ON_VAN, DELIVERED, UNPACKED }
+/** The states a container goes through, as lists show and filter them. One carried by hand is never "on the van". */
+internal enum class PackState { OPEN, SEALED, ON_VAN, BY_HAND, DELIVERED, UNPACKED }
 
 internal fun Box.packState(): PackState = when {
+    stage == Stage.LOADED && carriedByHand() -> PackState.BY_HAND
     stage == Stage.LOADED -> PackState.ON_VAN
     stage == Stage.DELIVERED -> PackState.DELIVERED
     stage == Stage.DONE -> PackState.UNPACKED
@@ -159,6 +160,7 @@ internal fun PackState.label(vehicle: String): String = when (this) {
     PackState.OPEN -> "Open"
     PackState.SEALED -> "Sealed"
     PackState.ON_VAN -> stageText(Stage.LOADED, isBox = true, vehicle)
+    PackState.BY_HAND -> "Carried by hand"
     PackState.DELIVERED -> stageText(Stage.DELIVERED, isBox = true, vehicle)
     PackState.UNPACKED -> stageText(Stage.DONE, isBox = true, vehicle)
 }
@@ -167,6 +169,7 @@ internal fun PackState.picture(): ImageVector = when (this) {
     PackState.OPEN -> Icons.Default.LockOpen
     PackState.SEALED -> Icons.Default.Lock
     PackState.ON_VAN -> Stage.LOADED.icon()
+    PackState.BY_HAND -> Pic.WithMe
     PackState.DELIVERED -> Stage.DELIVERED.icon()
     PackState.UNPACKED -> Stage.DONE.icon()
 }
@@ -195,7 +198,7 @@ internal fun ContainerRefusal(reason: String, modifier: Modifier = Modifier, onD
             Icon(Icons.Default.Block, contentDescription = null, tint = Night.RedPale, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(10.dp))
             Text(reason, color = Night.RedPale, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(vertical = 8.dp))
-            IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = Night.RedPale) }
+            GlassOrb(Icons.Default.Close, "Dismiss", Modifier.padding(end = 4.dp), size = 36.dp, onClick = onDismiss)
         }
     }
 }
@@ -411,7 +414,8 @@ internal fun ContainerRow(
                     // The code is what people look for on the thing itself, so it is never cut short: the room's name gives way.
                     Text(box.label, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
                     // Something inside another goes where that one goes, so it shows no room of its own.
-                    if (showRoom) RoomBadge(data.room(box.destRoomId), Modifier.weight(1f, fill = false))
+                    // A long room name takes a second line before it is shortened.
+                    if (showRoom) RoomBadge(data.room(box.destRoomId), Modifier.weight(1f, fill = false), maxLines = 2)
                 }
                 val words = box.rowWords()
                 val nothing = words.isEmpty() && carried == 0 && scanned == 0

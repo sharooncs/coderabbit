@@ -106,7 +106,8 @@ fun TasksScreen() {
     val known = tasks.map { it.id }.toSet()
     val waiting = data.waitingProposals().filter { it.kind == ProposalKind.TASK && it.task != null }
     val suggested = waiting.filter { it.targetId !in known }
-    val changes = waiting.filter { it.targetId in known }.groupBy { it.targetId }
+    // Requests to delete a job wait on the job, with the changes suggested to it.
+    val changes = (waiting.filter { it.targetId in known } + data.waitingProposals().filter { it.deletes && it.targetId in known }).groupBy { it.targetId }
     // What this person suggested and was turned down, until they have read why.
     val seen = rememberSeenAnswers()
     val declinedNew = data.declinedFor(me, seen.ids, ProposalKind.TASK).filter { it.task != null && it.targetId !in known }
@@ -135,7 +136,7 @@ fun TasksScreen() {
                     text = "Start with a ready-made list of $ready jobs, each dated from your move day." +
                         if (shared) " Add it on one phone only." else "",
                     action = "Add the checklist",
-                    onAction = { if (store.mayOrSay(context, Action.DECIDE)) seedTasks(data.move.kind).forEach { store.put(it) } },
+                    onAction = { for (t in seedTasks(data.move.kind)) if (!store.saveTask(t).okOrSay(context)) break },
                 ) else EmptyState(Icons.Default.Checklist, "Nothing on the timeline yet", text = "Jobs appear here once an Organiser adds them.")
             } else item(key = "progress") {
                 ProgressCard(
@@ -199,9 +200,8 @@ private fun TaskAdder(mayPlan: Boolean) {
     fun add(said: String) {
         val title = said.trim().replaceFirstChar { it.uppercase() }
         if (title.isEmpty()) return
-        val task = Task(id = newId(), title = title)
-        if (!mayPlan) store.suggestTask(task).okOrSay(context)
-        else if (store.mayOrSay(context, Action.DECIDE)) store.put(task)
+        // Saved for an Organiser, suggested for a Decider; the Store says why when it is neither.
+        store.saveOrSuggest(Task(id = newId(), title = title)).okOrSay(context)
     }
     fun done() {
         text = ""
@@ -408,14 +408,13 @@ private fun TaskDetail(task: Task, mayPlan: Boolean, maySuggest: Boolean) {
     var title by remember(task.id, task.updatedAt) { mutableStateOf(task.title) }
     var notes by remember(task.id, task.updatedAt) { mutableStateOf(task.notes) }
     var editing by rememberSaveable(task.id) { mutableStateOf(false) }
-    var confirmDelete by remember { mutableStateOf(false) }
 
     /** The job as it is saved right now, so quick changes never overwrite each other. */
     fun fresh(): Task = store.data.value.task(task.id) ?: task
 
-    /** An Organiser's change, saved at once. The plain save cannot answer, so it is asked first and says why not. */
+    /** An Organiser's change, saved at once through the Store's guarded call, which says why when it refuses. */
     fun save(next: Task) {
-        if (store.mayOrSay(context, Action.DECIDE)) store.put(next)
+        store.saveTask(next).okOrSay(context)
     }
     val proposed = draft.copy(title = title.trim().ifBlank { task.title }, notes = notes.trim())
     val changed = proposed.title != task.title || proposed.notes != task.notes ||
@@ -460,8 +459,14 @@ private fun TaskDetail(task: Task, mayPlan: Boolean, maySuggest: Boolean) {
                     },
                 )
             }
-            // Not undone, so it is the last thing on the job, drawn as on every other page.
-            if (mayPlan && !editing) DeleteButton("Delete this job", onClick = { confirmDelete = true }, modifier = Modifier.align(Alignment.CenterHorizontally))
+            // Not undone, so it is the last thing on the job, drawn as on every other page: deleting it for an
+            // Organiser, asking an Organiser to for anyone else.
+            if (!editing) DeleteOrAsk(
+                task, "Delete this job", "Delete this job?",
+                "\"${task.title}\" will be removed from the timeline on every phone at the next sync.",
+                Modifier.align(Alignment.CenterHorizontally),
+                onDelete = { store.tryDelete(fresh()).okOrSay(context) },
+            )
             if (!mayPlan && changed) {
                 BigAction(
                     Icons.Default.Send, "Suggest this change",
@@ -478,12 +483,4 @@ private fun TaskDetail(task: Task, mayPlan: Boolean, maySuggest: Boolean) {
         }
     }
 
-    if (confirmDelete) {
-        ConfirmDialog(
-            title = "Delete this job?",
-            text = "\"${task.title}\" will be removed from the timeline on every phone at the next sync.",
-            onConfirm = { save(fresh().copy(deleted = true)) },
-            onDismiss = { confirmDelete = false },
-        )
-    }
 }

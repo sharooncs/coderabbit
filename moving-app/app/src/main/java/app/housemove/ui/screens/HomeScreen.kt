@@ -57,7 +57,9 @@ private fun nextStep(data: AppData, suggests: Boolean = false): NextStep {
     val p = data.progress()
     val mv = data.movables()
     val delivered = mv.count { it.stage == Stage.DELIVERED || it.stage == Stage.DONE }
-    val loaded = mv.count { it.stage == Stage.LOADED }
+    // On the way: in the van, or carried by hand by someone (the Store's onTheVan and carriedByHand).
+    val loaded = mv.count { it.onTheVan() }
+    val carried = mv.count { it.stage == Stage.LOADED && it.carriedByHand() }
     val inventoryOnly = data.move.kind == MoveKind.INVENTORY
     val van = data.vehicle()
     return when {
@@ -74,6 +76,8 @@ private fun nextStep(data: AppData, suggests: Boolean = false): NextStep {
             NextStep((if (suggests) "Suggest a room for every item in " else "Give every item a room in ") + data.move.destName.lowercase() + ".", "Plan destinations", "plan", Icons.Default.Map)
         data.uses(Part.MOVE_DAY) && loaded > 0 && delivered < mv.size ->
             NextStep("$loaded on the $van. Scan each thing as it comes off.", "Unload", "unload", Icons.Default.Download)
+        data.uses(Part.MOVE_DAY) && carried > 0 && delivered < mv.size ->
+            NextStep("${countOf(carried, "thing")} carried by hand. Tick each one off as it comes in.", "Unload", "unload", Icons.Default.Download)
         data.uses(Part.UNPACK) && mv.isNotEmpty() && delivered == mv.size && p.unpacked.done < p.unpacked.total ->
             NextStep("Everything has arrived. First-night boxes first.", "Unpack", "unpack", Icons.Default.Unarchive)
         mv.isNotEmpty() && delivered == mv.size ->
@@ -223,39 +227,54 @@ private fun HomeHero(data: AppData, device: DeviceInfo, packing: Boolean, modifi
         }
 
         // The house: the old home, with the next room to pack called out. It takes the middle of the page.
-        val rooms = if (packing) data.roomPacking() else emptyList()
-        val nextRoom = rooms.nextToPack(device.currentRoomId)
-        val atOldHome = if (packing) data.liveBoxes.count { it.stage == Stage.AT_ORIGIN } else 0
         Spacer(Modifier.weight(1f))
-        BoxWithConstraints(Modifier.widthIn(max = 460.dp).fillMaxWidth().align(Alignment.CenterHorizontally)) {
-            val width = maxWidth
-            IsoHouse(
-                Modifier.clickable(onClickLabel = if (packing) "Open the rooms overview" else "Open rooms", role = Role.Button) {
-                    nav.open(if (packing) "overview" else "rooms")
-                },
-                boxes = when {
-                    atOldHome == 0 -> 0
-                    atOldHome <= 3 -> 1
-                    atOldHome <= 9 -> 2
-                    else -> 3
-                },
-                markers = listOfNotNull(
-                    if (rooms.any { it.room.packed }) HouseMarker(HouseSpot.ROOF) else null,
-                    if (nextRoom != null) HouseMarker(HouseSpot.EXTENSION, amber = true) else null,
-                ),
-            )
-            // The callout sits where the design has it: to the right of the marker on the extension.
-            val tagAt = Modifier.align(Alignment.TopEnd).padding(end = 12.dp).offset(y = width * (206f / 390f)).widthIn(max = width * 0.6f)
-            if (nextRoom != null) {
-                GlassTag("${nextRoom.room.name} is next", nextRoom.leftText(), Icons.Outlined.Inventory2, tagAt, onClick = { nav.open("overview") })
-            } else if (packing && rooms.isNotEmpty()) {
-                GlassTag("Every room", "is packed", Icons.Default.Check, tagAt, kind = OrbKind.Primary, onClick = { nav.open("overview") })
-            }
-        }
+        LitHouse(data, device, packing, Modifier.widthIn(max = 460.dp).fillMaxWidth().align(Alignment.CenterHorizontally))
         Spacer(Modifier.weight(1f))
 
         SuggestionsSlot(Modifier.fillMaxWidth().padding(horizontal = 16.dp))
         Spacer(Modifier.height(10.dp))
+    }
+}
+
+/**
+ * The old home as the lit model house of the design, the same on everyone's Home: boxes by
+ * the door for what is still there (each container counted once, with what carries it), a
+ * mint marker once a room is packed, and the room to pack next called out on the amber one.
+ * Tapping it opens the rooms overview (on a move without boxes, the rooms), for whoever is offered that.
+ */
+@Composable
+private fun LitHouse(data: AppData, device: DeviceInfo, packing: Boolean, modifier: Modifier = Modifier) {
+    val nav = LocalNav.current
+    val rooms = if (packing) data.roomPacking() else emptyList()
+    val nextRoom = rooms.nextToPack(device.currentRoomId)
+    val atOldHome = if (packing) data.topBoxes().count { it.stage == Stage.AT_ORIGIN } else 0
+    val route = if (packing) "overview" else "rooms"
+    val opens = offeredTo(route, data, device)
+    BoxWithConstraints(modifier) {
+        val width = maxWidth
+        IsoHouse(
+            if (!opens) Modifier else Modifier.clickable(onClickLabel = if (packing) "Open the rooms overview" else "Open rooms", role = Role.Button) {
+                nav.open(route)
+            },
+            boxes = when {
+                atOldHome == 0 -> 0
+                atOldHome <= 3 -> 1
+                atOldHome <= 9 -> 2
+                else -> 3
+            },
+            markers = listOfNotNull(
+                if (rooms.any { it.room.packed }) HouseMarker(HouseSpot.ROOF) else null,
+                if (nextRoom != null) HouseMarker(HouseSpot.EXTENSION, amber = true) else null,
+            ),
+        )
+        // The callout sits where the design has it: to the right of the marker on the extension.
+        val tagAt = Modifier.align(Alignment.TopEnd).padding(end = 12.dp).offset(y = width * (206f / 390f)).widthIn(max = width * 0.6f)
+        val open = if (opens) ({ nav.open("overview") }) else null
+        if (nextRoom != null) {
+            GlassTag("${nextRoom.room.name} is next", nextRoom.leftText(), Icons.Outlined.Inventory2, tagAt, onClick = open)
+        } else if (packing && rooms.isNotEmpty()) {
+            GlassTag("Every room", "is packed", Icons.Default.Check, tagAt, kind = OrbKind.Primary, onClick = open)
+        }
     }
 }
 
@@ -359,7 +378,7 @@ internal fun suggestionStrip(data: AppData, device: DeviceInfo, now: Long = Syst
     if (data.can(device, Action.APPROVE)) {
         val waiting = data.waitingProposals()
         if (waiting.isEmpty()) return null
-        val questions = waiting.count { it.kind == ProposalKind.QUESTION }
+        val questions = waiting.count { it.isQuestion }
         val suggestions = waiting.size - questions
         return SuggestionStrip(
             people = waiting.map { it.by }.distinct().take(3).map { data.person(it) },
@@ -511,7 +530,10 @@ private fun KeyNumberView(k: KeyNumber, withOrb: Boolean, modifier: Modifier = M
     }
 }
 
-/** Home for a helper's phone: only the jobs a helper does, as large tiles. */
+/**
+ * Home for a helper's phone: the same lit house as everyone's Home, with the room to pack
+ * next called out, then only the jobs a helper does, as large tiles.
+ */
 @Composable
 private fun HelperHome() {
     val nav = LocalNav.current
@@ -528,6 +550,8 @@ private fun HelperHome() {
         subtitle = if (shared && mine != null && mine.name.isNotBlank()) "${mine.name} · Helper" else "Helper",
     ) {
         ScrollColumn {
+            // A little smaller than on the full Home, so the first row of jobs is in sight with it.
+            LitHouse(data, device, data.uses(Part.BOXES), Modifier.widthIn(max = 360.dp).fillMaxWidth().align(Alignment.CenterHorizontally))
             // How the questions this Helper asked stand, when there are any.
             if (suggestionStrip(data, device) != null) SuggestionsSlot(Modifier.fillMaxWidth())
             data class Job(val icon: ImageVector, val title: String, val route: String, val status: String?, val part: Part?)

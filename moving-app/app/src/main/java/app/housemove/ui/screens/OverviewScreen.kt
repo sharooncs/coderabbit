@@ -72,9 +72,13 @@ internal data class RoomPacking(val room: Room, val sealed: Int, val total: Int)
     }
 }
 
-/** The old home's rooms in their own order, each with its packing state. */
+/**
+ * The old home's rooms in their own order, each with its packing state. Counted as on
+ * every screen: a container inside another is sealed and carried with that one, so only
+ * the containers that are not inside another count, each under the room it was packed in.
+ */
 internal fun AppData.roomPacking(): List<RoomPacking> {
-    val boxes = liveBoxes
+    val boxes = topBoxes()
     return roomsOf(Home.ORIGIN).map { r ->
         val fromHere = boxes.filter { it.originRoomId == r.id }
         RoomPacking(r, fromHere.count { it.sealed }, fromHere.size)
@@ -205,7 +209,8 @@ fun OverviewScreen() {
                             )
                         }
                         Spacer(Modifier.weight(1f))
-                        LoadBars(rooms.map { data.loadFrom(it.room.id) })
+                        val load = data.loadByRoom()
+                        LoadBars(rooms.map { load[it.room.id] ?: 0.0 })
                     }
                 }
 
@@ -224,10 +229,16 @@ fun OverviewScreen() {
 
 private fun oneDecimal(v: Double): String = (Math.round(v * 10) / 10.0).let { if (it == it.toLong().toDouble()) it.toLong().toString() else it.toString() }
 
-/** Rough volume of what leaves one old-home room, the same way the load estimate counts it. */
-private fun AppData.loadFrom(roomId: String): Double =
-    liveBoxes.filter { it.originRoomId == roomId }.sumOf { it.size.m3 } +
-        movingItems().filter { it.originRoomId == roomId }.sumOf { it.volumeM3() ?: DEFAULT_ITEM_M3 }
+/**
+ * Rough volume of what leaves each old-home room, the same way the load estimate counts it:
+ * what is inside a container takes no room of its own.
+ */
+private fun AppData.loadByRoom(): Map<String?, Double> {
+    val out = HashMap<String?, Double>()
+    topBoxes().forEach { out.merge(it.originRoomId, it.volumeM3(), Double::plus) }
+    looseItems().forEach { out.merge(it.originRoomId, it.volumeM3() ?: DEFAULT_ITEM_M3, Double::plus) }
+    return out
+}
 
 /** One room: its name, sealed of begun, a bar. Tapping it puts the marker on that room in the drawing. */
 @Composable

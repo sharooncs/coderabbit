@@ -317,7 +317,10 @@ internal fun RoomAdder(home: Home, modifier: Modifier = Modifier) {
 @Composable
 private fun RoomSetup(home: Home) {
     val store = LocalStore.current
-    val rooms = appData().roomsOf(home)
+    val context = LocalContext.current
+    val data = appData()
+    val me = myPerson()
+    val rooms = data.roomsOf(home)
     Text(
         if (home == Home.ORIGIN) "Tap every room and storage space with things in it."
         else "Tap the rooms things will go into. Each gets a colour for its boxes and door sign.",
@@ -332,7 +335,9 @@ private fun RoomSetup(home: Home) {
                     Spacer(Modifier.width(12.dp))
                     Text(r.name, modifier = Modifier.weight(1f))
                     if (home == Home.DEST) Hint(roomColor(r.color).name)
-                    IconButton(onClick = { store.delete(r) }) { Icon(Icons.Default.Close, contentDescription = "Remove ${r.name}") }
+                    // By the Store's rule, like every delete: hidden from whoever may not take it off.
+                    if (data.canDelete(me, r)) GlassOrb(Icons.Default.Close, "Remove ${r.name}", Modifier.padding(4.dp), size = 36.dp, onClick = { store.tryDelete(r).okOrSay(context) })
+                    else Spacer(Modifier.width(12.dp))
                 }
             }
         }

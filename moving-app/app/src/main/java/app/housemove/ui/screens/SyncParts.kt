@@ -52,11 +52,20 @@ class SyncReport(
 )
 
 /**
- * Turn what [WifiSync] reported into something to show. The messages for an invite that
- * has run out, a removed person and a phone that was never added come from WifiSync
- * itself; this only gives each a short heading.
+ * Did the two phones take in each other's lists? Also true when only some photos were still
+ * on their way as the connection dropped ([WifiSync.PHOTOS_CUT]): that is a sync, with the
+ * rest of the photos to come next time.
+ */
+fun WifiSync.Result.listsSynced(): Boolean = ok || error == WifiSync.PHOTOS_CUT
+
+/**
+ * Turn what [WifiSync] reported into something to show. Every message comes from WifiSync
+ * itself, already in plain words; this only gives each a short heading.
  */
 fun syncReport(r: WifiSync.Result, store: Store): SyncReport {
+    if (r.error == WifiSync.PHOTOS_CUT) {
+        return SyncReport(true, "Synced with ${r.peerName.ifBlank { "the other phone" }}, all but some photos", r.error)
+    }
     if (!r.ok) {
         val title = when (r.error) {
             WifiSync.INVITE_EXPIRED -> "This invite no longer works"
@@ -64,6 +73,13 @@ fun syncReport(r: WifiSync.Result, store: Store): SyncReport {
             WifiSync.NOT_ADDED -> "Not added to this move yet"
             WifiSync.UNKNOWN_PHONE -> "That phone is not on this move"
             WifiSync.VERSION_MISMATCH -> "Different versions"
+            WifiSync.NO_NETWORK -> "No Wi-Fi"
+            WifiSync.UNREACHABLE -> "No answer from the other phone"
+            WifiSync.CONNECTION_LOST -> "The connection dropped"
+            WifiSync.CODE_NOT_ACCEPTED -> "Code not accepted"
+            WifiSync.WRONG_CODE -> "Someone used the wrong code"
+            WifiSync.NOT_HOUSEMOVE -> "Not a HouseMove phone"
+            WifiSync.UNREADABLE -> "Could not read the other phone"
             else -> "Could not sync"
         }
         return SyncReport(false, title, r.error ?: "")
@@ -122,7 +138,7 @@ class Joiner(private val store: Store, private val scope: CoroutineScope) {
         report = null
         scope.launch {
             val r = withContext(Dispatchers.IO) { WifiSync.join(store, invite, letNewPhonesIn = store.isAlone()) }
-            if (r.ok) store.setDevice { it.copy(lastSyncAt = System.currentTimeMillis()) }
+            if (r.listsSynced()) store.setDevice { it.copy(lastSyncAt = System.currentTimeMillis()) }
             report = syncReport(r, store)
             busy = false
         }

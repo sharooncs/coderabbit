@@ -71,6 +71,7 @@ import app.housemove.data.Photo
 import app.housemove.data.PhotoKind
 import app.housemove.data.Qr
 import app.housemove.data.ScanFormats
+import app.housemove.data.canDelete
 import app.housemove.data.labelFromQr
 import coil.compose.AsyncImage
 import java.io.File
@@ -671,6 +672,9 @@ fun OwnerThumb(ownerId: String, modifier: Modifier = Modifier, isBox: Boolean = 
 @Composable
 fun PhotoViewer(photo: Photo, onClose: () -> Unit) {
     val store = LocalStore.current
+    val context = LocalContext.current
+    // Deleting a photo is by the Store's rule: whoever took it, while nobody else has worked on it, or an Organiser.
+    val mayDelete = appData().canDelete(myPerson(), photo)
     var confirm by remember { mutableStateOf(false) }
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize(), color = Color.Black) {
@@ -691,7 +695,8 @@ fun PhotoViewer(photo: Photo, onClose: () -> Unit) {
                     Box(Modifier.weight(1f).padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
                         OnPhotoLabel(listOf(photo.kind.label, photo.note).filter { it.isNotBlank() }.joinToString(" · "))
                     }
-                    OverlayIconButton(onClick = { confirm = true }) { Icon(Icons.Default.Delete, contentDescription = "Delete photo") }
+                    if (mayDelete) OverlayIconButton(onClick = { confirm = true }) { Icon(Icons.Default.Delete, contentDescription = "Delete photo") }
+                    else Spacer(Modifier.size(48.dp))
                 }
             }
         }
@@ -699,7 +704,7 @@ fun PhotoViewer(photo: Photo, onClose: () -> Unit) {
     if (confirm) ConfirmDialog(
         title = "Delete this photo?",
         text = "It will be removed from every phone at the next sync.",
-        onConfirm = { store.delete(photo); onClose() },
+        onConfirm = { if (store.tryDelete(photo).okOrSay(context)) onClose() },
         onDismiss = { confirm = false },
     )
 }

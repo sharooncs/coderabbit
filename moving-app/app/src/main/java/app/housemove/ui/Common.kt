@@ -47,6 +47,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.zIndex
 import androidx.navigation.NavHostController
 import app.housemove.data.*
@@ -416,46 +417,138 @@ fun DateButton(day: Long?, onPick: (Long?) -> Unit, label: String, modifier: Mod
         Spacer(Modifier.width(8.dp))
         Text(if (day == null) label else "$label: ${fmtDay(day)}", style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center)
     }
-    if (open) {
-        val state = rememberDatePickerState(initialSelectedDateMillis = (day ?: today()) * 86_400_000L)
-        // Material's calendar is 360dp wide whatever the screen: on a narrower phone it is drawn smaller, not cut off.
-        val fit = ((LocalConfiguration.current.screenWidthDp - 8) / 360f).coerceAtMost(1f)
-        DatePickerDialog(
-            modifier = if (fit < 1f) Modifier.scale(fit) else Modifier,
-            onDismissRequest = { open = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    state.selectedDateMillis?.let { onPick(Math.floorDiv(it, 86_400_000L)) }
-                    open = false
-                }) { Text("OK") }
-            },
-            dismissButton = {
-                Row {
-                    if (allowClear) TextButton(onClick = { onPick(null); open = false }) { Text("Clear") }
-                    TextButton(onClick = { open = false }) { Text("Cancel") }
+    if (open) DatePickerPanel(day, label, allowClear, onPick, onClose = { open = false })
+}
+
+// ---- things that open over a screen ------------------------------------------
+
+/**
+ * A question or a short form over the screen, in the look: the solid glass panel of
+ * [dialogPanel], the title (with its [icon] in an orb, if given), a line of [text] and/or
+ * [content], and [buttons] along the bottom, right-aligned. Buttons are the kit's
+ * [PillButton]s: glass to go back, mint for the thing to do, red glass for what deletes.
+ * Tapping outside it or Back calls [onDismiss], as with any dialog.
+ */
+@Composable
+fun GlassDialog(
+    title: String,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+    text: String? = null,
+    icon: ImageVector? = null,
+    buttons: @Composable FlowRowScope.() -> Unit,
+    content: @Composable ColumnScope.() -> Unit = {},
+) {
+    BasicAlertDialog(onDismissRequest = onDismiss, modifier = modifier) {
+        Column(
+            Modifier.dialogPanel().padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            CompositionLocalProvider(LocalContentColor provides Night.Text) {
+                Row(Modifier.semantics(mergeDescendants = true) { heading() }, verticalAlignment = Alignment.CenterVertically) {
+                    if (icon != null) {
+                        GlassOrb(icon, null, size = 40.dp)
+                        Spacer(Modifier.width(12.dp))
+                    }
+                    Text(title, style = MaterialTheme.typography.titleLarge)
                 }
-            },
-        ) { DatePicker(state = state) }
+                // What is said in between gives way first, so the buttons stay on screen.
+                Column(Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (text != null) Text(text, style = MaterialTheme.typography.bodyLarge, color = Night.TextSoft)
+                    content()
+                }
+                FlowRow(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    content = buttons,
+                )
+            }
+        }
     }
 }
 
+/** The button that closes a [GlassDialog] without doing anything: clear glass. */
+@Composable
+fun DialogCancel(onClick: () -> Unit, label: String = "Cancel") = PillButton(label, onClick, primary = false)
+
+/**
+ * Asks before something is done. [danger] (deleting, erasing) puts the [confirm] word on red
+ * glass with a bin, as on the Delete buttons of the pages; otherwise it is the mint pill.
+ */
 @Composable
 fun ConfirmDialog(
     title: String,
     text: String,
     confirm: String = "Delete",
+    danger: Boolean = true,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        modifier = Modifier.dialogRim(),
-        title = { Text(title) },
-        text = { Text(text) },
-        confirmButton = { TextButton(onClick = { onConfirm(); onDismiss() }) { Text(confirm) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
+    GlassDialog(title, onDismiss, text = text, buttons = {
+        DialogCancel(onDismiss)
+        PillButton(
+            confirm, onClick = { onConfirm(); onDismiss() },
+            icon = if (danger) Icons.Default.Delete else null, primary = !danger, tone = if (danger) GlassTone.Red else GlassTone.Plain,
+        )
+    })
 }
+
+/**
+ * The calendar for picking a day, on the panel of a [GlassDialog], with [label] (what the day
+ * is for) as its title and the kit's buttons. Material's calendar is 360dp wide whatever the
+ * screen, so on a narrower phone the whole panel is drawn smaller rather than cut off.
+ */
+@Composable
+fun DatePickerPanel(day: Long?, label: String, allowClear: Boolean, onPick: (Long?) -> Unit, onClose: () -> Unit) {
+    val state = rememberDatePickerState(initialSelectedDateMillis = (day ?: today()) * 86_400_000L)
+    val fit = ((LocalConfiguration.current.screenWidthDp - 8) / 360f).coerceAtMost(1f)
+    val colors = nightDatePickerColors()
+    BasicAlertDialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Column(Modifier.requiredWidth(360.dp).heightIn(max = 568.dp).then(if (fit < 1f) Modifier.scale(fit) else Modifier).dialogPanel()) {
+            Box(Modifier.weight(1f, fill = false)) {
+                DatePicker(
+                    state = state, colors = colors,
+                    title = { Text(label, Modifier.padding(start = 24.dp, end = 12.dp, top = 18.dp), style = MaterialTheme.typography.labelLarge, color = Night.MintPale) },
+                )
+            }
+            FlowRow(
+                Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (allowClear) PillButton("Clear", onClick = { onPick(null); onClose() }, primary = false)
+                DialogCancel(onClose)
+                PillButton("OK", onClick = {
+                    state.selectedDateMillis?.let { onPick(Math.floorDiv(it, 86_400_000L)) }
+                    onClose()
+                })
+            }
+        }
+    }
+}
+
+/** The calendar in the kit's colours: mint for the chosen day and year, a mint ring round today, glass for typing a date. */
+@Composable
+private fun nightDatePickerColors(): DatePickerColors = DatePickerDefaults.colors(
+    containerColor = Color.Transparent,
+    titleContentColor = Night.MintPale,
+    headlineContentColor = Night.Text,
+    weekdayContentColor = Night.TextDim,
+    subheadContentColor = Night.TextDim,
+    navigationContentColor = Night.Text,
+    yearContentColor = Night.Text,
+    currentYearContentColor = Night.MintLight,
+    selectedYearContentColor = Night.OnMint,
+    selectedYearContainerColor = Night.Mint,
+    dayContentColor = Night.Text,
+    selectedDayContentColor = Night.OnMint,
+    selectedDayContainerColor = Night.Mint,
+    todayContentColor = Night.MintLight,
+    todayDateBorderColor = Night.Mint,
+    dividerColor = Night.Hairline,
+    dateTextFieldColors = glassFieldColors(),
+)
 
 // ---- display ---------------------------------------------------------------
 
@@ -471,9 +564,6 @@ fun ProgressRow(label: String, ratio: Ratio, modifier: Modifier = Modifier) {
     }
 }
 
-/** The rim that makes a stock dialog read as a panel of the look. Pass as the dialog's modifier. */
-fun Modifier.dialogRim(): Modifier = border(1.dp, Night.GlassRim, RoundedCornerShape(30.dp))
-
 fun RoomColor.color() = Color(argb)
 fun RoomColor.onColor() = if (darkText) Color.Black else Color.White
 
@@ -484,9 +574,11 @@ fun RoomColor.onColor() = if (darkText) Color.Black else Color.White
  *
  * Squeezed into a narrow space it never dwindles to "…": it shows the room's short code
  * (the one on its labels, "KIT") and, with no room even for that, its colour alone.
+ * With [maxLines] 2 a name of two words that does not fit on one line takes two
+ * ("Main / bedroom") before anything is shortened.
  */
 @Composable
-fun RoomBadge(room: Room?, modifier: Modifier = Modifier) {
+fun RoomBadge(room: Room?, modifier: Modifier = Modifier, maxLines: Int = 1) {
     val c = room?.takeIf { it.home == Home.DEST }?.let { roomColor(it.color) }
     val bg = c?.color() ?: Color(0xFF26364B)
     val fg = c?.onColor() ?: Night.TextDim
@@ -496,7 +588,7 @@ fun RoomBadge(room: Room?, modifier: Modifier = Modifier) {
     val style = MaterialTheme.typography.labelMedium
     Layout(
         content = {
-            Text(name, color = fg, style = style, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(name, color = fg, style = style, maxLines = maxLines, overflow = TextOverflow.Ellipsis)
             // The stand-in is read out as the room's name, and is not a second text for anything that looks for texts.
             Text(code, color = fg, style = style, maxLines = 1, softWrap = false, modifier = Modifier.clearAndSetSemantics { contentDescription = name })
         },
@@ -505,9 +597,11 @@ fun RoomBadge(room: Room?, modifier: Modifier = Modifier) {
     ) { measurables, constraints ->
         val loose = constraints.copy(minWidth = 0, minHeight = 0)
         val (full, short) = measurables
-        // The whole name where it fits; a shortened name only where enough of it is left to read.
+        // The whole name where it fits (on two lines if allowed and its longest word fits); a shortened
+        // name only where enough of it is left to read.
         val shown = when {
             full.maxIntrinsicWidth(constraints.maxHeight) <= constraints.maxWidth || constraints.maxWidth >= 56.dp.roundToPx() -> full.measure(loose)
+            maxLines > 1 && full.minIntrinsicWidth(constraints.maxHeight) <= constraints.maxWidth -> full.measure(loose)
             short.maxIntrinsicWidth(constraints.maxHeight) <= constraints.maxWidth -> short.measure(loose)
             else -> null
         }
@@ -557,6 +651,12 @@ fun stageText(stage: Stage, isBox: Boolean, vehicle: String = "van"): String = w
     Stage.DONE -> if (isBox) "Unpacked" else "In place"
 }
 
+/**
+ * Where something is now, in words: as [stageText] says it, except "Carried by hand" for what
+ * is on its way with someone rather than on the van (the Store's [statusOf]).
+ */
+fun AppData.statusText(m: Movable): String = statusOf(m).let { if (it == m.stage.label) stageText(m.stage, m.isBox, vehicle()) else it }
+
 /** One row for a box or item, with its destination colour, where it is, and warning flags. */
 @Composable
 fun MovableRow(
@@ -590,7 +690,7 @@ fun MovableRow(
             Text(m.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
-                    "→ " + (dest?.name ?: "no room") + " · " + stageText(m.stage, m.isBox, data.vehicle()),
+                    "→ " + (dest?.name ?: "no room") + " · " + data.statusText(m),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,

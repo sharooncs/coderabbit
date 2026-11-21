@@ -407,29 +407,25 @@ fun ScanScreen() {
     }
 
     notRecorded?.let { code ->
-        AlertDialog(
-            modifier = Modifier.dialogRim(),
-            onDismissRequest = { notRecorded = null },
-            title = { Text("Barcode $code is not recorded") },
-            text = { Text("Nothing with this barcode has been scanned into a box yet. To record it, open the box and tap \"Scan books and products into this box\".") },
-            confirmButton = { TextButton(onClick = { notRecorded = null }) { Text("OK") } },
+        GlassDialog(
+            "Barcode $code is not recorded", onDismiss = { notRecorded = null }, icon = Icons.Default.QrCodeScanner,
+            text = "Nothing with this barcode has been scanned into a box yet. To record it, open the box and tap \"Scan books and products into this box\".",
+            buttons = { PillButton("OK", onClick = { notRecorded = null }) },
         )
     }
 
     unknown?.let { code ->
-        AlertDialog(
-            modifier = Modifier.dialogRim(),
-            onDismissRequest = { unknown = null },
-            title = { Text("Label $code is not in use") },
-            text = { Text("Start a new box with this label? To put it on a piece of furniture instead, open the item and choose \"Scan a printed label\".") },
-            confirmButton = {
-                TextButton(onClick = {
+        GlassDialog(
+            "Label $code is not in use", onDismiss = { unknown = null }, icon = Pic.Label,
+            text = "Start a new box with this label? To put it on a piece of furniture instead, open the item and choose \"Scan a printed label\".",
+            buttons = {
+                DialogCancel({ unknown = null })
+                PillButton("New box", icon = Icons.Default.Add, onClick = {
                     val box = store.createBox(code)
                     unknown = null
                     nav.open("box/${box.id}")
-                }) { Text("New box") }
+                })
             },
-            dismissButton = { TextButton(onClick = { unknown = null }) { Text("Cancel") } },
         )
     }
 }

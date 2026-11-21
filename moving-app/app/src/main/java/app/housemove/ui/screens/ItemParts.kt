@@ -79,9 +79,12 @@ internal fun itemNameChips(roomName: String?): List<String> {
     return ROOM_ITEM_NAMES.firstOrNull { (words, _) -> words.any { it in n } }?.second ?: ANY_ROOM_NAMES
 }
 
-/** Suggestions and questions still waiting about one item, oldest first. */
+/**
+ * Suggestions and questions still waiting about one item, oldest first. Requests to delete it
+ * are left out: they are not answered by deciding, and are shown by [DeleteRequests].
+ */
 internal fun AppData.waitingFor(itemId: String, vararg kinds: ProposalKind): List<Proposal> =
-    proposalsFor(itemId).filter { it.state == ProposalState.WAITING && (kinds.isEmpty() || it.kind in kinds) }.reversed()
+    proposalsFor(itemId).filter { it.state == ProposalState.WAITING && !it.deletes && (kinds.isEmpty() || it.kind in kinds) }.reversed()
 
 /** How an item stands, in a word or two, and the tone that goes with it. */
 internal fun AppData.itemState(x: Item): Pair<String, GlassTone> = when (x.disposition) {
@@ -175,13 +178,13 @@ internal fun MyLastAnswer(itemId: String, data: AppData, modifier: Modifier = Mo
     if (last.state == ProposalState.WAITING) return
     // Turned down: the same note, in the same words, as on the lists, and kept here as the item's record.
     if (last.state == ProposalState.DECLINED) {
-        DeclinedNote(last, data, modifier, what = data.proposalText(last).takeIf { last.kind != ProposalKind.QUESTION })
+        DeclinedNote(last, data, modifier, what = data.proposalText(last).takeIf { !last.isQuestion })
         return
     }
     val by = data.personName(last.decidedBy)
     val (text, tone, icon) = when (last.state) {
         ProposalState.APPROVED -> Triple(
-            if (last.kind == ProposalKind.QUESTION) "Answered" + (if (by.isBlank()) "" else " by $by") else "Approved" + (if (by.isBlank()) "" else " by $by") + ": " + data.proposalText(last),
+            if (last.isQuestion) "Answered" + (if (by.isBlank()) "" else " by $by") else "Approved" + (if (by.isBlank()) "" else " by $by") + ": " + data.proposalText(last),
             GlassTone.Mint, Icons.Default.CheckCircle,
         )
         ProposalState.DECLINED -> Triple(
@@ -404,23 +407,6 @@ internal fun DateChip(day: Long?, label: String, modifier: Modifier = Modifier, 
         if (day == null) label else "$label ${fmtDayShort(day)}", modifier, icon = Icons.Default.Event,
         tone = if (day != null && day < today()) GlassTone.Red else GlassTone.Plain, onClick = { open = true },
     )
-    if (open) {
-        val state = rememberDatePickerState(initialSelectedDateMillis = (day ?: today()) * 86_400_000L)
-        DatePickerDialog(
-            onDismissRequest = { open = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    state.selectedDateMillis?.let { onPick(Math.floorDiv(it, 86_400_000L)) }
-                    open = false
-                }) { Text("OK") }
-            },
-            dismissButton = {
-                Row {
-                    TextButton(onClick = { onPick(null); open = false }) { Text("Clear") }
-                    TextButton(onClick = { open = false }) { Text("Cancel") }
-                }
-            },
-        ) { DatePicker(state = state) }
-    }
+    if (open) DatePickerPanel(day, label, allowClear = true, onPick = onPick, onClose = { open = false })
 }
 

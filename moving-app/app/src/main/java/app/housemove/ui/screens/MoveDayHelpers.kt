@@ -89,12 +89,6 @@ internal data class MdResult(val tone: MdTone, val title: String, val detail: St
 /** True once something has reached the new home. */
 internal fun mdArrived(stage: Stage) = stage == Stage.DELIVERED || stage == Stage.DONE
 
-/**
- * Carried by hand, not in the van: it travels with the person ("With me" on Load) and was
- * not put on a trip. Such things are never "still on the van", on any screen.
- */
-internal fun Movable.byHand(): Boolean = travelsWithMe && tripId == null
-
 /** Move one box or item to [stage]. The trip is kept unless [tripId] is given. */
 internal fun mdSetStage(store: Store, m: Movable, stage: Stage, tripId: String? = m.tripId) {
     if (m.isBox) store.updateBoxes(listOf(m.id)) { it.copy(stage = stage, tripId = tripId) }
@@ -326,12 +320,16 @@ internal fun MdThingRow(
         ThingThumb(m.id, m.picture())
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            // Two lines, so a long name is still told apart from its neighbours on a small phone.
-            Text(m.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            // Two lines, three on a small phone where the button beside it takes a third of the width,
+            // so a long name ("Box L001 · Kettle, mugs, tea, cutlery") is read whole.
+            Text(
+                m.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium,
+                maxLines = if (trailing != null && narrowScreen(360f)) 3 else 2, overflow = TextOverflow.Ellipsis,
+            )
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 RoomBadge(data.room(m.destRoomId))
                 InsideChip(carried)
-                if (showStage) IconFlag(m.stage.icon(), stageText(m.stage, m.isBox, data.vehicle()))
+                if (showStage) IconFlag(if (m.onTheVan() || m.stage != Stage.LOADED) m.stage.icon() else Pic.WithMe, data.statusText(m))
                 m.flags().forEach { (picture, word) -> IconFlag(picture, word) }
                 if (open) IconFlag(Icons.Default.LockOpen, "Open")
                 if (m.damaged) IconFlag(Pic.Damage, "Damaged", error = true)

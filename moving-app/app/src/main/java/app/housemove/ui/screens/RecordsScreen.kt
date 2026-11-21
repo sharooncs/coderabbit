@@ -163,8 +163,9 @@ fun RecordsScreen(home: Home) {
             title = "Delete this reading?",
             text = "The ${r.kind} reading and its photos will be removed.",
             onConfirm = {
-                data.photosOf(r.id).forEach { store.delete(it) }
+                // The reading first; then its photos, those this person may delete (the Store leaves the others).
                 store.delete(r)
+                data.photosOf(r.id).forEach { store.delete(it) }
             },
             onDismiss = { deleting = null },
         )
@@ -223,7 +224,8 @@ private fun MdReadingEditor(r: Reading, onDelete: () -> Unit) {
             mdEditReading(store, r.id) { it.copy(value = number) }
             said = number
         }
-        if (mayDelete()) GlassOrb(Icons.Default.Delete, "Delete this ${r.kind} reading", size = 40.dp, onClick = onDelete)
+        // A reading is part of the work, so anyone working on the move may delete it: the Store's rule says so.
+        if (appData().canDelete(myPerson(), r)) GlassOrb(Icons.Default.Delete, "Delete this ${r.kind} reading", size = 40.dp, onClick = onDelete)
     }
     PhotoStrip(r.id, PhotoKind.METER, label = "${r.kind} meter, ${fmtDay(r.day)}")
     HorizontalDivider(color = Night.Hairline)

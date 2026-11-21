@@ -141,7 +141,8 @@ internal object AuditSampleData {
     /**
      * The sample move with people on it: Sam organises, Priya may suggest, Tom helps, Gran
      * has not joined yet and Alex was removed. Two of their suggestions are already decided
-     * (one approved, one declined with a reason) and three still wait. [newFolder] gives an
+     * (one approved, one declined with a reason) and four still wait, one of them Tom's request
+     * to delete a box. [newFolder] gives an
      * empty directory for each phone.
      */
     fun phones(newFolder: () -> File): Phones {
@@ -156,6 +157,8 @@ internal object AuditSampleData {
         priya.suggestDecision("table", Disposition.SELL, 40.0, note = "Too big for the new kitchen")
         priya.suggestCost(Expense(id = "e3", title = "20 more boxes", amount = 35.0, category = "Supplies", day = today()))
         tom.ask("mirror", note = "Is this coming with us?")
+        // Tom did not add L002, so he may not delete it himself: he asks an Organiser to.
+        tom.askToDelete("box2", note = "We packed the pans twice")
         for (phone in listOf(priya, tom)) s.mergeIn(phone.data.value)
         s.approve(toOffice.id)
         s.decline(donateBike.id, "Too worn to give away")

@@ -43,10 +43,11 @@ fun ReconcileScreen() {
     // Each thing once: a container stands for everything packed inside it.
     val all = data.movables()
     val carried = remember(data) { data.carriedCounts() }
-    // What travels with the person is never "on the van", whether or not Load marked it as gone with them.
-    val onVan = all.filter { it.stage == Stage.LOADED && !it.byHand() }.sortedBy { it.title }
-    val neverLoaded = all.filter { it.stage == Stage.AT_ORIGIN && !it.byHand() }.sortedBy { it.title }
-    val withMe = all.filter { it.byHand() && !mdArrived(it.stage) }.sortedBy { it.title }
+    // What travels with the person is never "on the van", whether or not Load marked it as gone with them:
+    // the Store's carriedByHand and onTheVan say so, for every screen alike.
+    val onVan = all.filter { it.onTheVan() }.sortedBy { it.title }
+    val neverLoaded = all.filter { it.stage == Stage.AT_ORIGIN && !it.carriedByHand() }.sortedBy { it.title }
+    val withMe = all.filter { it.carriedByHand() && !mdArrived(it.stage) }.sortedBy { it.title }
     val damaged = all.filter { it.damaged }.sortedBy { it.title }
     val arrived = all.count { mdArrived(it.stage) }
     val allIn = onVan.isEmpty() && neverLoaded.isEmpty() && arrived > 0

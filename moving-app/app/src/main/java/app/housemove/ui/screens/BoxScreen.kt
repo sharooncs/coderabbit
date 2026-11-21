@@ -76,7 +76,7 @@ fun BoxScreen(id: String) {
     val nav = LocalNav.current
     val context = LocalContext.current
     val data = appData()
-    deviceInfo() // whose phone this is decides whether deleting is offered
+    deviceInfo() // whose phone this is decides whether deleting, or asking for it, is offered
     val box = data.box(id)
     if (box == null) {
         Screen("Box") {
@@ -88,7 +88,6 @@ fun BoxScreen(id: String) {
     // Always change the newest copy, so two quick edits never overwrite each other.
     val edit: ((Box) -> Box) -> Unit = { f -> store.data.value.box(id)?.let { store.put(f(it)) } }
 
-    var confirmDelete by remember { mutableStateOf(false) }
     var relabel by remember { mutableStateOf(false) }
     var scanIn by remember { mutableStateOf(false) }
     var scanItem by remember { mutableStateOf(false) }
@@ -126,7 +125,6 @@ fun BoxScreen(id: String) {
         "what's inside".takeIf { box.contents.isBlank() && entries.isEmpty() && items.isEmpty() && children.isEmpty() && photos == 0 },
     )
     val narrow = narrowScreen(360f)
-    val mayDelete = mayDelete()
 
     fun setContents(f: (String) -> String) {
         edit { it.copy(contents = f(it.contents)) }
@@ -145,6 +143,8 @@ fun BoxScreen(id: String) {
                     destOpen = false
                 },
             )
+            // Someone has asked for it to be deleted: an Organiser settles it here, whoever asked can withdraw it.
+            DeleteRequests(box.id)
             if (parent != null) {
                 GlassPill(Modifier.fillMaxWidth(), tone = GlassTone.Amber, contentPadding = PaddingValues(start = 16.dp, end = 4.dp)) {
                     Icon(Icons.Default.SubdirectoryArrowRight, contentDescription = null, tint = Night.AmberPale, modifier = Modifier.size(20.dp))
@@ -244,9 +244,7 @@ fun BoxScreen(id: String) {
                     }
                     items.forEach { i ->
                         ContainerItemRow(i, onOpen = { nav.open("item/${i.id}") }) {
-                            IconButton(onClick = { itemTrouble = store.takeOut(i.id).reason }) {
-                                Icon(Icons.Default.Close, contentDescription = "Take ${i.title()} out")
-                            }
+                            GlassOrb(Icons.Default.Close, "Take ${i.title()} out", size = 36.dp, onClick = { itemTrouble = store.takeOut(i.id).reason })
                         }
                     }
                     if (loose.isNotEmpty()) {
@@ -267,9 +265,7 @@ fun BoxScreen(id: String) {
                         ContainerRow(
                             c, data, showRoom = false, onOpen = { nav.open("box/${it.id}") },
                             trailing = {
-                                IconButton(onClick = { nestTrouble = store.nest(c.id, null).reason }) {
-                                    Icon(Icons.Default.Close, contentDescription = "Take ${c.shownName()} out")
-                                }
+                                GlassOrb(Icons.Default.Close, "Take ${c.shownName()} out", size = 36.dp, onClick = { nestTrouble = store.nest(c.id, null).reason })
                             },
                         )
                     }
@@ -354,7 +350,7 @@ fun BoxScreen(id: String) {
                 }
                 if (travelled) Fold(
                     "On the move", Pic.Where, open = box.damaged, key = "move",
-                    summary = stageText(box.stage, isBox = true, vehicle) + if (box.damaged) " · " + box.damageNote.ifBlank { "Damaged" } else "",
+                    summary = data.statusText(box.toMovable()) + if (box.damaged) " · " + box.damageNote.ifBlank { "Damaged" } else "",
                 ) { onTheMove() }
 
                 // The name, the label, the photos, and what is not undone: deleting it.
@@ -385,10 +381,16 @@ fun BoxScreen(id: String) {
                         HorizontalDivider(color = Night.Hairline)
                         onTheMove()
                     }
-                    if (mayDelete) {
-                        HorizontalDivider(color = Night.Hairline)
-                        DeleteButton("Delete this $word", onClick = { confirmDelete = true }, modifier = Modifier.align(Alignment.CenterHorizontally))
-                    }
+                    if (deleteOffered(box)) HorizontalDivider(color = Night.Hairline)
+                    val kept = items.isNotEmpty() || children.isNotEmpty()
+                    DeleteOrAsk(
+                        box, "Delete this $word", "Delete ${box.nameAndCode()}?",
+                        "This record and your photos of it will be removed from every phone at the next sync." +
+                            if (kept) " What is packed in it stays in the app." else "",
+                        Modifier.align(Alignment.CenterHorizontally),
+                        onDelete = { store.tryDelete(box).okOrSay(context) },
+                        onDeleted = { nav.popBackStack() },
+                    )
                 }
             }
         }
@@ -475,20 +477,6 @@ fun BoxScreen(id: String) {
         )
     }
 
-    if (confirmDelete) {
-        val kept = items.isNotEmpty() || children.isNotEmpty()
-        ConfirmDialog(
-            title = "Delete ${box.nameAndCode()}?",
-            text = "This record and its photos will be removed from every phone at the next sync." +
-                if (kept) " What is packed in it stays in the app." else "",
-            onConfirm = {
-                data.photosOf(box.id).forEach { store.delete(it) }
-                store.delete(box)
-                nav.popBackStack()
-            },
-            onDismiss = { confirmDelete = false },
-        )
-    }
 }
 
 /** The small word above one thing to choose inside a section that holds several. */

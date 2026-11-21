@@ -72,7 +72,7 @@ private fun mdStepRatio(route: String, data: AppData): Ratio? = when (route) {
  */
 private fun mdAllIn(data: AppData): Boolean {
     val all = data.movables()
-    return all.isNotEmpty() && all.all { mdArrived(it.stage) || it.byHand() } && all.any { mdArrived(it.stage) }
+    return all.isNotEmpty() && all.all { mdArrived(it.stage) || it.carriedByHand() } && all.any { mdArrived(it.stage) }
 }
 
 /**
@@ -87,8 +87,9 @@ internal fun mdCurrentStep(data: AppData, routes: List<String>, finished: List<B
     if (firstOpen < 0) return -1
     fun open(vararg wanted: String): Int? = wanted.firstNotNullOfOrNull { r -> routes.indexOf(r).takeIf { it >= 0 && !finished[it] } }
     val all = data.movables()
-    val atOld = all.count { it.stage == Stage.AT_ORIGIN && !it.byHand() }
-    val onVan = all.count { it.stage == Stage.LOADED && !it.byHand() }
+    // What travels with someone is neither left at the old home nor on the van (the Store's carriedByHand and onTheVan).
+    val atOld = all.count { it.stage == Stage.AT_ORIGIN && !it.carriedByHand() }
+    val onVan = all.count { it.onTheVan() }
     val arrived = all.count { mdArrived(it.stage) }
     val moveDay = data.move.moveDay
     return when {

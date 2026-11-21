@@ -164,9 +164,7 @@ private fun ListPanel(
                         style = MaterialTheme.typography.bodySmall, color = Night.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
                 }
-                IconButton(onClick = { onRemove(m) }) {
-                    Icon(Icons.Default.Close, contentDescription = "Take ${m.title} off the $title list")
-                }
+                GlassOrb(Icons.Default.Close, "Take ${m.title} off the $title list", Modifier.padding(end = 6.dp), size = 36.dp, onClick = { onRemove(m) })
             }
         }
     }

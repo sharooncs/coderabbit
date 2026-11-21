@@ -175,7 +175,7 @@ private fun shortcuts(data: AppData, maySuggest: Boolean, mayApprove: Boolean): 
     val asked = if (mayApprove) data.waitingProposals() else emptyList()
     if (data.uses(Part.TRIAGE) && maySuggest) {
         val undecided = data.liveItems.count { it.disposition == Disposition.UNDECIDED }
-        val toApprove = asked.count { it.kind == ProposalKind.ITEM_DECISION || it.kind == ProposalKind.QUESTION }
+        val toApprove = asked.count { it.kind == ProposalKind.ITEM_DECISION || it.isQuestion }
         out += Shortcut(
             Icons.Default.Rule, "Triage", "triage",
             status = if (toApprove > 0) "$toApprove to approve" else if (undecided > 0) "$undecided to decide" else "All decided",
@@ -247,7 +247,7 @@ private fun ItemCard(x: Item, data: AppData, waiting: List<Proposal>, modifier: 
                     if (x.damaged) IconFlag(Pic.Damage, "Damaged", error = true)
                 }
             }
-            waiting.firstOrNull()?.let { WaitingTag(it, data, Modifier.fillMaxWidth(), compact = true) }
+            waiting.firstOrNull()?.let { WaitingTag(it, Modifier.fillMaxWidth(), compact = true, what = data.proposalText(it)) }
         }
     }
 }

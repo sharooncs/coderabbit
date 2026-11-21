@@ -58,11 +58,9 @@ fun ItemScreen(id: String) {
     val mayDecide = store.can(Action.DECIDE)
     val maySuggest = store.can(Action.SUGGEST)
     val mayCarryOut = data.mayCarryOut(me, item)
-    val mayDelete = mayDelete()
     val waitingDecision = data.waitingFor(id, ProposalKind.ITEM_DECISION, ProposalKind.QUESTION)
     val waitingRoom = data.waitingFor(id, ProposalKind.ITEM_ROOM)
 
-    var confirmDelete by remember { mutableStateOf(false) }
     var scanning by remember { mutableStateOf(false) }
     var scanningSerial by remember { mutableStateOf(false) }
     var scanningContainer by remember { mutableStateOf(false) }
@@ -132,6 +130,8 @@ fun ItemScreen(id: String) {
                     }
                 }
                 // What others suggested or asked sits here, on the item: an Organiser settles it, the rest see it wait.
+                // A request to delete it is here too, where it is seen.
+                DeleteRequests(id)
                 waitingDecision.forEach { p -> Suggestion(p, data) }
                 if (!mayDecide && !item.gone && waitingDecision.none { it.by == me?.id }) MyLastAnswer(id, data)
 
@@ -457,7 +457,7 @@ fun ItemScreen(id: String) {
                 // Opened when it first appears because damage was just reported, so what happened can be added at once.
                 if (travelled) Fold(
                     "On the move", Pic.Where, open = item.damaged, key = "move",
-                    summary = stageText(item.stage, isBox = false, vehicle) + (trip?.let { " · ${it.name}" } ?: "") +
+                    summary = data.statusText(item.toMovable()) + (trip?.let { " · ${it.name}" } ?: "") +
                         if (item.damaged) " · " + item.damageNote.ifBlank { "Damaged" } else "",
                 ) { onTheMove() }
             }
@@ -492,11 +492,16 @@ fun ItemScreen(id: String) {
                     HorizontalDivider(color = Night.Hairline)
                     onTheMove()
                 }
-                // Not undone, so it is the last thing in the last section.
-                if (mayDelete) {
-                    HorizontalDivider(color = Night.Hairline)
-                    DeleteButton("Delete item", onClick = { confirmDelete = true }, modifier = Modifier.align(Alignment.CenterHorizontally))
-                }
+                // Not undone, so it is the last thing in the last section: deleting it, or asking an Organiser to.
+                if (deleteOffered(item)) HorizontalDivider(color = Night.Hairline)
+                DeleteOrAsk(
+                    item, "Delete item", "Delete this item?",
+                    "\"${item.title()}\" and your photos of it will be removed from every phone at the next sync.",
+                    Modifier.align(Alignment.CenterHorizontally),
+                    // The Store deletes the photos with it, the ones this person may delete, only once it may delete the item.
+                    onDelete = { store.tryDelete(item).okOrSay(context) },
+                    onDeleted = { nav.popBackStack() },
+                )
             }
         }
     }
@@ -565,6 +570,7 @@ fun ItemScreen(id: String) {
             title = "New container $code?",
             text = "Nothing has the label $code yet. Start a new container with it and put ${item.title()} in it?",
             confirm = "Start it",
+            danger = false,
             onConfirm = {
                 val box = store.createContainer(code, item.originRoomId)
                 store.putInto(id, box.id).okOrSay(context)
@@ -586,18 +592,7 @@ fun ItemScreen(id: String) {
         )
     }
 
-    if (confirmDelete) {
-        ConfirmDialog(
-            title = "Delete this item?",
-            text = "\"${item.title()}\" and its photos will be removed from every phone at the next sync.",
-            onConfirm = {
-                store.data.value.photosOf(id).forEach { store.delete(it) }
-                store.delete(item)
-                nav.popBackStack()
-            },
-            onDismiss = { confirmDelete = false },
-        )
-    }
+
 }
 
 /** The numbers in what was said, in order: "200 by 90 by 85" gives 200, 90 and 85. A decimal comma counts as a point. */

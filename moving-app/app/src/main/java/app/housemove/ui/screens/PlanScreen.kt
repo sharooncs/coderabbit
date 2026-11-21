@@ -252,8 +252,9 @@ private fun HomelessCard(
                         ) {
                             ColorDot(suggestion.color, Modifier.size(18.dp))
                             Spacer(Modifier.width(10.dp))
+                            // Two lines on a small phone rather than "Main bedr…".
                             Text(
-                                suggestion.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                suggestion.name, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f),
                             )
                             Icon(Icons.Default.Check, contentDescription = if (mayDecide) "Accept" else "Suggest", tint = Night.MintPale, modifier = Modifier.size(20.dp))
