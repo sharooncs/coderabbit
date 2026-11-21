@@ -1,5 +1,8 @@
 package app.housemove.ui
 
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -19,43 +22,52 @@ fun AppRoot(store: Store, startRoute: String? = null, onNav: (NavHostController)
         LaunchedEffect(nav) { onNav(nav) }
         val start = remember { startRoute ?: if (store.data.value.move.setupDone) "home" else "setup" }
         CompositionLocalProvider(LocalStore provides store, LocalNav provides nav) {
-            NavHost(nav, startDestination = start) {
-                composable("setup") { SetupScreen() }
-                composable("home") { HomeScreen() }
-                composable("more") { MoreScreen() }
-                composable("rooms") { RoomsScreen() }
-                composable("sync") { SyncScreen() }
-                composable("settings") { SettingsScreen() }
-                composable("search") { SearchScreen() }
-                composable("scan") { ScanScreen() }
+            // The night ground is drawn once here; every screen is transparent on top of it.
+            AppBackground {
+                NavHost(
+                    nav, startDestination = start,
+                    // Screens are transparent, so a slow cross-fade would show one through the other.
+                    enterTransition = { fadeIn(tween(220, delayMillis = 90)) },
+                    exitTransition = { fadeOut(tween(90)) },
+                ) {
+                    composable("setup") { SetupScreen() }
+                    composable("home") { HomeScreen() }
+                    composable("overview") { OverviewScreen() }
+                    composable("more") { MoreScreen() }
+                    composable("rooms") { RoomsScreen() }
+                    composable("sync") { SyncScreen() }
+                    composable("settings") { SettingsScreen() }
+                    composable("search") { SearchScreen() }
+                    composable("scan") { ScanScreen() }
 
-                composable("items") { ItemsScreen() }
-                composable("item/{id}") { ItemScreen(it.arguments?.getString("id") ?: "") }
-                composable("walk") { WalkScreen() }
-                composable("triage") { TriageScreen() }
-                composable("plan") { PlanScreen() }
-                composable("disposal") { DisposalScreen() }
-                composable("electronics") { ElectronicsScreen() }
+                    composable("items") { ItemsScreen() }
+                    composable("item/{id}") { ItemScreen(it.arguments?.getString("id") ?: "") }
+                    composable("walk") { WalkScreen() }
+                    composable("triage") { TriageScreen() }
+                    composable("plan") { PlanScreen() }
+                    composable("disposal") { DisposalScreen() }
+                    composable("electronics") { ElectronicsScreen() }
 
-                composable("boxes") { BoxesScreen() }
-                composable("box/{id}") { BoxScreen(it.arguments?.getString("id") ?: "") }
-                composable("pack") { PackScreen() }
-                composable("labels") { LabelsScreen() }
-                composable("lists") { ListsScreen() }
-                composable("packorder") { PackOrderScreen() }
-                composable("tasks") { TasksScreen() }
+                    composable("boxes") { BoxesScreen() }
+                    composable("box/{id}") { BoxScreen(it.arguments?.getString("id") ?: "") }
+                    composable("pack") { PackScreen() }
+                    composable("labels") { LabelsScreen() }
+                    composable("lists") { ListsScreen() }
+                    composable("packorder") { PackOrderScreen() }
+                    composable("tasks") { TasksScreen() }
 
-                composable("moveday") { MoveDayScreen() }
-                composable("load") { LoadScreen() }
-                composable("unload") { UnloadScreen() }
-                composable("reconcile") { ReconcileScreen() }
-                composable("sweep") { SweepScreen() }
-                composable("records/{home}") {
-                    RecordsScreen(if (it.arguments?.getString("home") == "DEST") Home.DEST else Home.ORIGIN)
+                    composable("moveday") { MoveDayScreen() }
+                    composable("load") { LoadScreen() }
+                    composable("unload") { UnloadScreen() }
+                    composable("reconcile") { ReconcileScreen() }
+                    composable("sweep") { SweepScreen() }
+                    composable("records/{home}") {
+                        RecordsScreen(if (it.arguments?.getString("home") == "DEST") Home.DEST else Home.ORIGIN)
+                    }
+                    composable("unpack") { UnpackScreen() }
+                    composable("budget") { BudgetScreen() }
+                    composable("reports") { ReportsScreen() }
                 }
-                composable("unpack") { UnpackScreen() }
-                composable("budget") { BudgetScreen() }
-                composable("reports") { ReportsScreen() }
             }
         }
     }

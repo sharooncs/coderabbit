@@ -15,6 +15,10 @@ import androidx.compose.ui.test.performTextReplacement
 import androidx.navigation.NavHostController
 import app.housemove.data.*
 import app.housemove.ui.AppRoot
+import app.housemove.ui.ISO_MAX_ROOMS
+import app.housemove.ui.IsoRoom
+import app.housemove.ui.RoomState
+import app.housemove.ui.layoutRooms
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -125,6 +129,81 @@ class FlowsTest {
      */
     private companion object {
         const val NARROW = "w320dp-h891dp-xxhdpi"
+    }
+
+    // ---- home, the rooms overview and the dock -----------------------------------
+
+    @Test
+    fun homeShowsTheHouseTheNextRoomAndLeadsToTheRoomsOverview() {
+        start()
+        val a = store.createBox("L001", oldKitchen.id)
+        store.createBox("L002", oldKitchen.id)
+        store.updateBoxes(listOf(a.id)) { it.copy(sealed = true) }
+        settle()
+        see("Test move")
+        see("days to go")
+        see("1/2") // boxes sealed, as a key number
+        see("Kitchen is next")
+        see("1 box left")
+        tapDesc("model house", sub = true)
+        assertEquals("overview", route())
+        see("Kitchen")
+        see("1 still open")
+        dontSee("Needs attention") // the overview is about rooms only
+
+        // The marker and the callout follow the room that is tapped.
+        tapDesc("Bedroom: no boxes", sub = true)
+        see("No boxes yet")
+
+        // The bar at the bottom packs in the room that is next.
+        store.setDevice { it.copy(currentRoomId = null) }
+        tap("Pack a box")
+        assertEquals("pack", route())
+        assertEquals(oldKitchen.id, store.device.value.currentRoomId)
+        back()
+        tapDesc("Manage rooms")
+        assertEquals("rooms", route())
+        back()
+
+        // Marking the room packed moves "next" on to the other room.
+        store.put(data.room(oldKitchen.id)!!.copy(packed = true))
+        settle()
+        see("Bedroom is next")
+        tap("Home") // the dock's Home button leaves the overview
+        assertEquals("home", route())
+        see("Bedroom is next")
+    }
+
+    @Test
+    fun dockReachesEveryDestinationAndTheBigButtonPacks() {
+        start()
+        for ((label, where) in listOf("Items" to "items", "Boxes" to "boxes", "Move day" to "moveday", "More" to "more", "Home" to "home")) {
+            tap(label)
+            assertEquals(where, route())
+        }
+        tapDesc("Menu")
+        assertEquals("more", route())
+        tap("Home")
+        tap("Pack a box") // the glowing button in the middle of Home's dock
+        assertEquals("pack", route())
+    }
+
+    @Test
+    fun roomsDrawingLaysOutOneRoomAndManyRooms() {
+        fun rooms(n: Int) = (1..n).map { IsoRoom("r$it", "Room $it", RoomState.entries[it % 4], stacks = it % 4) }
+        assertTrue(layoutRooms(emptyList()).isEmpty())
+        // One room has the whole floor.
+        layoutRooms(rooms(1)).single().let { c -> assertEquals(listOf(0f, 0f, 8f, 6f), listOf(c.x0, c.y0, c.x1, c.y1)) }
+        for (n in listOf(2, 3, 4, 5, 7, 12, 20)) {
+            val cells = layoutRooms(rooms(n))
+            assertEquals(minOf(n, ISO_MAX_ROOMS), cells.size) // the rest are counted in the "+N more" note
+            // The cells tile the floor: no gaps, no overlaps, and each is wide enough for a box.
+            assertEquals(48f, cells.sumOf { ((it.x1 - it.x0) * (it.y1 - it.y0)).toDouble() }.toFloat(), 0.01f)
+            assertTrue(cells.all { it.x0 >= 0f && it.x1 <= 8f && it.y0 >= 0f && it.y1 <= 6f && it.x1 - it.x0 >= 1.3f })
+            for (a in cells) for (b in cells) if (a !== b) {
+                assertFalse(a.x0 < b.x1 - 0.001f && b.x0 < a.x1 - 0.001f && a.y0 < b.y1 - 0.001f && b.y0 < a.y1 - 0.001f)
+            }
+        }
     }
 
     // ---- setup --------------------------------------------------------------

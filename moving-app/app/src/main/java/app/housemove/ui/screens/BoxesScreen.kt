@@ -94,6 +94,7 @@ fun BoxesScreen() {
             // With no boxes yet, the picture in the middle of the page carries the one button.
             if (boxes.isNotEmpty()) {
                 ExtendedFloatingActionButton(
+                containerColor = Night.Mint, contentColor = Night.OnMint,
                     onClick = { nav.open("pack") },
                     icon = { Icon(Icons.Default.Add, contentDescription = null) },
                     text = { Text("Pack a box") },
@@ -121,9 +122,9 @@ fun BoxesScreen() {
                 item(key = "header") {
                     Column(Modifier.padding(top = 8.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (duplicates.isNotEmpty()) {
-                            Card(
+                            GlassCard(
                                 Modifier.padding(horizontal = 16.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                                tone = GlassTone.Red,
                             ) {
                                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.onErrorContainer)
@@ -138,6 +139,7 @@ fun BoxesScreen() {
                         }
 
                         OutlinedTextField(
+                            colors = glassFieldColors(),
                             value = query,
                             onValueChange = { query = it },
                             placeholder = { Text("Filter by label or contents") },
@@ -400,7 +402,7 @@ fun PackScreen() {
 @Composable
 private fun RoomPackedCard(room: Room, sealed: Ratio, onChange: (Boolean) -> Unit, modifier: Modifier = Modifier) {
     val scheme = MaterialTheme.colorScheme
-    Card(modifier.fillMaxWidth()) {
+    GlassCard(modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().toggleable(value = room.packed, role = Role.Switch, onValueChange = onChange)
                 .padding(horizontal = 16.dp, vertical = 10.dp),

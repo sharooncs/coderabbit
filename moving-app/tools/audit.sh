@@ -5,5 +5,6 @@
 # Sheets are written to app/build/audit/sheets/ as tall-N.png (whole screen, top to
 # bottom), fold-N.png (what a phone shows on opening) and empty-N.png (no data yet).
 cd "$(dirname "$0")/.." || exit 1
+mkdir -p build
 tools/test.sh --tests 'app.housemove.AuditShotsTest' > build/audit-run.txt 2>&1 || { cat build/audit-run.txt; echo "audit run failed"; exit 1; }
 python3 tools/sheets.py "${1:-}"

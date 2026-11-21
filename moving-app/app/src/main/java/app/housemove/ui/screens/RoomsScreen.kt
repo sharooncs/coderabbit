@@ -33,7 +33,7 @@ fun RoomsScreen() {
     val rooms = data.roomsOf(home)
 
     Screen("Rooms") {
-        TabRow(selectedTabIndex = tab) {
+        GlassTabRow(tab) {
             Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text(data.move.originName) })
             Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text(data.move.destName) })
         }
@@ -44,7 +44,7 @@ fun RoomsScreen() {
             )
             rooms.forEach { r ->
                 val rc = roomColor(r.color)
-                Card(Modifier.fillMaxWidth().clickable { editing = r.id }) {
+                GlassCard(Modifier.fillMaxWidth(), onClick = { editing = r.id }) {
                     Row(Modifier.height(IntrinsicSize.Min), verticalAlignment = Alignment.CenterVertically) {
                         if (home == Home.DEST) {
                             // The room's colour as a block, with its short code, as on the door sign.
@@ -98,6 +98,7 @@ private fun AddRoom(home: Home) {
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
+                colors = glassFieldColors(),
                 value = name,
                 onValueChange = { name = it },
                 label = { Text("Room name") },
@@ -120,6 +121,7 @@ private fun RoomDialog(room: Room, onClose: () -> Unit) {
     val inUse = data.liveItems.count { it.originRoomId == room.id || it.destRoomId == room.id } +
         data.liveBoxes.count { it.originRoomId == room.id || it.destRoomId == room.id }
     AlertDialog(
+        modifier = Modifier.dialogRim(),
         onDismissRequest = onClose,
         title = { Text(if (room.home == Home.ORIGIN) "Old-home room" else "New-home room") },
         text = {

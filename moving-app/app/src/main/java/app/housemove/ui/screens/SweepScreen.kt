@@ -43,6 +43,7 @@ import app.housemove.ui.ScrollColumn
 import app.housemove.ui.TileGrid
 import app.housemove.ui.appData
 import app.housemove.ui.open
+import app.housemove.ui.*
 
 /** Last walk round the old home: tick each room once it is empty and checked. */
 @Composable
@@ -117,20 +118,11 @@ fun SweepScreen() {
 @Composable
 private fun MdSweepTile(name: String, checked: Boolean, warning: String?, onChange: (Boolean) -> Unit, modifier: Modifier = Modifier) {
     val scheme = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(14.dp)
+    val shape = RoundedCornerShape(20.dp)
     Column(
         modifier.heightIn(min = 112.dp)
-            .clip(shape)
-            .background(if (checked) scheme.tertiaryContainer else scheme.surface)
-            .border(
-                if (checked) 2.dp else 1.dp,
-                when {
-                    warning != null -> scheme.error
-                    checked -> scheme.tertiary
-                    else -> scheme.outlineVariant
-                },
-                shape,
-            )
+            .glass(shape, if (checked) GlassTone.Mint else GlassTone.Plain, shadow = 5.dp)
+            .then(if (warning != null) Modifier.border(1.5.dp, scheme.error, shape) else Modifier)
             .toggleable(value = checked, role = Role.Checkbox, onValueChange = onChange)
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),

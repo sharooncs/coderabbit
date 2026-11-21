@@ -162,9 +162,7 @@ private fun CountTile(icon: ImageVector, count: Int, label: String, modifier: Mo
     val scheme = MaterialTheme.colorScheme
     Column(
         modifier
-            .clip(RoundedCornerShape(14.dp))
-            .background(scheme.surface)
-            .border(1.dp, scheme.outlineVariant, RoundedCornerShape(14.dp))
+            .glass(RoundedCornerShape(18.dp), shadow = 5.dp)
             .padding(vertical = 10.dp, horizontal = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {

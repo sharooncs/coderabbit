@@ -57,6 +57,7 @@ import app.housemove.ui.Screen
 import app.housemove.ui.appData
 import app.housemove.ui.deviceInfo
 import app.housemove.ui.open
+import app.housemove.ui.*
 
 /** Put one thing on the current trip and describe what happened. */
 private fun mdLoadOne(store: Store, m: Movable): MdResult {
@@ -157,7 +158,7 @@ fun LoadScreen() {
             if (scanning) QrScanner(onText = onScan, modifier = Modifier.fillMaxWidth().height(mdScannerHeight()))
             result?.let { MdBanner(it) }
 
-            TabRow(selectedTabIndex = tab) {
+            GlassTabRow(tab) {
                 Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("To load (${waiting.size})") })
                 Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("On ${trip?.name ?: "this trip"} (${onTrip.size})") })
             }

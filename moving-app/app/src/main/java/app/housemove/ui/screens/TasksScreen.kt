@@ -63,7 +63,7 @@ fun TasksScreen() {
     Screen(
         "Timeline",
         fab = {
-            FloatingActionButton(onClick = { draft = Task(id = newId(), title = "") }) {
+            FloatingActionButton(containerColor = Night.Mint, contentColor = Night.OnMint, onClick = { draft = Task(id = newId(), title = "") }) {
                 Icon(Icons.Default.Add, contentDescription = "Add a task")
             }
         },
@@ -84,9 +84,9 @@ fun TasksScreen() {
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
                 item(key = "progress") {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Card(
+                        GlassCard(
                             Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                            tone = GlassTone.Mint,
                         ) {
                             Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Ring(Ratio(done.size, tasks.size), size = 72.dp, stroke = 8.dp) {
@@ -156,9 +156,9 @@ fun TasksScreen() {
 
 @Composable
 private fun MoveDateCard(onSet: () -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+    GlassCard(tone = GlassTone.Amber) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Jobs get their dates from your move day.", color = MaterialTheme.colorScheme.onSecondaryContainer)
+            Text("Jobs get their dates from your move day.")
             Button(onClick = onSet) {
                 Icon(Icons.Default.Event, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
@@ -241,6 +241,7 @@ private fun TaskDialog(
     var confirmDelete by remember { mutableStateOf(false) }
 
     AlertDialog(
+        modifier = Modifier.dialogRim(),
         onDismissRequest = onDismiss,
         title = { Text(if (isNew) "New job" else "Edit job") },
         text = {

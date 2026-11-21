@@ -332,7 +332,7 @@ class DeviceTest {
         tap("More")
         val menu = listOf(
             "Rooms", "Triage", "Devices", "Plan rooms", "Sell, donate, bin", "Timeline", "Supplies and costs",
-            "Labels and signs", "Packing order", "Special lists", "Unpack", "Reports", "Sync and backup", "Settings",
+            "Labels and signs", "Packing order", "Rooms overview", "Special lists", "Unpack", "Reports", "Sync and backup", "Settings",
         )
         for (row in menu) {
             tapInList(row)

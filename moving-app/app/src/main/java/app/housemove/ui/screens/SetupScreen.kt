@@ -162,6 +162,7 @@ private fun RoomSetup(home: Home) {
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
         OutlinedTextField(
+            colors = glassFieldColors(),
             value = custom,
             onValueChange = { custom = it },
             label = { Text("Another room") },
@@ -179,7 +180,7 @@ private fun RoomSetup(home: Home) {
     } else {
         Text("${rooms.size} added", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         rooms.forEach { r ->
-            Card(Modifier.fillMaxWidth()) {
+            GlassCard(Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(start = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (home == Home.DEST) ColorDot(r.color) else Icon(Pic.Room, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(12.dp))

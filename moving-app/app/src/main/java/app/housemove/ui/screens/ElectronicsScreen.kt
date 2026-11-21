@@ -46,8 +46,7 @@ fun ElectronicsScreen() {
         ) {
             item(key = "head") {
                 Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surface)
-                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(14.dp)).padding(16.dp),
+                    Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), shadow = 5.dp).padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Ring(Ratio(withSerial, devices.size), size = 64.dp, color = MaterialTheme.colorScheme.tertiary)
@@ -70,9 +69,8 @@ private fun DeviceRow(d: Item, data: AppData, onOpen: () -> Unit) {
     val recorded = d.serial.isNotBlank() || serialPhoto
     Row(
         Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(scheme.surface)
-            .border(1.dp, if (recorded) scheme.outlineVariant else scheme.error, RoundedCornerShape(14.dp))
+            .glass(RoundedCornerShape(18.dp), shadow = 5.dp)
+            .then(if (!recorded) Modifier.border(1.5.dp, scheme.error, RoundedCornerShape(18.dp)) else Modifier)
             .clickable(onClick = onOpen)
             .padding(8.dp),
         verticalAlignment = Alignment.CenterVertically,

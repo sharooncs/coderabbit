@@ -91,9 +91,7 @@ fun WalkScreen() {
                 val scheme = MaterialTheme.colorScheme
                 Column(
                     Modifier
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(scheme.surface)
-                        .border(1.dp, scheme.outlineVariant, RoundedCornerShape(14.dp))
+                        .glass(RoundedCornerShape(18.dp), shadow = 5.dp)
                         .padding(6.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
@@ -103,7 +101,7 @@ fun WalkScreen() {
                             Modifier.fillMaxWidth().aspectRatio(4f / 3f)
                                 .clickable(onClickLabel = "Open item details") { nav.open("item/${x.id}") },
                         )
-                        FilledTonalIconButton(
+                        OverlayIconButton(
                             onClick = { nav.open("item/${x.id}") },
                             modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(36.dp),
                         ) { Icon(Icons.Default.ChevronRight, contentDescription = "Open item details") }

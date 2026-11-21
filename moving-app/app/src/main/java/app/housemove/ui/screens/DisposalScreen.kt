@@ -66,8 +66,7 @@ fun DisposalScreen() {
                 val gone = everything.count { it.gone }
                 val late = everything.count { !it.gone && (it.deadlineDay ?: Long.MAX_VALUE) < now }
                 Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surface)
-                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(14.dp)).padding(16.dp),
+                    Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), shadow = 5.dp).padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Ring(Ratio(gone, everything.size), size = 64.dp, color = MaterialTheme.colorScheme.tertiary)
@@ -136,9 +135,8 @@ private fun DisposalRow(
     val price = x.price
     Row(
         Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(scheme.surface)
-            .border(1.dp, if (late) scheme.error else scheme.outlineVariant, RoundedCornerShape(14.dp))
+            .glass(RoundedCornerShape(18.dp), shadow = 5.dp)
+            .then(if (late) Modifier.border(1.5.dp, scheme.error, RoundedCornerShape(18.dp)) else Modifier)
             .clickable(onClick = onOpen)
             .padding(start = 8.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,

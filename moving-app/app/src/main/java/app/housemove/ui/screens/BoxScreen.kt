@@ -85,7 +85,7 @@ fun BoxScreen(id: String) {
     Screen(
         "Box ${box.label}",
         actions = {
-            IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Default.Delete, contentDescription = "Delete this box") }
+            TopAction(Icons.Default.Delete, "Delete this box") { confirmDelete = true }
         },
     ) {
         ScrollColumn(Modifier.weight(1f)) {
@@ -275,7 +275,7 @@ fun BoxScreen(id: String) {
 @Composable
 private fun LabelCard(label: String, handwritten: Boolean, clash: Boolean) {
     val scheme = MaterialTheme.colorScheme
-    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = scheme.primaryContainer)) {
+    GlassCard(Modifier.fillMaxWidth(), tone = GlassTone.Mint) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -311,11 +311,7 @@ private fun LabelCard(label: String, handwritten: Boolean, clash: Boolean) {
 @Composable
 private fun SealBar(sealed: Boolean, missing: List<String>, onSeal: () -> Unit, onOpen: () -> Unit, onNext: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
-    Surface(
-        color = if (sealed) scheme.tertiaryContainer else scheme.surfaceContainer,
-        shadowElevation = 6.dp,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    Box(Modifier.fillMaxWidth().bottomBar(if (sealed) GlassTone.Mint else GlassTone.Plain)) {
         if (!sealed) {
             Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (missing.isNotEmpty()) Hint("Still to add: ${missing.joinToString(", ")}")
