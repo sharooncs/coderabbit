@@ -55,7 +55,7 @@ private val SIZE_ICONS: Map<BoxSize, ImageVector> by lazy {
 
 /**
  * How many chips "What's inside" shows before "more": what is in it already first, then the
- * usual things to add, about three rows in all, so the items and Seal stay in reach. Of
+ * usual things to add, two or three rows in all, so the items and Seal stay in reach. Of
  * the usual things a few always show, however long the list of what is inside.
  */
 private const val CHIPS_SHOWN = 9
@@ -201,7 +201,8 @@ fun BoxScreen(id: String) {
                 // What is in it already, ticked; then the usual things for this category, one tap each.
                 // A long list is cut short behind "more", so what comes below stays in reach.
                 val usual = contentsChips(category, data.room(box.originRoomId)?.name, box.contents)
-                val budget = if (narrow) CHIPS_SHOWN_NARROW else CHIPS_SHOWN
+                // Two rows on most phones (360-399dp wide), three on a large one.
+                val budget = if (narrowScreen(400f)) CHIPS_SHOWN_NARROW else CHIPS_SHOWN
                 val shownLines = if (allChips) lines else lines.take(budget - minOf(USUAL_KEPT, usual.size))
                 val shownUsual = if (allChips) usual else usual.take((budget - shownLines.size).coerceAtLeast(0))
                 val hidden = lines.size - shownLines.size + usual.size - shownUsual.size

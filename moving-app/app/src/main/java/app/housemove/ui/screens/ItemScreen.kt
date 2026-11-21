@@ -75,6 +75,8 @@ fun ItemScreen(id: String) {
     var deviceJustOn by rememberSaveable { mutableStateOf(false) }
     var editingDevice by rememberSaveable { mutableStateOf(false) }
     var naming by rememberSaveable { mutableStateOf(false) }
+    // Bumped when the size is said, so the three fields pick the new numbers up.
+    var sizeSaid by remember { mutableIntStateOf(0) }
     var choosingRoom by rememberSaveable(id) { mutableStateOf(false) }
     // A Decider choosing Sell names an asking price before the suggestion is sent.
     var pricing by rememberSaveable { mutableStateOf(false) }
@@ -334,10 +336,27 @@ fun ItemScreen(id: String) {
                 val unit = if (inches) "in" else "cm"
                 fun shown(cm: Double?): Double? = cm?.let { if (inches) (it / 2.54 * 100).roundToLong() / 100.0 else it }
                 fun toCm(v: Double?): Double? = v?.takeIf { it > 0 }?.let { if (inches) it * 2.54 else it }
+                // All three can be said at once ("200 by 90 by 85"), so measuring needs no keyboard either.
+                if (canSpeak()) Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Width, depth and height in $unit", style = MaterialTheme.typography.labelLarge, color = Night.TextDim, modifier = Modifier.weight(1f))
+                    SpeakButton("Width, depth and height, in $unit", contentDescription = "Say its size", size = 40.dp) { said ->
+                        val n = spokenNumbers(said)
+                        if (n.isNotEmpty()) {
+                            edit {
+                                it.copy(
+                                    widthCm = toCm(n.getOrNull(0)) ?: it.widthCm,
+                                    depthCm = toCm(n.getOrNull(1)) ?: it.depthCm,
+                                    heightCm = toCm(n.getOrNull(2)) ?: it.heightCm,
+                                )
+                            }
+                            sizeSaid++
+                        }
+                    }
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    NumberInput(shown(item.widthCm), { v -> edit { it.copy(widthCm = toCm(v)) } }, "Width $unit", Modifier.weight(1f), key = "$id-w-$unit")
-                    NumberInput(shown(item.depthCm), { v -> edit { it.copy(depthCm = toCm(v)) } }, "Depth $unit", Modifier.weight(1f), key = "$id-d-$unit")
-                    NumberInput(shown(item.heightCm), { v -> edit { it.copy(heightCm = toCm(v)) } }, "Height $unit", Modifier.weight(1f), key = "$id-h-$unit")
+                    NumberInput(shown(item.widthCm), { v -> edit { it.copy(widthCm = toCm(v)) } }, "Width $unit", Modifier.weight(1f), key = "$id-w-$unit-$sizeSaid")
+                    NumberInput(shown(item.depthCm), { v -> edit { it.copy(depthCm = toCm(v)) } }, "Depth $unit", Modifier.weight(1f), key = "$id-d-$unit-$sizeSaid")
+                    NumberInput(shown(item.heightCm), { v -> edit { it.copy(heightCm = toCm(v)) } }, "Height $unit", Modifier.weight(1f), key = "$id-h-$unit-$sizeSaid")
                 }
                 val handling = listOf(
                     Toggle("Fragile", Pic.Fragile, item.fragile) { v -> edit { it.copy(fragile = v) } },
@@ -580,6 +599,10 @@ fun ItemScreen(id: String) {
         )
     }
 }
+
+/** The numbers in what was said, in order: "200 by 90 by 85" gives 200, 90 and 85. A decimal comma counts as a point. */
+internal fun spokenNumbers(said: String): List<Double> =
+    Regex("\\d+(?:[.,]\\d+)?").findAll(said).map { it.value.replace(',', '.').toDouble() }.toList()
 
 /** An empty circle until it has gone, then a tick: the same picture as on the Sell, donate, bin list. */
 private fun goneIcon(gone: Boolean) = if (gone) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked

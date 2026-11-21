@@ -173,6 +173,11 @@ internal fun MyLastAnswer(itemId: String, data: AppData, modifier: Modifier = Mo
     val me = LocalStore.current.me?.id ?: return
     val last = data.proposalsFor(itemId).firstOrNull { it.by == me } ?: return
     if (last.state == ProposalState.WAITING) return
+    // Turned down: the same note, in the same words, as on the lists, and kept here as the item's record.
+    if (last.state == ProposalState.DECLINED) {
+        DeclinedNote(last, data, modifier, what = data.proposalText(last).takeIf { last.kind != ProposalKind.QUESTION })
+        return
+    }
     val by = data.personName(last.decidedBy)
     val (text, tone, icon) = when (last.state) {
         ProposalState.APPROVED -> Triple(

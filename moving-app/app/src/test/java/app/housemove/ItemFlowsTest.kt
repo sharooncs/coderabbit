@@ -223,6 +223,24 @@ class ItemFlowsTest {
         assertEquals("Bosch washing machine", asha.item(made[0].id).name)
     }
 
+    /** The size for the doorway check is said in one go; the three fields are there for typing it. */
+    @Test
+    fun theSizeIsSaidInOneGo() {
+        solo()
+        asha.decide(sofa, Disposition.MOVE)
+        show(asha, "item/$sofa")
+        tap("Size and handling")
+        said += "200 by 90 by 85.5"
+        tapDesc("Say its size")
+        val s = asha.item(sofa)
+        assertEquals(listOf(200.0, 90.0, 85.5), listOf(s.widthCm, s.depthCm, s.heightCm))
+        see("85.5") // the field shows what was said
+        // Two numbers fill the first two; the third is kept.
+        said += "180, 80"
+        tapDesc("Say its size")
+        assertEquals(listOf(180.0, 80.0, 85.5), asha.item(sofa).let { listOf(it.widthCm, it.depthCm, it.heightCm) })
+    }
+
     // ---- deciding ---------------------------------------------------------------------
 
     @Test
