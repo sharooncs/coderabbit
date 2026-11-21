@@ -574,6 +574,7 @@ internal class SimStats {
             .replace(Regex("^.* has been removed from the move\\.$"), "(They) have been removed from the move.")
             .replace(Regex("^.* is already inside .*\\. Containers only go one inside another\\.$"), "(That container) is already inside another. Containers only go one inside another.")
             .replace(Regex("^.* has containers inside it, so it cannot go inside another\\.$"), "(That container) has containers inside it, so it cannot go inside another.")
+            .replace(Regex("^.* (has|have) worked on it since you added it, (.*)$"), "(Someone else) has worked on it since you added it, $2")
             .take(160)
     }
 }
