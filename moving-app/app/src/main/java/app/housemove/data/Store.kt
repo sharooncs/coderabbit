@@ -296,6 +296,16 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
         mirrorMe()
     }
 
+    /** If it turns out that someone who was in the move before this phone's person has the same letter, this phone takes another. */
+    private fun giveWayOnLetter() {
+        val d = _data.value
+        val me = d.person(_device.value.personId) ?: return
+        val letter = d.letterInstead(me) ?: return
+        val t = now()
+        _data.value = d.copy(people = d.people.map { if (it.id == me.id) it.copy(letter = letter, updatedAt = t) else it })
+        mirrorMe()
+    }
+
     /** This phone's own settings follow its person: the name, the letter, and the old helper switch. */
     private fun mirrorMe() {
         val dev = _device.value
@@ -969,10 +979,16 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
         synchronized(lock) {
             val seen = maxStamp(remote)
             lastStamp.updateAndGet { maxOf(it, seen) }
-            _data.value = merge(distrustUnstamped(_data.value), distrustUnstamped(remote))
+            val was = _data.value
+            val dev = _device.value
+            var merged = merge(distrustUnstamped(was), distrustUnstamped(remote))
+            fun AppData.helperHere() = hasOrganiser() && roleOf(dev) == Role.HELPER
+            if (was.helperHere() && merged.helperHere()) merged = merged.withHelpersShareOf(was)
+            _data.value = merged
             // What arrived can show that this phone's person was never rightly in the move (whoever added them had
             // already lost the right to). The phone is not left as nobody: it goes on as a Helper nobody has added yet.
             ensureMe()
+            giveWayOnLetter()
         }
         scheduleSave()
         forgetDeletedPhotos()

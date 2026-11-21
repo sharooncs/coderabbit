@@ -419,6 +419,83 @@ class PhonesTogetherTest {
         assertEquals(Role.HELPER, asha.data.value.person(hal.id)!!.role)
     }
 
+    @Test
+    fun aHelpersPhoneTakesInNoCostsEvenFromAPhoneThatThinksSheIsMore() {
+        val asha = phone("Asha")
+        val tv = asha.createItem("TV", null).id
+        asha.put(Expense(id = "van", title = "Van hire", amount = 180.0))
+        val receipt = asha.photo("van", PhotoKind.RECEIPT, 3000)
+        val serial = asha.photo(tv, PhotoKind.SERIAL, 3100)
+        val picture = asha.photo(tv, PhotoKind.GENERAL, 3200)
+        val omar = invited(asha, "Omar", Role.ORGANISER)
+        val hana = invited(asha, "Hana", Role.HELPER)
+        everyone(asha, omar, hana)
+        // Omar makes Asha a Decider, and Hana's phone hears of it. Asha's phone has not: on it she makes Hana a Decider,
+        // which does not count, since she was no longer an Organiser. Her phone, taking Hana for a Decider, sends her everything
+        // when it scans Hana's code: the costs with its data, and the receipt and serial-label files after.
+        assertTrue(omar.setRole(asha.id, Role.DECIDER).ok)
+        synced(omar, hana)
+        assertTrue(asha.setRole(hana.id, Role.DECIDER).ok)
+        asha.put(Expense(id = "fuel", title = "Fuel", amount = 60.0))
+        synced(hana, asha)
+        // Hana's phone knows better: she is a Helper, and it has taken in none of it. The ordinary photo did come.
+        assertEquals(Role.HELPER, hana.myRole)
+        assertTrue(hana.data.value.expenses.isEmpty())
+        assertTrue(hana.data.value.proposals.none { it.kind == ProposalKind.COST })
+        assertEquals(listOf(PhotoKind.GENERAL), hana.data.value.photos.map { it.kind })
+        assertEquals(listOf(picture.name), hana.photoDir.list()!!.toList())
+        assertFalse(File(hana.photoDir, receipt.name).exists() || File(hana.photoDir, serial.name).exists())
+        // Asha's phone has heard in turn, and from now on sends a Helper's share.
+        assertEquals(Role.HELPER, asha.data.value.person(hana.id)!!.role)
+        // Made a Decider by someone who may, she is sent it all.
+        assertTrue(omar.setRole(hana.id, Role.DECIDER).ok)
+        synced(omar, hana)
+        synced(asha, hana)
+        assertEquals(Role.DECIDER, hana.myRole)
+        assertEquals(180.0, hana.data.value.expense("van")!!.amount, 0.0)
+        assertEquals(3000L, File(hana.photoDir, receipt.name).length())
+        assertEquals(3100L, File(hana.photoDir, serial.name).length())
+    }
+
+    @Test
+    fun twoPeopleWhoFindTheyHaveTheSameLetterDoNotKeepIt() {
+        val asha = phone("Asha")
+        asha.setDevice { it.copy(letter = "A") }
+        val hal = invited(asha, "Hal", Role.HELPER)
+        val dee = invited(asha, "Dee", Role.DECIDER)
+        everyone(asha, hal, dee)
+        // Hal and Dee each choose the letter Q on their own phones at the same moment. Each phone sees nobody else using it.
+        assertTrue(hal.setLetter(hal.id, "Q").ok)
+        assertTrue(dee.setLetter(dee.id, "Q").ok)
+        val before = listOf(hal.nextHandCode(), dee.nextHandCode())
+        assertEquals(listOf("Q1", "Q1"), before) // nothing could have stopped these two
+        // When their phones learn of each other, the one who has been in the move longer keeps Q and the other's phone takes another.
+        everyone(asha, hal, dee)
+        for (s in listOf(asha, hal, dee)) {
+            assertTrue(s.data.value.duplicateLetters().isEmpty())
+            assertEquals("Q", s.data.value.person(hal.id)!!.letter)
+            assertTrue(s.data.value.person(dee.id)!!.letter.let { it.length == 2 && it.startsWith("Q") })
+        }
+        assertEquals("Q", hal.device.value.letter)
+        assertEquals(dee.me!!.letter, dee.device.value.letter)
+        val codes = (1..3).flatMap { listOf(hal.nextHandCode(), dee.nextHandCode()) }
+        assertEquals(codes.toString(), 6, codes.toSet().size)
+
+        // A phone that was started on its own and is let in as it is, with the letter of someone already in the move: the same.
+        val guest = phone("Guest")
+        guest.setDevice { it.copy(letter = "A") }
+        guest.createBox(guest.nextHandCode(), null)
+        synced(asha, guest)
+        everyone(asha, hal, dee, guest)
+        for (s in listOf(asha, hal, dee, guest)) {
+            assertTrue(s.data.value.duplicateLetters().isEmpty())
+            assertEquals("A", s.data.value.person(asha.id)!!.letter)
+        }
+        assertNotEquals("A", guest.device.value.letter)
+        assertNotEquals(asha.nextHandCode(), guest.nextHandCode())
+        assertSame(asha, dee, guest)
+    }
+
     // ---- containers and labels ---------------------------------------------------------------
 
     @Test
@@ -1011,10 +1088,13 @@ class PhonesTogetherTest {
 
     /**
      * A phone that is nobody: its settings name no person, or one the move does not have, while the
-     * move has an Organiser. No Store function leaves a phone like that on its own account (see the
-     * three tests above). It is written here straight into the data, as a damaged file would be, to
-     * pin what then happens: it has a Helper's rights and no more, it cannot get into another
-     * phone's move as a member, and the next start gives it a person again.
+     * move has an Organiser. No Store function leaves a phone like that: not replacing its settings,
+     * not starting again, not restoring (the three tests above), and not a merge that shows its person
+     * was never rightly added (MergeRulesTest: it gets a stand-in at once). So it is written here
+     * straight into the data, as a damaged file would be, to pin what happens if it comes about all
+     * the same: the phone has a Helper's rights and no more, a sync with a phone that knows its person
+     * brings the person back, and the next start gives it a person in any case, never an Organiser
+     * by its own say-so.
      */
     @Test
     fun aPhoneWithNoPersonOnAMoveThatHasAnOrganiser() {

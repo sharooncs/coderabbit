@@ -55,6 +55,10 @@ import kotlin.concurrent.thread
  * joiner: data      host: merged data      (each leaves out what the other's role is not sent)
  * joiner: file names   host: file names   joiner: files   host: files
  * ```
+ * A phone that is refused because its person has been removed is still listened to on one
+ * point: what its own person record says (see `Store.hearAbout`). A hello in the words of
+ * version 1.3 is answered VERSION, or AGAIN when it comes from a phone on this version,
+ * which only says it after its own hello went unanswered because the connection dropped.
  */
 object WifiSync {
     private const val MAGIC = "HMSYNC3"
@@ -527,7 +531,9 @@ object WifiSync {
             if (name.isEmpty()) break
             val size = din.readLong()
             if (size < 0 || size > MAX_PHOTO) throw IOException("Bad photo size")
-            val safe = isSafeFileName(name)
+            // Only files of photos this phone has on record are kept. The record came with the data just merged; a file
+            // for a photo that was deleted meanwhile, or that this phone's person is not sent, is read and dropped.
+            val safe = isSafeFileName(name) && store.data.value.photos.any { !it.deleted && it.file == name }
             val target = if (safe) File(store.photoDir, name) else null
             val tmp = if (safe) File(store.photoDir, "$name.part") else null
             val sink = tmp?.outputStream()

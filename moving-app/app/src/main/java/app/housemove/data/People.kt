@@ -226,6 +226,29 @@ internal fun AppData.letterFor(by: Person?): String {
     return mine + letterAt(n)
 }
 
+/**
+ * No two people share a letter, yet two phones can each have given one out, or had one chosen,
+ * before they met: two people picking the same letter at the same moment, or a phone let in as it
+ * is that happens to use a letter already taken. When their phones learn of each other, whoever
+ * has been in the move longest keeps the letter. Returns the letter [me] takes instead when [me]
+ * is not that person, or null when nothing has to change: their own with one more letter after it.
+ */
+internal fun AppData.letterInstead(me: Person): String? {
+    val mine = me.letter.trim().uppercase()
+    if (mine.isEmpty()) return null
+    fun since(p: Person) = p.grants.minOfOrNull { it.at } ?: Long.MAX_VALUE
+    val first = people.filter { it.letter.trim().equals(mine, ignoreCase = true) }.minWithOrNull(compareBy({ since(it) }, { it.id })) ?: return null
+    if (first.id == me.id) return null
+    val used = people.map { it.letter.uppercase() }.toSet()
+    // Where to start looking differs from person to person, so that two who must both change do not pick the same again.
+    var n = Math.floorMod(me.id.hashCode(), 26)
+    repeat(26) {
+        if (mine + letterAt(n) !in used) return mine + letterAt(n)
+        n = (n + 1) % 26
+    }
+    return freeLetter()
+}
+
 /** Letters used by more than one person, which would make their handwritten codes clash. */
 fun AppData.duplicateLetters(): List<String> =
     livePeople.map { it.letter.uppercase() }.filter { it.isNotBlank() }.groupingBy { it }.eachCount().filter { it.value > 1 }.keys.sorted()
@@ -281,6 +304,25 @@ fun AppData.roleOfPeer(peer: Person?): Role? {
 
 /** Photo kinds a Helper's phone is not sent. */
 val HIDDEN_FROM_HELPERS = setOf(PhotoKind.RECEIPT, PhotoKind.SERIAL)
+
+/**
+ * What a Helper's phone keeps of a merge. The other phone leaves out what a Helper is not sent,
+ * but it goes by what it knows, and it may take this phone's person for more than a Helper (it
+ * has heard of a promotion that does not count, say). So a phone whose person was a Helper before
+ * the merge and is one after it takes in none of it: its costs, cost suggestions, and receipt and
+ * serial-label photos stay exactly as they were ([was]).
+ */
+internal fun AppData.withHelpersShareOf(was: AppData): AppData {
+    val photosWere = was.photos.filter { it.kind in HIDDEN_FROM_HELPERS }.associateBy { it.id }
+    val suggestionsWere = was.proposals.filter { it.kind == ProposalKind.COST }.associateBy { it.id }
+    val photoIds = photos.map { it.id }.toSet()
+    val suggestionIds = proposals.map { it.id }.toSet()
+    return copy(
+        expenses = was.expenses,
+        photos = photos.mapNotNull { if (it.kind in HIDDEN_FROM_HELPERS) photosWere[it.id] else it } + photosWere.values.filter { it.id !in photoIds },
+        proposals = proposals.mapNotNull { if (it.kind == ProposalKind.COST) suggestionsWere[it.id] else it } + suggestionsWere.values.filter { it.id !in suggestionIds },
+    )
+}
 
 /**
  * The part of the data that is sent to a phone whose person has [role].

@@ -134,8 +134,10 @@ class EdgeCaseTest {
 
     @Test
     fun twoPhonesUsingTheSameHandwrittenCodeBothSurviveAndAreFlagged() {
-        val a = store("a")
-        val b = store("b")
+        var ta = 1_000L
+        var tb = 2_000L
+        val a = store("a") { ta++ }
+        val b = store("b") { tb++ }
         a.setDevice { it.copy(letter = "A", nextSeq = 1) }
         b.setDevice { it.copy(letter = "A", nextSeq = 1) }
         a.createBox(a.nextHandCode(), null)
@@ -146,6 +148,13 @@ class EdgeCaseTest {
         assertTrue(a.data.value.issues().any { it.severe && it.text.contains("A1") })
         // After the clash is known, the next code on either phone avoids it.
         assertEquals("A2", a.nextHandCode())
+        // And it cannot happen again: the phone that came to the letter second has taken another.
+        assertEquals("A", a.device.value.letter)
+        assertNotEquals("A", b.device.value.letter)
+        assertTrue(b.device.value.letter.startsWith("A"))
+        exchange(a, b)
+        assertTrue(a.data.value.duplicateLetters().isEmpty())
+        assertNotEquals(a.nextHandCode(), b.nextHandCode())
     }
 
     @Test

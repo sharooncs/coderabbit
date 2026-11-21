@@ -585,6 +585,13 @@ internal class SimChecks(private val sim: Simulation) {
         for ((k, r) in got.records()) theirs[k] = r
         for ((k, r) in after.records()) out[k] = r
         fun bad(what: String, k: String) = broke(MERGE, "a merge on ${p.tag} $what $k\n      had: ${short(mine[k])}\n      got: ${short(theirs[k])}\n      kept: ${short(out[k])}", k.substringAfter(':'))
+        // A phone whose person is a Helper before and after takes in nothing of what Helpers are not sent, whatever the other phone thought.
+        fun helperOn(d: AppData) = d.people.any { it.role == Role.ORGANISER && !it.removed } && (d.person(p.personId)?.let { it.removed || it.role == Role.HELPER } ?: true)
+        val asHelper = helperOn(before) && helperOn(after)
+        if (asHelper) {
+            fun share(d: AppData) = Triple(d.expenses.toSet(), d.photos.filter { it.kind in HIDDEN_KINDS }.toSet(), d.proposals.filter { it.kind == ProposalKind.COST }.toSet())
+            if (share(before) != share(after)) broke(HELPERS, "${p.tag}, a Helper's phone, took in costs, cost suggestions or receipt or serial-label photos in a merge", p.personId)
+        }
 
         /** The part of the result must be the newest one that was allowed, of the two copies that went in. */
         fun part(k: String, name: String, a: Any?, b: Any?, result: Any, ok: (Any) -> Boolean) {
@@ -605,7 +612,10 @@ internal class SimChecks(private val sim: Simulation) {
             val r = out[k]
             val type = k.substringBefore(':')
             if (type == "activity") continue
+            if (asHelper && listOfNotNull(a, b, r).any { hidden(it) }) continue
             val newest = maxOf(a?.updatedAt ?: -1, b?.updatedAt ?: -1)
+            // The phone's own person may have given way on a letter someone else had first: a change of its own, made after the merge.
+            if (r is Person && r.id == p.personId && r.updatedAt > newest && (a as Person?)?.letter != r.letter) continue
             if (r == null) {
                 val mayGo = when (type) {
                     "task" -> listOfNotNull(a, b).none { j.plan(it as Task) }
