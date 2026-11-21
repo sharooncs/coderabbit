@@ -440,10 +440,7 @@ private fun TaskDetail(task: Task, mayPlan: Boolean, maySuggest: Boolean) {
                     if (mayPlan) save(fresh().copy(notes = joined)) else notes = joined
                 }
             }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                GlassChip("Edit", icon = Icons.Default.Edit, selected = editing, onClick = { editing = !editing })
-                if (mayPlan) GlassChip("Delete this job", icon = Icons.Default.Delete, onClick = { confirmDelete = true })
-            }
+            GlassChip("Edit", icon = Icons.Default.Edit, selected = editing, onClick = { editing = !editing })
             if (editing) {
                 OutlinedTextField(
                     value = title, onValueChange = { title = it }, label = { Text("What needs doing") },
@@ -463,6 +460,8 @@ private fun TaskDetail(task: Task, mayPlan: Boolean, maySuggest: Boolean) {
                     },
                 )
             }
+            // Not undone, so it is the last thing on the job, drawn as on every other page.
+            if (mayPlan && !editing) DeleteButton("Delete this job", onClick = { confirmDelete = true }, modifier = Modifier.align(Alignment.CenterHorizontally))
             if (!mayPlan && changed) {
                 BigAction(
                     Icons.Default.Send, "Suggest this change",

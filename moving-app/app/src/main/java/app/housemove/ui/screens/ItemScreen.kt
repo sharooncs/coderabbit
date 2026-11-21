@@ -631,20 +631,28 @@ private fun ContainerBlock(item: Item, container: Box?, data: AppData, onScan: (
     // Once it is packed, by a tap or by a scan, the choice is made: taking it out again starts afresh.
     LaunchedEffect(container?.id) { if (container != null) choosing = false }
     if (container != null) {
+        // "Take out" sits beside where it is, or under it on a small phone, so the container's name is not cut short.
+        val stacked = narrowScreen(360f)
         GlassCard(Modifier.fillMaxWidth(), tone = GlassTone.Mint, shape = RoundedCornerShape(22.dp)) {
-            Row(Modifier.padding(start = 10.dp, top = 8.dp, bottom = 8.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Row(Modifier.weight(1f).clip(RoundedCornerShape(16.dp)).clickable { onOpen(container) }, verticalAlignment = Alignment.CenterVertically) {
+            FlowRow(
+                Modifier.fillMaxWidth().padding(start = 10.dp, top = 8.dp, bottom = 8.dp, end = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End), verticalArrangement = Arrangement.spacedBy(6.dp),
+                itemVerticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    (if (stacked) Modifier.fillMaxWidth() else Modifier.weight(1f)).clip(RoundedCornerShape(16.dp)).clickable { onOpen(container) },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     ContainerThumb(container, data, 44.dp)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
-                        Text("Inside " + container.nameAndCode(), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("Inside " + container.nameAndCode(), style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Text(
                             data.whereIs(container.toMovable()), style = MaterialTheme.typography.bodySmall, color = Night.TextSoft,
                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
-                Spacer(Modifier.width(8.dp))
                 RowButton("Take out", onClick = { store.takeOut(item.id).okOrSay(context) }, forward = false)
             }
         }

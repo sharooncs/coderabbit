@@ -685,8 +685,13 @@ internal fun ProposalReview(p: Proposal, data: AppData, modifier: Modifier = Mod
                         Text("Choose what happens to it to answer.", style = MaterialTheme.typography.bodySmall, color = Night.TextSoft, modifier = Modifier.weight(1f))
                         RowButton("Not now", onClick = { declining = true }, forward = false)
                     } else {
-                        RowButton("Approve", onClick = { store.approve(p.id).okOrSay(context) }, Modifier.weight(1f), icon = Icons.Default.Check, look = RowButtonLook.Primary)
-                        RowButton("Decline", onClick = { declining = true }, Modifier.weight(1f), forward = false, icon = Icons.Default.Close)
+                        // On a small phone or with large text the pictures go, so both words stay whole.
+                        val pictures = !narrowScreen(360f)
+                        RowButton(
+                            "Approve", onClick = { store.approve(p.id).okOrSay(context) }, Modifier.weight(1f),
+                            icon = Icons.Default.Check.takeIf { pictures }, look = RowButtonLook.Primary,
+                        )
+                        RowButton("Decline", onClick = { declining = true }, Modifier.weight(1f), forward = false, icon = Icons.Default.Close.takeIf { pictures })
                     }
                 }
             } else {

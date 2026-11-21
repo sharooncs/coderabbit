@@ -96,7 +96,16 @@ fun ItemsScreen() {
         ) {
             item(key = "shortcuts") {
                 val tiles = shortcuts(data, store.can(Action.SUGGEST), store.can(Action.APPROVE))
-                TileGrid(tiles, Modifier.padding(horizontal = 16.dp), columns = tiles.size.coerceAtMost(if (narrow) 2 else 3)) { s, m ->
+                if (narrowScreen(300f)) {
+                    // A small phone with large text: tiles side by side would break their names in two, so they
+                    // are rows of one panel, which is also shorter.
+                    GlassCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
+                        tiles.forEachIndexed { i, s ->
+                            if (i > 0) HorizontalDivider(color = Night.Hairline)
+                            MenuRow(s.icon, s.title, sub = s.status, onClick = { nav.open(s.route) })
+                        }
+                    }
+                } else TileGrid(tiles, Modifier.padding(horizontal = 16.dp), columns = tiles.size.coerceAtMost(if (narrow) 2 else 3)) { s, m ->
                     Tile(s.icon, s.title, onClick = { nav.open(s.route) }, modifier = m, status = s.status, done = s.done, alert = s.alert)
                 }
             }
