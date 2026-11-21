@@ -280,9 +280,11 @@ internal object AuditReport {
         val low = phone.lowContrast
         val measured = phone.contrastCounts.sumOf { it.measured }
         body.appendLine(
-            "**This is an estimate from the pixels of the rendered screens, not a reading of the theme.** For each text the background is the commonest colour " +
-                "in the patch of picture behind it, judged piece by piece along the text so that a gradient is followed. The text colour is the colour the text was given, " +
-                "when that colour can be seen in the patch; otherwise it is taken from the pixels that differ most from the background. " +
+            "**This is an estimate from the pixels of the rendered screens, not a reading of the theme.** Each text is judged piece by piece along its lines, " +
+                "against what is really behind it in the picture. Where the text has a solid colour and that colour shows in the pixels, everything that does not touch a letter " +
+                "is its background, and the piece scores the contrast that four fifths of that background reaches or beats: exact on a plain background, fair on a gradient, a glow or a photo. " +
+                "Otherwise (a see-through text colour, or a see-through layer over the text) the background is the commonest colour behind the text, and the text colour is worked out from that or taken from the pixels. " +
+                "The text as a whole gets the score of its weaker pieces. " +
                 "Text needs ${CONTRAST_NORMAL}:1, or ${CONTRAST_LARGE}:1 from ${LARGE_TEXT_SP.roundToInt()}sp (${LARGE_BOLD_TEXT_SP.roundToInt()}sp when bold). " +
                 "Each screen is also scrolled down, so text below the fold is measured where it shows. " +
                 "Greyed-out controls are exempt and left out; so are symbols and emoji. Icons and pictures are not measured.",
