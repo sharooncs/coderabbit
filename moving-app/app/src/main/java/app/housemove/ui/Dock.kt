@@ -132,8 +132,12 @@ internal fun Dock(current: String, tabs: List<Tab>, plan: DockPlan, action: Dock
                         interactionSource = remember { MutableInteractionSource() },
                         indication = ripple(bounded = false, radius = 40.dp),
                         role = Role.Tab,
-                        // On a screen that belongs to a destination (Rooms under Home), its button goes back to it.
-                        onClick = { if (nav.currentDestination?.route != t.route) nav.goTab(t.route) },
+                        onClick = {
+                            // A screen that sits on top of a destination (Rooms on Home) is left behind
+                            // first, not remembered: the Home button always shows Home.
+                            if (TABS.none { it.route == nav.currentDestination?.route }) nav.popBackStack()
+                            if (nav.currentDestination?.route != t.route) nav.goTab(t.route)
+                        },
                     ),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {

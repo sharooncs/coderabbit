@@ -139,7 +139,12 @@ private fun TopBar(title: String, subtitle: String?, back: Boolean, actions: @Co
             GlassOrb(Icons.Default.ChevronLeft, "Back", onClick = { nav.popBackStack() })
             Spacer(Modifier.width(12.dp))
         }
-        Column(Modifier.weight(1f).semantics(mergeDescendants = true) { heading() }) {
+        // With a line above it and a button either side, the title is centred, as in the design.
+        val centred = back && subtitle != null
+        Column(
+            Modifier.weight(1f).semantics(mergeDescendants = true) { heading() },
+            horizontalAlignment = if (centred) Alignment.CenterHorizontally else Alignment.Start,
+        ) {
             if (subtitle != null) {
                 Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Night.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
@@ -527,7 +532,8 @@ fun MovableRow(
     ) {
         Box(
             Modifier.width(6.dp).height(44.dp).clip(RoundedCornerShape(3.dp))
-                .background(dest?.let { roomColor(it.color).color() } ?: MaterialTheme.colorScheme.outlineVariant)
+                .background(dest?.let { roomColor(it.color).color() } ?: Night.Hairline)
+                .border(1.dp, Color.White.copy(alpha = if (dest != null) 0.4f else 0f), RoundedCornerShape(3.dp))
         )
         Spacer(Modifier.width(12.dp))
         Icon(
@@ -576,21 +582,21 @@ fun Flag(text: String, error: Boolean = false) {
     )
 }
 
-/** A big tappable menu row with an icon, used on hub screens. */
+/** A big tappable menu row with its picture in a small glass orb, used on hub screens. */
 @Composable
 fun MenuRow(icon: ImageVector, title: String, sub: String? = null, badge: String? = null, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp),
+        Modifier.fillMaxWidth().clickable(onClick = onClick).heightIn(min = 56.dp).padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-        Spacer(Modifier.width(16.dp))
+        GlassOrb(size = 40.dp) { Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp)) }
+        Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyLarge)
             if (sub != null) Hint(sub)
         }
         if (badge != null) {
-            Text(badge, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            GlassChip(badge)
             Spacer(Modifier.width(8.dp))
         }
         Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)

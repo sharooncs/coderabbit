@@ -1,5 +1,8 @@
 package app.housemove.ui
 
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -21,7 +24,12 @@ fun AppRoot(store: Store, startRoute: String? = null, onNav: (NavHostController)
         CompositionLocalProvider(LocalStore provides store, LocalNav provides nav) {
             // The night ground is drawn once here; every screen is transparent on top of it.
             AppBackground {
-                NavHost(nav, startDestination = start) {
+                NavHost(
+                    nav, startDestination = start,
+                    // Screens are transparent, so a slow cross-fade would show one through the other.
+                    enterTransition = { fadeIn(tween(220, delayMillis = 90)) },
+                    exitTransition = { fadeOut(tween(90)) },
+                ) {
                     composable("setup") { SetupScreen() }
                     composable("home") { HomeScreen() }
                     composable("overview") { OverviewScreen() }

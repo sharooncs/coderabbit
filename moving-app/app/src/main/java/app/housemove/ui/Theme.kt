@@ -195,11 +195,17 @@ private val Corners = Shapes(
 
 @Composable
 fun HouseMoveTheme(content: @Composable () -> Unit) {
-    // Always dark: tell the system to draw light status and navigation bar icons.
+    // Always dark, whatever the phone is set to: light status and navigation bar icons,
+    // and no light scrim behind them (older Android puts one there in light mode).
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as? Activity)?.window ?: return@SideEffect
+            @Suppress("DEPRECATION")
+            run {
+                window.statusBarColor = android.graphics.Color.TRANSPARENT
+                window.navigationBarColor = android.graphics.Color.TRANSPARENT
+            }
             WindowCompat.getInsetsController(window, view).apply {
                 isAppearanceLightStatusBars = false
                 isAppearanceLightNavigationBars = false

@@ -152,7 +152,7 @@ fun HomeScreen() {
     Frame(tab = "home", topBar = { HomeTopBar(device) }, dockAction = if (roomy) action else null) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
             // On opening, the house has the page to itself and the next step only peeks in below it.
-            val firstPage = if (roomy) minOf(maxHeight - 34.dp, 700.dp) else 0.dp
+            val firstPage = if (roomy) minOf(maxHeight - 34.dp, 620.dp) else 0.dp
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                 HomeHero(data, device, packing, Modifier.fillMaxWidth().heightIn(min = firstPage))
                 HomeDetails(data, device, next, inPageAction = if (roomy) null else action, quietNext = packing && roomy && next.route == "pack")

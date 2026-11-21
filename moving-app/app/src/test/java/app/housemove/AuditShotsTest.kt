@@ -9,7 +9,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onLast
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.onRoot
 import androidx.navigation.NavHostController
@@ -196,6 +204,53 @@ class AuditShotsTest {
         }
         rule.waitForIdle()
         rule.onRoot().captureRoboImage("build/audit/drawings.png")
+    }
+
+    /**
+     * Things that open on top of a screen: a confirmation, a dialog with a text field,
+     * the date picker and a menu. Written to build/audit/dialogs. At 320dp wide, because
+     * a dialog with a text field never settles at phone width in this runtime (see FlowsTest).
+     */
+    @Test
+    @Config(sdk = [34], qualifiers = "w320dp-h740dp-xhdpi")
+    fun dialogs() {
+        val store = seeded()
+        var nav: NavHostController? = null
+        rule.setContent { AppRoot(store, startRoute = "home", onNav = { nav = it }) }
+        rule.waitForIdle()
+        fun go(route: String) {
+            rule.runOnUiThread { nav!!.navigate(route) }
+            rule.waitForIdle()
+        }
+        fun tap(text: String, sub: Boolean = false) {
+            val node = rule.onAllNodes(hasText(text, substring = sub) and hasClickAction()).onFirst()
+            try {
+                node.performScrollTo()
+            } catch (_: AssertionError) {
+            }
+            node.performClick()
+            rule.waitForIdle()
+        }
+        fun shot(name: String) = rule.onAllNodes(isRoot()).onLast().captureRoboImage("build/audit/dialogs/$name.png")
+
+        go("tasks")
+        rule.onAllNodes(hasContentDescription("Add a task") and hasClickAction()).onFirst().performClick()
+        rule.waitForIdle()
+        shot("task")
+        tap("Cancel")
+
+        go("settings")
+        tap("Move day", sub = true)
+        shot("date")
+        tap("Cancel")
+        tap("Start again")
+        tap("Erase all data on this phone")
+        shot("confirm")
+        tap("Cancel")
+
+        go("boxes")
+        tap("All rooms")
+        shot("menu")
     }
 
     @Test
