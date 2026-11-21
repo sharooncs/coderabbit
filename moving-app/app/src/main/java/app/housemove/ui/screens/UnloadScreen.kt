@@ -5,24 +5,31 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.LocalShipping
+import androidx.compose.material.icons.filled.TouchApp
+import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -36,7 +43,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.housemove.data.Movable
 import app.housemove.data.PhotoKind
@@ -48,17 +57,20 @@ import app.housemove.data.labelFromQr
 import app.housemove.data.movables
 import app.housemove.data.roomColor
 import app.housemove.data.toMovable
-import app.housemove.ui.EmptyHint
+import app.housemove.data.vehicle
+import app.housemove.ui.EmptyState
+import app.housemove.ui.LocalNav
 import app.housemove.ui.LocalStore
-import app.housemove.ui.MovableRow
+import app.housemove.ui.OwnerThumb
 import app.housemove.ui.PhotoStrip
-import app.housemove.ui.ProgressRow
+import app.housemove.ui.Pic
 import app.housemove.ui.QrScanner
 import app.housemove.ui.Screen
 import app.housemove.ui.TextInput
 import app.housemove.ui.appData
 import app.housemove.ui.color
 import app.housemove.ui.onColor
+import app.housemove.ui.open
 
 /** The thing that was just carried in, and what it was before, so the tap can be undone. */
 private data class MdArrival(val id: String, val isBox: Boolean, val prev: Stage, val already: Boolean)
@@ -67,7 +79,9 @@ private data class MdArrival(val id: String, val isBox: Boolean, val prev: Stage
 @Composable
 fun UnloadScreen() {
     val store = LocalStore.current
+    val nav = LocalNav.current
     val data = appData()
+    val vehicle = data.vehicle()
     var scanning by rememberSaveable { mutableStateOf(true) }
     var arrival by remember { mutableStateOf<MdArrival?>(null) }
     var unknown by remember { mutableStateOf<String?>(null) }
@@ -91,62 +105,30 @@ fun UnloadScreen() {
         } else deliver(m)
     }
 
-    // Bring the result back into view if the list was scrolled down.
-    LaunchedEffect(arrival, unknown) { listState.scrollToItem(0) }
-
     val all = data.movables()
     val arrivedCount = all.count { mdArrived(it.stage) }
     val trips = data.liveTrips
     val filter = tripFilter?.takeIf { id -> trips.any { it.id == id } }
+    val stillOn = all.count { it.stage == Stage.LOADED }
     val onVan = all.filter { it.stage == Stage.LOADED && (filter == null || it.tripId == filter) }
         .sortedWith(compareBy<Movable>({ it.priority.ordinal }, { data.room(it.destRoomId)?.name ?: "~" }, { it.title }))
     val shown = arrival?.let { a -> if (a.isBox) data.box(a.id)?.toMovable() else data.item(a.id)?.toMovable() }
 
-    Screen(
-        "Unload",
-        actions = {
-            IconButton(onClick = { scanning = !scanning }) {
-                Icon(Icons.Default.QrCodeScanner, contentDescription = if (scanning) "Hide the scanner" else "Show the scanner")
-            }
-        },
-    ) {
-        if (scanning) QrScanner(onText = onScan, modifier = Modifier.fillMaxWidth().height(240.dp))
-
-        LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = listState) {
-            item(key = "result") {
-                val a = arrival
-                val code = unknown
-                when {
-                    code != null -> MdBanner(
-                        MdResult(MdTone.BAD, "Unknown label $code", "This label is not on any box or item. Check the code, then carry it in and sort it out later.")
-                    )
-                    a != null && shown != null -> MdArrivalPanel(
-                        m = shown,
-                        already = a.already,
-                        onDamage = { damageFor = shown },
-                        onUndo = {
-                            mdSetStage(store, shown, a.prev)
-                            arrival = null
-                        },
-                    )
-                    else -> Text(
-                        if (scanning) "Point the camera at a label, or tap something in the list below."
-                        else "Tap something in the list below when it comes off the van.",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(16.dp),
-                    )
-                }
-            }
-            item(key = "progress") {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Delivered $arrivedCount of ${all.size}", style = MaterialTheme.typography.titleMedium)
-                    ProgressRow("Delivered", Ratio(arrivedCount, all.size))
-                }
-            }
-            if (trips.size > 1) item(key = "trips") {
-                Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+    Screen("Unload") {
+        if (all.isEmpty()) {
+            EmptyState(
+                Icons.Default.Download, "Nothing to unload yet",
+                text = "Boxes you pack and items marked Move appear here.",
+            )
+        } else {
+            MdProgressHeader(
+                Ratio(arrivedCount, all.size),
+                "$arrivedCount of ${all.size} delivered",
+                Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp),
+                sub = if (stillOn > 0) "$stillOn still on the $vehicle" else null,
+            ) {
+                if (trips.size > 1) Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     FilterChip(selected = filter == null, onClick = { tripFilter = null }, label = { Text("All trips") })
@@ -155,17 +137,60 @@ fun UnloadScreen() {
                     }
                 }
             }
-            item(key = "hvan") { MdGroupHeader("Still on the van", onVan.size) }
-            if (onVan.isEmpty()) item(key = "empty") {
-                EmptyHint(
-                    if (arrivedCount > 0) "Nothing left on the van. Check Reconcile before it goes back."
-                    else "Nothing is marked as loaded. You can still scan labels as things come in."
-                )
-            }
-            items(onVan, key = { "m" + it.id }) { m ->
-                MovableRow(m, onClick = { deliver(m) }, trailing = {
-                    FilledTonalButton(onClick = { deliver(m) }) { Text("Here") }
-                })
+            MdScanAction(scanning, "Scan labels at the door") { scanning = !scanning }
+            if (scanning) QrScanner(onText = onScan, modifier = Modifier.fillMaxWidth().height(mdScannerHeight()))
+
+            // Bring the result back into view if the list was scrolled down.
+            LaunchedEffect(arrival, unknown) { listState.scrollToItem(0) }
+            LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = listState) {
+                item(key = "result") {
+                    val a = arrival
+                    val code = unknown
+                    when {
+                        code != null -> MdBanner(
+                            MdResult(MdTone.BAD, "Unknown label $code", "Check the code. Carry it in and sort it out later.")
+                        )
+                        a != null && shown != null -> MdArrivalPanel(
+                            m = shown,
+                            already = a.already,
+                            onDamage = { damageFor = shown },
+                            onUndo = {
+                                mdSetStage(store, shown, a.prev)
+                                arrival = null
+                            },
+                        )
+                        onVan.isNotEmpty() -> Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.TouchApp, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                if (scanning) "Scan a label, or tap Here as each thing comes off."
+                                else "Tap Here as each thing comes off the $vehicle.",
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                        }
+                    }
+                }
+                if (onVan.isNotEmpty() || filter != null) item(key = "hvan") { MdGroupHeader("Still on the $vehicle", onVan.size) }
+                if (onVan.isEmpty()) item(key = "empty") {
+                    when {
+                        // Only the trip being looked at is empty.
+                        stillOn > 0 -> EmptyState(Icons.Default.CheckCircle, "Nothing left from this trip")
+                        arrivedCount > 0 -> EmptyState(
+                            Icons.Default.CheckCircle, "Nothing left on the $vehicle",
+                            text = "Check Reconcile before it goes back.",
+                            action = "Reconcile", onAction = { nav.open("reconcile") },
+                        )
+                        else -> EmptyState(
+                            Icons.Default.LocalShipping, "Nothing is marked as loaded",
+                            text = "You can still scan labels as things come in.",
+                        )
+                    }
+                }
+                items(onVan, key = { "m" + it.id }) { m ->
+                    MdThingRow(m, onClick = { deliver(m) }) {
+                        FilledTonalButton(onClick = { deliver(m) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Here") }
+                    }
+                }
             }
         }
     }
@@ -173,7 +198,10 @@ fun UnloadScreen() {
     damageFor?.let { m -> MdDamageDialog(m, onClose = { damageFor = null }) }
 }
 
-/** Full-width panel in the room's colour: readable from a few steps away while carrying. */
+/**
+ * The hero of the screen: a full-width panel in the room's colour, with the room
+ * name large enough to read from a few steps away while carrying.
+ */
 @Composable
 private fun MdArrivalPanel(m: Movable, already: Boolean, onDamage: () -> Unit, onUndo: () -> Unit) {
     val room = appData().room(m.destRoomId)
@@ -183,8 +211,21 @@ private fun MdArrivalPanel(m: Movable, already: Boolean, onDamage: () -> Unit, o
     val name = room?.name ?: "No room set"
     Column(
         Modifier.fillMaxWidth().background(bg).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Pic.Where, contentDescription = null, tint = fg, modifier = Modifier.size(22.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(
+                when {
+                    already && room != null -> "Already scanned in. It goes to"
+                    already -> "Already scanned in"
+                    room != null -> "Carry it to"
+                    else -> "Carried in"
+                },
+                color = fg, style = MaterialTheme.typography.titleMedium,
+            )
+        }
         Text(
             name,
             color = fg,
@@ -197,30 +238,49 @@ private fun MdArrivalPanel(m: Movable, already: Boolean, onDamage: () -> Unit, o
         )
         val where = listOfNotNull(room?.floor?.takeIf { it.isNotBlank() }, rc?.let { "${it.name} door sign" }).joinToString(" · ")
         if (where.isNotBlank()) Text(where, color = fg, style = MaterialTheme.typography.titleLarge)
-        Text(m.title, color = fg, style = MaterialTheme.typography.titleMedium)
-        val flags = listOfNotNull(
-            "FRAGILE".takeIf { m.fragile },
-            "KEEP UPRIGHT".takeIf { m.upright },
-            "HEAVY".takeIf { m.heavy },
-            "FIRST NIGHT".takeIf { m.priority == Priority.FIRST_NIGHT },
-            "DAMAGE NOTED".takeIf { m.damaged },
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OwnerThumb(m.id, Modifier.size(64.dp), isBox = m.isBox)
+            Spacer(Modifier.width(12.dp))
+            Text(m.title, color = fg, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+        val flags = listOfNotNull<Pair<ImageVector, String>>(
+            (Pic.Fragile to "Fragile").takeIf { m.fragile },
+            (Pic.Upright to "Keep upright").takeIf { m.upright },
+            (if (m.isBox) Pic.Heavy to "Heavy" else Pic.TwoPeople to "2 people").takeIf { m.heavy },
+            (Pic.FirstNight to "First night").takeIf { m.priority == Priority.FIRST_NIGHT },
+            (Pic.Damage to "Damage noted").takeIf { m.damaged },
         )
         if (flags.isNotEmpty()) {
-            Text(flags.joinToString("  ·  "), color = fg, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                flags.forEach { (icon, label) ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(icon, contentDescription = null, tint = fg, modifier = Modifier.size(26.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(label, color = fg, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
         }
-        if (already) Text("Already scanned in.", color = fg, style = MaterialTheme.typography.bodyLarge)
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Button(
                 onClick = onDamage,
                 colors = ButtonDefaults.buttonColors(containerColor = fg, contentColor = bg),
                 modifier = Modifier.heightIn(min = 52.dp),
-            ) { Text("Report damage") }
+            ) {
+                Icon(Pic.Damage, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Report damage")
+            }
             if (!already) OutlinedButton(
                 onClick = onUndo,
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = fg),
                 border = BorderStroke(1.dp, fg),
                 modifier = Modifier.heightIn(min = 52.dp),
-            ) { Text("Undo") }
+            ) {
+                Icon(Icons.Default.Undo, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Undo")
+            }
         }
     }
 }
