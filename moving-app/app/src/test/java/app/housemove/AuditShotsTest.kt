@@ -153,9 +153,19 @@ class AuditShotsTest {
         rule.waitForIdle()
         for (route in routes) {
             rule.runOnUiThread { nav!!.navigate(route) }
-            rule.waitForIdle()
+            settle()
             rule.onRoot().captureRoboImage("build/audit/$kind/" + route.replace('/', '_') + ".png")
         }
+    }
+
+    /**
+     * Photos are decoded on another thread, which the test clock knows nothing about:
+     * give them a moment, then let the result reach the screen, so pictures are in the picture.
+     */
+    private fun settle() {
+        rule.waitForIdle()
+        Thread.sleep(150)
+        rule.waitForIdle()
     }
 
     /** The variants of Home and the first-run screens, which the route list does not reach. */
