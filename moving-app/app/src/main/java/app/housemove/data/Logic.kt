@@ -82,19 +82,30 @@ data class Movable(
     val travelsWithMe: Boolean,
     /** Must travel standing up. */
     val upright: Boolean = false,
+    /** For a container, what kind it is; null for an item. */
+    val kind: ContainerKind? = null,
 )
 
-fun Box.title(): String = "Box $label" + if (contents.isBlank()) "" else " · " + contents.lineSequence().first().take(40)
+/** "Box L001 · plates", "Suitcase B2", or the container's own name with its code: "Kitchen box 4 (L004)". */
+fun Box.title(): String =
+    (if (name.isBlank()) "${kind.noun} $label" else "$name ($label)") + if (contents.isBlank()) "" else " · " + contents.lineSequence().first().take(40)
 fun Item.title(): String = name.ifBlank { "Unnamed item" }
 
-fun Box.toMovable() = Movable(id, true, title(), label, originRoomId, destRoomId, stage, tripId, fragile, heavy, damaged, priority, travelsWithMe, thisWayUp)
+fun Box.toMovable() = Movable(id, true, title(), label, originRoomId, destRoomId, stage, tripId, fragile, heavy, damaged, priority, travelsWithMe, thisWayUp, kind)
 fun Item.toMovable() = Movable(
     id, false, title(), label, originRoomId, destRoomId, stage, tripId, fragile, twoPerson, damaged,
     if (firstNight) Priority.FIRST_NIGHT else Priority.WHENEVER, travelsWithMe, keepUpright,
 )
 
+/** Every item marked Move, including those packed in a container. See [looseItems] for the ones that travel on their own. */
 fun AppData.movingItems(): List<Item> = liveItems.filter { it.disposition == Disposition.MOVE }
-fun AppData.movables(): List<Movable> = liveBoxes.map { it.toMovable() } + movingItems().map { it.toMovable() }
+
+/**
+ * What has to be loaded, unloaded and accounted for: every container that is
+ * not inside another, and every moving item that is not in a container.
+ * Things inside a container go wherever it goes, so they are not listed twice.
+ */
+fun AppData.movables(): List<Movable> = topBoxes().map { it.toMovable() } + looseItems().map { it.toMovable() }
 
 /** Find the box or item carrying this label code. */
 fun AppData.findByLabel(code: String): Movable? {
@@ -107,6 +118,8 @@ fun AppData.findByLabel(code: String): Movable? {
 /**
  * Find what a scanned or typed code belongs to: a label first, then an item's
  * serial number, then something scanned into a box by its own barcode.
+ * The thing itself is returned even when it is inside a container; pass it to
+ * [carrierOf] to get what is actually loaded and unloaded.
  */
 fun AppData.findByAnyCode(code: String): Movable? {
     val c = code.trim()
@@ -161,6 +174,10 @@ data class VolumeEstimate(
     val itemsWithoutSize: Int,
     val totalM3: Double,
     val trips: Int,
+    /** Cartons packed so far: the only containers that count as boxes to buy. */
+    val cartons: Int = 0,
+    /** Suitcases, bags, crates and other containers packed so far. */
+    val otherContainers: Int = 0,
 )
 
 const val DEFAULT_ITEM_M3 = 0.3
@@ -173,14 +190,19 @@ fun Item.volumeM3(): Double? {
     return w * d * h / 1_000_000.0
 }
 
+/** Things inside a container take no space of their own, so only [looseItems] and [topBoxes] are counted. */
 fun AppData.volume(): VolumeEstimate {
-    val items = movingItems()
+    val items = looseItems()
     val unsized = items.count { it.volumeM3() == null }
     val itemsM3 = items.sumOf { it.volumeM3() ?: DEFAULT_ITEM_M3 }
-    val boxesM3 = liveBoxes.sumOf { it.size.m3 }
+    val boxesM3 = topBoxes().sumOf { it.volumeM3() }
     val total = (itemsM3 + boxesM3) * LOAD_SLACK
     val cap = move.vanCapacityM3.coerceAtLeast(1.0)
-    return VolumeEstimate(itemsM3, boxesM3, unsized, total, ceil(total / cap).toInt().coerceAtLeast(if (total > 0) 1 else 0))
+    val cartons = liveBoxes.count { it.kind == ContainerKind.CARTON }
+    return VolumeEstimate(
+        itemsM3, boxesM3, unsized, total, ceil(total / cap).toInt().coerceAtLeast(if (total > 0) 1 else 0),
+        cartons = cartons, otherContainers = liveBoxes.size - cartons,
+    )
 }
 
 // ---- tasks -----------------------------------------------------------------
@@ -207,9 +229,10 @@ data class Progress(
 
 fun AppData.progress(): Progress {
     val items = liveItems
-    val moving = movingItems()
-    val boxes = liveBoxes
-    val mv = movables()
+    // Something inside a container goes where the container goes and is sealed, loaded and unpacked with it.
+    val moving = looseItems()
+    val boxes = topBoxes()
+    val mv = boxes.map { it.toMovable() } + moving.map { it.toMovable() }
     val origin = roomsOf(Home.ORIGIN)
     val tasks = liveTasks
     return Progress(
@@ -241,20 +264,23 @@ fun AppData.issues(now: Long = today()): List<Issue> {
     if (damaged > 0) out += Issue("$damaged damaged in the move", "reports")
     val undecided = liveItems.count { it.disposition == Disposition.UNDECIDED }
     if (uses(Part.TRIAGE) && undecided > 0) out += Issue("$undecided item${if (undecided == 1) "" else "s"} not triaged", "triage")
-    val moving = movingItems()
+    // Items in a container, and containers inside another, go where it goes: they need no room, fit check or seal of their own.
+    val moving = looseItems()
+    val top = topBoxes()
     val noDest = moving.count { room(it.destRoomId) == null }
     if (uses(Part.PLAN) && noDest > 0) out += Issue("$noDest item${if (noDest == 1) "" else "s"} with no destination room", "plan")
     val wontFit = moving.count { fitOf(it) == Fit.NO && !it.needsDisassembly }
     if (uses(Part.PLAN) && wontFit > 0) out += Issue("$wontFit item${if (wontFit == 1) "" else "s"} won't fit through the door assembled", "plan", severe = true)
     val toGo = liveItems.count { it.disposition in listOf(Disposition.SELL, Disposition.DONATE, Disposition.BIN) && !it.gone }
     if (uses(Part.TRIAGE) && toGo > 0) out += Issue("$toGo item${if (toGo == 1) "" else "s"} still to sell, donate or bin", "disposal")
-    val boxNoDest = liveBoxes.count { room(it.destRoomId) == null }
+    val boxNoDest = top.count { room(it.destRoomId) == null }
     if (uses(Part.BOXES) && uses(Part.PLAN) && boxNoDest > 0) out += Issue("$boxNoDest box${if (boxNoDest == 1) "" else "es"} with no destination room", "boxes")
-    val unsealed = liveBoxes.count { !it.sealed && it.stage == Stage.AT_ORIGIN }
+    val unsealed = top.count { !it.sealed && it.stage == Stage.AT_ORIGIN }
     if (uses(Part.BOXES) && unsealed > 0) out += Issue("$unsealed box${if (unsealed == 1) "" else "es"} still open", "boxes")
-    val noSerial = moving.count { it.isElectronic() && it.serial.isBlank() && photosOf(it.id, PhotoKind.SERIAL).isEmpty() }
+    val noSerial = movingItems().count { it.isElectronic() && it.serial.isBlank() && photosOf(it.id, PhotoKind.SERIAL).isEmpty() }
     if (uses(Part.DEVICES) && noSerial > 0) out += Issue("$noSerial device${if (noSerial == 1) "" else "s"} with no serial number recorded", "electronics")
-    val boxesWithEntries = liveEntries.map { it.boxId }.toSet()
+    // A container counts as described when anything at all is recorded in it: text, a photo, scanned things, items or other containers.
+    val boxesWithEntries = liveEntries.map { it.boxId }.toSet() + liveItems.mapNotNull { it.boxId } + liveBoxes.mapNotNull { it.parentId }
     val blank = liveBoxes.count { b -> b.contents.isBlank() && photosOf(b.id).isEmpty() && b.id !in boxesWithEntries }
     if (uses(Part.BOXES) && blank > 0) out += Issue("$blank box${if (blank == 1) "" else "es"} with no contents recorded", "boxes")
     return out
@@ -271,14 +297,20 @@ fun AppData.search(query: String): List<Hit> {
     fun matches(text: String) = words.all { text.contains(it) }
     val out = ArrayList<Hit>()
     for (b in liveBoxes) {
-        val text = listOf(b.label, b.contents, b.notes, room(b.destRoomId)?.name, room(b.originRoomId)?.name)
+        val text = listOf(b.label, b.name, b.contents, b.notes, b.category, b.kind.label, room(b.destRoomId)?.name, room(b.originRoomId)?.name)
             .joinToString(" ").lowercase()
-        if (matches(text)) out += Hit(b.toMovable(), b.contents.ifBlank { b.notes })
+        if (!matches(text)) continue
+        val inside = parentOf(b)?.let { "Inside ${it.title()}" }
+        out += Hit(b.toMovable(), listOfNotNull(inside, b.contents.ifBlank { b.notes }.ifBlank { null }).joinToString(" · "))
     }
     for (i in liveItems) {
         val text = listOf(i.name, i.label, i.notes, i.make, i.model, i.serial, i.accessories, room(i.destRoomId)?.name, room(i.originRoomId)?.name)
             .joinToString(" ").lowercase()
-        if (matches(text)) out += Hit(i.toMovable(), listOf(i.make, i.model, i.serial).filter { it.isNotBlank() }.joinToString(" ").ifBlank { i.notes })
+        if (!matches(text)) continue
+        // An item packed in a container is still found by its own name; the detail says where it is packed.
+        val inside = containerOf(i)?.let { "In ${it.title()}" }
+        val detail = listOf(i.make, i.model, i.serial).filter { it.isNotBlank() }.joinToString(" ").ifBlank { i.notes }
+        out += Hit(i.toMovable(), listOfNotNull(inside, detail.ifBlank { null }).joinToString(" · "))
     }
     // Books and products scanned into a box: the hit is the box, with what matched as the detail.
     val seen = out.filter { it.movable.isBox }.map { it.movable.id }.toMutableSet()
@@ -293,8 +325,18 @@ fun AppData.search(query: String): List<Hit> {
     return out
 }
 
-/** Where is it right now, in words. */
-fun AppData.whereIs(m: Movable): String = when (m.stage) {
+/**
+ * Where is it right now, in words. Something inside a container is where the
+ * container is: "In Suitcase B2 · On the van (Trip 1)". Once the container has
+ * been unpacked its contents are in their own rooms again.
+ */
+fun AppData.whereIs(m: Movable): String {
+    val carrier = carrierOf(m)
+    if (carrier.id != m.id && carrier.stage != Stage.DONE) return "In ${carrier.title} · ${placeOf(carrier)}"
+    return placeOf(m)
+}
+
+private fun AppData.placeOf(m: Movable): String = when (m.stage) {
     Stage.AT_ORIGIN -> "${move.originName}: ${room(m.originRoomId)?.name ?: "no room"}"
     Stage.LOADED -> "On the ${vehicle()}" + (trip(m.tripId)?.let { " (${it.name})" } ?: "")
     Stage.DELIVERED, Stage.DONE -> "${move.destName}: ${room(m.destRoomId)?.name ?: "no room"}"
@@ -320,15 +362,21 @@ fun boxesForRoom(name: String): Int {
     }
 }
 
-/** A starting shopping list for a self-move, sized from the rooms and the catalogue. */
+/**
+ * A starting shopping list for a self-move, sized from the rooms and the catalogue.
+ * Only cartons count as boxes to buy: suitcases, bags and crates are already owned.
+ * If more cartons of a size have been packed than the estimate, that many are needed.
+ */
 fun AppData.suggestSupplies(): List<Pair<String, Int>> {
-    val boxes = roomsOf(Home.ORIGIN).sumOf { boxesForRoom(it.name) }.coerceAtLeast(10)
-    val big = movingItems().size
+    val cartons = liveBoxes.filter { it.kind == ContainerKind.CARTON }
+    fun packed(vararg sizes: BoxSize) = cartons.count { it.size in sizes }
+    val boxes = maxOf(roomsOf(Home.ORIGIN).sumOf { boxesForRoom(it.name) }.coerceAtLeast(10), cartons.size)
+    val big = looseItems().size
     val beds = movingItems().count { val n = it.name.lowercase(); "bed" in n || "mattress" in n }
     return listOf(
-        "Small boxes (books, heavy things)" to ceil(boxes * 0.4).toInt(),
-        "Medium boxes" to ceil(boxes * 0.4).toInt(),
-        "Large boxes (light, bulky things)" to ceil(boxes * 0.2).toInt(),
+        "Small boxes (books, heavy things)" to maxOf(ceil(boxes * 0.4).toInt(), packed(BoxSize.S)),
+        "Medium boxes" to maxOf(ceil(boxes * 0.4).toInt(), packed(BoxSize.M)),
+        "Large boxes (light, bulky things)" to maxOf(ceil(boxes * 0.2).toInt(), packed(BoxSize.L, BoxSize.XL)),
         "Packing tape rolls" to ceil(boxes / 15.0).toInt().coerceAtLeast(2),
         "Tape dispenser" to 2,
         "Packing paper / bubble wrap packs" to ceil(boxes / 20.0).toInt().coerceAtLeast(1),
