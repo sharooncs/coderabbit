@@ -41,7 +41,7 @@ object BookLookup {
             conn.readTimeout = timeoutMs
             conn.setRequestProperty("User-Agent", "HouseMove (Android app)")
             conn.setRequestProperty("Accept", "application/json")
-            if (conn.responseCode != 200) throw IOException("The catalogue answered ${conn.responseCode}")
+            if (conn.responseCode != 200) throw IOException("The book catalogue is not answering just now. The title can be looked up later.")
             return parse(conn.inputStream.use { it.readBytes().decodeToString() })
         } finally {
             conn.disconnect()

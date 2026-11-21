@@ -52,12 +52,25 @@ internal fun Task.doneSum() = seal(done)
 internal fun MoveInfo.settingsSum() =
     seal(name, moveDay, originName, destName, vanCapacityM3, useInches, currency, kind, off.joinToString(","), setupDone)
 
-internal fun Proposal.stateSum() = seal(
-    state, reason, kind, targetId, by, disposition, price, roomId,
-    expense?.let { seal(it.title, it.amount, it.category, it.day, it.planned) },
-    task?.let { seal(it.title, it.offsetDays, it.dueDay, it.category, it.notes, it.assignedTo) },
-    answers,
-)
+internal fun Proposal.stateSum(): String {
+    // What a suggestion to delete something proposes is part of it too; the extra parts are only there when set,
+    // so the check value of every other suggestion stays as it was.
+    val gone = if (deletes) "delete" else null
+    return if (gone == null && expense?.deleted != true && task?.deleted != true) seal(
+        state, reason, kind, targetId, by, disposition, price, roomId,
+        expense?.let { seal(it.title, it.amount, it.category, it.day, it.planned) },
+        task?.let { seal(it.title, it.offsetDays, it.dueDay, it.category, it.notes, it.assignedTo) },
+        answers,
+    ) else seal(
+        state, reason, kind, targetId, by, disposition, price, roomId,
+        expense?.let { seal(it.title, it.amount, it.category, it.day, it.planned, it.deleted) },
+        task?.let { seal(it.title, it.offsetDays, it.dueDay, it.category, it.notes, it.assignedTo, it.deleted) },
+        answers, gone,
+    )
+}
+
+/** The check value of a withdrawal: which suggestion, and that its author took it back. */
+internal fun Proposal.withdrawnSum() = seal("withdrawn", id, by)
 
 /** A part nobody has set since version 2.0: stamped as it stands, with no author. */
 private fun Stamp.orAsIs(sum: String): Stamp = if (this.sum.isEmpty() && by.isEmpty()) Stamp(sum = sum) else this
@@ -95,13 +108,20 @@ internal fun MoveInfo.stamped(): MoveInfo = if (changedBy.sum.isNotEmpty()) this
 fun migrate(d: AppData): AppData = d.copy(
     version = maxOf(d.version, SCHEMA),
     move = d.move.stamped(),
-    items = d.items.mapChanged { it.stamped() },
+    items = d.items.mapChanged { it.stamped().let { i -> if (i.deleted && i.deletedBy.sum.isEmpty()) i.copy(deletedBy = i.deletedBy.orAsIs(deletedSum())) else i } },
     expenses = d.expenses.mapChanged { it.stamped() },
     tasks = d.tasks.mapChanged { it.stamped() },
+    boxes = d.boxes.mapChanged { if (it.deleted && it.deletedBy.sum.isEmpty()) it.copy(deletedBy = it.deletedBy.orAsIs(deletedSum())) else it },
+    rooms = d.rooms.mapChanged { if (it.deleted && it.deletedBy.sum.isEmpty()) it.copy(deletedBy = it.deletedBy.orAsIs(deletedSum())) else it },
+    photos = d.photos.mapChanged { if (it.deleted && it.deletedBy.sum.isEmpty()) it.copy(deletedBy = it.deletedBy.orAsIs(deletedSum())) else it },
     people = settlePeople(d.people),
 )
 
 private fun Stamp.distrusted(): Stamp = if (sum.isEmpty()) copy(sum = "?") else this
+
+/** A deletion that arrives without its stamp is marked, as for the other protected parts. */
+private fun <T : Owned> List<T>.distrustDeletions(f: (T, Stamp) -> T): List<T> =
+    mapChanged { if (it.deleted && it.deletedBy.sum.isEmpty()) f(it, it.deletedBy.distrusted()) else it }
 
 /**
  * Data arriving from another phone on this version always has its stamps.
@@ -120,7 +140,14 @@ internal fun distrustUnstamped(d: AppData): AppData = d.copy(
     tasks = d.tasks.mapChanged { t ->
         if (t.planBy.sum.isNotEmpty() && t.doneBy.sum.isNotEmpty()) t else t.copy(planBy = t.planBy.distrusted(), doneBy = t.doneBy.distrusted())
     },
-)
+).let { x ->
+    x.copy(
+        items = x.items.distrustDeletions { i, s -> i.copy(deletedBy = s) },
+        boxes = x.boxes.distrustDeletions { b, s -> b.copy(deletedBy = s) },
+        rooms = x.rooms.distrustDeletions { r, s -> r.copy(deletedBy = s) },
+        photos = x.photos.distrustDeletions { p, s -> p.copy(deletedBy = s) },
+    )
+}
 
 /**
  * The data of a phone that has been on its own, as it goes into a move it was invited to.
@@ -132,12 +159,18 @@ internal fun distrustUnstamped(d: AppData): AppData = d.copy(
  */
 internal fun leavingOwnMove(d: AppData): AppData {
     fun Stamp.left(): Stamp = if (by.isEmpty()) copy(sum = "?") else this
+    // What it deleted of its own things stays deleted: nobody else has those things, and they were its to delete.
+    // So the deletion goes in as one from before there was anybody to ask.
+    val asBefore = Stamp(sum = deletedSum())
     return d.copy(
         people = emptyList(),
         move = d.move.copy(changedBy = d.move.changedBy.left()),
-        items = d.items.map { it.copy(decisionBy = it.decisionBy.left(), roomBy = it.roomBy.left(), outcomeBy = it.outcomeBy.left()) },
+        items = d.items.map { it.copy(decisionBy = it.decisionBy.left(), roomBy = it.roomBy.left(), outcomeBy = it.outcomeBy.left(), deletedBy = if (it.deleted) asBefore else it.deletedBy) },
         expenses = d.expenses.map { it.copy(costBy = it.costBy.left(), paidBy = it.paidBy.left()) },
         tasks = d.tasks.map { it.copy(planBy = it.planBy.left(), doneBy = it.doneBy.left()) },
+        boxes = d.boxes.mapChanged { if (it.deleted) it.copy(deletedBy = asBefore) else it },
+        rooms = d.rooms.mapChanged { if (it.deleted) it.copy(deletedBy = asBefore) else it },
+        photos = d.photos.mapChanged { if (it.deleted) it.copy(deletedBy = asBefore) else it },
     )
 }
 
@@ -223,6 +256,9 @@ fun AppData.proposalsFor(targetId: String): List<Proposal> =
 
 /** What a suggestion asks for, in a few words, e.g. "Sell Sofa for 50". */
 fun AppData.describe(p: Proposal): String {
+    if (p.deletes) return "Delete " + nameOf(p.targetId) + "?"
+    if (p.kind == ProposalKind.COST && p.expense?.deleted == true) return "Delete the cost " + (p.expense.title.ifBlank { p.expense.category.ifBlank { "Cost" } })
+    if (p.kind == ProposalKind.TASK && p.task?.deleted == true) return "Delete the task " + p.task.title
     val item = items.firstOrNull { it.id == p.targetId }?.title() ?: "an item"
     return when (p.kind) {
         ProposalKind.ITEM_DECISION ->
@@ -232,6 +268,17 @@ fun AppData.describe(p: Proposal): String {
         ProposalKind.TASK -> p.task?.title?.ifBlank { null } ?: "A task"
         ProposalKind.QUESTION -> "What to do with $item?"
     }
+}
+
+/** What a record is called on screen, by its id, whatever kind it is: "Sofa", "Box L012", "the photo", "the Kitchen". */
+fun AppData.nameOf(id: String): String {
+    items.firstOrNull { it.id == id }?.let { return it.title() }
+    boxes.firstOrNull { it.id == id }?.let { return if (it.name.isBlank()) "${it.kind.noun} ${it.label}" else it.name }
+    rooms.firstOrNull { it.id == id }?.let { return "the room " + it.name }
+    photos.firstOrNull { it.id == id }?.let { return "a photo" }
+    tasks.firstOrNull { it.id == id }?.let { return "the task " + it.title }
+    expenses.firstOrNull { it.id == id }?.let { return "the cost " + it.title.ifBlank { it.category.ifBlank { "Cost" } } }
+    return "something"
 }
 
 // ---- keeping the data consistent after any change -------------------------------------
@@ -253,8 +300,23 @@ internal fun closeProposals(d: AppData): AppData {
     for (i in d.items) if (i.id in targets) items[i.id] = i
     for (e in d.expenses) if (e.id in targets) expenses[e.id] = e
     for (t in d.tasks) if (t.id in targets) tasks[t.id] = t
+    val others = if (d.proposals.none { it.deletes && it.state == ProposalState.WAITING && !it.deleted }) emptyMap()
+    else HashMap<String, Rec>().also { m -> for (list in listOf<List<Rec>>(d.items, d.boxes, d.rooms, d.photos, d.tasks, d.expenses)) for (r in list) if (r.id in targets) m[r.id] = r }
     val proposals = d.proposals.mapChanged { p ->
         if (p.state != ProposalState.WAITING || p.deleted) return@mapChanged p
+        // A request to delete something is passed by when the thing is deleted, and by nothing else.
+        if (p.deletes) {
+            val gone = others[p.targetId]?.takeIf { it.deleted } ?: return@mapChanged p
+            val by = when (gone) {
+                is Owned -> gone.deletedBy
+                is Task -> gone.planBy
+                is Expense -> gone.costBy
+                else -> Stamp(at = gone.updatedAt)
+            }
+            if (by.at <= p.createdAt) return@mapChanged p
+            // In nobody's name: it followed from the deletion, which may have been its own author's to make.
+            return@mapChanged p.copy(state = ProposalState.OVERTAKEN).let { it.copy(decided = Stamp("", by.at, it.stateSum())) }
+        }
         val reg: Stamp = when (p.kind) {
             ProposalKind.ITEM_DECISION, ProposalKind.QUESTION -> items[p.targetId]?.let { if (it.deleted) Stamp(at = it.updatedAt) else it.decisionBy }
             ProposalKind.ITEM_ROOM -> items[p.targetId]?.let { if (it.deleted) Stamp(at = it.updatedAt) else it.roomBy }

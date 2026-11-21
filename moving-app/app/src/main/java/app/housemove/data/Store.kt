@@ -358,7 +358,12 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
         Outcome.Ok(d.move)
     }
 
-    fun put(x: Room) = update { it.copy(rooms = it.rooms.upsert(x.copy(updatedAt = now()))) }
+    /** Save a room. Deleting one this phone's person may not delete ([mayDelete]) saves nothing. */
+    fun put(x: Room) = update { d ->
+        val a = actor(d)
+        val old = d.rooms.firstOrNull { it.id == x.id }
+        if (a.refusesDeleting(old, x)) d else d.copy(rooms = d.rooms.upsert(a.guard(old, x, now())))
+    }
 
     /**
      * Save an item. The decision, the room it goes to and whether it has gone are only
@@ -368,9 +373,11 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
 
     /** Save a container. Moving one that is inside another moves the outer one. */
     fun put(x: Box) = change { saveBoxes(listOf(x)) }
-    fun put(x: Photo) = update {
-        val t = now()
-        it.copy(photos = it.photos.upsert(x.copy(updatedAt = t, createdAt = if (x.createdAt == 0L) t else x.createdAt)))
+    /** Save a photo record. Deleting one this phone's person may not delete saves nothing. */
+    fun put(x: Photo) = update { d ->
+        val a = actor(d)
+        val old = d.photos.firstOrNull { it.id == x.id }
+        if (a.refusesDeleting(old, x)) d else d.copy(photos = d.photos.upsert(a.guard(old, x, now())))
     }
 
     /** Save a task. Only an Organiser can add or change one; whoever it is assigned to can tick it off. */
@@ -386,31 +393,181 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
         val saved = actor(d).guard(d.expenses.firstOrNull { it.id == x.id }, x, t) ?: return@update d
         closeProposals(d.copy(expenses = d.expenses.upsert(saved.copy(updatedAt = t))))
     }
+    /**
+     * [put] for a task that says what happened: Ok with the task as saved, or why nothing was saved.
+     * Creating or changing a task is an Organiser's; ticking it is also the assignee's ([tick]).
+     * Nothing is saved unless all of it may be. A Decider uses [saveOrSuggest] to make it a suggestion.
+     */
+    fun saveTask(x: Task): Outcome<Task> = act(null) {
+        val old = d.tasks.firstOrNull { it.id == x.id }
+        val saved = actor.guard(old, x, t) ?: return@act Outcome.Refused(actor.refusal(Action.DECIDE) ?: "Only an Organiser can add a task.")
+        if (saved.planSum() != x.planSum()) return@act Outcome.Refused(actor.refusal(Action.DECIDE) ?: "Only an Organiser can change a task.")
+        if (saved.done != x.done) return@act Outcome.Refused("Only an Organiser, or the person a task is assigned to, can tick it off.")
+        if (old != null && saved.copy(updatedAt = old.updatedAt) == old.stamped()) return@act Outcome.Ok(old)
+        if (x.assignedTo != null && x.assignedTo != old?.assignedTo && d.person(x.assignedTo)?.removed != false) return@act Outcome.Refused("That person is not in the move.")
+        val next = saved.copy(updatedAt = t)
+        d = d.copy(tasks = d.tasks.upsert(next))
+        Outcome.Ok(next)
+    }
+
+    /**
+     * [put] for a cost that says what happened: Ok with the cost as saved, or why nothing was saved.
+     * Creating or changing a cost is an Organiser's; marking it paid follows [markPaid]'s rule.
+     * Nothing is saved unless all of it may be. A Decider uses [saveOrSuggest] to make it a suggestion.
+     */
+    fun saveCost(x: Expense): Outcome<Expense> = act(null) {
+        val old = d.expenses.firstOrNull { it.id == x.id }
+        val saved = actor.guard(old, x, t) ?: return@act Outcome.Refused(actor.refusal(Action.DECIDE) ?: "Only an Organiser can add a cost.")
+        if (saved.costSum() != x.costSum()) return@act Outcome.Refused(actor.refusal(Action.DECIDE) ?: "Only an Organiser can change a cost.")
+        if (saved.planned != x.planned) return@act Outcome.Refused(actor.refusal(Action.CARRY_OUT) ?: "An Organiser has to approve your suggestion for this first.")
+        if (old != null && saved.copy(updatedAt = old.updatedAt) == old.stamped()) return@act Outcome.Ok(old)
+        val next = saved.copy(updatedAt = t)
+        d = d.copy(expenses = d.expenses.upsert(next))
+        if (old != null && old.planned && !next.planned) events.say("marked a cost as paid", next.id)
+        Outcome.Ok(next)
+    }
+
+    /**
+     * Save a task if this phone's person may, or else put it forward as a suggestion when they may
+     * suggest (a Decider). Ok holds the saved [Task] or the waiting [Proposal]; Refused says why
+     * neither could be done (a Helper may only tick a task given to them).
+     */
+    fun saveOrSuggest(x: Task, note: String = ""): Outcome<Rec> = synchronized(lock) {
+        val direct = saveTask(x)
+        if (direct.ok || !actor(_data.value).may(Action.SUGGEST)) return direct
+        val old = _data.value.task(x.id)
+        // Only the plan is put forward: ticking is not something to suggest.
+        if (old != null && old.copy(done = x.done).planSum() == x.planSum()) return direct
+        suggestTask(x.copy(done = old?.done ?: false), note)
+    }
+
+    /** The same as [saveOrSuggest] for a cost: saved for an Organiser, suggested for a Decider. */
+    fun saveOrSuggest(x: Expense, note: String = ""): Outcome<Rec> = synchronized(lock) {
+        val direct = saveCost(x)
+        if (direct.ok || !actor(_data.value).may(Action.SUGGEST)) return direct
+        val old = _data.value.expense(x.id)
+        if (old != null && old.costSum() == x.copy(planned = old.planned).costSum()) return direct
+        suggestCost(x, note)
+    }
+
     fun put(x: Supply) = update { it.copy(supplies = it.supplies.upsert(x.copy(updatedAt = now()))) }
     fun put(x: Trip) = update { it.copy(trips = it.trips.upsert(x.copy(updatedAt = now()))) }
     fun put(x: Reading) = update { it.copy(readings = it.readings.upsert(x.copy(updatedAt = now()))) }
-    fun put(x: BoxEntry) = update {
-        val t = now()
-        it.copy(entries = it.entries.upsert(x.copy(updatedAt = t, createdAt = if (x.createdAt == 0L) t else x.createdAt)))
+    fun put(x: BoxEntry) = update { d -> d.copy(entries = d.entries.upsert(actor(d).guard(d.entries.firstOrNull { it.id == x.id }, x, now()))) }
+
+    // ---- deleting ------------------------------------------------------------
+    //
+    // An Organiser may delete anything; anyone else only an item, container, room or photo they added
+    // themselves that nobody else has had a hand in since (see Deleting.kt and [mayDelete]). The plain
+    // delete calls do nothing when that is refused, as the plain saves leave a protected part alone;
+    // tryDelete says why. Either way it is the stored record that is deleted, not the caller's copy of it.
+
+    fun delete(x: Room) {
+        tryDelete(x, withPhotos = false)
     }
 
-    fun delete(x: Room) = put(x.copy(deleted = true))
-    fun delete(x: Item) = put(x.copy(deleted = true))
-    fun delete(x: BoxEntry) = put(x.copy(deleted = true))
+    fun delete(x: Item) {
+        tryDelete(x, withPhotos = false)
+    }
+
+    fun delete(x: BoxEntry) {
+        tryDelete(x)
+    }
 
     /**
      * Deleting a container also removes the list of things scanned into it.
      * Catalogued items and other containers that were inside are let go, not deleted.
      */
-    fun delete(x: Box) = put(x.copy(deleted = true))
-    fun delete(x: Task) = put(x.copy(deleted = true))
-    fun delete(x: Expense) = put(x.copy(deleted = true))
+    fun delete(x: Box) {
+        tryDelete(x, withPhotos = false)
+    }
+
+    fun delete(x: Task) {
+        tryDelete(x)
+    }
+
+    fun delete(x: Expense) {
+        tryDelete(x)
+    }
+
     fun delete(x: Supply) = put(x.copy(deleted = true))
     fun delete(x: Trip) = put(x.copy(deleted = true))
     fun delete(x: Reading) = put(x.copy(deleted = true))
     fun delete(x: Photo) {
-        put(x.copy(deleted = true))
-        File(photoDir, x.file).delete()
+        tryDelete(x)
+    }
+
+    /** The photos of [ownerId] this person may delete, deleted with the thing they show. */
+    private fun Draft.deletePhotosOf(ownerId: String) {
+        val doomed = d.photos.filter { !it.deleted && it.ownerId == ownerId && d.mayDelete(actor.me, it) == null }.map { it.id }.toSet()
+        if (doomed.isEmpty()) return
+        d = d.copy(photos = d.photos.map { if (it.id in doomed) actor.guard(it, it.copy(deleted = true), t) else it })
+    }
+
+    /**
+     * Delete an item, saying why when this phone's person may not ([mayDelete]). With [withPhotos]
+     * the photos of it that they may delete go too (their files once the change is saved).
+     */
+    fun tryDelete(x: Item, withPhotos: Boolean = true): Outcome<Item> = act(null) {
+        val old = d.item(x.id) ?: return@act Outcome.Refused("That item is no longer here.")
+        d.mayDelete(actor.me, old)?.let { return@act Outcome.Refused(it) }
+        if (withPhotos) deletePhotosOf(old.id)
+        saveItems(listOf(old.copy(deleted = true)))
+        Outcome.Ok(d.items.first { it.id == old.id })
+    }.also { if (it.ok) forgetDeletedPhotos() }
+
+    /** Delete a container ([delete]), saying why when this phone's person may not. */
+    fun tryDelete(x: Box, withPhotos: Boolean = true): Outcome<Box> = act(null) {
+        val old = d.box(x.id) ?: return@act Outcome.Refused("That container is no longer here.")
+        d.mayDelete(actor.me, old)?.let { return@act Outcome.Refused(it) }
+        if (withPhotos) deletePhotosOf(old.id)
+        saveBoxes(listOf(old.copy(deleted = true)))
+        Outcome.Ok(d.boxes.first { it.id == old.id })
+    }.also { if (it.ok) forgetDeletedPhotos() }
+
+    /** Delete a room, saying why when this phone's person may not. Things in it stay, with no room. */
+    fun tryDelete(x: Room, withPhotos: Boolean = true): Outcome<Room> = act(null) {
+        val old = d.room(x.id) ?: return@act Outcome.Refused("That room is no longer here.")
+        d.mayDelete(actor.me, old)?.let { return@act Outcome.Refused(it) }
+        if (withPhotos) deletePhotosOf(old.id)
+        val saved = actor.guard(old, old.copy(deleted = true), t)
+        d = d.copy(rooms = d.rooms.upsert(saved))
+        Outcome.Ok(saved)
+    }.also { if (it.ok) forgetDeletedPhotos() }
+
+    /** Delete a photo and its file, saying why when this phone's person may not. */
+    fun tryDelete(x: Photo): Outcome<Photo> = act(null) {
+        val old = d.photos.firstOrNull { it.id == x.id && !it.deleted } ?: return@act Outcome.Refused("That photo is no longer here.")
+        d.mayDelete(actor.me, old)?.let { return@act Outcome.Refused(it) }
+        val saved = actor.guard(old, old.copy(deleted = true), t)
+        d = d.copy(photos = d.photos.upsert(saved))
+        Outcome.Ok(saved)
+    }.also { if (it.ok) forgetDeletedPhotos() }
+
+    /** Delete a task. Organisers only. */
+    fun tryDelete(x: Task): Outcome<Task> = act(null) {
+        val old = d.task(x.id) ?: return@act Outcome.Refused("That task is no longer here.")
+        d.mayDelete(actor.me, old)?.let { return@act Outcome.Refused(it) }
+        val saved = (actor.guard(old, old.copy(deleted = true), t) ?: old).copy(updatedAt = t)
+        d = d.copy(tasks = d.tasks.upsert(saved))
+        Outcome.Ok(saved)
+    }
+
+    /** Delete a cost. Organisers only; a Decider suggests it with [suggestCost] of the cost marked deleted, or [askToDelete]. */
+    fun tryDelete(x: Expense): Outcome<Expense> = act(null) {
+        val old = d.expense(x.id) ?: return@act Outcome.Refused("That cost is no longer here.")
+        d.mayDelete(actor.me, old)?.let { return@act Outcome.Refused(it) }
+        val saved = (actor.guard(old, old.copy(deleted = true), t) ?: old).copy(updatedAt = t)
+        d = d.copy(expenses = d.expenses.upsert(saved))
+        Outcome.Ok(saved)
+    }
+
+    /** Remove something scanned into a container. Part of the work: anyone may. */
+    fun tryDelete(x: BoxEntry): Outcome<BoxEntry> = act(Action.WORK) {
+        val old = d.entries.firstOrNull { it.id == x.id && !it.deleted } ?: return@act Outcome.Refused("That is no longer in the container.")
+        val saved = actor.guard(old, old.copy(deleted = true), t)
+        d = d.copy(entries = d.entries.upsert(saved))
+        Outcome.Ok(saved)
     }
 
     /** Apply one change to many items / boxes in a single write. */
@@ -760,7 +917,8 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
     /** Set an item's decision in this person's name, even when it is the same as before: that is what an approval is. */
     private fun Draft.decideItem(item: Item, disposition: Disposition, price: Double?): Item {
         val was = item.stamped()
-        val next = was.copy(disposition = disposition, price = price, updatedAt = t).let { it.copy(decisionBy = actor.stamp(t, it.decisionSum())) }
+        val next = was.copy(disposition = disposition, price = price, updatedAt = t, hands = actor.handsAfter(was.hands, true))
+            .let { it.copy(decisionBy = actor.stamp(t, it.decisionSum())) }
         replace(next)
         return next
     }
@@ -812,7 +970,7 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
             file.delete()
             return@act Outcome.Refused(actor.refusal(Action.CARRY_OUT) ?: "An Organiser has to approve your suggestion for this first.")
         }
-        val p = Photo(id = newId(), ownerId = e.id, kind = PhotoKind.RECEIPT, file = file.name, note = note, by = actor.signature, createdAt = t, updatedAt = t)
+        val p = actor.guard(null, Photo(id = newId(), ownerId = e.id, kind = PhotoKind.RECEIPT, file = file.name, note = note, by = actor.signature, createdAt = t), t)
         d = d.copy(photos = d.photos + p)
         Outcome.Ok(p)
     }
@@ -864,16 +1022,26 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
         propose(p, "suggested: " + d.describe(p))
     }
 
-    /** Suggest a new cost, or a change to an existing one (same id). The cost appears, or changes, when approved. */
-    fun suggestCost(expense: Expense, note: String = ""): Outcome<Proposal> = act(Action.SUGGEST) {
-        val clean = expense.copy(costBy = Stamp(), paidBy = Stamp(), deleted = false, updatedAt = 0)
-        propose(Proposal(id = "", kind = ProposalKind.COST, targetId = expense.id, expense = clean, note = note.trim()), "suggested a cost")
+    /**
+     * Suggest a new cost, or a change to an existing one (same id). The cost appears, or changes, when approved.
+     * An existing cost marked deleted is a suggestion to delete it.
+     */
+    fun suggestCost(expense: Expense, note: String = ""): Outcome<Proposal> =
+        suggestCostChange(expense, note, if (expense.deleted) "suggested deleting a cost" else "suggested a cost")
+
+    private fun suggestCostChange(expense: Expense, note: String, said: String): Outcome<Proposal> = act(Action.SUGGEST) {
+        val gone = expense.deleted && d.expense(expense.id) != null
+        if (expense.deleted && !gone) return@act Outcome.Refused("That cost is no longer here.")
+        val clean = expense.copy(costBy = Stamp(), paidBy = Stamp(), deleted = gone, updatedAt = 0)
+        propose(Proposal(id = "", kind = ProposalKind.COST, targetId = expense.id, expense = clean, note = note.trim()), said)
     }
 
-    /** Suggest a new task, or a change to an existing one (same id). */
+    /** Suggest a new task, or a change to an existing one (same id). An existing task marked deleted is a suggestion to delete it. */
     fun suggestTask(task: Task, note: String = ""): Outcome<Proposal> = act(Action.SUGGEST) {
-        val clean = task.copy(planBy = Stamp(), doneBy = Stamp(), deleted = false, updatedAt = 0)
-        propose(Proposal(id = "", kind = ProposalKind.TASK, targetId = task.id, task = clean, note = note.trim()), "suggested a task: " + task.title.take(60))
+        val gone = task.deleted && d.task(task.id) != null
+        if (task.deleted && !gone) return@act Outcome.Refused("That task is no longer here.")
+        val clean = task.copy(planBy = Stamp(), doneBy = Stamp(), deleted = gone, updatedAt = 0)
+        propose(Proposal(id = "", kind = ProposalKind.TASK, targetId = task.id, task = clean, note = note.trim()), (if (gone) "suggested deleting a task: " else "suggested a task: ") + task.title.take(60))
     }
 
     /** Ask the Organisers what should happen to an item. Anyone may ask. */
@@ -899,34 +1067,111 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
             }
             ProposalKind.ITEM_ROOM -> {
                 val item = d.item(p.targetId)?.stamped() ?: return@act Outcome.Refused("The item it was about is no longer here.")
-                replace(item.copy(destRoomId = p.roomId, updatedAt = t).let { it.copy(roomBy = actor.stamp(t, it.roomSum())) })
+                replace(item.copy(destRoomId = p.roomId, updatedAt = t, hands = actor.handsAfter(item.hands, true)).let { it.copy(roomBy = actor.stamp(t, it.roomSum())) })
             }
             ProposalKind.COST -> {
                 val proposed = p.expense ?: return@act Outcome.Refused("That suggestion has no cost in it.")
                 val old = d.expenses.firstOrNull { it.id == p.targetId }?.stamped()
+                // A suggestion to delete a cost deletes it; one that is no longer there stays gone.
+                if (proposed.deleted && old?.deleted != false) return@act Outcome.Refused("That cost is no longer here.")
                 val next = (
                     if (old == null) proposed.copy(id = p.targetId, deleted = false).let { it.copy(paidBy = actor.stamp(t, it.paidSum())) }
-                    else old.copy(title = proposed.title, amount = proposed.amount, category = proposed.category, day = proposed.day, deleted = false)
+                    else old.copy(title = proposed.title, amount = proposed.amount, category = proposed.category, day = proposed.day, deleted = proposed.deleted)
                     ).copy(updatedAt = t).let { it.copy(costBy = actor.stamp(t, it.costSum())) }
                 d = d.copy(expenses = d.expenses.upsert(next))
             }
             ProposalKind.TASK -> {
                 val proposed = p.task ?: return@act Outcome.Refused("That suggestion has no task in it.")
                 val old = d.tasks.firstOrNull { it.id == p.targetId }?.stamped()
+                if (proposed.deleted && old?.deleted != false) return@act Outcome.Refused("That task is no longer here.")
                 val next = (
                     if (old == null) proposed.copy(id = p.targetId, deleted = false, done = false).let { it.copy(doneBy = Stamp(sum = it.doneSum())) }
                     else old.copy(
                         title = proposed.title, offsetDays = proposed.offsetDays, dueDay = proposed.dueDay, category = proposed.category,
-                        notes = proposed.notes, assignedTo = proposed.assignedTo, deleted = false,
+                        notes = proposed.notes, assignedTo = proposed.assignedTo, deleted = proposed.deleted,
                     )
                     ).copy(updatedAt = t).let { it.copy(planBy = actor.stamp(t, it.planSum())) }
                 d = d.copy(tasks = d.tasks.upsert(next))
             }
-            ProposalKind.QUESTION -> return@act Outcome.Refused("A question is answered, not approved.")
+            ProposalKind.QUESTION -> {
+                if (!p.deletes) return@act Outcome.Refused("A question is answered, not approved.")
+                deleteForGood(p.targetId)?.let { return@act Outcome.Refused(it) }
+            }
         }
         val done = p.copy(state = ProposalState.APPROVED, reason = "", updatedAt = t).let { it.copy(decided = actor.stamp(t, it.stateSum())) }
         replace(done)
         events.say(if (p.kind == ProposalKind.COST) "approved a suggested cost" else "approved: " + d.describe(p), p.id)
+        Outcome.Ok(done)
+    }.also { if (it.ok) forgetDeletedPhotos() }
+
+    /** Delete whatever [id] names, as an Organiser does when approving a request to delete it. Null when done, else why not. */
+    private fun Draft.deleteForGood(id: String): String? {
+        d.item(id)?.let {
+            deletePhotosOf(id)
+            saveItems(listOf(it.copy(deleted = true)))
+            return null
+        }
+        d.box(id)?.let {
+            deletePhotosOf(id)
+            saveBoxes(listOf(it.copy(deleted = true)))
+            return null
+        }
+        d.room(id)?.let {
+            deletePhotosOf(id)
+            d = d.copy(rooms = d.rooms.upsert(actor.guard(it, it.copy(deleted = true), t)))
+            return null
+        }
+        d.photos.firstOrNull { it.id == id && !it.deleted }?.let {
+            d = d.copy(photos = d.photos.upsert(actor.guard(it, it.copy(deleted = true), t)))
+            return null
+        }
+        d.task(id)?.let {
+            d = d.copy(tasks = d.tasks.upsert((actor.guard(it, it.copy(deleted = true), t) ?: it).copy(updatedAt = t)))
+            return null
+        }
+        d.expense(id)?.let {
+            d = d.copy(expenses = d.expenses.upsert((actor.guard(it, it.copy(deleted = true), t) ?: it).copy(updatedAt = t)))
+            return null
+        }
+        return "What it was about is no longer here."
+    }
+
+    /**
+     * Ask an Organiser to delete something this phone's person may not delete themselves (see
+     * [mayDelete]): an item, container, room, photo or task. It waits like a question, and an
+     * Organiser approves it (the thing is deleted) or declines it. Anyone may ask. A Decider asking
+     * about a cost suggests deleting it instead ([suggestCost]), since costs are not shown to Helpers.
+     * Asking again about the same thing gives back the request already waiting.
+     */
+    fun askToDelete(targetId: String, note: String = ""): Outcome<Proposal> = synchronized(lock) {
+        val d0 = _data.value
+        d0.expense(targetId)?.let { e ->
+            actor(d0).refusal(Action.SUGGEST)?.let { return Outcome.Refused("Only an Organiser can delete a cost.") }
+            if (actor(d0).may(Action.DELETE)) return Outcome.Refused("You can delete it yourself.")
+            return suggestCost(e.copy(deleted = true), note)
+        }
+        act(Action.ASK) {
+            val target: Rec = d.item(targetId) ?: d.box(targetId) ?: d.room(targetId) ?: d.task(targetId)
+                ?: d.photos.firstOrNull { it.id == targetId && !it.deleted } ?: return@act Outcome.Refused("That is no longer here.")
+            if (d.mayDelete(actor.me, target) == null) return@act Outcome.Refused("You can delete it yourself.")
+            d.liveProposals.firstOrNull { it.deletes && it.targetId == targetId && it.by == actor.id && it.state == ProposalState.WAITING }?.let { return@act Outcome.Ok(it) }
+            val p = Proposal(id = "", kind = ProposalKind.QUESTION, targetId = targetId, note = note.trim(), deletes = true)
+            propose(p, "asked to delete " + d.nameOf(targetId))
+        }
+    }
+
+    /**
+     * Withdraw a suggestion or question of one's own while it is still waiting. It is then in no
+     * list on any phone. If an Organiser approved or declined it on another phone in the meantime,
+     * that stands instead once the phones have synced.
+     */
+    fun withdraw(proposalId: String): Outcome<Proposal> = act(null) {
+        val p = d.proposal(proposalId) ?: return@act Outcome.Refused("That suggestion is no longer here.")
+        if (p.by != actor.id || actor.id.isEmpty()) return@act Outcome.Refused("Only the person who made a suggestion can withdraw it.")
+        if (p.state != ProposalState.WAITING) return@act Outcome.Refused("That suggestion has already been dealt with, so it cannot be withdrawn.")
+        val done = p.copy(deleted = true, updatedAt = t).let { it.copy(withdrawn = Stamp(actor.id, t, it.withdrawnSum())) }
+        replace(done)
+        events.say(if (p.kind == ProposalKind.QUESTION && !p.deletes) "withdrew a question" else "withdrew a suggestion", p.id)
         Outcome.Ok(done)
     }
 
@@ -950,6 +1195,7 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
         val d0 = _data.value
         val q = d0.proposal(questionId)?.takeIf { it.kind == ProposalKind.QUESTION } ?: return Outcome.Refused("That question is no longer here.")
         if (q.state != ProposalState.WAITING) return Outcome.Refused("That question has already been dealt with.")
+        if (q.deletes) return Outcome.Refused("That is a request to delete something: approve or decline it.")
         if (!actor(d0).may(Action.DECIDE)) return suggestDecision(q.targetId, disposition, price, note, answers = q.id)
         act(Action.DECIDE) {
             val item = d.item(q.targetId) ?: return@act Outcome.Refused("The item it was about is no longer here.")
@@ -1013,6 +1259,66 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
             ensureMe(restoring = true)
         }
         scheduleSave()
+    }
+
+    /** Does this phone share its move with anyone: is anybody but its own person in it? */
+    private fun AppData.sharedHere(): Boolean = people.any { it.id != _device.value.personId }
+
+    /** Is [backup] of the same move as [d]: does it have any of the same people, or (from before 2.0, with no people) any of the same things? */
+    private fun sameMove(d: AppData, backup: AppData): Boolean {
+        if (backup.people.isNotEmpty()) {
+            val ids = d.people.map { it.id }.toSet()
+            return backup.people.any { it.id in ids }
+        }
+        val ids = HashSet<String>()
+        for (list in listOf<List<Rec>>(d.items, d.boxes, d.rooms, d.tasks, d.expenses)) for (r in list) ids += r.id
+        return listOf<List<Rec>>(backup.items, backup.boxes, backup.rooms, backup.tasks, backup.expenses).any { l -> l.any { it.id in ids } }
+    }
+
+    /**
+     * Why [backup] should not be restored on this phone, or null when it may be. Only an Organiser
+     * restores ([Action.RESTORE_BACKUP]). A phone on its own takes in any backup: that is how a move
+     * comes onto a new phone, or how two phones that cannot reach each other are combined. A phone
+     * that shares its move with others only takes in a backup of that same move, so that two moves
+     * are never mixed and passed on to everyone in this one.
+     */
+    fun whyNotRestore(backup: AppData): String? {
+        val d = _data.value
+        d.refusal(me, Action.RESTORE_BACKUP)?.let { return it }
+        if (!d.sharedHere() || sameMove(d, backup)) return null
+        val name = backup.move.name.trim().let { if (it.isEmpty()) "" else " (“$it”)" }
+        return "That backup is of a different move$name. This phone shares its move with others, so the two are not mixed. " +
+            "Restore it on a phone that is not in a move yet, or erase this phone first."
+    }
+
+    /**
+     * Restore a backup, already checked with [whyNotRestore] and brought up to date with [migrate].
+     * Merged in, nothing on the phone is lost. With [replace] the phone goes back to the backup, but
+     * who is in the move and every role change and removal since are kept, so a restore never gives
+     * anyone back rights they have lost. A backup from a Helper's phone ([helpersShare]) holds none of
+     * what Helpers are not sent, so this phone keeps its own costs, cost suggestions, and receipt and
+     * serial-label photos.
+     */
+    internal fun restore(backup: AppData, replace: Boolean, helpersShare: Boolean = false) {
+        if (!replace) {
+            mergeIn(backup)
+            return
+        }
+        synchronized(lock) {
+            val cur = _data.value
+            var next = backup
+            if (sameMove(cur, backup) && cur.people.isNotEmpty()) {
+                next = next.copy(people = mergePeople(next.people, cur.people))
+                if (helpersShare) {
+                    next = next.copy(
+                        expenses = cur.expenses,
+                        photos = next.photos.filter { it.kind !in HIDDEN_FROM_HELPERS } + cur.photos.filter { it.kind in HIDDEN_FROM_HELPERS },
+                        proposals = next.proposals.filter { it.kind != ProposalKind.COST } + cur.proposals.filter { it.kind == ProposalKind.COST },
+                    )
+                }
+            }
+            replaceAll(next)
+        }
     }
 
     /** Erase everything on this phone, photos included, and start again. Organisers only. */

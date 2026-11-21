@@ -443,7 +443,7 @@ object Csv {
             sb.append(
                 listOf(
                     "Item", i.label, i.title(), data.room(i.originRoomId)?.name, data.room(i.destRoomId)?.name,
-                    i.disposition.label, i.stage.label, fmtNum(i.widthCm), fmtNum(i.depthCm), fmtNum(i.heightCm), fmtNum(i.value),
+                    i.disposition.label, data.statusOf(i.toMovable()), fmtNum(i.widthCm), fmtNum(i.depthCm), fmtNum(i.heightCm), fmtNum(i.value),
                     if (i.fragile) "yes" else "", if (i.damaged) "yes: ${i.damageNote}" else "", i.notes,
                     i.make, i.model, i.serial, i.warrantyDay?.let { fmtDay(it) } ?: "", i.accessories,
                     container?.kind?.label, container?.category, container?.label,
@@ -455,7 +455,7 @@ object Csv {
                 listOf(
                     "Box", b.label, listOf(b.name, b.contents).filter { it.isNotBlank() }.joinToString(": "),
                     data.room(b.originRoomId)?.name, data.room(b.destRoomId)?.name,
-                    "Move", b.stage.label, "", "", "", "",
+                    "Move", data.statusOf(b.toMovable()), "", "", "", "",
                     if (b.fragile) "yes" else "", if (b.damaged) "yes: ${b.damageNote}" else "", b.notes,
                     "", "", "", "", "",
                     b.kind.label, b.category, data.parentOf(b)?.label,
@@ -467,7 +467,7 @@ object Csv {
             sb.append(
                 listOf(
                     "In box", b.label, e.title.ifBlank { "Barcode ${e.code}" }, data.room(b.originRoomId)?.name, data.room(b.destRoomId)?.name,
-                    "Move", b.stage.label, "", "", "", "", "", "", listOf(e.author, e.code).filter { it.isNotBlank() }.joinToString(" / "),
+                    "Move", data.statusOf(b.toMovable()), "", "", "", "", "", "", listOf(e.author, e.code).filter { it.isNotBlank() }.joinToString(" / "),
                     "", "", "", "", "",
                     b.kind.label, b.category, b.label,
                 ).joinToString(",") { cell(it) }
