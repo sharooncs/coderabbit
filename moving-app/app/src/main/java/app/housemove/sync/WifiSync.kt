@@ -394,8 +394,8 @@ object WifiSync {
                     store.flush()
                     // Whoever shows an invite is trusted to say who they are; anyone else is looked up.
                     val role = (if (claim != null) theirPerson?.role else before.roleOfPeer(theirPerson)) ?: Role.HELPER
-                    // A phone joining its first move leaves behind the person it started as.
-                    val mine = store.data.value.let { if (claim != null && store.isAlone()) it.copy(people = emptyList()) else it }
+                    // A phone joining its first move leaves behind the person it started as and what that person decided alone.
+                    val mine = if (claim != null) store.offerFor(claim) else store.data.value
                     writeData(out, mine.visibleTo(role))
                     val merged = readData(din)
                     var joined: Person? = null

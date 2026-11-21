@@ -122,6 +122,25 @@ internal fun distrustUnstamped(d: AppData): AppData = d.copy(
     },
 )
 
+/**
+ * The data of a phone that has been on its own, as it goes into a move it was invited to.
+ * The person it started as stays behind, so what that person decided carries no weight in
+ * the new move. The same has to hold for what was set in nobody's name there (a phone in
+ * the old "helper mode", or data from before 2.0): those parts are marked so that the merge
+ * does not take them for decisions made when the new move had nobody to ask.
+ * The items, containers, photos and everything else it holds go in as they are.
+ */
+internal fun leavingOwnMove(d: AppData): AppData {
+    fun Stamp.left(): Stamp = if (by.isEmpty()) copy(sum = "?") else this
+    return d.copy(
+        people = emptyList(),
+        move = d.move.copy(changedBy = d.move.changedBy.left()),
+        items = d.items.map { it.copy(decisionBy = it.decisionBy.left(), roomBy = it.roomBy.left(), outcomeBy = it.outcomeBy.left()) },
+        expenses = d.expenses.map { it.copy(costBy = it.costBy.left(), paidBy = it.paidBy.left()) },
+        tasks = d.tasks.map { it.copy(planBy = it.planBy.left(), doneBy = it.doneBy.left()) },
+    )
+}
+
 // ---- approved suggestions and the go-ahead they give -------------------------------
 
 /** Approved suggestions, by what they are about. */

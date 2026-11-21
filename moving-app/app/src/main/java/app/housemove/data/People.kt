@@ -111,9 +111,10 @@ fun AppData.personName(id: String?): String = person(id)?.name?.ifBlank { null }
  * time. An open grant ([Grant.by] blank) counts when it is how the person
  * first appears (a phone starting its own move) or when the move had no
  * Organiser at that time, so there was nobody to ask. Anything else, such as
- * a Decider's phone writing itself a promotion, is ignored. Because past
- * roles are kept, a decision made by an Organiser stays good after they are
- * demoted or removed.
+ * a Decider's phone writing itself a promotion, is ignored. So is a grant that
+ * would take the last Organiser away while other people are in the move.
+ * Because past roles are kept, a decision made by an Organiser stays good
+ * after they are demoted or removed.
  */
 class Roles(people: Collection<Person>) {
     private class Step(val at: Long, val role: Role, val removed: Boolean, val by: String) {
@@ -121,6 +122,9 @@ class Roles(people: Collection<Person>) {
     }
 
     private val steps = HashMap<String, ArrayList<Step>>()
+
+    /** Each moment the number of Organisers changed, with the number from then on. */
+    private val organisersFrom = ArrayList<Pair<Long, Int>>()
 
     init {
         val all = ArrayList<Pair<String, Grant>>()
@@ -132,10 +136,22 @@ class Roles(people: Collection<Person>) {
             val ok = if (g.by.isEmpty()) mine == null || organisers == 0 else steps[g.by]?.lastOrNull()?.organiser == true
             if (!ok) continue
             val step = Step(g.at, g.role, g.removed, g.by)
-            organisers += (if (step.organiser) 1 else 0) - (if (mine?.lastOrNull()?.organiser == true) 1 else 0)
+            val wasOrganiser = mine?.lastOrNull()?.organiser == true
+            // The last Organiser stays one while there is anyone else in the move. Each phone refuses that by itself;
+            // this is for two Organisers who step down (or remove themselves) on their own phones at the same time.
+            if (wasOrganiser && !step.organiser && organisers == 1 && steps.any { (other, s) -> other != id && !s.last().removed }) continue
+            val before = organisers
+            organisers += (if (step.organiser) 1 else 0) - (if (wasOrganiser) 1 else 0)
+            if (organisers != before) organisersFrom += g.at to organisers
             steps.getOrPut(id) { ArrayList() }.add(step)
         }
     }
+
+    /**
+     * Was there nobody to ask at [time]: no Organiser in the move then? Something set in
+     * nobody's name counts only if so. Time 0 is data from before there were roles.
+     */
+    fun nobodyToAsk(time: Long): Boolean = time == 0L || (organisersFrom.lastOrNull { it.first <= time }?.second ?: 0) == 0
 
     private fun stepAt(id: String, time: Long): Step? = steps[id]?.lastOrNull { it.at <= time }
 
@@ -190,6 +206,24 @@ fun AppData.freeLetter(except: String? = null): String {
     var n = 0
     while (letterAt(n) in used) n++
     return letterAt(n)
+}
+
+/**
+ * The letter for someone [by] is adding. While [by] is the only Organiser, nobody else can be
+ * adding people at the same moment, so the next free letter is theirs to give. Once there are
+ * several Organisers, two of them could each give out the same "next free" letter on their own
+ * phones before those have synced, and two people would then write the same codes on their
+ * boxes. So each Organiser hands out letters that begin with their own: Asha (A) gives AA, AB, …
+ * and Omar (B) gives BA, BB, ….
+ */
+internal fun AppData.letterFor(by: Person?): String {
+    val mine = by?.letter?.trim()?.uppercase().orEmpty()
+    val alone = people.none { it.id != by?.id && it.role == Role.ORGANISER && !it.removed }
+    if (by == null || mine.isEmpty() || alone) return freeLetter()
+    val used = people.map { it.letter.uppercase() }.toSet()
+    var n = 0
+    while (mine + letterAt(n) in used) n++
+    return mine + letterAt(n)
 }
 
 /** Letters used by more than one person, which would make their handwritten codes clash. */

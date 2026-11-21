@@ -37,13 +37,14 @@ private inline fun <T : Rec> mergeEach(a: List<T>, b: List<T>, f: (x: T?, y: T?,
  * One protected part of a record (see Rules.kt): where its stamp is, the check
  * value over its values, and whether the person on a stamp was allowed to set it.
  */
-private class Guarded<T>(val stamp: (T) -> Stamp, val sum: (T) -> String, val allowed: (T, Stamp) -> Boolean) {
+private class Guarded<T>(val roles: Roles, val stamp: (T) -> Stamp, val sum: (T) -> String, val allowed: (T, Stamp) -> Boolean) {
     fun good(r: T?): Boolean {
         if (r == null) return false
         val s = stamp(r)
         if (s.sum.isEmpty()) return s.by.isEmpty() // never stamped: data from before there were roles
         if (s.sum != sum(r)) return false // the values were changed without a new stamp
-        return s.by.isEmpty() || allowed(r, s)
+        // Set in nobody's name: that counts from a time when the move had no Organiser to ask, and not otherwise.
+        return if (s.by.isEmpty()) roles.nobodyToAsk(s.at) else allowed(r, s)
     }
 
     /**
@@ -72,7 +73,7 @@ private fun mergeMove(a: MoveInfo, b: MoveInfo, roles: Roles): MoveInfo {
         a.updatedAt != b.updatedAt -> if (a.updatedAt > b.updatedAt) a else b
         else -> if (a.toString() >= b.toString()) a else b
     }
-    val settings = Guarded<MoveInfo>({ it.changedBy }, { it.settingsSum() }) { _, s -> roles.organiserAt(s.by, s.at) }
+    val settings = Guarded<MoveInfo>(roles, { it.changedBy }, { it.settingsSum() }) { _, s -> roles.organiserAt(s.by, s.at) }
     val from = settings.pick(a, b, newer) ?: newer
     val printed = maxOf(a.labelsPrinted, b.labelsPrinted)
     return if (from.updatedAt == newer.updatedAt && from.labelsPrinted == printed) from else from.copy(updatedAt = newer.updatedAt, labelsPrinted = printed)
@@ -92,7 +93,9 @@ private val CLASS = mapOf(
 private fun mergeProposals(a: List<Proposal>, b: List<Proposal>, roles: Roles): List<Proposal> {
     fun good(p: Proposal?): Boolean {
         if (p == null || p.decided.sum != p.stateSum()) return false // the state or what was proposed changed without a stamp
-        return p.decided.by.isEmpty() || roles.organiserAt(p.decided.by, p.decided.at)
+        // An approval or refusal in nobody's name only counts from a time when there was no Organiser to give it.
+        if (p.decided.by.isEmpty()) return CLASS.getValue(p.state) < 2 || roles.nobodyToAsk(p.decided.at)
+        return roles.organiserAt(p.decided.by, p.decided.at)
     }
     return mergeEach(a, b) { x, y, newer ->
         val role = roles.at(newer.by, newer.createdAt) ?: return@mergeEach null
@@ -121,10 +124,10 @@ private fun mergeProposals(a: List<Proposal>, b: List<Proposal>, roles: Roles): 
 
 private fun mergeItems(a: List<Item>, b: List<Item>, roles: Roles, approvals: Approvals, rooms: List<Room>): List<Item> {
     val organiser = { _: Item, s: Stamp -> roles.organiserAt(s.by, s.at) }
-    val decision = Guarded<Item>({ it.decisionBy }, { it.decisionSum() }, organiser)
-    val room = Guarded<Item>({ it.roomBy }, { it.roomSum() }, organiser)
+    val decision = Guarded<Item>(roles, { it.decisionBy }, { it.decisionSum() }, organiser)
+    val room = Guarded<Item>(roles, { it.roomBy }, { it.roomSum() }, organiser)
     var decided = Stamp()
-    val outcome = Guarded<Item>({ it.outcomeBy }, { it.outcomeSum() }) { item, s ->
+    val outcome = Guarded<Item>(roles, { it.outcomeBy }, { it.outcomeSum() }) { item, s ->
         when (roles.at(s.by, s.at)) {
             Role.ORGANISER -> true
             Role.DECIDER -> approvals.coveredThen(ProposalKind.ITEM_DECISION, item.id, s, decided)
@@ -149,9 +152,9 @@ private fun mergeItems(a: List<Item>, b: List<Item>, roles: Roles, approvals: Ap
 
 /** Costs. One created by someone who may not create costs is left out altogether. */
 private fun mergeExpenses(a: List<Expense>, b: List<Expense>, roles: Roles, approvals: Approvals): List<Expense> {
-    val cost = Guarded<Expense>({ it.costBy }, { it.costSum() }) { _, s -> roles.organiserAt(s.by, s.at) }
+    val cost = Guarded<Expense>(roles, { it.costBy }, { it.costSum() }) { _, s -> roles.organiserAt(s.by, s.at) }
     var costed = Stamp()
-    val paid = Guarded<Expense>({ it.paidBy }, { it.paidSum() }) { e, s ->
+    val paid = Guarded<Expense>(roles, { it.paidBy }, { it.paidSum() }) { e, s ->
         when (roles.at(s.by, s.at)) {
             Role.ORGANISER -> true
             Role.DECIDER -> approvals.coveredThen(ProposalKind.COST, e.id, s, costed)
@@ -171,9 +174,9 @@ private fun mergeExpenses(a: List<Expense>, b: List<Expense>, roles: Roles, appr
 
 /** Tasks. One created by someone who may not create tasks is left out altogether. */
 private fun mergeTasks(a: List<Task>, b: List<Task>, roles: Roles): List<Task> {
-    val plan = Guarded<Task>({ it.planBy }, { it.planSum() }) { _, s -> roles.organiserAt(s.by, s.at) }
+    val plan = Guarded<Task>(roles, { it.planBy }, { it.planSum() }) { _, s -> roles.organiserAt(s.by, s.at) }
     var assignee: String? = null
-    val done = Guarded<Task>({ it.doneBy }, { it.doneSum() }) { _, s ->
+    val done = Guarded<Task>(roles, { it.doneBy }, { it.doneSum() }) { _, s ->
         roles.organiserAt(s.by, s.at) || (s.by == assignee && roles.memberAt(s.by, s.at))
     }
     return mergeEach(a, b) { x, y, newer ->
