@@ -186,6 +186,11 @@ val JOURNEY: List<JourneyPhase> = listOf(
         "Pack", "Pack", "From 3 weeks before", Icons.Default.Inventory2,
         listOf(
             JourneyStep(
+                "Rooms overview", Icons.Default.Roofing, "overview", part = Part.BOXES,
+                status = { d, _ -> d.progress().roomsPacked.let { if (it.total == 0) "No rooms yet" else "${it.done} of ${it.total} rooms packed" } },
+                done = { d -> d.progress().roomsPacked.let { it.total > 0 && it.done == it.total } },
+            ),
+            JourneyStep(
                 "Pack a box", Icons.Default.Inventory2, "pack", part = Part.BOXES,
                 status = { d, _ -> d.progress().sealed.let { if (it.total == 0) "No boxes yet" else "${it.done} of ${it.total} sealed" } },
                 done = { d -> d.progress().sealed.let { it.total > 0 && it.done == it.total } },
@@ -300,8 +305,7 @@ fun JourneyStrip(data: AppData, selected: Int, current: Int, onSelect: (Int) -> 
             val isSelected = i == selected
             Column(
                 Modifier.weight(1f)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(if (isSelected) scheme.primaryContainer else Color.Transparent)
+                    .then(if (isSelected) Modifier.glass(RoundedCornerShape(18.dp), shadow = 3.dp) else Modifier.clip(RoundedCornerShape(18.dp)))
                     .clickable(role = Role.Tab, onClickLabel = phase.name) { onSelect(i) }
                     .padding(vertical = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,

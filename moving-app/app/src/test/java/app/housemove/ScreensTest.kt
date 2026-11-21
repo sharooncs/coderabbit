@@ -99,7 +99,7 @@ class ScreensTest {
     }
 
     private val routes = listOf(
-        "home", "items", "item/wardrobe", "item/bed", "item/sofa", "item/fridge", "item/tv", "item/missing", "walk", "triage", "plan", "disposal",
+        "home", "overview", "items", "item/wardrobe", "item/bed", "item/sofa", "item/fridge", "item/tv", "item/missing", "walk", "triage", "plan", "disposal",
         "electronics", "box/box5",
         "boxes", "box/box1", "box/box3", "box/missing", "pack", "labels", "lists", "packorder", "tasks",
         "moveday", "load", "unload", "reconcile", "sweep", "records/ORIGIN", "records/DEST", "unpack", "budget", "reports",
@@ -133,7 +133,7 @@ class ScreensTest {
             rule.runOnUiThread { nav!!.navigate(route) }
             rule.waitForIdle()
             rule.onRoot().assertExists()
-            if (route in setOf("home", "box/box1", "unload", "item/wardrobe", "load", "pack")) {
+            if (route in setOf("home", "overview", "box/box1", "unload", "item/wardrobe", "load", "pack")) {
                 rule.onRoot().captureRoboImage("build/screens/small-dark-" + route.replace('/', '_') + ".png")
             }
         }

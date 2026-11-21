@@ -18,13 +18,18 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -44,6 +49,11 @@ import app.housemove.data.*
  *   EmptyState    what a screen shows before there is anything in it
  *   StepRow       one step of an ordered list of things to do
  *   Tile          a tappable square with an icon, a title and a short status
+ *   Meter, Dial   progress as a glowing bar, and as a half-circle gauge
+ *
+ * Everything here is made of glass (see Glass.kt) and stands on the night ground.
+ * Mint means selected or done, amber in progress, slate not started, red wrong; none
+ * of them is the only sign of it: there is always a tick, a picture or a word as well.
  *
  * Rules of thumb: one main action per screen, visible without scrolling; pictures and
  * colour before words; at most one short hint per section; rarely used things go in a Fold.
@@ -115,7 +125,7 @@ fun Fold(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     var expanded by rememberSaveable(key) { mutableStateOf(open) }
-    Card(modifier.fillMaxWidth()) {
+    GlassCard(modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -154,6 +164,11 @@ fun Fold(
 
 data class Choice<T>(val value: T, val label: String, val icon: ImageVector)
 
+/**
+ * One tile of a choice. Selected is mint-tinted glass with a tick in the corner, so it
+ * does not depend on colour. [tap] is the selectable/toggleable modifier: it goes after
+ * the glass so the ripple keeps to the rounded shape.
+ */
 @Composable
 private fun PickTile(
     icon: ImageVector,
@@ -161,33 +176,37 @@ private fun PickTile(
     selected: Boolean,
     modifier: Modifier = Modifier,
     large: Boolean = false,
+    tap: Modifier = Modifier,
 ) {
-    val scheme = MaterialTheme.colorScheme
-    Column(
-        modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(if (selected) scheme.primaryContainer else scheme.surface)
-            .border(
-                if (selected) 2.dp else 1.dp,
-                if (selected) scheme.primary else scheme.outlineVariant,
-                RoundedCornerShape(12.dp),
-            )
-            .padding(horizontal = if (large) 10.dp else 4.dp, vertical = if (large) 22.dp else 10.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(if (large) 10.dp else 4.dp),
+    val fg = if (selected) Night.MintPale else Night.Text
+    Box(
+        modifier.glass(RoundedCornerShape(if (large) 22.dp else 16.dp), if (selected) GlassTone.Mint else GlassTone.Plain, shadow = 4.dp).then(tap),
     ) {
-        Icon(
-            icon, contentDescription = null, tint = if (selected) scheme.primary else scheme.onSurfaceVariant,
-            modifier = Modifier.size(if (large) 40.dp else 24.dp),
-        )
-        Text(
-            label,
-            style = if (large) MaterialTheme.typography.titleSmall else MaterialTheme.typography.labelMedium,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            color = if (selected) scheme.onPrimaryContainer else scheme.onSurface,
-            textAlign = TextAlign.Center,
-            maxLines = 2,
-        )
+        Column(
+            Modifier.fillMaxWidth().heightIn(min = 56.dp)
+                .padding(horizontal = if (large) 10.dp else 4.dp, vertical = if (large) 22.dp else 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(if (large) 10.dp else 4.dp, Alignment.CenterVertically),
+        ) {
+            Icon(
+                icon, contentDescription = null, tint = if (selected) Night.Mint else Night.TextDim,
+                modifier = Modifier.size(if (large) 40.dp else 24.dp),
+            )
+            Text(
+                label,
+                style = if (large) MaterialTheme.typography.titleSmall else MaterialTheme.typography.labelMedium,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                color = fg,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+            )
+        }
+        if (selected) {
+            Icon(
+                Icons.Default.CheckCircle, contentDescription = null, tint = Night.Mint,
+                modifier = Modifier.align(Alignment.TopEnd).padding(if (large) 8.dp else 4.dp).size(if (large) 18.dp else 13.dp),
+            )
+        }
     }
 }
 
@@ -203,12 +222,13 @@ fun <T> IconChoice(
 ) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         options.chunked(columns).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 row.forEach { c ->
                     PickTile(
                         c.icon, c.label, c.value == selected,
-                        Modifier.weight(1f).selectable(selected = c.value == selected, role = Role.RadioButton) { onPick(c.value) },
+                        Modifier.weight(1f).fillMaxHeight(),
                         large = large,
+                        tap = Modifier.selectable(selected = c.value == selected, role = Role.RadioButton) { onPick(c.value) },
                     )
                 }
                 repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
@@ -224,11 +244,12 @@ data class Toggle(val label: String, val icon: ImageVector, val on: Boolean, val
 fun ToggleTiles(toggles: List<Toggle>, modifier: Modifier = Modifier, columns: Int = toggles.size.coerceIn(1, 4)) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         toggles.chunked(columns).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 row.forEach { t ->
                     PickTile(
                         t.icon, t.label, t.on,
-                        Modifier.weight(1f).toggleable(value = t.on, role = Role.Switch) { t.set(it) },
+                        Modifier.weight(1f).fillMaxHeight(),
+                        tap = Modifier.toggleable(value = t.on, role = Role.Switch) { t.set(it) },
                     )
                 }
                 repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
@@ -255,33 +276,28 @@ fun RoomTiles(
         Hint("No rooms yet. Add them under More → Rooms.", modifier)
         return
     }
-    val scheme = MaterialTheme.colorScheme
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         rooms.chunked(columns).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 row.forEach { r ->
                     val selected = r.id == selectedId
                     val rc = roomColor(r.color)
                     val coloured = home == Home.DEST
-                    val bg = when {
-                        selected && coloured -> rc.color()
-                        selected -> scheme.primaryContainer
-                        else -> scheme.surface
-                    }
+                    val shape = RoundedCornerShape(16.dp)
                     val fg = when {
                         selected && coloured -> rc.onColor()
-                        selected -> scheme.onPrimaryContainer
-                        else -> scheme.onSurface
+                        selected -> Night.MintPale
+                        else -> Night.Text
+                    }
+                    // A chosen new-home room is filled with its own colour, the one on its tape and door sign.
+                    val look = if (selected && coloured) {
+                        Modifier.clip(shape).background(rc.color()).border(2.dp, Color.White.copy(alpha = 0.75f), shape)
+                    } else {
+                        Modifier.glass(shape, if (selected) GlassTone.Mint else GlassTone.Plain, shadow = 4.dp)
                     }
                     Row(
-                        Modifier.weight(1f).heightIn(min = 52.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(bg)
-                            .border(
-                                if (selected) 2.dp else 1.dp,
-                                if (selected) (if (coloured) rc.color() else scheme.primary) else scheme.outlineVariant,
-                                RoundedCornerShape(12.dp),
-                            )
+                        Modifier.weight(1f).fillMaxHeight().heightIn(min = 52.dp)
+                            .then(look)
                             .selectable(selected = selected, role = Role.RadioButton) {
                                 onPick(if (selected && allowNone) null else r.id)
                             }
@@ -289,11 +305,11 @@ fun RoomTiles(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         if (coloured && !selected) {
-                            Box(Modifier.size(18.dp).clip(CircleShape).background(rc.color()))
+                            Box(Modifier.size(18.dp).clip(CircleShape).background(rc.color()).border(1.dp, Color.White.copy(alpha = 0.5f), CircleShape))
                         } else {
                             Icon(
                                 if (selected) Icons.Default.Check else Pic.Room,
-                                contentDescription = null, tint = fg, modifier = Modifier.size(18.dp),
+                                contentDescription = null, tint = if (selected) fg else Night.TextDim, modifier = Modifier.size(18.dp),
                             )
                         }
                         Spacer(Modifier.width(10.dp))
@@ -324,7 +340,7 @@ fun Ring(
         Text("${ratio.done}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
     },
 ) {
-    val track = MaterialTheme.colorScheme.surfaceVariant
+    val track = Night.Track
     Box(modifier.size(size), contentAlignment = Alignment.Center) {
         Canvas(Modifier.fillMaxSize()) {
             val w = stroke.toPx()
@@ -345,15 +361,63 @@ fun Ring(
 /** A flag with a picture: used where there is room for it. */
 @Composable
 fun IconFlag(icon: ImageVector, text: String, error: Boolean = false) {
-    val bg = if (error) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer
-    val fg = if (error) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer
+    val (bg, fg) = flagColors(error)
     Row(
-        Modifier.clip(RoundedCornerShape(6.dp)).background(bg).padding(horizontal = 6.dp, vertical = 2.dp),
+        Modifier.clip(RoundedCornerShape(8.dp)).background(bg).padding(horizontal = 7.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(icon, contentDescription = null, tint = fg, modifier = Modifier.size(14.dp))
         Spacer(Modifier.width(4.dp))
         Text(text, color = fg, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium, maxLines = 1)
+    }
+}
+
+/**
+ * Progress as a thin bar that glows a little. [color] says how it is going: mint when
+ * done or fine, amber while under way.
+ */
+@Composable
+fun Meter(fraction: Float, modifier: Modifier = Modifier, color: Color = Night.MintLight, height: Dp = 5.dp) {
+    Canvas(modifier.height(height)) {
+        val r = CornerRadius(size.height / 2f)
+        drawRoundRect(Night.Track, cornerRadius = r)
+        val f = fraction.coerceIn(0f, 1f)
+        if (f > 0f) {
+            val w = (size.width * f).coerceAtLeast(size.height)
+            drawRoundRect(color.copy(alpha = 0.28f), topLeft = Offset(-1.5f, -2.5f), size = Size(w + 3f, size.height + 5f), cornerRadius = CornerRadius(size.height))
+            drawRoundRect(color, size = Size(w, size.height), cornerRadius = r)
+        }
+    }
+}
+
+/**
+ * Progress as a half-circle gauge with the count underneath its arch, for the one
+ * number a panel is about. Says "[done] of [total] [what]" to a screen reader.
+ */
+@Composable
+fun Dial(ratio: Ratio, what: String, modifier: Modifier = Modifier, width: Dp = 128.dp) {
+    Box(
+        modifier.size(width, width * 0.61f).semantics(mergeDescendants = true) { contentDescription = "${ratio.done} of ${ratio.total} $what" },
+        contentAlignment = Alignment.BottomCenter,
+    ) {
+        Canvas(Modifier.fillMaxSize()) {
+            val w = 11.dp.toPx()
+            val r = (size.width - w * 3f) / 2f
+            val c = Offset(size.width / 2f, size.height - w * 0.9f)
+            val box = Size(r * 2, r * 2)
+            val at = Offset(c.x - r, c.y - r)
+            drawArc(Color.Black.copy(alpha = 0.35f), 180f, 180f, false, at, box, style = Stroke(w + 2.dp.toPx(), cap = StrokeCap.Round))
+            drawArc(Color.White.copy(alpha = 0.14f), 180f, 180f, false, at, box, style = Stroke(w, cap = StrokeCap.Round))
+            val sweep = 180f * ratio.fraction.coerceIn(0f, 1f)
+            if (sweep > 0f) {
+                drawArc(Night.Mint.copy(alpha = 0.22f), 180f, sweep, false, at, box, style = Stroke(w * 1.9f, cap = StrokeCap.Round))
+                drawArc(
+                    Brush.horizontalGradient(0f to Color(0xFF2FB893), 1f to Color(0xFFC8FFEE), startX = at.x, endX = at.x + box.width),
+                    180f, sweep, false, at, box, style = Stroke(w, cap = StrokeCap.Round),
+                )
+            }
+        }
+        Text("${ratio.done}/${ratio.total}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, maxLines = 1)
     }
 }
 
@@ -369,15 +433,40 @@ fun BigAction(
     primary: Boolean = true,
     enabled: Boolean = true,
 ) {
-    val content: @Composable RowScope.() -> Unit = {
-        Icon(icon, contentDescription = null)
+    val fg = if (primary) Night.OnMint else Night.Text
+    val look = if (primary) Modifier.mintPill() else Modifier.glass(CircleShape, sheen = true)
+    Row(
+        modifier.fillMaxWidth().enabledLook(enabled).then(look)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .heightIn(min = 60.dp).padding(horizontal = 20.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        Icon(icon, contentDescription = null, tint = fg)
         Spacer(Modifier.width(12.dp))
-        Text(label, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+        Text(label, style = MaterialTheme.typography.titleMedium, color = fg, textAlign = TextAlign.Center)
     }
-    val m = modifier.fillMaxWidth().heightIn(min = 60.dp)
-    if (primary) Button(onClick = onClick, modifier = m, enabled = enabled, content = content)
-    else OutlinedButton(onClick = onClick, modifier = m, enabled = enabled, content = content)
 }
+
+/** The body of a primary button: a glossy mint pill with a soft mint glow beneath it. */
+internal fun Modifier.mintPill(): Modifier = this
+    .drawBehind {
+        val r = CornerRadius(size.height / 2f)
+        // The glow, in widening faint layers.
+        for (i in 5 downTo 1) {
+            val g = 3.dp.toPx() * i
+            drawRoundRect(
+                Color(0xFF28DCAA).copy(alpha = 0.055f), topLeft = Offset(-g * 0.6f, 4.dp.toPx() - g * 0.2f),
+                size = Size(size.width + g * 1.2f, size.height + g * 0.9f), cornerRadius = CornerRadius(size.height / 2f + g),
+            )
+        }
+        drawRoundRect(Brush.verticalGradient(0f to Color(0xFFA9F5DD), 0.42f to Night.Mint, 1f to Color(0xFF34BE98)), cornerRadius = r)
+        drawRoundRect(
+            Brush.verticalGradient(0f to Color.White.copy(alpha = 0.85f), 0.5f to Color.White.copy(alpha = 0f)),
+            cornerRadius = r, style = Stroke(1.dp.toPx()),
+        )
+    }
+    .clip(CircleShape)
 
 /** A tappable square: picture, title, and a short status line. */
 @Composable
@@ -391,11 +480,11 @@ fun Tile(
     alert: Boolean = false,
 ) {
     val scheme = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(20.dp)
     Column(
         modifier
-            .clip(RoundedCornerShape(14.dp))
-            .background(scheme.surface)
-            .border(1.dp, if (alert) scheme.error else scheme.outlineVariant, RoundedCornerShape(14.dp))
+            .glass(shape, shadow = 5.dp)
+            .then(if (alert) Modifier.border(1.5.dp, scheme.error.copy(alpha = 0.85f), shape) else Modifier)
             .clickable(onClick = onClick)
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -403,7 +492,9 @@ fun Tile(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, contentDescription = null, tint = scheme.primary, modifier = Modifier.size(26.dp))
             Spacer(Modifier.weight(1f))
-            if (done) Icon(Icons.Default.CheckCircle, contentDescription = "Done", tint = scheme.tertiary, modifier = Modifier.size(20.dp))
+            // A tick for done, a mark for "needs attention": never the colour alone.
+            if (alert) Icon(Icons.Default.ErrorOutline, contentDescription = "Needs attention", tint = scheme.error, modifier = Modifier.size(20.dp))
+            else if (done) Icon(Icons.Default.CheckCircle, contentDescription = "Done", tint = scheme.tertiary, modifier = Modifier.size(20.dp))
         }
         Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
         if (!status.isNullOrBlank()) {
@@ -446,15 +537,17 @@ fun EmptyState(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Box(
-            Modifier.size(88.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
-            contentAlignment = Alignment.Center,
-        ) { Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(44.dp)) }
+        Box(Modifier.size(88.dp).drawBehind { drawOrb(OrbKind.Plain) }, contentAlignment = Alignment.Center) {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(42.dp))
+        }
         Text(title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
         if (text != null) {
             Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
         }
-        if (action != null && onAction != null) Button(onClick = onAction) { Text(action) }
+        if (action != null && onAction != null) {
+            Spacer(Modifier.height(2.dp))
+            Button(onClick = onAction, modifier = Modifier.heightIn(min = 48.dp)) { Text(action) }
+        }
     }
 }
 
@@ -476,8 +569,7 @@ fun StepRow(
     val scheme = MaterialTheme.colorScheme
     Row(
         modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(if (current) scheme.primaryContainer else Color.Transparent)
+            .then(if (current) Modifier.glass(RoundedCornerShape(22.dp), GlassTone.Mint, shadow = 4.dp) else Modifier.clip(RoundedCornerShape(22.dp)))
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -500,4 +592,4 @@ fun StepRow(
 /** Outline used by tiles; exposed for screens that draw their own. */
 @Composable
 fun tileBorder(selected: Boolean = false): BorderStroke =
-    BorderStroke(if (selected) 2.dp else 1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant)
+    BorderStroke(if (selected) 2.dp else 1.dp, if (selected) MaterialTheme.colorScheme.primary else Night.GlassRim)

@@ -7,6 +7,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -25,11 +26,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import app.housemove.data.*
 
@@ -66,9 +71,10 @@ fun NavHostController.open(route: String) = navigate(route) { launchSingleTop = 
 fun NavHostController.openMovable(m: Movable) = open(if (m.isBox) "box/${m.id}" else "item/${m.id}")
 
 /**
- * Standard page frame: top bar, optional bottom tabs, content column.
- * Pass [tab] (the route of the selected tab) on top-level screens to show the bottom bar.
+ * Standard page frame: glass top bar, optional dock at the bottom, content column.
+ * Pass [tab] (the route of the selected destination) on top-level screens to show the dock.
  * The content column does not scroll by itself; use [ScrollColumn] or a LazyColumn inside.
+ * [subtitle] is a small line above the title. Buttons in [actions] should be [TopAction]s.
  */
 @Composable
 fun Screen(
@@ -77,56 +83,85 @@ fun Screen(
     tab: String? = null,
     actions: @Composable RowScope.() -> Unit = {},
     fab: @Composable () -> Unit = {},
+    subtitle: String? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val nav = LocalNav.current
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                navigationIcon = {
-                    if (back) IconButton(onClick = { nav.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                actions = actions,
+    Frame(tab = tab, topBar = { TopBar(title, subtitle, back, actions) }, fab = fab, content = content)
+}
+
+/**
+ * What [Screen] is built on, for the rare screen that needs its own top bar (Home).
+ * Screens are transparent: the ground is drawn once by [AppBackground]. The dock floats
+ * over the bottom of the content, which is given room so nothing ends up under it.
+ * [dockAction] puts a large glowing button in the middle of a taller dock.
+ */
+@Composable
+fun Frame(
+    tab: String?,
+    topBar: @Composable () -> Unit,
+    fab: @Composable () -> Unit = {},
+    dockAction: DockAction? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val tabs = if (tab == null) emptyList() else dockTabs(appData())
+    val labelHeight = with(LocalDensity.current) { 16.sp.toDp() }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val plan = if (tab == null) null else dockPlan(maxWidth, tabs.size, dockAction != null, labelHeight)
+        Scaffold(
+            containerColor = Color.Transparent,
+            contentColor = Night.Text,
+            topBar = topBar,
+            // Keeps the content and any floating button clear of the dock, which is drawn on top below.
+            bottomBar = { if (plan != null) Spacer(Modifier.navigationBarsPadding().height(plan.reserve)) },
+            floatingActionButton = fab,
+        ) { inner ->
+            Column(
+                Modifier.fillMaxSize().padding(inner).consumeWindowInsets(inner).imePadding(),
+                content = content,
             )
-        },
-        bottomBar = {
-            if (tab != null) NavigationBar {
-                val data = appData()
-                // Tabs for parts of the app this person does not use are left out.
-                TABS.filter { t ->
-                    when (t.route) {
-                        "boxes" -> data.uses(Part.BOXES)
-                        "moveday" -> data.uses(Part.MOVE_DAY) || data.uses(Part.RECORDS) || data.uses(Part.UNPACK)
-                        else -> true
-                    }
-                }.forEach { t ->
-                    NavigationBarItem(
-                        selected = t.route == tab,
-                        onClick = { if (t.route != tab) nav.goTab(t.route) },
-                        icon = { Icon(t.icon, contentDescription = null) },
-                        label = { Text(t.label, maxLines = 1) },
-                    )
-                }
-            }
-        },
-        floatingActionButton = fab,
-    ) { inner ->
-        Column(
-            Modifier.fillMaxSize().padding(inner).consumeWindowInsets(inner).imePadding(),
-            content = content,
-        )
+        }
+        if (plan != null && tab != null) Dock(tab, tabs, plan, dockAction, Modifier.align(Alignment.BottomCenter))
     }
+}
+
+@Composable
+private fun TopBar(title: String, subtitle: String?, back: Boolean, actions: @Composable RowScope.() -> Unit) {
+    val nav = LocalNav.current
+    Row(
+        Modifier.fillMaxWidth().statusBarsPadding().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 6.dp).heightIn(min = 52.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (back) {
+            GlassOrb(Icons.Default.ChevronLeft, "Back", onClick = { nav.popBackStack() })
+            Spacer(Modifier.width(12.dp))
+        }
+        Column(Modifier.weight(1f).semantics(mergeDescendants = true) { heading() }) {
+            if (subtitle != null) {
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Night.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Text(
+                title,
+                style = if (back) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically, content = actions)
+    }
+}
+
+/** A round glass button for the top bar. Every one needs a [description]: there is no label. */
+@Composable
+fun TopAction(icon: ImageVector, description: String, kind: OrbKind = OrbKind.Plain, onClick: () -> Unit) {
+    GlassOrb(icon, description, kind = kind, onClick = onClick)
 }
 
 /** Search and scan buttons for the top bar of top-level screens. */
 @Composable
 fun TopActions() {
     val nav = LocalNav.current
-    IconButton(onClick = { nav.open("search") }) { Icon(Icons.Default.Search, contentDescription = "Find anything") }
-    IconButton(onClick = { nav.open("scan") }) { Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan a label") }
+    TopAction(Icons.Default.Search, "Find anything") { nav.open("search") }
+    TopAction(Icons.Default.QrCodeScanner, "Scan a label") { nav.open("scan") }
 }
 
 // ---- layout helpers --------------------------------------------------------
@@ -140,15 +175,16 @@ fun ScrollColumn(modifier: Modifier = Modifier, content: @Composable ColumnScope
     )
 }
 
-/** A titled card. */
+/** A titled glass panel. [tone] tints it when the whole panel says something (a warning, a result). */
 @Composable
 fun Section(
     title: String? = null,
     modifier: Modifier = Modifier,
     action: (@Composable () -> Unit)? = null,
+    tone: GlassTone = GlassTone.Plain,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Card(modifier.fillMaxWidth()) {
+    GlassCard(modifier.fillMaxWidth(), tone = tone, shape = RoundedCornerShape(26.dp), sheen = true) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (title != null || action != null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -226,9 +262,35 @@ fun TextInput(
                 }) { Icon(Icons.Default.Mic, contentDescription = "Dictate") }
             }
         },
+        colors = glassFieldColors(),
         modifier = modifier,
     )
 }
+
+/**
+ * Colours for text fields on the night ground: a faint glass fill, a rim that is still
+ * easy to see, and mint when the field has focus. Pass as `colors` to any OutlinedTextField.
+ */
+@Composable
+fun glassFieldColors(): TextFieldColors = OutlinedTextFieldDefaults.colors(
+    focusedContainerColor = Color(0x14FFFFFF),
+    unfocusedContainerColor = Color(0x0DFFFFFF),
+    disabledContainerColor = Color(0x08FFFFFF),
+    errorContainerColor = Color(0x14FF6B5E),
+    focusedBorderColor = Night.Mint,
+    unfocusedBorderColor = Color(0x70FFFFFF),
+    focusedLabelColor = Night.MintPale,
+    unfocusedLabelColor = Night.TextDim,
+    focusedTextColor = Night.Text,
+    unfocusedTextColor = Night.Text,
+    cursorColor = Night.Mint,
+    focusedPlaceholderColor = Night.TextDim,
+    unfocusedPlaceholderColor = Night.TextDim,
+    focusedLeadingIconColor = Night.TextDim,
+    unfocusedLeadingIconColor = Night.TextDim,
+    focusedTrailingIconColor = Night.Text,
+    unfocusedTrailingIconColor = Night.TextDim,
+)
 
 @Composable
 fun NumberInput(
@@ -248,6 +310,7 @@ fun NumberInput(
         label = { Text(label, maxLines = 1) },
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        colors = glassFieldColors(),
         modifier = modifier,
     )
 }
@@ -255,7 +318,7 @@ fun NumberInput(
 @Composable
 fun SwitchRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit, sub: String? = null) {
     Row(
-        Modifier.fillMaxWidth().clickable { onChange(!checked) }.padding(vertical = 2.dp),
+        Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onChange(!checked) }.padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
@@ -269,7 +332,7 @@ fun SwitchRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit, sub:
 @Composable
 fun CheckRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit, sub: String? = null) {
     Row(
-        Modifier.fillMaxWidth().clickable { onChange(!checked) },
+        Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onChange(!checked) },
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Checkbox(checked = checked, onCheckedChange = onChange)
@@ -289,9 +352,9 @@ fun <T> ChipPicker(
     onPick: (T) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         options.forEach { o ->
-            FilterChip(selected = o == selected, onClick = { onPick(o) }, label = { Text(label(o)) })
+            GlassChip(label(o), selected = o == selected, onClick = { onPick(o) })
         }
     }
 }
@@ -335,6 +398,7 @@ fun ConfirmDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
+        modifier = Modifier.dialogRim(),
         title = { Text(title) },
         text = { Text(text) },
         confirmButton = { TextButton(onClick = { onConfirm(); onDismiss() }) { Text(confirm) } },
@@ -351,36 +415,42 @@ fun ProgressRow(label: String, ratio: Ratio, modifier: Modifier = Modifier) {
             Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
             Text(ratio.toString(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Spacer(Modifier.height(4.dp))
-        LinearProgressIndicator(
-            progress = { ratio.fraction },
-            modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
-        )
+        Spacer(Modifier.height(6.dp))
+        Meter(ratio.fraction, Modifier.fillMaxWidth(), height = 8.dp)
     }
 }
+
+/** The rim that makes a stock dialog read as a panel of the look. Pass as the dialog's modifier. */
+fun Modifier.dialogRim(): Modifier = border(1.dp, Night.GlassRim, RoundedCornerShape(30.dp))
 
 fun RoomColor.color() = Color(argb)
 fun RoomColor.onColor() = if (darkText) Color.Black else Color.White
 
-/** Coloured pill showing a room. Shows "No room" when null. */
+/**
+ * Coloured pill showing a room. Shows "No room" when null. The colour is the one on the
+ * tape and the door sign, so it is not adjusted for the dark ground; a light rim keeps
+ * the darker ones (navy, brown, grey) visible against it.
+ */
 @Composable
 fun RoomBadge(room: Room?, modifier: Modifier = Modifier) {
-    val c = room?.let { roomColor(it.color) }
-    val bg = if (room?.home == Home.DEST && c != null) c.color() else MaterialTheme.colorScheme.surfaceVariant
-    val fg = if (room?.home == Home.DEST && c != null) c.onColor() else MaterialTheme.colorScheme.onSurfaceVariant
+    val c = room?.takeIf { it.home == Home.DEST }?.let { roomColor(it.color) }
+    val bg = c?.color() ?: Color(0x1FFFFFFF)
+    val fg = c?.onColor() ?: Night.TextDim
+    val shape = RoundedCornerShape(8.dp)
     Text(
         room?.name ?: "No room",
         color = fg,
         style = MaterialTheme.typography.labelMedium,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
-        modifier = modifier.clip(RoundedCornerShape(6.dp)).background(bg).padding(horizontal = 8.dp, vertical = 3.dp),
+        modifier = modifier.clip(shape).background(bg).border(1.dp, Color.White.copy(alpha = if (c != null) 0.42f else 0.2f), shape)
+            .padding(horizontal = 8.dp, vertical = 3.dp),
     )
 }
 
 @Composable
 fun ColorDot(index: Int, modifier: Modifier = Modifier) {
-    Box(modifier.size(14.dp).clip(CircleShape).background(roomColor(index).color()))
+    Box(modifier.size(14.dp).clip(CircleShape).background(roomColor(index).color()).border(1.dp, Color.White.copy(alpha = 0.5f), CircleShape))
 }
 
 /** Chips for picking a room of one home. New-home rooms show their colour. */
@@ -397,13 +467,13 @@ fun RoomPicker(
         Hint("No rooms yet. Add them under More → Rooms.", modifier)
         return
     }
-    FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         rooms.forEach { r ->
-            FilterChip(
+            GlassChip(
+                r.name,
                 selected = r.id == selectedId,
                 onClick = { onPick(if (r.id == selectedId && allowNone) null else r.id) },
-                label = { Text(r.name) },
-                leadingIcon = if (home == Home.DEST) {
+                leading = if (home == Home.DEST) {
                     { ColorDot(r.color) }
                 } else null,
             )
@@ -469,17 +539,20 @@ fun MovableRow(
     }
 }
 
+/** The fill and text colours of a flag: amber for "take care", red for "something is wrong". */
+internal fun flagColors(error: Boolean): Pair<Color, Color> =
+    if (error) Night.RedDeep.copy(alpha = 0.30f) to Night.RedPale else Night.AmberDeep.copy(alpha = 0.24f) to Night.AmberPale
+
 @Composable
 fun Flag(text: String, error: Boolean = false) {
-    val bg = if (error) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer
-    val fg = if (error) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer
+    val (bg, fg) = flagColors(error)
     Text(
         text,
         color = fg,
         style = MaterialTheme.typography.labelSmall,
         fontWeight = FontWeight.Medium,
         maxLines = 1,
-        modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(bg).padding(horizontal = 5.dp, vertical = 1.dp),
+        modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(bg).padding(horizontal = 6.dp, vertical = 1.dp),
     )
 }
 

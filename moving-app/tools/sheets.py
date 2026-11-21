@@ -6,7 +6,7 @@ from PIL import Image, ImageChops, ImageDraw
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent / "app" / "build" / "audit"
 ORDER = [
-    "home", "items", "item_wardrobe", "item_fridge", "item_sofa", "walk", "triage", "plan", "disposal", "electronics",
+    "home", "overview", "items", "item_wardrobe", "item_fridge", "item_sofa", "walk", "triage", "plan", "disposal", "electronics",
     "boxes", "box_box1", "box_box2", "box_box5", "pack", "labels", "lists", "packorder", "tasks",
     "moveday", "load", "unload", "reconcile", "sweep", "records_ORIGIN", "unpack", "budget", "reports",
     "rooms", "more", "sync", "settings", "search", "scan",
@@ -20,9 +20,14 @@ for old in out.glob("*.png"):
 
 
 def trim(im):
-    """Cut the empty space below the content of a tall capture."""
-    bg = Image.new(im.mode, im.size, im.getpixel((im.width - 2, im.height // 2)))
-    box = ImageChops.difference(im, bg).getbbox()
+    """Cut the empty space below the content of a tall capture.
+
+    The ground is a soft gradient with glows, not one flat colour, so "empty" means
+    a row with no sharp step along it: content has edges, the ground has none.
+    """
+    grey = im.convert("L")
+    steps = ImageChops.difference(grey, ImageChops.offset(grey, 1, 0)).point(lambda v: 255 if v > 10 else 0)
+    box = steps.crop((2, 0, im.width, im.height)).getbbox()
     return im if not box else im.crop((0, 0, im.width, min(im.height, box[3] + 24)))
 
 
@@ -33,7 +38,8 @@ for kind, per, scale in (("tall", 5, 1.0), ("fold", 4, 0.5), ("empty", 5, 1.0)):
         for n in names[start:start + per]:
             im = Image.open(ROOT / kind / f"{n}.png").convert("RGB")
             if kind == "tall":
-                im = trim(im.crop((0, 0, im.width, im.height - 90)))
+                # The dock stays at the bottom of the tall page, far below the content: leave it out.
+                im = trim(im.crop((0, 0, im.width, im.height - 290)))
             if scale != 1.0:
                 im = im.resize((int(im.width * scale), int(im.height * scale)), Image.LANCZOS)
             shots.append((n, im))
