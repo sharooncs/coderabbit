@@ -159,6 +159,8 @@ class PeopleFlowsTest {
     /** Type a code where a person would scan it. It stands for pointing the camera, so it counts as neither a tap nor typing. */
     private fun scan(code: String) {
         val before = taps
+        // The scanners for invites and sync codes keep the typed way behind a chip; opening it stands in for the camera too.
+        if (rule.onAllNodes(hasSetTextAction() and hasText("Or type the code")).fetchSemanticsNodes().isEmpty()) tap("Type the code")
         rule.onAllNodes(hasSetTextAction() and hasText("Or type the code")).onFirst().performTextReplacement(code)
         settle()
         tap("OK")

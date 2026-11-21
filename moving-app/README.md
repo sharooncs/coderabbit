@@ -37,7 +37,7 @@ deleted by switching a part off; it only leaves the screens.
 
 | Stage | In the app |
 | --- | --- |
-| Set up | What it is for, the move date, the rooms of both homes by a tap each |
+| Set up | What it is for, the move date, the rooms of the old home by a tap each; the new home can take the same rooms in one tap |
 | Catalogue | Walk-through: one photo per big thing, name it later (or say it) |
 | Devices | Make, model, serial number (scanned, photographed or typed), receipt, warranty, accessories |
 | Decide | Triage: Move, Sell, Donate, Bin or Store, one tap per thing |
@@ -52,8 +52,9 @@ deleted by switching a part off; it only leaves the screens.
 | Close out | Inventory PDF/CSV, damage report with before and after photos |
 
 Home shows the old home as a small lit house, three numbers that say where the
-move stands, the next thing to do, and the six phases of the move. "More" lists
-every screen once, grouped by phase.
+move stands, the next thing to do, the six phases of the move, and what needs
+attention. The "More" button opens "Everything": every screen once, grouped by
+phase.
 
 ### Containers
 
@@ -107,8 +108,10 @@ round button at the top right) and gives them one of three roles:
   and scans it. An invite works once and for ten minutes.
 - **What each person sees.** Screens show only what their person may do. A
   Helper's Home is six large tiles; a Helper's list of screens leaves out
-  triage, the room plan and costs, and a Helper's phone is not even sent the
-  costs and receipts.
+  triage, the room plan, costs and the list of things to sell, donate or bin,
+  and a Helper's phone is not even sent the costs and receipts. Nobody is
+  flagged something only someone else can put right: a move with no date is
+  pointed out to Organisers, overdue jobs to whoever may tick them off.
 - **A move always has an Organiser.** The last one cannot be demoted or
   removed. Someone removed can no longer sync; what they did stays.
 - The rules live in one place, `data/People.kt`, and are checked again when
@@ -126,8 +129,10 @@ reason that is one tap (or spoken). Several can be approved at once. A question
 is answered by tapping the decision.
 
 The person who suggested sees what became of it on their own Home and under
-"My suggestions": approved (and then theirs to carry out), declined and why,
-or overtaken because the Organiser decided the same thing directly.
+"My suggestions" ("My questions" for a Helper): approved (and then theirs to
+carry out), declined and why (a no is shown on their Home with its reason, or
+"No reason given"), or overtaken because the Organiser decided the same thing
+directly.
 
 Who did what is kept in a shared log (People, "All activity").
 
@@ -219,7 +224,8 @@ Run from this folder. They use the system `gradle` when there is one.
 | `tools/test.sh --tests 'app.housemove.PeopleFlowsTest'` | Among other things, counts the taps of the main flows | `app/build/audit/flows.md` |
 
 To have a new screen checked and pictured, add its route to `ROUTES` in
-`AuditSampleData.kt`.
+`AuditSampleData.kt`. The role walk finds new routes by itself; one that takes
+an argument (an id) needs an example in `stops()` in `RoleWalkTest.kt`.
 
 ## The look
 

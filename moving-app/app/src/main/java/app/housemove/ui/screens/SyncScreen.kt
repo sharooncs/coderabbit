@@ -223,6 +223,8 @@ fun SyncScreen(code: String? = null) {
         ScanDialog(
             title = "Scan the code or invite on the other phone",
             raw = true,
+            // A sync code is far too long to type unless there is no other way: the field waits behind a chip.
+            typingFolded = true,
             onClose = { scanning = false },
             onCode = { text ->
                 note = null

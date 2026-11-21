@@ -461,6 +461,9 @@ internal fun AimMarks(modifier: Modifier = Modifier) {
 /**
  * Full-screen "scan a label" dialog. Reports the label code (QR prefix removed).
  * The code can also be typed, for handwritten labels or when the camera is unavailable.
+ * With [typingFolded] the field waits behind a "Type the code" chip, so the camera has the
+ * screen to itself: for codes nobody would type unless they had to, such as a sync code or
+ * an invite.
  */
 @Composable
 fun ScanDialog(
@@ -470,6 +473,7 @@ fun ScanDialog(
     raw: Boolean = false,
     formats: ScanFormats = ScanFormats.LABELS,
     typeLabel: String = "Or type the code",
+    typingFolded: Boolean = false,
 ) {
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize(), color = Night.Ground1, contentColor = Night.Text) {
@@ -486,17 +490,25 @@ fun ScanDialog(
                     formats = formats,
                 )
                 var typed by remember { mutableStateOf("") }
-                Row(Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(
-                        colors = glassFieldColors(),
-                        value = typed,
-                        onValueChange = { typed = it },
-                        label = { Text(typeLabel) },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    PillButton("OK", onClick = { onCode(typed.trim()); typed = "" }, enabled = typed.isNotBlank())
+                var typing by remember { mutableStateOf(!typingFolded) }
+                if (typingFolded) {
+                    Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = if (typing) 0.dp else 12.dp), horizontalArrangement = Arrangement.End) {
+                        GlassChip("Type the code", icon = Icons.Default.Keyboard, selected = typing, onClick = { typing = !typing })
+                    }
+                }
+                if (typing) {
+                    Row(Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            colors = glassFieldColors(),
+                            value = typed,
+                            onValueChange = { typed = it },
+                            label = { Text(typeLabel) },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        PillButton("OK", onClick = { onCode(typed.trim()); typed = "" }, enabled = typed.isNotBlank())
+                    }
                 }
             }
         }

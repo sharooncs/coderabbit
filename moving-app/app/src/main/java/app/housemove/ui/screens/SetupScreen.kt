@@ -186,6 +186,8 @@ fun SetupScreen() {
         ScanDialog(
             title = "Scan the invite on the other phone",
             raw = true,
+            // An invite is far too long to type unless there is no other way: the field waits behind a chip.
+            typingFolded = true,
             onClose = { scanning = false },
             onCode = { text ->
                 if (joiner.join(text)) scanning = false

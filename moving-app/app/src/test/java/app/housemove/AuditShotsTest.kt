@@ -197,6 +197,7 @@ class AuditShotsTest {
         try {
             use(Store(tmp.newFolder("joining")))
             tap("Second phone for the same move?") // straight to the scanner
+            tap("Type the code") // the typed way, which stands in for the camera here
             rule.onAllNodes(hasSetTextAction() and hasText("Or type the code")).onFirst()
                 .performTextReplacement(host.inviteFor(gran.id, listOf("127.0.0.1")).valueOrNull()!!.encode())
             rule.waitForIdle()
