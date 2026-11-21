@@ -41,6 +41,7 @@ fun DisposalScreen() {
     val maySuggest = store.can(Action.SUGGEST)
     val now = today()
     val currency = data.move.currency
+    val seen = rememberSeenAnswers()
 
     val groups = listOf(
         Disposition.SELL to "To sell",
@@ -89,11 +90,14 @@ fun DisposalScreen() {
                         GroupHeading(d.icon(), title, trailing = "${list.count { it.gone }} of ${list.size} gone")
                     }
                     items(list, key = { it.id }) { x ->
+                        val declined = data.declinedOn(x.id, me, seen.ids, ProposalKind.ITEM_DECISION)
                         DisposalRow(
                             x = x,
                             data = data,
                             now = now,
                             waiting = waiting[x.id].orEmpty(),
+                            declined = declined,
+                            onSeen = { declined?.let { seen.mark(it.id) } },
                             mayDecide = mayDecide,
                             maySuggest = maySuggest,
                             mayCarryOut = data.mayCarryOut(me, x),
@@ -126,6 +130,8 @@ private fun DisposalRow(
     data: AppData,
     now: Long,
     waiting: List<Proposal>,
+    declined: Proposal?,
+    onSeen: () -> Unit,
     mayDecide: Boolean,
     maySuggest: Boolean,
     mayCarryOut: Boolean,
@@ -155,7 +161,7 @@ private fun DisposalRow(
             ) {
                 // Something that has gone fades back, so what is still here stands out.
                 // On a small screen or with large text the picture gives way to the words, and the words get shorter.
-                val narrow = LocalConfiguration.current.let { it.screenWidthDp / it.fontScale < 340 }
+                val narrow = narrowScreen()
                 ItemPhoto(x.id, Modifier.size(if (narrow) 48.dp else 68.dp).alpha(if (x.gone) 0.45f else 1f))
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
@@ -166,7 +172,7 @@ private fun DisposalRow(
                     val line = when {
                         late -> "Late: was due ${fmtDayShort(deadline)}"
                         x.gone && !selling -> data.itemState(x).first
-                        !x.gone && deadline != null -> "By ${fmtDayShort(deadline)} (${relDay(deadline, now)})"
+                        !x.gone && deadline != null -> "By ${fmtDayShort(deadline)}" + if (narrow) "" else " (${relDay(deadline, now)})"
                         else -> null
                     }
                     if (line != null) {
@@ -202,18 +208,22 @@ private fun DisposalRow(
                     mayDecide -> AmountPicker(x.price, onAsking, "Asking price", currency)
                     else -> {
                         AmountPicker(draft, { draft = it }, "Suggest an asking price", currency)
-                        Button(
-                            onClick = { onAsking(draft); pricing = false }, enabled = draft != null && draft != x.price,
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp),
-                        ) { Text("Suggest " + (draft?.let { money(currency, it) } ?: "a price")) }
+                        val changed = draft != null && draft != x.price
+                        RowButton(
+                            "Suggest " + (draft?.let { money(currency, it) } ?: "a price"),
+                            onClick = { if (changed) { onAsking(draft); pricing = false } },
+                            modifier = Modifier.fillMaxWidth().enabledLook(changed), icon = Icons.Default.Send, look = RowButtonLook.Primary,
+                        )
                     }
                 }
             }
         }
         waiting.forEach { p ->
-            Box(Modifier.padding(start = 10.dp, end = 10.dp, bottom = 10.dp)) {
-                if (mayDecide) ProposalReview(p, data) else WaitingTag(p, data)
-            }
+            Box(Modifier.padding(start = 10.dp, end = 10.dp, bottom = 10.dp)) { Suggestion(p, data) }
+        }
+        // What this person suggested for it was turned down: they are told why, once.
+        if (declined != null) {
+            DeclinedNote(declined, data, Modifier.padding(start = 10.dp, end = 10.dp, bottom = 10.dp), what = data.proposalText(declined), onSeen = onSeen)
         }
     }
 }

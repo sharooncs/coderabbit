@@ -155,10 +155,10 @@ private fun ListPanel(
                 Modifier.fillMaxWidth().clickable { nav.openMovable(m) }.padding(start = 14.dp, top = 8.dp, bottom = 8.dp, end = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (box != null) ContainerThumb(box, data, 48.dp) else OwnerThumb(m.id, Modifier.size(48.dp))
+                ThingThumb(m.id, m.picture(), size = 48.dp)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(m.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(m.title, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Text(
                         listOfNotNull(box?.let { data.categoryOf(it) }?.takeIf { it != "Other" }, data.whereIs(m)).joinToString(" · "),
                         style = MaterialTheme.typography.bodySmall, color = Night.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -191,24 +191,15 @@ fun PackOrderScreen() {
         ) {
             if (rooms.isNotEmpty()) {
                 item(key = "progress") {
-                    GlassCard(Modifier.fillMaxWidth().padding(horizontal = 16.dp), tone = GlassTone.Mint, shape = RoundedCornerShape(26.dp), sheen = true) {
-                        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Ring(Ratio(rooms.count { it.packed }, rooms.size), size = 72.dp, stroke = 8.dp) {
-                                Text(
-                                    "${rooms.count { it.packed }}", style = MaterialTheme.typography.headlineMedium,
-                                    fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary,
-                                )
-                            }
-                            Spacer(Modifier.width(16.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text("of ${rooms.size} room${if (rooms.size == 1) "" else "s"} fully packed", style = MaterialTheme.typography.titleMedium)
-                                Text(
-                                    "${boxes.count { it.sealed }} of ${boxes.size} box${if (boxes.size == 1) "" else "es"} sealed",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
+                    val packed = rooms.count { it.packed }
+                    SummaryCard(
+                        Ratio(packed, rooms.size), "$packed of ${countOf(rooms.size, "room")} fully packed",
+                        Modifier.padding(horizontal = 16.dp), tone = GlassTone.Mint,
+                    ) {
+                        Text(
+                            "${boxes.count { it.sealed }} of ${countOf(boxes.size, "box", "boxes")} sealed",
+                            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
             } else {
@@ -236,7 +227,7 @@ fun PackOrderScreen() {
             }
             item(key = "order") {
                 Fold(
-                    "Suggested order", Icons.Default.FormatListNumbered, summary = "Least used first, everyday things last",
+                    "Suggested order", Icons.Default.FormatListNumbered, summary = "Least used things first",
                     modifier = Modifier.padding(horizontal = 16.dp),
                 ) {
                     PACK_ORDER.forEachIndexed { i, (what, timing) ->
@@ -275,15 +266,16 @@ fun PackOrderScreen() {
 @Composable
 private fun CategoryTile(category: String, sealed: Int, total: Int) {
     val done = sealed == total
+    // As wide as its name needs, so "Documents" and "Electronics" are written out whatever the text size.
     Column(
-        Modifier.width(96.dp).glass(RoundedCornerShape(18.dp), shadow = 5.dp)
+        Modifier.width(IntrinsicSize.Max).widthIn(min = 88.dp).glass(RoundedCornerShape(18.dp), shadow = 5.dp)
             .clearAndSetSemantics { contentDescription = "$category: $sealed of $total sealed" }
             .padding(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 10.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             Icon(categoryPicture(category), contentDescription = null, tint = Night.Mint, modifier = Modifier.size(15.dp))
-            Text(category, style = MaterialTheme.typography.bodySmall, color = Night.TextSoft, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(category, style = MaterialTheme.typography.bodySmall, color = Night.TextSoft, maxLines = 1, softWrap = false)
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("$sealed/$total", fontSize = 16.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
@@ -313,14 +305,18 @@ private fun RoomPackRow(room: Room, to: Room?, sealed: Ratio, onPacked: (Boolean
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(room.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Hint(if (sealed.total == 0) "No boxes yet" else "${sealed.done} of ${sealed.total} sealed")
+                    // Where its boxes go drops to a line of its own where the two do not fit side by side,
+                    // so the room's name is never squeezed down to nothing on a small phone.
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Hint(if (sealed.total == 0) "No boxes yet" else "${sealed.done} of ${sealed.total} sealed", Modifier.align(Alignment.CenterVertically))
                         if (to != null) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "goes to",
-                                tint = scheme.onSurfaceVariant, modifier = Modifier.size(14.dp),
-                            )
-                            RoomBadge(to)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "goes to",
+                                    tint = scheme.onSurfaceVariant, modifier = Modifier.size(14.dp),
+                                )
+                                RoomBadge(to)
+                            }
                         }
                     }
                     if (!room.packed) {

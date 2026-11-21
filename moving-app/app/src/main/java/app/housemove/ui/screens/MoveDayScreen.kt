@@ -50,6 +50,7 @@ import app.housemove.ui.TopActions
 import app.housemove.ui.appData
 import app.housemove.ui.deviceInfo
 import app.housemove.ui.open
+import app.housemove.data.*
 import app.housemove.ui.*
 
 /** The steps of the day, in order: everything in the Move day phase, then Unpack. */
@@ -163,7 +164,7 @@ fun MoveDayScreen() {
                         .takeIf { data.uses(Part.MOVE_DAY) && data.uses(Part.BOXES) },
                     (Icons.Default.FactCheck to "Check Reconcile before the $vehicle goes back.").takeIf { data.uses(Part.MOVE_DAY) },
                 )
-                Fold("Before you start", Icons.Default.Lightbulb, summary = mdCount(tips.size, "tip") + " for the day") {
+                Fold("Before you start", Icons.Default.Lightbulb, summary = countOf(tips.size, "tip") + " for the day") {
                     tips.forEach { (icon, text) -> MdTip(icon, text) }
                 }
             }

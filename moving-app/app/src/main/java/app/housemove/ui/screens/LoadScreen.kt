@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -16,7 +17,9 @@ import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -37,6 +40,7 @@ import app.housemove.data.movables
 import app.housemove.data.newId
 import app.housemove.data.uses
 import app.housemove.data.vehicle
+import app.housemove.data.*
 import app.housemove.ui.*
 
 /**
@@ -66,6 +70,9 @@ fun LoadScreen() {
     var scanning by rememberSaveable { mutableStateOf(false) }
     var tab by rememberSaveable { mutableStateOf(0) }
     var result by remember { mutableStateOf<MdResult?>(null) }
+    // Goes up with every scan, so the answer to it can be brought into view.
+    var scans by remember { mutableIntStateOf(0) }
+    val listState = rememberLazyListState()
 
     val trips = data.liveTrips
     val trip = data.trip(device.currentTripId) ?: trips.firstOrNull()
@@ -98,6 +105,7 @@ fun LoadScreen() {
             m.stage == Stage.LOADED -> MdResult(MdTone.WARN, "Already on the $vehicle", found.inside ?: m.title)
             else -> MdResult(MdTone.WARN, "Already delivered", found.inside ?: m.title)
         }
+        scans++
     }
 
     Screen("Load the $vehicle") {
@@ -111,47 +119,54 @@ fun LoadScreen() {
                 onAction = if (canPack) ({ nav.open("pack") }) else null,
             )
         } else {
-            MdProgressHeader(
-                Ratio(loadedCount, all.size),
-                "$loadedCount of ${all.size} loaded",
-                Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp),
-            ) {
-                // Which trip things go on; a new one for each run of the vehicle.
-                Row(
-                    Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    trips.forEach { t ->
-                        GlassChip(t.name, selected = t.id == trip?.id, onClick = { store.setDevice { it.copy(currentTripId = t.id) } })
-                    }
-                    GlassChip(
-                        "Add trip", icon = Icons.Default.Add,
-                        onClick = {
-                            val n = trips.size + 1
-                            val t = Trip(id = newId(), name = "Trip $n", sort = n)
-                            store.put(t)
-                            store.setDevice { it.copy(currentTripId = t.id) }
-                        },
-                    )
-                }
-            }
-            MdScanAction(scanning, if (mdNarrow()) "Scan labels" else "Scan labels as they go on") { scanning = !scanning }
+            // Only the scan button stays put. The count, what just happened and the list scroll under it,
+            // so the list keeps most of even a small screen with large text.
+            MdScanAction(scanning, if (narrowScreen()) "Scan labels" else "Scan labels as they go on") { scanning = !scanning }
             if (scanning) MdScanner(onScan)
-            result?.let { MdBanner(it, Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) }
+            // A scan is answered at the top of the list: bring it back into view if the list was scrolled down.
+            LaunchedEffect(scans) { if (scans > 0) listState.scrollToItem(0) }
 
-            GlassTabRow(tab) {
-                Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("To load (${waiting.size})") })
-                Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("On ${trip?.name ?: "this trip"} (${onTrip.size})") })
-            }
-
-            LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(top = 4.dp, bottom = 16.dp)) {
+            LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = listState, contentPadding = PaddingValues(top = 2.dp, bottom = 16.dp)) {
+                result?.let { r -> item(key = "result") { MdBanner(r, Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) } }
+                item(key = "head") {
+                    MdProgressHeader(
+                        Ratio(loadedCount, all.size),
+                        "$loadedCount of ${all.size} loaded",
+                        Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp),
+                    ) {
+                        // Which trip things go on; a new one for each run of the vehicle.
+                        Row(
+                            Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            trips.forEach { t ->
+                                GlassChip(t.name, selected = t.id == trip?.id, onClick = { store.setDevice { it.copy(currentTripId = t.id) } })
+                            }
+                            GlassChip(
+                                "Add trip", icon = Icons.Default.Add,
+                                onClick = {
+                                    val n = trips.size + 1
+                                    val t = Trip(id = newId(), name = "Trip $n", sort = n)
+                                    store.put(t)
+                                    store.setDevice { it.copy(currentTripId = t.id) }
+                                },
+                            )
+                        }
+                    }
+                }
+                stickyHeader(key = "tabs") {
+                    GlassTabRow(tab, Modifier.groundBand()) {
+                        Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("To load (${waiting.size})") })
+                        Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("On ${trip?.name ?: "this trip"} (${onTrip.size})") })
+                    }
+                }
                 if (tab == 0) {
                     if (waiting.isEmpty()) item(key = "empty") { EmptyState(Icons.Default.CheckCircle, "Everything is on the $vehicle") }
                     groups.forEach { (room, list) ->
                         item(key = "h" + (room?.id ?: "none")) {
                             MdGroupHeader(room?.name ?: "No room", list.size) {
-                                MdRowButton(
+                                RowButton(
                                     "Load all",
                                     onClick = {
                                         mdSetStageAll(store, list, Stage.LOADED, mdEnsureTrip(store))
@@ -163,7 +178,7 @@ fun LoadScreen() {
                         }
                         items(list, key = { "m" + it.id }) { m ->
                             MdThingRow(m, open = m.id in openBoxes, carried = carried[m.id] ?: 0) {
-                                MdRowButton("Load", onClick = { result = mdLoadOne(store, m) })
+                                RowButton("Load", onClick = { result = mdLoadOne(store, m) })
                             }
                         }
                     }
@@ -171,7 +186,7 @@ fun LoadScreen() {
                         item(key = "hwithme") { MdGroupHeader("Travels with me, not in the $vehicle", withMe.size) }
                         items(withMe, key = { "w" + it.id }) { m ->
                             MdThingRow(m, open = m.id in openBoxes, carried = carried[m.id] ?: 0) {
-                                MdRowButton(
+                                RowButton(
                                     "With me",
                                     onClick = {
                                         mdSetStage(store, m, Stage.LOADED, null)
@@ -188,7 +203,7 @@ fun LoadScreen() {
                     }
                     items(onTrip, key = { "t" + it.id }) { m ->
                         MdThingRow(m, open = m.id in openBoxes, carried = carried[m.id] ?: 0) {
-                            MdRowButton(
+                            RowButton(
                                 "Undo",
                                 onClick = {
                                     mdSetStage(store, m, Stage.AT_ORIGIN, null)

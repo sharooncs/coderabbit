@@ -382,6 +382,7 @@ class DeviceTest {
 
         tap("Items")
         tap("Oak wardrobe")
+        tap("More") // what is rarely wanted is in the last section
         tap("It has a serial number")
         tapDesc("Edit make, model and serial number") // typing them is behind the pencil
         type("Make", "Acme")

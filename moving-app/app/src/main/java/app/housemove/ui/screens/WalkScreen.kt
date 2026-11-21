@@ -67,7 +67,7 @@ fun WalkScreen() {
                 if (rooms.isEmpty()) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Hint("No rooms yet. Photos can be sorted into rooms later.", Modifier.weight(1f))
-                        OutlinedButton(onClick = { nav.open("rooms") }) { Text("Add rooms") }
+                        RowButton("Add rooms", onClick = { nav.open("rooms") }, forward = false)
                     }
                 } else {
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -131,9 +131,8 @@ fun WalkScreen() {
     }
 
     if (camera && canShoot) {
-        CameraDialog(
+        PhotoCamera(
             hint = (room?.name?.let { "$it: " } ?: "") + "one photo per big thing",
-            newFile = { store.newPhotoFile() },
             onPhoto = { file -> store.addByPhoto(roomId, file) },
             onClose = { camera = false },
         )

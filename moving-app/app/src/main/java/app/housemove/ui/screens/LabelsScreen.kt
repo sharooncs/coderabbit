@@ -193,27 +193,32 @@ fun LabelsScreen() {
                         modifier = Modifier.weight(1f),
                     )
                 }
-                IconChoice(
-                    listOf(
-                        Choice(false, "Sticker sheet", Icons.Default.ViewModule),
-                        Choice(true, "Plain paper, cut out", Icons.Default.ContentCut),
-                    ),
-                    plain,
-                    onPick = { plain = it },
-                )
-                Hint(sheet.label)
-                IconChoice(
-                    listOf(
-                        Choice(2, "2 stickers a box: top and side", Icons.Default.LooksTwo),
-                        Choice(1, "1 sticker a box", Icons.Default.LooksOne),
-                    ),
-                    copies,
-                    onPick = { copies = it },
-                )
+                // What is set once and then left alone: the kind of sheet, stickers per box, other numbers.
                 Fold(
-                    "Other numbers", Pic.More, open = !ready,
-                    summary = if (s != null && n != null) "From ${labelCode(s)}, for ${containerCount(n, "box", "boxes")}" else null,
+                    "Sheet and numbers", Pic.More, open = !ready,
+                    summary = listOfNotNull(
+                        if (plain) "Plain paper" else "Sticker sheet",
+                        if (copies == 2) "2 a box" else "1 a box",
+                        if (s != null && n != null) "from ${labelCode(s)}" else null,
+                    ).joinToString(" · "),
                 ) {
+                    IconChoice(
+                        listOf(
+                            Choice(false, "Sticker sheet", Icons.Default.ViewModule),
+                            Choice(true, "Plain paper, cut out", Icons.Default.ContentCut),
+                        ),
+                        plain,
+                        onPick = { plain = it },
+                    )
+                    Hint(sheet.label)
+                    IconChoice(
+                        listOf(
+                            Choice(2, "2 stickers a box: top and side", Icons.Default.LooksTwo),
+                            Choice(1, "1 sticker a box", Icons.Default.LooksOne),
+                        ),
+                        copies,
+                        onPick = { copies = it },
+                    )
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         NumberInput(
                             s?.toDouble(),
@@ -280,7 +285,7 @@ fun LabelsScreen() {
                     else "One page for each room in ${data.move.destName}, in its colour.",
                 )
                 if (rooms.isEmpty()) {
-                    Button(onClick = { nav.open("rooms") }) { Text("Add rooms") }
+                    RowButton("Add rooms", onClick = { nav.open("rooms") })
                 } else {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         rooms.forEach { RoomBadge(it) }
@@ -319,33 +324,5 @@ private fun Printout(icon: ImageVector, title: String, sub: String) {
 
 @Composable
 private fun PrintButtons(enabled: Boolean, busy: Boolean, onPrint: () -> Unit, onShare: () -> Unit) {
-    val print: @Composable (Modifier) -> Unit = { m ->
-        Button(enabled = enabled, onClick = onPrint, modifier = m.heightIn(min = 52.dp)) {
-            // While the PDF is being made, the picture on the button turns into a spinner.
-            if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-            else Icon(Icons.Default.Print, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text("Open to print")
-        }
-    }
-    val share: @Composable (Modifier) -> Unit = { m ->
-        OutlinedButton(enabled = enabled, onClick = onShare, modifier = m.heightIn(min = 52.dp)) {
-            Icon(Icons.Default.Share, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text("Share")
-        }
-    }
-    // Side by side where there is room; stacked on a narrow screen or with large text.
-    val config = LocalConfiguration.current
-    if (config.screenWidthDp / config.fontScale >= 360f) {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            print(Modifier.weight(1f))
-            share(Modifier)
-        }
-    } else {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            print(Modifier.fillMaxWidth())
-            share(Modifier.fillMaxWidth())
-        }
-    }
+    FileButtons("Open to print", enabled, onOpen = onPrint, onShare = onShare, openIcon = Icons.Default.Print, busy = busy)
 }
