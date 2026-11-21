@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -23,9 +24,9 @@ import java.io.IOException
 
 /**
  * Full-screen "scan things into this box": every book or product barcode the
- * camera sees is added to the box's list. Books get their title looked up
+ * camera sees is added to the container's list. Books get their title looked up
  * online if the person has agreed to that; otherwise they are kept by number
- * and can be named by hand.
+ * and can be named by saying the name, or by typing it.
  */
 @Composable
 fun ScanInDialog(box: Box, onClose: () -> Unit) {
@@ -36,6 +37,8 @@ fun ScanInDialog(box: Box, onClose: () -> Unit) {
     val entries = data.entriesOf(box.id)
     var status by remember { mutableStateOf("Point the camera at the barcode on a book or product") }
     var typed by remember { mutableStateOf("") }
+    // The keyboard is the last resort: its field only shows once it is asked for.
+    var typing by remember { mutableStateOf(false) }
     var askLookup by remember { mutableStateOf(false) }
 
     fun lookUp(entryId: String, isbn: String) {
@@ -51,7 +54,7 @@ fun ScanInDialog(box: Box, onClose: () -> Unit) {
             val info = result.getOrNull()
             when {
                 result.isFailure -> status = "No connection. Saved by its number; the title can be looked up later."
-                info == null -> status = "Not in the catalogue. Type its title in the list below."
+                info == null -> status = "Not in the catalogue. Say or type its title in the list below."
                 current.title.isBlank() -> {
                     store.put(current.copy(title = info.title, author = info.author))
                     status = "Added: ${info.title}"
@@ -70,8 +73,8 @@ fun ScanInDialog(box: Box, onClose: () -> Unit) {
         val name = e.title.ifBlank { "barcode ${e.code}" }
         status = when (result) {
             is ScanIn.Added -> "Added: $name"
-            is ScanIn.AlreadyHere -> "Already in this box: $name"
-            is ScanIn.Moved -> "Moved here from box ${result.fromLabel ?: "?"}: $name"
+            is ScanIn.AlreadyHere -> "Already in here: $name"
+            is ScanIn.Moved -> "Moved here from ${result.fromLabel ?: "another one"}: $name"
         }
         if (e.title.isBlank() && isIsbn(e.code)) {
             when (store.device.value.bookLookup) {
@@ -87,7 +90,10 @@ fun ScanInDialog(box: Box, onClose: () -> Unit) {
             Column(Modifier.fillMaxSize().systemBarsPadding().imePadding()) {
                 Row(Modifier.padding(start = 8.dp, end = 12.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onClose) { Icon(Icons.Default.Close, contentDescription = "Close") }
-                    Text("Scan into box ${box.label}", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    Text(
+                        "Scan into ${box.shownName()}", style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+                    )
                     Button(onClick = onClose) { Text("Done") }
                 }
                 // The camera keeps the larger share; what just happened is written in a strip along its foot.
@@ -107,22 +113,39 @@ fun ScanInDialog(box: Box, onClose: () -> Unit) {
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                     )
                 }
-                Row(Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(
-                        colors = glassFieldColors(),
-                        value = typed,
-                        onValueChange = { typed = it },
-                        label = { Text("Or type a barcode number or a name", maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f),
+                // Something with no barcode: say what it is. Typing is there for when speaking will not do.
+                Row(Modifier.padding(start = 12.dp, end = 8.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    SpeakButton("What is it?", contentDescription = "Say what it is", size = 40.dp) { said ->
+                        contentsLines(said).forEach { add(it.replaceFirstChar(Char::uppercase)) }
+                    }
+                    Text(
+                        "No barcode? Say what it is", style = MaterialTheme.typography.bodyMedium, color = Night.TextDim,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(start = 8.dp),
                     )
-                    Spacer(Modifier.width(8.dp))
-                    Button(enabled = typed.isNotBlank(), onClick = { add(typed); typed = "" }) { Text("Add") }
+                    TextButton(onClick = { typing = !typing }) {
+                        Icon(Icons.Default.Keyboard, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Type it")
+                    }
+                }
+                if (typing) {
+                    Row(Modifier.padding(start = 12.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            colors = glassFieldColors(),
+                            value = typed,
+                            onValueChange = { typed = it },
+                            label = { Text("A barcode number or a name", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Button(enabled = typed.isNotBlank(), onClick = { add(typed); typed = "" }) { Text("Add") }
+                    }
                 }
                 val untitled = entries.filter { it.title.isBlank() && isIsbn(it.code) }
                 Row(Modifier.padding(start = 16.dp, end = 8.dp).heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        if (entries.isEmpty()) "Nothing scanned into this box yet" else "In this box (${entries.size})",
+                        if (entries.isEmpty()) "Nothing scanned in yet" else "Scanned in (${entries.size})",
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.weight(1f),
@@ -140,7 +163,7 @@ fun ScanInDialog(box: Box, onClose: () -> Unit) {
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Icon(
-                                if (isIsbn(e.code)) Icons.Default.MenuBook else Pic.Box, contentDescription = null,
+                                if (isIsbn(e.code)) Icons.AutoMirrored.Filled.MenuBook else Pic.Box, contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
                             )
                             Spacer(Modifier.width(14.dp))
@@ -172,7 +195,7 @@ fun ScanInDialog(box: Box, onClose: () -> Unit) {
             text = {
                 Text(
                     "Titles come from Open Library, a free public catalogue. Only the barcode number is sent. " +
-                        "If you say no, you type the titles yourself. You can change this in Settings."
+                        "If you say no, you name the books yourself. You can change this in Settings."
                 )
             },
             confirmButton = {
@@ -189,23 +212,32 @@ fun ScanInDialog(box: Box, onClose: () -> Unit) {
     }
 }
 
-/** Type a name for something that was saved by its barcode number only. */
+/** Give a name to something that was saved by its barcode number only: say it, or type it. */
 @Composable
 private fun NameEntryRow(e: BoxEntry) {
     val store = LocalStore.current
+    var typing by remember(e.id) { mutableStateOf(false) }
     var name by remember(e.id) { mutableStateOf("") }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        OutlinedTextField(
-            colors = glassFieldColors(),
-            value = name,
-            onValueChange = { name = it },
-            label = { Text("Name for barcode ${e.code}", maxLines = 1, overflow = TextOverflow.Ellipsis) },
-            singleLine = true,
-            modifier = Modifier.weight(1f),
-        )
-        TextButton(
-            enabled = name.isNotBlank(),
-            onClick = { store.data.value.liveEntries.firstOrNull { it.id == e.id }?.let { store.put(it.copy(title = name.trim())) } },
-        ) { Text("Save") }
+    fun save(title: String) {
+        store.data.value.liveEntries.firstOrNull { it.id == e.id }?.let { store.put(it.copy(title = title.trim())) }
+    }
+    if (!typing) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Barcode ${e.code}", style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            SpeakButton("What is it called?", contentDescription = "Say the name for barcode ${e.code}", size = 40.dp) { save(it.replaceFirstChar(Char::uppercase)) }
+            IconButton(onClick = { typing = true }) { Icon(Icons.Default.Edit, contentDescription = "Type a name for barcode ${e.code}") }
+        }
+    } else {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                colors = glassFieldColors(),
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Name for barcode ${e.code}", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(enabled = name.isNotBlank(), onClick = { save(name) }) { Text("Save") }
+        }
     }
 }
