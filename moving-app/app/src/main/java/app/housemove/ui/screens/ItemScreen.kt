@@ -5,7 +5,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -13,7 +16,14 @@ import app.housemove.data.*
 import app.housemove.ui.*
 import kotlin.math.roundToLong
 
-/** Everything about one catalogued item, editable in place. */
+/** The decisions offered as tiles. Tapping the chosen one again takes the decision back. */
+private val DECISIONS = listOf(Disposition.MOVE, Disposition.SELL, Disposition.DONATE, Disposition.BIN, Disposition.STORE)
+
+/**
+ * Everything about one catalogued item, editable in place. The photo, the name, the
+ * decision and the new room are always showing; the rest waits in sections that open
+ * when tapped, each saying in one line what is already set.
+ */
 @Composable
 fun ItemScreen(id: String) {
     val store = LocalStore.current
@@ -24,7 +34,7 @@ fun ItemScreen(id: String) {
 
     if (item == null) {
         Screen("Item") {
-            EmptyHint("This item is no longer here. It may have been deleted on this phone or another one.")
+            EmptyState(Pic.Item, "This item is no longer here", text = "It may have been deleted on this phone or another one.")
         }
         return
     }
@@ -34,7 +44,8 @@ fun ItemScreen(id: String) {
     var scanningSerial by remember { mutableStateOf(false) }
     // Bumped when a scan fills the serial number in, so the text field picks the new value up.
     var serialScans by remember { mutableIntStateOf(0) }
-    val electronic = item.isElectronic()
+    // Set when "It has a make, model…" is switched on here, so its section appears already open.
+    var deviceJustOn by rememberSaveable { mutableStateOf(false) }
 
     // Always edit the newest copy in the store, so two quick changes never overwrite each other.
     fun edit(f: (Item) -> Item) {
@@ -45,6 +56,18 @@ fun ItemScreen(id: String) {
     val origin = data.room(item.originRoomId)
     val dest = data.room(item.destRoomId)
     val money = data.move.currency.trim()
+    val vehicle = data.vehicle()
+    val inches = data.move.useInches
+    // Device details are offered when that part of the app is in use, or something is already recorded.
+    val hasDeviceDetails = item.electronic == true || item.make.isNotBlank() || item.model.isNotBlank() || item.serial.isNotBlank()
+    val offerDevice = data.uses(Part.DEVICES) || hasDeviceDetails
+    val electronic = offerDevice && item.isElectronic()
+    // Is a move being run with the app, or is it only a list of belongings? Sections about the
+    // journey are left out for a plain list, unless something is already recorded in them.
+    val movesHouse = data.uses(Part.PLAN) || data.uses(Part.BOXES) || data.uses(Part.MOVE_DAY) || data.uses(Part.UNPACK)
+    // On a small screen or with large text, tiles go fewer to a row so their words still fit.
+    val config = LocalConfiguration.current
+    val narrow = config.screenWidthDp / config.fontScale < 340
 
     Screen(
         title = item.title(),
@@ -55,45 +78,88 @@ fun ItemScreen(id: String) {
         },
     ) {
         ScrollColumn {
-            Section("Photos") {
-                PhotoStrip(item.id, PhotoKind.GENERAL, label = "Photos of the item")
-            }
+            PhotoHero(item.id, PhotoKind.GENERAL, label = item.title(), height = 190.dp)
 
-            Section("Basics") {
-                TextInput(
-                    value = item.name,
-                    onChange = { v -> edit { it.copy(name = v) } },
-                    label = "What is it?",
-                    key = "$id-name",
-                    mic = true,
-                    placeholder = "e.g. Oak wardrobe",
+            TextInput(
+                value = item.name,
+                onChange = { v -> edit { it.copy(name = v) } },
+                label = "What is it?",
+                key = "$id-name",
+                mic = true,
+                placeholder = "e.g. Oak wardrobe",
+            )
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("What happens to it?", style = MaterialTheme.typography.titleMedium)
+                IconChoice(
+                    options = DECISIONS.map { Choice(it, it.label, it.icon()) },
+                    selected = item.disposition,
+                    onPick = { d ->
+                        edit { cur ->
+                            val next = if (cur.disposition == d) Disposition.UNDECIDED else d
+                            val mapped = store.data.value.room(cur.originRoomId)?.mapsTo
+                            cur.copy(
+                                disposition = next,
+                                destRoomId = if (next == Disposition.MOVE && cur.destRoomId == null) mapped else cur.destRoomId,
+                            )
+                        }
+                    },
+                    columns = if (narrow) 3 else 5,
                 )
-                Text("Room in the old home", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                RoomPicker(Home.ORIGIN, item.originRoomId, onPick = { rid ->
-                    edit { cur ->
-                        val mapped = store.data.value.room(rid)?.mapsTo
-                        cur.copy(
-                            originRoomId = rid,
-                            destRoomId = cur.destRoomId ?: if (cur.disposition == Disposition.MOVE) mapped else null,
+                when (item.disposition) {
+                    Disposition.SELL -> {
+                        ToggleTiles(
+                            listOf(
+                                Toggle("Listed for sale", Icons.Default.Campaign, item.listed) { v -> edit { it.copy(listed = v) } },
+                                Toggle("Sold and gone", goneIcon(item.gone), item.gone) { v -> edit { it.copy(gone = v) } },
+                            )
+                        )
+                        NumberInput(
+                            value = item.price,
+                            onChange = { v -> edit { it.copy(price = v) } },
+                            label = if (money.isEmpty()) "Asking price" else "Asking price ($money)",
+                            modifier = Modifier.fillMaxWidth(),
+                            key = "$id-price",
+                        )
+                        DateButton(item.deadlineDay, { d -> edit { it.copy(deadlineDay = d) } }, "Sell by", Modifier.fillMaxWidth())
+                    }
+                    Disposition.DONATE, Disposition.BIN -> {
+                        ToggleTiles(listOf(Toggle("Gone", goneIcon(item.gone), item.gone) { v -> edit { it.copy(gone = v) } }))
+                        DateButton(
+                            item.deadlineDay, { d -> edit { it.copy(deadlineDay = d) } },
+                            if (item.disposition == Disposition.DONATE) "Donate by" else "Get rid of it by", Modifier.fillMaxWidth(),
                         )
                     }
-                })
-                TextInput(
-                    value = item.notes,
-                    onChange = { v -> edit { it.copy(notes = v) } },
-                    label = "Notes",
-                    key = "$id-notes",
-                    singleLine = false,
-                    mic = true,
-                )
-                SwitchRow(
-                    "It has a make, model and serial number", electronic, { v -> edit { it.copy(electronic = v) } },
-                    sub = "TVs, computers, appliances, tools, bikes. Worth recording for insurance, warranty and theft.",
-                )
+                    Disposition.STORE -> Hint("Going into storage, so it is not counted in the $vehicle load.")
+                    Disposition.MOVE, Disposition.UNDECIDED -> Unit
+                }
             }
 
+            if (moving && (movesHouse || dest != null)) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Where it goes", style = MaterialTheme.typography.titleMedium)
+                    RoomTiles(Home.DEST, item.destRoomId, onPick = { rid -> edit { it.copy(destRoomId = rid) } })
+                    if (data.uses(Part.PLAN)) {
+                        FitLine(
+                            item, dest, data.fitOf(item), inches,
+                            onTakeApart = { edit { it.copy(needsDisassembly = true) } },
+                            onAddDoor = { nav.open("rooms") },
+                        )
+                    }
+                }
+            }
+
+            // ---- everything else, closed until wanted ----------------------------------
+
             if (electronic) {
-                Section("Make, model and serial number") {
+                Fold(
+                    "Make, model and serial number", Pic.Device,
+                    summary = listOf(item.makeModel(), if (item.serial.isBlank()) "" else "S/N ${item.serial}")
+                        .filter { it.isNotBlank() }.joinToString(" · ")
+                        .ifBlank { if (data.photosOf(id, PhotoKind.SERIAL).isNotEmpty()) "Serial label photographed" else "Nothing recorded yet" },
+                    open = deviceJustOn,
+                    key = "device-$deviceJustOn",
+                ) {
                     TextInput(item.make, { v -> edit { it.copy(make = v) } }, "Make", key = "$id-make", placeholder = "e.g. Samsung")
                     TextInput(item.model, { v -> edit { it.copy(model = v) } }, "Model", key = "$id-model", placeholder = "e.g. QE55Q60")
                     TextInput(item.serial, { v -> edit { it.copy(serial = v.trim()) } }, "Serial number", key = "$id-serial-$serialScans")
@@ -102,22 +168,24 @@ fun ItemScreen(id: String) {
                         Spacer(Modifier.width(8.dp))
                         Text("Scan the serial number barcode")
                     }
-                    Hint("The label is usually on the back or underneath. If its barcode will not scan, a clear photo does the job.")
+                    Hint("The label is usually on the back or underneath.")
                     PhotoStrip(item.id, PhotoKind.SERIAL, label = "Photo of the serial label")
                     PhotoStrip(item.id, PhotoKind.RECEIPT, label = "Receipt or warranty card")
                     DateButton(item.boughtDay, { d -> edit { it.copy(boughtDay = d) } }, "Bought", Modifier.fillMaxWidth())
                     DateButton(item.warrantyDay, { d -> edit { it.copy(warrantyDay = d) } }, "Warranty until", Modifier.fillMaxWidth())
+                    SwitchRow("It has a make, model and serial number", true, { v -> deviceJustOn = false; edit { it.copy(electronic = v) } })
                 }
 
-                Section("What travels with it") {
+                Fold(
+                    "What travels with it", Icons.Default.Cable,
+                    summary = item.accessories.lineSequence().firstOrNull { it.isNotBlank() }
+                        ?.let { it + if (item.accessoriesPacked) " · bagged" else "" } ?: "Nothing listed",
+                ) {
                     TextInput(
                         item.accessories, { v -> edit { it.copy(accessories = v) } }, "Remote, leads, stand, screws…",
                         key = "$id-acc", singleLine = false, mic = true,
                     )
-                    CheckRow(
-                        "Bagged and marked with this item's name", item.accessoriesPacked, { v -> edit { it.copy(accessoriesPacked = v) } },
-                        sub = "Tape the bag to the item, or note the box it went in below.",
-                    )
+                    CheckRow("Bagged and marked with this item's name", item.accessoriesPacked, { v -> edit { it.copy(accessoriesPacked = v) } })
                     TextInput(item.accessoryBox, { v -> edit { it.copy(accessoryBox = v.trim()) } }, "Box they are in (label, optional)", key = "$id-accbox")
                     val accBox = data.findByLabel(item.accessoryBox)
                     if (item.accessoryBox.isNotBlank()) {
@@ -128,63 +196,36 @@ fun ItemScreen(id: String) {
 
                 val tips = handlingTips(item.name)
                 if (tips.isNotEmpty()) {
-                    Section("Moving it safely") {
+                    Fold("Moving it safely", Icons.Default.TipsAndUpdates, summary = tips.first()) {
                         tips.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
                     }
                 }
-            }
-
-            Section("What happens to it?") {
-                ChipPicker(
-                    options = Disposition.entries,
-                    selected = item.disposition,
-                    label = { it.label },
-                    onPick = { d ->
-                        edit { cur ->
-                            val mapped = store.data.value.room(cur.originRoomId)?.mapsTo
-                            cur.copy(
-                                disposition = d,
-                                destRoomId = if (d == Disposition.MOVE && cur.destRoomId == null) mapped else cur.destRoomId,
+            } else if (offerDevice) {
+                Card(Modifier.fillMaxWidth()) {
+                    Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Pic.Device, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(14.dp))
+                        Box(Modifier.weight(1f)) {
+                            SwitchRow(
+                                "It has a make, model and serial number", false,
+                                { v -> deviceJustOn = v; edit { it.copy(electronic = v) } },
                             )
                         }
-                    },
-                )
-                when (item.disposition) {
-                    Disposition.UNDECIDED -> Hint("Decide now, so you don't pack and carry something you don't want.")
-                    Disposition.MOVE -> Hint("It is coming with you. Pick its new room below.")
-                    Disposition.SELL -> {
-                        SwitchRow("Listed for sale", item.listed, { v -> edit { it.copy(listed = v) } })
-                        NumberInput(
-                            value = item.price,
-                            onChange = { v -> edit { it.copy(price = v) } },
-                            label = if (money.isEmpty()) "Asking price" else "Asking price ($money)",
-                            modifier = Modifier.fillMaxWidth(),
-                            key = "$id-price",
-                        )
-                        DateButton(item.deadlineDay, { d -> edit { it.copy(deadlineDay = d) } }, "Sell by")
-                        SwitchRow("Sold and gone", item.gone, { v -> edit { it.copy(gone = v) } }, sub = "Tick when the buyer has collected it.")
                     }
-                    Disposition.DONATE -> {
-                        DateButton(item.deadlineDay, { d -> edit { it.copy(deadlineDay = d) } }, "Donate by")
-                        SwitchRow("Gone", item.gone, { v -> edit { it.copy(gone = v) } }, sub = "Tick when it has been dropped off or collected.")
-                    }
-                    Disposition.BIN -> {
-                        DateButton(item.deadlineDay, { d -> edit { it.copy(deadlineDay = d) } }, "Get rid of it by")
-                        SwitchRow("Gone", item.gone, { v -> edit { it.copy(gone = v) } }, sub = "Tick when it has been taken away.")
-                    }
-                    Disposition.STORE -> Hint("Going into storage. It is not counted in the van load for the new home.")
                 }
             }
 
-            if (moving) {
-                Section("Where it goes in the new home") {
-                    RoomPicker(Home.DEST, item.destRoomId, onPick = { rid -> edit { it.copy(destRoomId = rid) } })
-                    FitLine(item, dest, data.fitOf(item), data.move.useInches)
-                }
-            }
-
-            Section("Size and handling") {
-                val inches = data.move.useInches
+            Fold(
+                "Size and handling", Pic.Size,
+                summary = listOfNotNull(
+                    sizeText(item, inches),
+                    item.value?.let { "Worth $money${fmtNum(it)}" },
+                    "Fragile".takeIf { item.fragile },
+                    "Two people".takeIf { item.twoPerson },
+                    "Keep upright".takeIf { item.keepUpright },
+                    "Take apart".takeIf { item.needsDisassembly },
+                ).joinToString(" · ").ifBlank { "No size yet" },
+            ) {
                 val unit = if (inches) "in" else "cm"
                 fun shown(cm: Double?): Double? = cm?.let { if (inches) (it / 2.54 * 100).roundToLong() / 100.0 else it }
                 fun toCm(v: Double?): Double? = v?.takeIf { it > 0 }?.let { if (inches) it * 2.54 else it }
@@ -193,23 +234,22 @@ fun ItemScreen(id: String) {
                     NumberInput(shown(item.depthCm), { v -> edit { it.copy(depthCm = toCm(v)) } }, "Depth $unit", Modifier.weight(1f), key = "$id-d-$unit")
                     NumberInput(shown(item.heightCm), { v -> edit { it.copy(heightCm = toCm(v)) } }, "Height $unit", Modifier.weight(1f), key = "$id-h-$unit")
                 }
-                Hint("Measure the widest points. The sizes are used to check doorways and estimate the van load.")
+                Hint("Measure the widest points. Used to check doors and the $vehicle load.")
+                ToggleTiles(
+                    listOf(
+                        Toggle("Fragile", Pic.Fragile, item.fragile) { v -> edit { it.copy(fragile = v) } },
+                        Toggle("Two people", Pic.TwoPeople, item.twoPerson) { v -> edit { it.copy(twoPerson = v) } },
+                        Toggle("Keep upright", Pic.Upright, item.keepUpright) { v -> edit { it.copy(keepUpright = v) } },
+                        Toggle("Take apart", Pic.TakeApart, item.needsDisassembly) { v -> edit { it.copy(needsDisassembly = v) } },
+                    ),
+                    columns = 2,
+                )
                 NumberInput(
                     value = item.value,
                     onChange = { v -> edit { it.copy(value = v) } },
                     label = if (money.isEmpty()) "What it is worth" else "What it is worth ($money)",
                     modifier = Modifier.fillMaxWidth(),
                     key = "$id-value",
-                )
-                SwitchRow("Fragile", item.fragile, { v -> edit { it.copy(fragile = v) } })
-                SwitchRow("Needs two people to lift", item.twoPerson, { v -> edit { it.copy(twoPerson = v) } })
-                SwitchRow(
-                    "Keep upright", item.keepUpright, { v -> edit { it.copy(keepUpright = v) } },
-                    sub = "TVs, fridges and freezers. Shown when loading and unloading.",
-                )
-                SwitchRow(
-                    "Needs taking apart", item.needsDisassembly, { v -> edit { it.copy(needsDisassembly = v) } },
-                    sub = "To get it out, through a door, or into the van.",
                 )
             }
 
@@ -219,65 +259,50 @@ fun ItemScreen(id: String) {
                     item.prepHardware, item.prepCables, item.prepWrapped,
                     item.prepCablesLabelled.takeIf { electronic }, item.prepSignedOut.takeIf { electronic },
                 )
-                Section("Getting it ready (${steps.count { it }} of ${steps.size})") {
-                    CheckRow("Emptied", item.prepEmptied, { v -> edit { it.copy(prepEmptied = v) } }, sub = "Drawers, shelves and cupboards cleared out.")
-                    CheckRow(
-                        "Condition photos taken", item.prepPhotos, { v -> edit { it.copy(prepPhotos = v) } },
-                        sub = "All sides, plus any marks it already has.",
-                    )
+                if (movesHouse || steps.any { it }) Fold("Getting it ready", Icons.Default.Checklist, summary = "${steps.count { it }} of ${steps.size} done") {
+                    CheckRow("Emptied", item.prepEmptied, { v -> edit { it.copy(prepEmptied = v) } })
+                    CheckRow("Condition photos taken", item.prepPhotos, { v -> edit { it.copy(prepPhotos = v) } })
                     PhotoStrip(item.id, PhotoKind.CONDITION, label = "Condition before the move")
                     if (item.needsDisassembly) {
-                        CheckRow(
-                            "Taken apart", item.prepDisassembled, { v -> edit { it.copy(prepDisassembled = v) } },
-                            sub = "Photograph each step so you can rebuild it in reverse.",
-                        )
+                        CheckRow("Taken apart", item.prepDisassembled, { v -> edit { it.copy(prepDisassembled = v) } })
                         PhotoStrip(item.id, PhotoKind.DISASSEMBLY, label = "Taking-apart steps")
                     }
-                    CheckRow(
-                        "Screws and fittings bagged", item.prepHardware, { v -> edit { it.copy(prepHardware = v) } },
-                        sub = "Write \"${item.label ?: item.title()}\" on the bag and tape it to the item.",
-                    )
-                    CheckRow(
-                        "Cables photographed", item.prepCables, { v -> edit { it.copy(prepCables = v) } },
-                        sub = "For anything with wires: photograph the back before unplugging.",
-                    )
+                    CheckRow("Screws and fittings bagged", item.prepHardware, { v -> edit { it.copy(prepHardware = v) } })
+                    CheckRow("Cables photographed", item.prepCables, { v -> edit { it.copy(prepCables = v) } })
                     PhotoStrip(item.id, PhotoKind.CABLES, label = "Cables and connections")
                     if (electronic) {
-                        CheckRow(
-                            "Cables labelled and bagged", item.prepCablesLabelled, { v -> edit { it.copy(prepCablesLabelled = v) } },
-                            sub = "Tag each lead with what it plugs into. Keep them with the remote.",
-                        )
-                        CheckRow(
-                            "Backed up and ready to unplug", item.prepSignedOut, { v -> edit { it.copy(prepSignedOut = v) } },
-                            sub = "Computers, consoles and smart TVs: back up first. Take batteries out of remotes for storage.",
-                        )
+                        CheckRow("Cables labelled and bagged", item.prepCablesLabelled, { v -> edit { it.copy(prepCablesLabelled = v) } })
+                        CheckRow("Backed up and ready to unplug", item.prepSignedOut, { v -> edit { it.copy(prepSignedOut = v) } })
                     }
                     CheckRow("Wrapped and protected", item.prepWrapped, { v -> edit { it.copy(prepWrapped = v) } })
+                    Hint("Write \"${item.label ?: item.title()}\" on the bag of screws and tape it to the item.")
                 }
 
-                Section("Special handling") {
-                    SwitchRow(
-                        "Travels with me", item.travelsWithMe, { v -> edit { it.copy(travelsWithMe = v) } },
-                        sub = "Goes in your own car, not the van.",
+                if (movesHouse || item.travelsWithMe || item.firstNight || item.hazardous) Fold(
+                    "Special handling", Icons.Default.Star,
+                    summary = listOfNotNull(
+                        "Travels with me".takeIf { item.travelsWithMe },
+                        "First night".takeIf { item.firstNight },
+                        "Hazardous".takeIf { item.hazardous },
+                    ).joinToString(" · ").ifBlank { "Nothing special" },
+                ) {
+                    ToggleTiles(
+                        listOf(
+                            Toggle("Travels with me", Pic.WithMe, item.travelsWithMe) { v -> edit { it.copy(travelsWithMe = v) } },
+                            Toggle("First night", Pic.FirstNight, item.firstNight) { v -> edit { it.copy(firstNight = v) } },
+                            Toggle("Hazardous", Pic.Hazard, item.hazardous) { v -> edit { it.copy(hazardous = v) } },
+                        )
                     )
-                    SwitchRow(
-                        "Needed on the first night", item.firstNight, { v -> edit { it.copy(firstNight = v) } },
-                        sub = "Loaded last so it comes off first.",
-                    )
-                    SwitchRow(
-                        "Hazardous / not in the van", item.hazardous, { v -> edit { it.copy(hazardous = v) } },
-                        sub = "Gas bottles, paint, fuel and similar need moving separately.",
-                    )
+                    Hint("Hazardous: gas bottles, paint and fuel cannot go in the $vehicle.")
                 }
 
-                Section("Label") {
+                if (movesHouse || data.uses(Part.LABELS) || item.label != null) Fold("Label", Pic.Label, summary = item.label ?: "No label yet") {
                     val label = item.label
                     if (label != null) {
                         Text(label, style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold)
-                        Hint("This code is on the item. Scan it, or type it, when loading and unloading.")
+                        Hint("Scan or type this code when loading and unloading.")
                         TextButton(onClick = { edit { it.copy(label = null) } }) { Text("Remove label") }
                     } else {
-                        Hint("A label lets you scan this item on move day. Without one you can still tick it off by hand.")
                         Button(onClick = { scanning = true }, modifier = Modifier.fillMaxWidth()) {
                             Icon(Icons.Default.QrCodeScanner, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
@@ -295,27 +320,31 @@ fun ItemScreen(id: String) {
                             Spacer(Modifier.width(8.dp))
                             Text("Use a handwritten code")
                         }
+                        Hint("With a label, this item can be scanned on move day.")
                     }
                 }
 
-                Section("Where it is now") {
-                    ChipPicker(
-                        options = Stage.entries,
+                val trip = data.trip(item.tripId)?.takeIf { item.stage != Stage.AT_ORIGIN }
+                if (movesHouse || item.stage != Stage.AT_ORIGIN) Fold(
+                    "Where it is now", Pic.Where,
+                    summary = stageText(item.stage, isBox = false, vehicle) + (trip?.let { " · ${it.name}" } ?: ""),
+                ) {
+                    IconChoice(
+                        options = Stage.entries.map { Choice(it, stageText(it, isBox = false, vehicle), it.icon()) },
                         selected = item.stage,
-                        label = { stageText(it, isBox = false) },
                         onPick = { s -> edit { it.copy(stage = s) } },
+                        columns = 2,
                     )
-                    val trip = data.trip(item.tripId)
-                    if (trip != null && item.stage != Stage.AT_ORIGIN) Hint("Travelled on: ${trip.name}")
+                    if (trip != null) Hint("Travelled on ${trip.name}")
                     if (item.needsDisassembly) {
-                        CheckRow(
-                            "Put back together", item.reassembled, { v -> edit { it.copy(reassembled = v) } },
-                            sub = "Use the taking-apart photos above, last one first.",
-                        )
+                        CheckRow("Put back together", item.reassembled, { v -> edit { it.copy(reassembled = v) } })
                     }
                 }
 
-                Section("Damage") {
+                if (movesHouse || item.damaged) Fold(
+                    "Damage", Pic.Damage,
+                    summary = if (item.damaged) item.damageNote.ifBlank { "Damaged in the move" } else "None",
+                ) {
                     SwitchRow("Damaged in the move", item.damaged, { v -> edit { it.copy(damaged = v) } })
                     if (item.damaged) {
                         TextInput(
@@ -331,10 +360,34 @@ fun ItemScreen(id: String) {
                 }
             }
 
-            Hint(
-                "From ${origin?.name ?: "no room"}" + if (moving) " to ${dest?.name ?: "no room yet"}" else "",
-                Modifier.padding(bottom = 24.dp),
-            )
+            Fold(
+                "Notes and old room", Pic.Notes,
+                summary = listOfNotNull(
+                    "From ${origin?.name ?: "no room"}",
+                    item.notes.lineSequence().firstOrNull { it.isNotBlank() },
+                ).joinToString(" · "),
+            ) {
+                TextInput(
+                    value = item.notes,
+                    onChange = { v -> edit { it.copy(notes = v) } },
+                    label = "Notes",
+                    key = "$id-notes",
+                    singleLine = false,
+                    mic = true,
+                )
+                Text("Room in the old home", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                RoomTiles(Home.ORIGIN, item.originRoomId, onPick = { rid ->
+                    edit { cur ->
+                        val mapped = store.data.value.room(rid)?.mapsTo
+                        cur.copy(
+                            originRoomId = rid,
+                            destRoomId = cur.destRoomId ?: if (cur.disposition == Disposition.MOVE) mapped else null,
+                        )
+                    }
+                })
+            }
+
+            Spacer(Modifier.height(12.dp))
         }
     }
 
@@ -391,42 +444,48 @@ fun ItemScreen(id: String) {
     }
 }
 
-/** Plain-words result of the doorway check. */
+/** An empty circle until it has gone, then a tick: the same picture as on the Sell, donate, bin list. */
+private fun goneIcon(gone: Boolean) = if (gone) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked
+
+/** "120 × 74 × 205 cm", with a ? for a side not measured yet. Null when nothing is measured. */
+private fun sizeText(item: Item, inches: Boolean): String? {
+    val sides = listOf(item.widthCm, item.depthCm, item.heightCm)
+    if (sides.all { it == null }) return null
+    return sides.joinToString(" × ") { cm -> cm?.let { fmtNum(if (inches) it / 2.54 else it) } ?: "?" } + if (inches) " in" else " cm"
+}
+
+/** The doorway check as a flag and a few plain words. */
 @Composable
-private fun FitLine(item: Item, dest: Room?, fit: Fit, inches: Boolean) {
-    val door = dest?.doorWidthCm
+private fun FitLine(item: Item, dest: Room?, fit: Fit, inches: Boolean, onTakeApart: () -> Unit, onAddDoor: () -> Unit) {
+    if (dest == null) return
+    val door = dest.doorWidthCm
     val doorText = door?.let { if (inches) "${fmtNum(it / 2.54)} in" else "${fmtNum(it)} cm" } ?: ""
-    val hasSize = item.widthCm != null && item.depthCm != null && item.heightCm != null
-    when (fit) {
-        Fit.UNKNOWN -> Hint(
-            when {
-                dest == null -> "Pick a room to check whether it will fit through the door."
-                door == null || door <= 0 -> "To check the fit, add the narrowest door width for ${dest.name} under More → Rooms."
-                !hasSize -> "Enter the width, depth and height below to check it fits through the $doorText door."
-                else -> "Not checked yet."
+    val scheme = MaterialTheme.colorScheme
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        when (fit) {
+            Fit.UNKNOWN -> if (door == null || door <= 0) {
+                Hint("No door width for ${dest.name} yet, so the fit is not checked.", Modifier.weight(1f))
+                TextButton(onClick = onAddDoor) { Text("Add it") }
+            } else {
+                IconFlag(Pic.Size, "Fit not checked")
+                Hint("Add its size to check the $doorText door.", Modifier.weight(1f))
             }
-        )
-        Fit.OK -> Text(
-            "Fits through the $doorText door to ${dest?.name ?: "its room"}.",
-            color = MaterialTheme.colorScheme.tertiary,
-            style = MaterialTheme.typography.bodyMedium,
-        )
-        Fit.TIGHT -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Flag("Tight fit")
-            Text(
-                "Only just fits through the $doorText door. Measure again and protect the door frame.",
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.weight(1f),
-            )
-        }
-        Fit.NO -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Flag("Won't fit", error = !item.needsDisassembly)
-            Text(
-                if (item.needsDisassembly) "Too big for the $doorText door in one piece. It is marked to be taken apart, so that is covered."
-                else "Too big for the $doorText door in one piece. Mark it as needing taking apart, or pick another room.",
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.weight(1f),
-            )
+            Fit.OK -> {
+                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = scheme.tertiary, modifier = Modifier.size(18.dp))
+                Text("Fits through the $doorText door", color = scheme.tertiary, style = MaterialTheme.typography.bodyMedium)
+            }
+            Fit.TIGHT -> {
+                IconFlag(Icons.Default.Warning, "Tight fit")
+                Text("through the $doorText door", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            }
+            Fit.NO -> if (item.needsDisassembly) {
+                IconFlag(Pic.TakeApart, "Take apart")
+                Text("to get through the $doorText door", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            } else {
+                IconFlag(Icons.Default.Warning, "Won't fit", error = true)
+                Text("the $doorText door", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                TextButton(onClick = onTakeApart) { Text("Mark: take apart") }
+            }
         }
     }
 }

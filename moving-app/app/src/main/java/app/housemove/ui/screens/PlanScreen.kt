@@ -1,5 +1,6 @@
 package app.housemove.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -10,6 +11,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.housemove.data.*
@@ -29,6 +31,7 @@ fun PlanScreen() {
     val destRooms = data.roomsOf(Home.DEST)
     val homeless = moving.filter { data.room(it.destRoomId) == null }.sortedBy { it.createdAt }
     val inches = data.move.useInches
+    val vehicle = data.vehicle()
 
     fun edit(itemId: String, f: (Item) -> Item) {
         store.data.value.item(itemId)?.let { store.put(f(it)) }
@@ -40,21 +43,22 @@ fun PlanScreen() {
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (moving.isEmpty()) {
-                item(key = "empty") {
-                    Section("Nothing to place yet") {
-                        Text("Items you mark as \"Move\" appear here so you can give each one a room in the new home.")
-                        Button(onClick = { nav.open("triage") }) { Text("Decide what moves") }
-                    }
-                }
-            }
-
             if (destRooms.isEmpty()) {
                 item(key = "norooms") {
-                    Section("Add the new home's rooms") {
-                        Text("List the rooms of the new home first. Each gets a colour, so boxes and furniture can be sent straight to the right door.")
-                        Button(onClick = { nav.open("rooms") }) { Text("Add rooms") }
-                    }
+                    EmptyState(
+                        Pic.Room, "Add the new home's rooms",
+                        text = "Each room gets a colour, so things go straight to the right door.",
+                        action = "Add rooms", onAction = { nav.open("rooms") },
+                    )
+                }
+            } else if (moving.isEmpty()) {
+                item(key = "empty") {
+                    EmptyState(
+                        Icons.Default.Map, "Nothing to place yet",
+                        text = "Things you mark Move appear here to be given a room.",
+                        action = if (data.uses(Part.TRIAGE)) "Decide what moves" else "Start the walk-through",
+                        onAction = { nav.open(if (data.uses(Part.TRIAGE)) "triage" else "walk") },
+                    )
                 }
             }
 
@@ -63,105 +67,170 @@ fun PlanScreen() {
                     Text("Needs a room (${homeless.size})", style = MaterialTheme.typography.titleMedium)
                 }
                 items(homeless, key = { "h-" + it.id }) { x ->
-                    Section {
-                        Row(
-                            Modifier.fillMaxWidth().clickable { nav.open("item/${x.id}") },
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            OwnerThumb(x.id, Modifier.size(48.dp))
-                            Spacer(Modifier.width(12.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(x.title(), style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Hint("From " + (data.room(x.originRoomId)?.name ?: "no room"))
-                            }
-                        }
-                        RoomPicker(Home.DEST, null, onPick = { rid -> edit(x.id) { it.copy(destRoomId = rid) } })
-                    }
-                }
-            }
-
-            items(destRooms, key = { "r-" + it.id }) { room ->
-                val here = moving.filter { it.destRoomId == room.id }.sortedBy { it.name.lowercase() }
-                val door = room.doorWidthCm
-                Section(
-                    title = "${room.name} (${here.size})",
-                    action = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            ColorDot(room.color)
-                            Spacer(Modifier.width(6.dp))
-                            Text(roomColor(room.color).name, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    },
-                ) {
-                    if (door != null && door > 0) {
-                        Hint("Narrowest door on the way in: " + if (inches) "${fmtNum(door / 2.54)} in" else "${fmtNum(door)} cm")
-                    } else {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Hint("No door width yet, so the fit can't be checked.", Modifier.weight(1f))
-                            TextButton(onClick = { nav.open("rooms") }) { Text("Add it") }
-                        }
-                    }
-                    if (here.isEmpty()) Hint("Nothing is going to this room yet.")
-                    here.forEach { x ->
-                        val fit = data.fitOf(x)
-                        Column {
+                    Card(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Row(
-                                Modifier.fillMaxWidth().clickable { nav.open("item/${x.id}") }.padding(vertical = 6.dp),
+                                Modifier.fillMaxWidth().clickable { nav.open("item/${x.id}") },
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
-                                Text(x.title(), style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                                when (fit) {
-                                    Fit.OK -> Text("Fits", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.tertiary)
-                                    Fit.TIGHT -> Flag("Tight fit")
-                                    Fit.NO -> if (x.needsDisassembly) Flag("Take apart") else Flag("Won't fit", error = true)
-                                    Fit.UNKNOWN -> if (door != null && door > 0) Hint("Add its size") else Unit
+                                OwnerThumb(x.id, Modifier.size(56.dp))
+                                Spacer(Modifier.width(12.dp))
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text(x.title(), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    RoomBadge(data.room(x.originRoomId))
                                 }
+                                Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            if (fit == Fit.NO && !x.needsDisassembly) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Hint("Too big for the door in one piece.", Modifier.weight(1f))
-                                    TextButton(onClick = { edit(x.id) { it.copy(needsDisassembly = true) } }) { Text("Mark: take apart") }
-                                }
+                            if (destRooms.isNotEmpty()) {
+                                RoomTiles(Home.DEST, null, onPick = { rid -> edit(x.id) { it.copy(destRoomId = rid) } })
                             }
                         }
                     }
                 }
             }
 
-            item(key = "load") {
-                val v = data.volume()
-                Section("Van load estimate") {
-                    if (v.totalM3 <= 0.0) {
-                        Hint("Once items are marked to move and boxes are packed, the size of the load is estimated here.")
-                    } else {
-                        Text(
-                            "About ${oneDecimal(v.totalM3)} m³ (${oneDecimal(v.totalM3 * 35.31)} ft³)",
-                            style = MaterialTheme.typography.titleLarge,
-                        )
-                        Text(
-                            "That is about ${v.trips} trip${if (v.trips == 1) "" else "s"} in a ${fmtNum(data.move.vanCapacityM3)} m³ van.",
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                        Hint("Furniture ${oneDecimal(v.itemsM3)} m³ + boxes ${oneDecimal(v.boxesM3)} m³, plus some slack for awkward shapes.")
-                        if (v.itemsWithoutSize > 0) {
-                            Hint(
-                                "${v.itemsWithoutSize} item${if (v.itemsWithoutSize == 1) " has" else "s have"} no size yet and " +
-                                    "${if (v.itemsWithoutSize == 1) "is" else "are"} counted at $DEFAULT_ITEM_M3 m³ each. Add sizes for a better estimate.",
-                            )
+            if (moving.isNotEmpty()) {
+                // Rooms with something going to them get a block each; the rest share one quiet line.
+                val (used, unused) = destRooms.partition { r -> moving.any { it.destRoomId == r.id } }
+                items(used, key = { "r-" + it.id }) { room ->
+                    val here = moving.filter { it.destRoomId == room.id }.sortedBy { it.name.lowercase() }
+                    RoomBlock(
+                        room = room,
+                        here = here,
+                        data = data,
+                        inches = inches,
+                        onOpen = { nav.open("item/${it.id}") },
+                        onTakeApart = { x -> edit(x.id) { it.copy(needsDisassembly = true) } },
+                        onAddDoor = { nav.open("rooms") },
+                    )
+                }
+                if (unused.isNotEmpty()) {
+                    item(key = "unused") {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("Nothing going here yet", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                unused.forEach { RoomBadge(it) }
+                            }
                         }
-                        Hint("Change the van size under More → Settings.")
                     }
                 }
             }
 
-            item(key = "signs") {
-                Card(Modifier.fillMaxWidth()) {
-                    MenuRow(
-                        Icons.Default.Print,
-                        "Print door signs",
-                        sub = "One coloured sign per room, so helpers know where things go.",
-                    ) { nav.open("labels") }
+            val v = data.volume()
+            if (v.totalM3 > 0.0) item(key = "load") {
+                Fold(
+                    "${vehicle.replaceFirstChar { it.uppercase() }} load estimate", Icons.Default.LocalShipping,
+                    summary = "About ${oneDecimal(v.totalM3)} m³ · ${v.trips} trip${if (v.trips == 1) "" else "s"}",
+                    key = "load",
+                ) {
+                    Text(
+                        "About ${oneDecimal(v.totalM3)} m³ (${oneDecimal(v.totalM3 * 35.31)} ft³)",
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                    Text(
+                        "That is about ${v.trips} trip${if (v.trips == 1) "" else "s"} in a ${fmtNum(data.move.vanCapacityM3)} m³ $vehicle.",
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Text(
+                        "Furniture ${oneDecimal(v.itemsM3)} m³ + boxes ${oneDecimal(v.boxesM3)} m³, plus some slack.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    if (v.itemsWithoutSize > 0) {
+                        IconFlag(
+                            Pic.Size,
+                            "${v.itemsWithoutSize} item${if (v.itemsWithoutSize == 1) "" else "s"} with no size, counted at $DEFAULT_ITEM_M3 m³ each",
+                        )
+                    }
+                    Hint("Change the $vehicle size under More → Settings.")
+                }
+            }
+
+            if (data.uses(Part.LABELS)) {
+                item(key = "signs") {
+                    Card(Modifier.fillMaxWidth()) {
+                        MenuRow(Icons.Default.Print, "Print door signs", sub = "One coloured sign per room.") { nav.open("labels") }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** One new-home room: its colour across the top, then what is going there and whether each thing fits. */
+@Composable
+private fun RoomBlock(
+    room: Room,
+    here: List<Item>,
+    data: AppData,
+    inches: Boolean,
+    onOpen: (Item) -> Unit,
+    onTakeApart: (Item) -> Unit,
+    onAddDoor: () -> Unit,
+) {
+    val colour = roomColor(room.color)
+    val door = room.doorWidthCm?.takeIf { it > 0 }
+    Card(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().background(colour.color()).padding(start = 16.dp, end = 6.dp).heightIn(min = 56.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
+                Text(
+                    room.name, color = colour.onColor(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    "${here.size} item${if (here.size == 1) "" else "s"}", color = colour.onColor(),
+                    style = MaterialTheme.typography.labelMedium, maxLines = 1,
+                )
+            }
+            if (door != null) {
+                Icon(Icons.Default.DoorFront, contentDescription = "Narrowest door", tint = colour.onColor(), modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    if (inches) "${fmtNum(door / 2.54)} in" else "${fmtNum(door)} cm",
+                    color = colour.onColor(), style = MaterialTheme.typography.labelLarge,
+                )
+                Spacer(Modifier.width(10.dp))
+            } else {
+                TextButton(onClick = onAddDoor, colors = ButtonDefaults.textButtonColors(contentColor = colour.onColor())) {
+                    Icon(Icons.Default.DoorFront, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Add door width")
+                }
+            }
+        }
+        if (here.isNotEmpty()) {
+            Column(Modifier.padding(vertical = 4.dp)) {
+                here.forEach { x ->
+                    val fit = data.fitOf(x)
+                    val stuck = fit == Fit.NO && !x.needsDisassembly
+                    Row(
+                        Modifier.fillMaxWidth().clickable { onOpen(x) }.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        OwnerThumb(x.id, Modifier.size(44.dp))
+                        Text(
+                            x.title(), style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        when (fit) {
+                            Fit.OK -> Icon(Icons.Default.CheckCircle, contentDescription = "Fits", tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(20.dp))
+                            Fit.TIGHT -> IconFlag(Icons.Default.Warning, "Tight fit")
+                            Fit.NO -> if (x.needsDisassembly) IconFlag(Pic.TakeApart, "Take apart") else IconFlag(Icons.Default.Warning, "Won't fit", error = true)
+                            Fit.UNKNOWN -> if (door != null) Hint("No size yet") else Unit
+                        }
+                    }
+                    if (stuck) {
+                        Row(Modifier.fillMaxWidth().padding(end = 4.dp), horizontalArrangement = Arrangement.End) {
+                            TextButton(onClick = { onTakeApart(x) }) {
+                                Icon(Pic.TakeApart, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Mark: take apart")
+                            }
+                        }
+                    }
                 }
             }
         }

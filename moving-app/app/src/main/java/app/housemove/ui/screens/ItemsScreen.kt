@@ -1,6 +1,7 @@
 package app.housemove.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -9,7 +10,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -17,12 +17,23 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.housemove.data.*
 import app.housemove.ui.*
 
 private const val NO_ROOM = "none"
+
+private data class Shortcut(
+    val icon: ImageVector,
+    val title: String,
+    val route: String,
+    val status: String? = null,
+    val done: Boolean = false,
+    val alert: Boolean = false,
+)
 
 /** The catalogue of big things: furniture, appliances, electronics, valuables. */
 @Composable
@@ -47,7 +58,10 @@ fun ItemsScreen() {
                 else -> i.originRoomId == roomFilter
             }
     }.sortedWith(compareBy({ data.room(it.originRoomId)?.sort ?: Int.MAX_VALUE }, { data.room(it.originRoomId)?.name ?: "~" }, { it.createdAt }))
-    val undecided = all.count { it.disposition == Disposition.UNDECIDED }
+
+    // On a small screen or with large text, tiles go fewer to a row so their words still fit.
+    val config = LocalConfiguration.current
+    val narrow = config.screenWidthDp / config.fontScale < 340
 
     fun addItem() {
         val room = roomFilter?.takeIf { it != NO_ROOM } ?: device.currentRoomId?.takeIf { data.room(it) != null }
@@ -68,166 +82,186 @@ fun ItemsScreen() {
             )
         },
     ) {
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
-            item(key = "header") {
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { nav.open("walk") }, modifier = Modifier.weight(1f)) {
-                            Icon(Icons.Default.PhotoCamera, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Walk-through", maxLines = 1)
-                        }
-                        OutlinedButton(onClick = { nav.open("plan") }, modifier = Modifier.weight(1f)) {
-                            Icon(Icons.Default.MeetingRoom, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Plan rooms", maxLines = 1)
-                        }
+        if (all.isEmpty()) {
+            ScrollColumn {
+                EmptyState(
+                    Pic.Camera, "Nothing listed yet",
+                    text = "Go room by room and photograph each big thing.",
+                    action = "Start the walk-through", onAction = { nav.open("walk") },
+                )
+            }
+        } else LazyColumn(
+            Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            item(key = "shortcuts") {
+                val tiles = shortcuts(data)
+                TileGrid(tiles, Modifier.padding(horizontal = 16.dp), columns = tiles.size.coerceAtMost(if (narrow) 2 else 3)) { s, m ->
+                    Tile(s.icon, s.title, onClick = { nav.open(s.route) }, modifier = m, status = s.status, done = s.done, alert = s.alert)
+                }
+            }
+            stickyHeader(key = "filters") {
+                Row(
+                    Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background)
+                        .horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (originRooms.isNotEmpty()) {
+                        RoomFilterChip(
+                            rooms = originRooms,
+                            withNoRoom = anyWithoutRoom,
+                            selected = roomFilter,
+                            onPick = { roomFilter = it },
+                        )
                     }
-                    if (undecided > 0) {
-                        Row(
-                            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
-                                .background(MaterialTheme.colorScheme.secondaryContainer)
-                                .clickable { nav.open("triage") }
-                                .padding(horizontal = 14.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                "$undecided not triaged yet",
-                                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                style = MaterialTheme.typography.bodyLarge,
-                                modifier = Modifier.weight(1f),
-                            )
-                            Text("Triage", color = MaterialTheme.colorScheme.onSecondaryContainer, style = MaterialTheme.typography.labelLarge)
-                            Spacer(Modifier.width(4.dp))
-                            Icon(
-                                Icons.AutoMirrored.Filled.ArrowForward,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                                modifier = Modifier.size(18.dp),
+                    FilterChip(selected = decision == null, onClick = { decision = null }, label = { Text("All ${all.size}") })
+                    Disposition.entries.forEach { d ->
+                        val n = all.count { it.disposition == d }
+                        // Decisions nobody has made yet are left out, to keep the row short.
+                        if (n > 0 || decision == d.name) {
+                            FilterChip(
+                                selected = decision == d.name,
+                                onClick = { decision = if (decision == d.name) null else d.name },
+                                label = { Text("${d.label} $n") },
+                                leadingIcon = { Icon(d.icon(), contentDescription = null, modifier = Modifier.size(18.dp)) },
                             )
                         }
                     }
                 }
             }
-
-            if (all.isEmpty()) {
-                item(key = "empty") {
-                    Column(Modifier.padding(horizontal = 16.dp)) {
-                        Section("Nothing catalogued yet") {
-                            Text(
-                                "Start with the walk-through: go room by room and take one photo of each big thing. " +
-                                    "Every photo becomes an item you can name and decide on later.",
-                            )
-                            Hint(
-                                "Only furniture, appliances, electronics, valuables and awkward things belong here. " +
-                                    "Small things are recorded by box when you pack.",
-                            )
-                        }
-                    }
+            if (shown.isEmpty()) {
+                item(key = "nomatch") {
+                    EmptyState(
+                        Icons.Default.SearchOff, "Nothing matches",
+                        action = "Show everything", onAction = { decision = null; roomFilter = null },
+                    )
                 }
-            } else {
-                item(key = "filters") {
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Row(
-                            Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            FilterChip(selected = decision == null, onClick = { decision = null }, label = { Text("All (${all.size})") })
-                            Disposition.entries.forEach { d ->
-                                val n = all.count { it.disposition == d }
-                                FilterChip(
-                                    selected = decision == d.name,
-                                    onClick = { decision = if (decision == d.name) null else d.name },
-                                    label = { Text("${d.label} ($n)") },
-                                )
-                            }
-                        }
-                        if (originRooms.isNotEmpty()) {
-                            Row(
-                                Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                FilterChip(selected = roomFilter == null, onClick = { roomFilter = null }, label = { Text("All rooms") })
-                                originRooms.forEach { r ->
-                                    FilterChip(
-                                        selected = roomFilter == r.id,
-                                        onClick = { roomFilter = if (roomFilter == r.id) null else r.id },
-                                        label = { Text(r.name) },
-                                    )
-                                }
-                                if (anyWithoutRoom) {
-                                    FilterChip(
-                                        selected = roomFilter == NO_ROOM,
-                                        onClick = { roomFilter = if (roomFilter == NO_ROOM) null else NO_ROOM },
-                                        label = { Text("No room") },
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-                if (shown.isEmpty()) {
-                    item(key = "nomatch") { EmptyHint("No items match these filters.") }
-                }
-                items(shown, key = { it.id }) { x ->
-                    ItemRow(x, data) { nav.open("item/${x.id}") }
-                    HorizontalDivider(Modifier.padding(start = 84.dp))
+            }
+            items(shown.chunked(2), key = { it.first().id }) { pair ->
+                Row(
+                    Modifier.padding(horizontal = 16.dp).height(IntrinsicSize.Min),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    pair.forEach { x -> ItemCard(x, data, Modifier.weight(1f).fillMaxHeight()) { nav.open("item/${x.id}") } }
+                    if (pair.size == 1) Spacer(Modifier.weight(1f))
                 }
             }
         }
     }
 }
 
-@Composable
-private fun ItemRow(x: Item, data: AppData, onClick: () -> Unit) {
-    val origin = data.room(x.originRoomId)
-    val dest = data.room(x.destRoomId)
-    val moving = x.disposition == Disposition.MOVE
-    val fit = if (moving) data.fitOf(x) else Fit.UNKNOWN
-    val status = when (x.disposition) {
-        Disposition.MOVE -> "Move · " + stageText(x.stage, isBox = false)
-        Disposition.SELL -> "Sell · " + if (x.gone) "sold" else if (x.listed) "listed" else "not listed yet"
-        Disposition.DONATE -> "Donate · " + if (x.gone) "gone" else "still here"
-        Disposition.BIN -> "Bin · " + if (x.gone) "gone" else "still here"
-        Disposition.STORE -> "Store"
-        Disposition.UNDECIDED -> "Not decided yet"
+/** The other ways into the catalogue, each with how far along it is. Parts that are switched off are left out. */
+private fun shortcuts(data: AppData): List<Shortcut> {
+    val out = ArrayList<Shortcut>()
+    out += Shortcut(Pic.Camera, "Walk-through", "walk", status = "Add by photo")
+    if (data.uses(Part.TRIAGE)) {
+        val undecided = data.liveItems.count { it.disposition == Disposition.UNDECIDED }
+        out += Shortcut(
+            Icons.Default.Rule, "Triage", "triage",
+            status = if (undecided > 0) "$undecided to decide" else "All decided", done = undecided == 0,
+        )
     }
-    Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    if (data.uses(Part.PLAN)) {
+        val moving = data.movingItems()
+        val noRoom = moving.count { data.room(it.destRoomId) == null }
+        val wontFit = moving.count { data.fitOf(it) == Fit.NO && !it.needsDisassembly }
+        out += Shortcut(
+            Icons.Default.Map, "Plan rooms", "plan",
+            status = when {
+                wontFit > 0 -> "$wontFit won't fit"
+                noRoom > 0 -> "$noRoom need a room"
+                moving.isEmpty() -> null
+                else -> "All placed"
+            },
+            done = moving.isNotEmpty() && noRoom == 0 && wontFit == 0,
+            alert = wontFit > 0,
+        )
+    }
+    return out
+}
+
+/** One chip that opens the list of old-home rooms, so rooms do not need a filter row of their own. */
+@Composable
+private fun RoomFilterChip(rooms: List<Room>, withNoRoom: Boolean, selected: String?, onPick: (String?) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    val label = when (selected) {
+        null -> "All rooms"
+        NO_ROOM -> "No room"
+        else -> rooms.firstOrNull { it.id == selected }?.name ?: "All rooms"
+    }
+    Box {
+        FilterChip(
+            selected = selected != null,
+            onClick = { open = true },
+            label = { Text(label, maxLines = 1) },
+            leadingIcon = { Icon(Pic.Room, contentDescription = null, modifier = Modifier.size(18.dp)) },
+            trailingIcon = { Icon(Icons.Default.ArrowDropDown, contentDescription = "Choose a room", modifier = Modifier.size(18.dp)) },
+        )
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(text = { Text("All rooms") }, onClick = { onPick(null); open = false })
+            rooms.forEach { r ->
+                DropdownMenuItem(text = { Text(r.name) }, onClick = { onPick(r.id); open = false })
+            }
+            if (withNoRoom) DropdownMenuItem(text = { Text("No room") }, onClick = { onPick(NO_ROOM); open = false })
+        }
+    }
+}
+
+/** One item as a picture: photo, name, the decision, where it is going, and anything to watch out for. */
+@Composable
+private fun ItemCard(x: Item, data: AppData, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val moving = x.disposition == Disposition.MOVE
+    val fit = if (moving && data.uses(Part.PLAN)) data.fitOf(x) else Fit.UNKNOWN
+    val state = when (x.disposition) {
+        Disposition.MOVE -> if (x.stage == Stage.AT_ORIGIN) "Move" else "Move · " + stageText(x.stage, isBox = false, data.vehicle())
+        Disposition.SELL -> if (x.gone) "Sold" else if (x.listed) "Sell · listed" else "Sell · not listed"
+        Disposition.DONATE -> if (x.gone) "Donate · gone" else "Donate"
+        Disposition.BIN -> if (x.gone) "Bin · gone" else "Bin"
+        Disposition.STORE -> "Store"
+        Disposition.UNDECIDED -> "Not decided"
+    }
+    Column(
+        modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(scheme.surface)
+            .border(1.dp, scheme.outlineVariant, RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .padding(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        OwnerThumb(x.id, Modifier.size(56.dp))
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(x.title(), style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                RoomBadge(origin, Modifier.weight(1f, fill = false))
-                if (moving) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.ArrowForward,
-                        contentDescription = "goes to",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(14.dp),
-                    )
-                    RoomBadge(dest, Modifier.weight(1f, fill = false))
+        val photo = data.photosOf(x.id).firstOrNull()
+        val frame = Modifier.fillMaxWidth().aspectRatio(4f / 3f)
+        if (photo != null) PhotoThumb(photo, frame) else {
+            Box(frame.clip(RoundedCornerShape(8.dp)).background(scheme.surfaceVariant), contentAlignment = Alignment.Center) {
+                Icon(Pic.Item, contentDescription = "No photo yet", tint = scheme.outline, modifier = Modifier.size(44.dp))
+            }
+        }
+        Column(Modifier.padding(start = 4.dp, end = 4.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(x.title(), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (x.disposition == Disposition.UNDECIDED) {
+                IconFlag(x.disposition.icon(), state)
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(x.disposition.icon(), contentDescription = null, tint = scheme.primary, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(state, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                    status,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                when {
-                    fit == Fit.NO && x.needsDisassembly -> Flag("Take apart")
-                    fit == Fit.NO -> Flag("Won't fit", error = true)
-                    fit == Fit.TIGHT -> Flag("Tight fit")
+            val flags = moving || x.fragile || x.damaged
+            if (flags) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (moving) RoomBadge(data.room(x.destRoomId))
+                    when {
+                        fit == Fit.NO && x.needsDisassembly -> IconFlag(Pic.TakeApart, "Take apart")
+                        fit == Fit.NO -> IconFlag(Icons.Default.Warning, "Won't fit", error = true)
+                        fit == Fit.TIGHT -> IconFlag(Icons.Default.Warning, "Tight fit")
+                    }
+                    if (x.fragile) IconFlag(Pic.Fragile, "Fragile")
+                    if (x.damaged) IconFlag(Pic.Damage, "Damaged", error = true)
                 }
-                if (x.fragile) Flag("Fragile")
-                if (x.damaged) Flag("Damaged", error = true)
             }
         }
     }
