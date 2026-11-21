@@ -551,7 +551,7 @@ internal class SimChecks(private val sim: Simulation) {
         val hostBefore = x.hostBefore
         val hostAfter = x.hostAfter
         if (sent != null && hostBefore != null && hostAfter != null) {
-            merged(x.host, hostBefore, sent, hostAfter)
+            merged(x.host, x.hostWas, hostBefore, sent, hostAfter)
             // What the joiner sends depends on who it takes the host to be; what comes back, on who the host now knows the joiner to be.
             val hostSelf = x.hostAtStart!!.person(x.host.personId)
             val joinerView = x.joinerSent ?: x.joinerAtStart!!
@@ -562,7 +562,7 @@ internal class SimChecks(private val sim: Simulation) {
                 if (joinerRole == null || joinerRole.second || joinerRole.first == Role.HELPER) notSent(x.host, x.joiner, back, wire.files(8), hostAfter)
                 val joinerBefore = x.joinerBefore
                 val joinerAfter = x.joinerAfter
-                if (joinerBefore != null && joinerAfter != null) merged(x.joiner, joinerBefore, back, joinerAfter)
+                if (joinerBefore != null && joinerAfter != null) merged(x.joiner, x.joinerWas, joinerBefore, back, joinerAfter)
             }
         }
     }
@@ -575,8 +575,8 @@ internal class SimChecks(private val sim: Simulation) {
         for (f in files) if (f in secret) broke(HELPERS, "${from.tag} sent the file of a receipt or serial-label photo to ${to.tag}, whom it knew to be a Helper", to.personId)
     }
 
-    /** One merge: [before] on the phone, [got] from the other, [after] as the phone was left. */
-    private fun merged(p: Simulation.Phone, before: AppData, got: AppData, after: AppData) {
+    /** One merge: [before] on the phone (whose person was [was] then), [got] from the other, [after] as the phone was left. */
+    private fun merged(p: Simulation.Phone, was: String, before: AppData, got: AppData, after: AppData) {
         val j = Judge(after)
         val mine = HashMap<String, Rec>()
         val theirs = HashMap<String, Rec>()
@@ -586,8 +586,8 @@ internal class SimChecks(private val sim: Simulation) {
         for ((k, r) in after.records()) out[k] = r
         fun bad(what: String, k: String) = broke(MERGE, "a merge on ${p.tag} $what $k\n      had: ${short(mine[k])}\n      got: ${short(theirs[k])}\n      kept: ${short(out[k])}", k.substringAfter(':'))
         // A phone whose person is a Helper before and after takes in nothing of what Helpers are not sent, whatever the other phone thought.
-        fun helperOn(d: AppData) = d.people.any { it.role == Role.ORGANISER && !it.removed } && (d.person(p.personId)?.let { it.removed || it.role == Role.HELPER } ?: true)
-        val asHelper = helperOn(before) && helperOn(after)
+        fun helperOn(d: AppData, me: String) = d.people.any { it.role == Role.ORGANISER && !it.removed } && (d.person(me)?.let { it.removed || it.role == Role.HELPER } ?: true)
+        val asHelper = helperOn(before, was) && helperOn(after.copy(people = after.people.filter { it.id != p.personId || it.id == was }), was)
         if (asHelper) {
             fun share(d: AppData) = Triple(d.expenses.toSet(), d.photos.filter { it.kind in HIDDEN_KINDS }.toSet(), d.proposals.filter { it.kind == ProposalKind.COST }.toSet())
             if (share(before) != share(after)) broke(HELPERS, "${p.tag}, a Helper's phone, took in costs, cost suggestions or receipt or serial-label photos in a merge", p.personId)

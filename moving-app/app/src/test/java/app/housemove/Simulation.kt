@@ -367,6 +367,10 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
 
         /** The joiner's data as it stood when it sent it. */
         var joinerSent: AppData? = null
+
+        /** Who each phone was just before its merge. A merge can leave a phone with a stand-in for a person that did not count. */
+        var hostWas = ""
+        var joinerWas = ""
         var quiet = true
     }
 
@@ -384,8 +388,8 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
         val wire = Wire(h.host.port, cut) { phase ->
             when (phase) {
                 2 -> { meanwhile(h, "before any data"); meanwhile(j, "before any data") }
-                3 -> { x.joinerSent = j.data; meanwhile(j, "after sending its data"); meanwhile(h, "before merging"); x.hostBefore = h.data }
-                4 -> { x.hostAfter = h.data; meanwhile(h, "after merging"); meanwhile(j, "before merging"); x.joinerBefore = j.data }
+                3 -> { x.joinerSent = j.data; meanwhile(j, "after sending its data"); meanwhile(h, "before merging"); x.hostBefore = h.data; x.hostWas = h.personId }
+                4 -> { x.hostAfter = h.data; meanwhile(h, "after merging"); meanwhile(j, "before merging"); x.joinerBefore = j.data; x.joinerWas = j.personId }
                 5 -> { x.joinerAfter = j.data; meanwhile(j, "after merging"); meanwhile(h, "after merging") }
                 6 -> { meanwhile(h, "before the photos"); meanwhile(j, "before the photos") }
                 // While a phone is sending photo files it reads them from disk, so only the receiving one does things.
