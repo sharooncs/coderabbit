@@ -1,6 +1,8 @@
 package app.housemove.ui
 
 import android.app.Activity
+import app.housemove.R
+import androidx.compose.ui.text.font.Font
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -161,7 +163,12 @@ private val Scheme = darkColorScheme(
  * The typeface of the look. The design uses "Outfit"; to bundle it, put the font in
  * res/font and change this one line, e.g. FontFamily(Font(R.font.outfit, ...)).
  */
-val AppFont: FontFamily = FontFamily.Default
+val AppFont: FontFamily = FontFamily(
+    Font(R.font.outfit_regular, FontWeight.Normal),
+    Font(R.font.outfit_medium, FontWeight.Medium),
+    Font(R.font.outfit_semibold, FontWeight.SemiBold),
+    Font(R.font.outfit_bold, FontWeight.Bold),
+)
 
 private fun style(size: Int, line: Int, weight: FontWeight, spacing: Double = 0.0) = TextStyle(
     fontFamily = AppFont, fontSize = size.sp, lineHeight = line.sp, fontWeight = weight, letterSpacing = spacing.sp,
