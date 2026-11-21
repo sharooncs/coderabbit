@@ -510,14 +510,16 @@ class PhonesTogetherTest {
         val hal = invited(asha, "Hal", Role.HELPER)
         val hugo = invited(asha, "Hugo", Role.HELPER)
 
-        // Hal packs three things while Hugo, on his phone, loads the first container, puts the second inside a crate and loads that, and deletes the third.
+        // Hal packs three things while Hugo, on his phone, loads the first container and puts the second inside a crate and
+        // loads that, and Asha, on hers, deletes the third. (Hugo may not delete it: Asha added it. See DeletingTest.)
         assertTrue(hal.putInto(lamp, carton).ok)
         assertTrue(hal.putInto(vase, bag).ok)
         assertTrue(hal.putInto(cup, doomed).ok)
         hugo.updateBoxes(listOf(carton)) { it.copy(stage = Stage.LOADED, tripId = trip.id) }
         assertTrue(hugo.nest(bag, crate).ok)
         hugo.updateBoxes(listOf(crate)) { it.copy(stage = Stage.LOADED, tripId = trip.id) }
-        hugo.delete(hugo.box(doomed))
+        assertNotNull(hugo.tryDelete(hugo.box(doomed)).reason)
+        assertTrue(asha.tryDelete(asha.box(doomed)).ok)
         everyone(asha, hal, hugo)
         assertSame(asha, hal, hugo, costs = false)
         for (s in listOf(asha, hal, hugo)) {
@@ -592,7 +594,7 @@ class PhonesTogetherTest {
             val (hosted, joined) = syncVia(asha, hal, cut)
             assertFalse("cut in phase ${cut.phase}", hosted.ok && joined.ok)
             // Whoever noticed is told what happened in words, and never that the versions differ.
-            for (r in listOf(hosted, joined)) if (!r.ok) assertTrue("cut in phase ${cut.phase}: ${r.error}", r.error in listOf(WifiSync.CONNECTION_LOST, "Connection lost during photo transfer"))
+            for (r in listOf(hosted, joined)) if (!r.ok) assertTrue("cut in phase ${cut.phase}: ${r.error}", r.error in listOf(WifiSync.CONNECTION_LOST, WifiSync.PHOTOS_CUT))
             // Each phone has either all of the other's data or none of it, and no half-received photo.
             assertEquals("cut in phase ${cut.phase}: has Asha merged?", cut.phase >= 4, asha.data.value.box(his.id) != null)
             assertEquals("cut in phase ${cut.phase}: has Hal merged?", cut.phase >= 5, hal.data.value.box(hers.id) != null)
@@ -935,10 +937,10 @@ class PhonesTogetherTest {
         everyone(asha, omar, hal)
         val backup = ByteArrayOutputStream().also { Backup.export(asha, it) }.toByteArray()
 
-        // Everyone carries on: Hal packs and deletes a box, Omar decides and makes Hal a Decider, Asha edits a box and adds one.
+        // Everyone carries on: Hal packs a box and adds one, Omar deletes one, decides and makes Hal a Decider, Asha edits a box and adds one.
         hal.put(hal.box(old).copy(contents = "plates", sealed = true))
-        hal.delete(hal.box(doomed))
         val added = hal.createBox("B1", null).id
+        assertTrue(omar.tryDelete(omar.box(doomed)).ok)
         assertTrue(omar.decide(sofa, Disposition.SELL, 60.0).ok)
         assertTrue(omar.setRole(hal.id, Role.DECIDER).ok)
         synced(omar, hal)

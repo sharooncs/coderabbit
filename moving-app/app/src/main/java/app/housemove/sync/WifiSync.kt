@@ -42,6 +42,10 @@ import kotlin.concurrent.thread
  * sends the photo files the other is missing.
  * Both phones must be on the same Wi-Fi, or one on the other's hotspot.
  *
+ * Nothing is said to a phone that does not have the code shown (or an invite's code): it is
+ * told "NO" and the connection is closed, and anything that does not begin the way a HouseMove
+ * phone does is not answered at all. Every message either phone shows is in words.
+ *
  * Who may sync: phones whose people are both in the move just sync. A phone
  * that is not in the move yet joins with an invite an Organiser made for one
  * person ([Host.inviteFor]); the plain code only lets it in when the other
@@ -73,11 +77,34 @@ object WifiSync {
     const val INVITE_EXPIRED = "That invite has been used or has run out. Ask for a new one."
     const val CONNECTION_LOST = "The connection was lost before the sync finished. Nothing is broken: keep the phones close together and sync again."
 
+    /** The lists went both ways, and then the connection was lost while photos were still on their way. */
+    const val PHOTOS_CUT = "Everything except some of the photos was synced: the connection was lost while they were being sent. Nothing is broken: sync again to fetch the rest."
+
+    /** What the other end sent could not be read: a damaged message, or something that is not HouseMove. */
+    const val UNREADABLE = "What the other phone sent could not be read, so nothing was changed. Sync again; if it keeps happening, check both phones have the same version of HouseMove."
+    const val NOT_HOUSEMOVE = "Something on the network that is not a HouseMove phone tried to connect. Nothing was exchanged."
+    const val WRONG_CODE = "A phone tried to sync with a code that is not the one shown here. Nothing was exchanged."
+    const val CODE_NOT_ACCEPTED = "The sync code was not accepted. Scan the QR code on the other phone again."
+    const val UNREACHABLE = "Could not reach the other phone. Are both on the same Wi-Fi?"
+    const val NO_NETWORK = "This phone is not on a Wi-Fi network or hotspot. Connect it to the same one as the other phone, then try again."
+
     /** How long an invite made for one person can be used. */
     const val INVITE_MINUTES = 10
-    private const val TIMEOUT_MS = 30_000
+
+    /** How long a phone waits for the other to say anything before it gives up. Tests shorten it. */
+    @Volatile
+    internal var timeoutMs = 30_000
+
+    /** This phone's addresses on the local network. Tests stand in a phone with no Wi-Fi. */
+    @Volatile
+    internal var addresses: () -> List<String> = { localAddresses() }
+
+    /** At most this many phones are served at once; one more is turned away, so a flood of connections cannot use the phone up. */
+    private const val MAX_PEERS = 8
     private const val MAX_JSON = 64 * 1024 * 1024
     private const val MAX_PHOTO = 40L * 1024 * 1024
+
+    // What the wire helpers throw is never shown: whatWentWrong turns every error into one of the messages above.
 
     data class Result(
         val peerName: String,
@@ -143,6 +170,15 @@ object WifiSync {
         emptyList()
     }
 
+    /**
+     * Why this phone cannot sync right now, or null when it is on a network other phones can reach.
+     * A screen can show it before offering a code to scan.
+     */
+    fun networkProblem(): String? = if (addresses().isEmpty()) NO_NETWORK else null
+
+    /** An address on the local network, as opposed to this phone itself (which only tests use). */
+    private fun onLocalNetwork(host: String): Boolean = host != "localhost" && !host.startsWith("127.") && host != "::1"
+
     private fun newToken(): String {
         val chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
         val r = SecureRandom()
@@ -160,11 +196,16 @@ object WifiSync {
     /** Thrown inside an exchange to end it with a message for this phone's screen. */
     private class Stop(message: String) : IOException(message)
 
-    /** What to show when an exchange ended early. A dropped connection is said in words, not as the name of an error. */
-    private fun whatWentWrong(e: Exception): String = when (e) {
-        is Stop -> e.message ?: CONNECTION_LOST
-        is EOFException, is SocketException, is java.net.SocketTimeoutException -> CONNECTION_LOST
-        else -> e.message ?: e.javaClass.simpleName
+    /**
+     * What to show when an exchange ended early: always in words for the screen, never the name or
+     * text of an error. [listsDone] is true once both phones have taken in each other's data, so
+     * that at most some photos can still be missing.
+     */
+    private fun whatWentWrong(e: Exception, listsDone: Boolean = false): String = when {
+        e is Stop -> e.message ?: CONNECTION_LOST
+        listsDone -> PHOTOS_CUT
+        e is EOFException || e is SocketException || e is java.net.SocketTimeoutException -> CONNECTION_LOST
+        else -> UNREADABLE
     }
 
     // ---- host --------------------------------------------------------------
@@ -186,17 +227,22 @@ object WifiSync {
         private val personal = HashMap<String, Personal>()
 
         /** The plain code: for phones whose people are already in the move, or to let a new phone in as itself. */
-        fun invite(hosts: List<String> = localAddresses()) = Invite(hosts, port, token)
+        fun invite(hosts: List<String> = addresses()) = Invite(hosts, port, token)
+
+        /** Phones being served right now. */
+        private val serving = java.util.concurrent.atomic.AtomicInteger(0)
 
         /**
          * An invite that makes the phone that scans it [personId], someone an Organiser
          * has added with [Store.addPerson]. It works once, and only for
          * [INVITE_MINUTES] minutes; after that make a new one.
          */
-        fun inviteFor(personId: String, hosts: List<String> = localAddresses()): Outcome<Invite> {
+        fun inviteFor(personId: String, hosts: List<String> = addresses()): Outcome<Invite> {
             val d = store.data.value
             d.refusal(store.me, Action.MANAGE_PEOPLE)?.let { return Outcome.Refused(it) }
             val p = d.person(personId)?.takeIf { !it.removed } ?: return Outcome.Refused("That person is not in the move.")
+            // An invite with nowhere to connect to cannot be scanned; say why now rather than show a code that does nothing.
+            if (hosts.isEmpty()) return Outcome.Refused(NO_NETWORK)
             val code = newToken()
             synchronized(personal) { personal[code] = Personal(p.id, clock() + INVITE_MINUTES * 60_000L) }
             return Outcome.Ok(Invite(hosts, port, code, p.id, p.name, p.role))
@@ -210,7 +256,22 @@ object WifiSync {
                     } catch (_: IOException) {
                         break
                     }
-                    thread(name = "sync-peer", isDaemon = true) { serve(socket) }
+                    // Real phones come one or two at a time; a crowd of connections at once is not a sync, and is not answered.
+                    if (serving.incrementAndGet() > MAX_PEERS) {
+                        serving.decrementAndGet()
+                        try {
+                            socket.close()
+                        } catch (_: IOException) {
+                        }
+                        continue
+                    }
+                    thread(name = "sync-peer", isDaemon = true) {
+                        try {
+                            serve(socket)
+                        } finally {
+                            serving.decrementAndGet()
+                        }
+                    }
                 }
             }
         }
@@ -220,9 +281,10 @@ object WifiSync {
             var letter = ""
             var peerId = ""
             var mine: Personal? = null
+            var listsDone = false
             try {
                 socket.use { s ->
-                    s.soTimeout = TIMEOUT_MS
+                    s.soTimeout = timeoutMs
                     // Each side writes a whole message and then waits for the answer, so nothing is gained by the
                     // network holding the tail of a message back to fill a packet; it only makes every step wait.
                     s.tcpNoDelay = true
@@ -233,17 +295,25 @@ object WifiSync {
                         throw Stop(message)
                     }
 
-                    val magic = din.readUTF()
+                    // The first line is short and known. Anything else is not a HouseMove phone, and is not read any further.
+                    val length = din.readUnsignedShort()
+                    if (length !in 4..16) throw Stop(NOT_HOUSEMOVE)
+                    val magic = ByteArray(length).also { din.readFully(it) }.decodeToString()
+                    fun knows(code: String) = code == token || synchronized(personal) { personal.containsKey(code) }
                     if (magic == OLD_MAGIC) refuse("NO", VERSION_MISMATCH)
                     if (magic != MAGIC) {
-                        if (!magic.startsWith("HMSYNC")) throw IOException("Not a HouseMove phone")
+                        if (!magic.startsWith("HMSYNC")) throw Stop(NOT_HOUSEMOVE)
                         // Another version of HouseMove. Read the rest of what 1.3 sends, so its hello is not cut short, and say so.
                         var theirLayout = -1
+                        var theirToken = ""
                         try {
-                            repeat(3) { din.readUTF() }
+                            theirToken = din.readUTF()
+                            repeat(2) { din.readUTF() }
                             theirLayout = din.readInt()
                         } catch (_: IOException) {
                         }
+                        // Even this much is only said to a phone that has the code shown here.
+                        if (!knows(theirToken)) refuse("NO", WRONG_CODE)
                         // A phone on this version only says hello the 1.3 way after its own hello went unanswered ([tellOlderPhone]).
                         // The versions are the same; it was the connection that dropped.
                         if (magic == MAGIC_1_3 && theirLayout == SCHEMA) refuse("AGAIN", CONNECTION_LOST)
@@ -258,7 +328,7 @@ object WifiSync {
                     val theirPerson = personFrom(din.readUTF())
                     val claim = din.readUTF()
                     val invited = synchronized(personal) { personal[theirToken] }
-                    if (theirToken != token && invited == null) refuse("NO", "Wrong sync code")
+                    if (theirToken != token && invited == null) refuse("NO", WRONG_CODE)
                     if (theirSchema != SCHEMA) refuse("VERSION", VERSION_MISMATCH)
                     peerId = theirPerson?.id ?: ""
 
@@ -272,7 +342,7 @@ object WifiSync {
                         if (before.person(invited.personId)?.removed != false) refuse("REMOVED", "That person is no longer in the move.")
                         peerId = invited.personId
                     } else {
-                        if (claim.isNotEmpty()) refuse("NO", "Wrong sync code")
+                        if (claim.isNotEmpty()) refuse("NO", WRONG_CODE)
                         when (before.admission(store.device.value, theirPerson)) {
                             Admission.REMOVED -> {
                                 // Nothing is exchanged, but what their phone knows about their own removal is kept and passed on.
@@ -293,7 +363,7 @@ object WifiSync {
                         "GO" -> Unit
                         "REMOVED" -> throw Stop(REMOVED_SELF)
                         "STRANGER" -> throw Stop(NOT_ADDED)
-                        else -> throw IOException("Not a HouseMove phone")
+                        else -> throw Stop(UNREADABLE)
                     }
 
                     // Data: receive theirs, merge, send back the merged set.
@@ -304,8 +374,10 @@ object WifiSync {
                     val role = them?.role ?: Role.HELPER
                     writeData(out, merged.visibleTo(role))
 
-                    // Photos: the client sends first, then we send.
+                    // Photos: the client sends first, then we send. Its list of files is sent once it has merged, so
+                    // from here on both phones have each other's data and only photos can still go missing.
                     val theirFiles = readNames(din)
+                    listsDone = true
                     writeNames(out, haveFiles(store, role))
                     val received = receiveFiles(din, store)
                     val sent = sendFiles(out, store, wanted(store, theirFiles, role))
@@ -317,7 +389,7 @@ object WifiSync {
                     onResult(Result(peer, letter, sent, received, peerPersonId = peerId, joinedAs = if (invited != null) store.data.value.person(peerId) else null))
                 }
             } catch (e: Exception) {
-                onResult(Result(peer, letter, 0, 0, whatWentWrong(e), peerPersonId = peerId))
+                onResult(Result(peer, letter, 0, 0, whatWentWrong(e, listsDone), peerPersonId = peerId))
             } finally {
                 mine?.let { synchronized(personal) { it.busy = false } }
             }
@@ -354,7 +426,9 @@ object WifiSync {
      * person is already in this phone's move.
      */
     fun join(store: Store, invite: Invite, connectTimeoutMs: Int = 4000, letNewPhonesIn: Boolean = true): Result {
-        var lastError = "Could not reach the other phone. Are both on the same Wi-Fi?"
+        // With no Wi-Fi there is nothing to try: say so at once instead of waiting for every address to time out.
+        if (invite.hosts.all { onLocalNetwork(it) } && addresses().isEmpty()) return Result("", "", 0, 0, NO_NETWORK)
+        var lastError = UNREACHABLE
         for (host in invite.hosts) {
             val socket = Socket()
             try {
@@ -363,9 +437,10 @@ object WifiSync {
                 socket.close()
                 continue
             }
+            var listsDone = false
             try {
                 socket.use { s ->
-                    s.soTimeout = TIMEOUT_MS
+                    s.soTimeout = timeoutMs
                     s.tcpNoDelay = true
                     val din = DataInputStream(s.getInputStream().buffered())
                     val out = DataOutputStream(s.getOutputStream().buffered())
@@ -386,7 +461,15 @@ object WifiSync {
                         // it understands, so that it too shows the "different versions" message.
                         // A phone on this version answers that hello with "AGAIN": then it was only the connection that dropped.
                         val word = tellOlderPhone(store, host, invite, connectTimeoutMs)
-                        return Result("", "", 0, 0, if (word == "AGAIN") CONNECTION_LOST else VERSION_MISMATCH)
+                        return Result(
+                            "", "", 0, 0,
+                            when (word) {
+                                "VERSION" -> VERSION_MISMATCH
+                                "NO" -> CODE_NOT_ACCEPTED
+                                // "AGAIN", or no answer at all: it was the connection that dropped.
+                                else -> CONNECTION_LOST
+                            },
+                        )
                     }
                     when (answer) {
                         "OK" -> Unit
@@ -394,7 +477,7 @@ object WifiSync {
                         "REMOVED" -> return Result("", "", 0, 0, REMOVED_SELF)
                         "STRANGER" -> return Result("", "", 0, 0, NOT_ADDED)
                         "EXPIRED" -> return Result("", "", 0, 0, INVITE_EXPIRED)
-                        else -> return Result("", "", 0, 0, "The sync code was not accepted. Scan the QR code again.")
+                        else -> return Result("", "", 0, 0, CODE_NOT_ACCEPTED)
                     }
                     val peer = din.readUTF()
                     val letter = din.readUTF()
@@ -431,6 +514,8 @@ object WifiSync {
                             is Outcome.Refused -> return Result(peer, letter, 0, 0, o.reason, peerPersonId = peerId)
                         }
                     } else store.mergeIn(merged)
+                    // The host merged this phone's data before it sent its own, so both now have everything but photos.
+                    listsDone = true
 
                     writeNames(out, haveFiles(store, role))
                     val theirFiles = readNames(din)
@@ -440,7 +525,7 @@ object WifiSync {
                     return Result(peer, letter, sent, received, peerPersonId = peerId, joinedAs = joined)
                 }
             } catch (e: Exception) {
-                lastError = whatWentWrong(e)
+                lastError = whatWentWrong(e, listsDone)
             }
         }
         return Result("", "", 0, 0, lastError)
@@ -541,7 +626,7 @@ object WifiSync {
                 var left = size
                 while (left > 0) {
                     val n = din.read(buf, 0, minOf(buf.size.toLong(), left).toInt())
-                    if (n < 0) throw IOException("Connection lost during photo transfer")
+                    if (n < 0) throw EOFException("the connection ended in the middle of a photo")
                     sink?.write(buf, 0, n)
                     left -= n
                 }

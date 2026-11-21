@@ -101,22 +101,69 @@ internal class Judge(val d: AppData) {
         val cost = d.expenses.firstOrNull { it.id == p.ownerId } ?: return true
         return carriedOut(ProposalKind.COST, cost.id, Stamp(p.by, p.createdAt), cost.costBy)
     }
+
+    /**
+     * The test's own reading of who else has had a hand in [x]: its own hands, the people behind
+     * photos of it, questions and suggestions about it, and (for a container or a room) what is in it.
+     * What a Helper's phone never holds is left out, as the rule says. Blank stands for someone unknown.
+     */
+    fun others(x: Owned): Set<String> {
+        val out = HashSet<String>()
+        fun people(of: Owned) = (of.hands + of.createdBy).filter { it.isNotEmpty() }.ifEmpty { listOf("") }
+        out += x.hands.filter { it.isNotEmpty() }
+        for (p in d.photos) if (!p.deleted && p.ownerId == x.id && p.id != x.id && p.kind !in HIDDEN_KINDS) out += people(p)
+        for (p in d.proposals) if (!p.deleted && p.targetId == x.id && p.kind != ProposalKind.COST && !p.deletes) out += p.by
+        if (x is Box) {
+            for (i in d.items) if (!i.deleted && i.boxId == x.id) out += people(i)
+            for (b in d.boxes) if (!b.deleted && b.parentId == x.id && b.id != x.id) out += people(b)
+            for (e in d.entries) if (!e.deleted && e.boxId == x.id) out += e.hands.filter { it.isNotEmpty() }.ifEmpty { listOf("") }
+        }
+        if (x is Room) {
+            for (i in d.items) if (!i.deleted && (i.originRoomId == x.id || i.destRoomId == x.id)) out += people(i)
+            for (b in d.boxes) if (!b.deleted && (b.originRoomId == x.id || b.destRoomId == x.id)) out += people(b)
+            for (r in d.rooms) if (!r.deleted && r.mapsTo == x.id && r.id != x.id) out += people(r)
+        }
+        out.remove(x.createdBy)
+        return out
+    }
+
+    /** May [x] be deleted, as it stands: by an Organiser then, or by whoever added it while nobody else had a hand in it. */
+    fun gone(x: Owned): Boolean {
+        if (!x.deleted) return true
+        val s = x.deletedBy
+        if (s.by.isEmpty()) return (s.sum.isEmpty() || s.sum == seal(true)) && (s.at == 0L || !book.anyOrganiser(s.at))
+        if (s.sum != seal(true)) return false
+        return when (book.at(s.by, s.at)) {
+            Role.ORGANISER -> true
+            null -> false
+            else -> s.by == x.createdBy && others(x).isEmpty()
+        }
+    }
+
+    /** A suggestion that is deleted was withdrawn by whoever made it, and was not approved or declined. */
+    fun withdrawal(p: Proposal): Boolean =
+        !p.deleted || (p.withdrawn.by == p.by && p.by.isNotEmpty() && p.state != ProposalState.APPROVED && p.state != ProposalState.DECLINED)
 }
 
 // ---- the parts of a record --------------------------------------------------------------
 
 /** A record without its protected parts and without what merely follows from other records. */
 internal fun plain(r: Any): Any = when (r) {
+    // Hands are what both copies knew of together, and whether it is deleted is a part of its own ("gone").
     is Item -> r.copy(
         disposition = Disposition.UNDECIDED, price = null, deadlineDay = null, decisionBy = Stamp(), destRoomId = null, roomBy = Stamp(),
         listed = false, gone = false, soldFor = null, outcomeBy = Stamp(),
         // Something in a container is wherever the container is.
         stage = if (r.boxId != null) Stage.AT_ORIGIN else r.stage, tripId = if (r.boxId != null) null else r.tripId,
+        hands = emptyList(), deleted = false, deletedBy = Stamp(),
     )
-    is Box -> if (r.parentId != null) r.copy(stage = Stage.AT_ORIGIN, tripId = null) else r
+    is Box -> (if (r.parentId != null) r.copy(stage = Stage.AT_ORIGIN, tripId = null) else r).copy(hands = emptyList(), deleted = false, deletedBy = Stamp())
+    is Room -> r.copy(hands = emptyList(), deleted = false, deletedBy = Stamp())
+    is Photo -> r.copy(hands = emptyList(), deleted = false, deletedBy = Stamp())
+    is BoxEntry -> r.copy(hands = emptyList())
     is Task -> Task(id = r.id, title = "", updatedAt = r.updatedAt)
     is Expense -> Expense(id = r.id, updatedAt = r.updatedAt)
-    is Proposal -> r.copy(state = ProposalState.WAITING, reason = "", decided = Stamp())
+    is Proposal -> r.copy(state = ProposalState.WAITING, reason = "", decided = Stamp(), deleted = false, withdrawn = Stamp())
     is Person -> r.copy(role = Role.HELPER, removed = false, grants = emptyList(), deleted = false)
     is MoveInfo -> r.updatedAt
     else -> r
@@ -128,7 +175,11 @@ internal fun parts(r: Any): List<Pair<String, String>> = when (r) {
         "decision" to "${r.disposition} ${r.price} ${r.deadlineDay} by ${r.decisionBy}",
         "room" to "${r.destRoomId} by ${r.roomBy}",
         "outcome" to "${r.listed} ${r.gone} ${r.soldFor} by ${r.outcomeBy}",
+        "gone" to "${r.deleted} by ${r.deletedBy}",
     )
+    is Box -> listOf("gone" to "${r.deleted} by ${r.deletedBy}")
+    is Room -> listOf("gone" to "${r.deleted} by ${r.deletedBy}")
+    is Photo -> listOf("gone" to "${r.deleted} by ${r.deletedBy}")
     is Task -> listOf(
         "plan" to "${r.title}|${r.offsetDays}|${r.dueDay}|${r.category}|${r.notes}|${r.assignedTo}|${r.deleted} by ${r.planBy}",
         "done" to "${r.done} by ${r.doneBy}",
@@ -140,7 +191,7 @@ internal fun parts(r: Any): List<Pair<String, String>> = when (r) {
 }
 
 private fun stampOf(r: Any, part: String): Stamp = when (r) {
-    is Item -> when (part) { "decision" -> r.decisionBy; "room" -> r.roomBy; else -> r.outcomeBy }
+    is Owned -> if (part == "gone") r.deletedBy else if (r is Item) when (part) { "decision" -> r.decisionBy; "room" -> r.roomBy; else -> r.outcomeBy } else Stamp()
     is Task -> if (part == "plan") r.planBy else r.doneBy
     is Expense -> if (part == "cost") r.costBy else r.paidBy
     is MoveInfo -> r.changedBy
@@ -152,6 +203,8 @@ private fun stampOf(r: Any, part: String): Stamp = when (r) {
 private fun isReset(r: Any, part: String): Boolean {
     val s = stampOf(r, part)
     if (s.by.isNotEmpty() || s.at != 0L) return false
+    // A deletion that did not stand is undone; one a phone made of its own things before it joined goes in as from before roles.
+    if (part == "gone") return true
     return when (r) {
         is Item -> when (part) {
             "decision" -> r.disposition == Disposition.UNDECIDED && r.price == null && r.deadlineDay == null
@@ -188,7 +241,8 @@ internal class SimChecks(private val sim: Simulation) {
         const val CODES = "The app never gave out the same handwritten code twice"
         const val PHOTOS = "Photo files arrived whole on every phone that should have them"
         const val DISK = "The data on disk loads again into the same state"
-        val ALL = listOf(Simulation.RUN, SAME, LOST, MERGE, RULES, HELPERS, COUNTED, NESTING, LETTERS, CODES, PHOTOS, DISK)
+        const val TWICE = "A label used on two things is flagged on every phone"
+        val ALL = listOf(Simulation.RUN, SAME, LOST, MERGE, RULES, HELPERS, COUNTED, NESTING, LETTERS, CODES, TWICE, PHOTOS, DISK, Simulation.OUTSIDERS)
     }
 
     private fun broke(invariant: String, message: String, vararg ids: String?) = sim.broke(invariant, message, ids.toList())
@@ -235,8 +289,29 @@ internal class SimChecks(private val sim: Simulation) {
         agree(c)
         letters(ref.data)
         codes()
+        for (p in sim.phones) twice(p)
         photos(c, full)
+        outsider()
         disk()
+    }
+
+    /** Labels used on more than one live thing, worked out afresh, against what the app flags. */
+    private fun twice(p: Simulation.Phone) {
+        val d = p.data
+        val mine = (d.boxes.filter { !it.deleted }.map { it.label } + d.items.filter { !it.deleted }.mapNotNull { it.label })
+            .filter { it.isNotBlank() }.groupBy { it.uppercase() }.filter { it.value.size > 1 }.keys.sorted()
+        if (d.duplicateLabels() != mine) broke(TWICE, "${p.tag} flags ${d.duplicateLabels()} as used twice, but ${mine} are")
+        if (mine.isNotEmpty() && d.issues().none { it.text.startsWith("Label used twice") && it.severe }) broke(TWICE, "${p.tag} has labels used twice (${mine}) but does not say so")
+    }
+
+    /** The phone outside the move holds nothing of it: none of its records, and none of its people. */
+    private fun outsider() {
+        val x = sim.outsider.data.value
+        val theirs = HashSet<String>()
+        for (p in sim.phones) for ((k, _) in p.data.records()) theirs += k
+        val got = x.records().map { it.first }.filter { it in theirs }.toList()
+        if (got.isNotEmpty()) broke(Simulation.OUTSIDERS, "the phone outside the move holds ${got.size} of the move's records, first ${got.first()}")
+        if (x.move.name.isNotEmpty() && sim.phones.any { it.data.move.name == x.move.name }) broke(Simulation.OUTSIDERS, "the phone outside the move holds the move's settings")
     }
 
     private fun canon(d: AppData, whole: Boolean): Map<String, Any> {
@@ -386,6 +461,12 @@ internal class SimChecks(private val sim: Simulation) {
             }
             for (p in d.photos) if (!j.receipt(p)) broke(RULES, "receipt ${p.id.take(8)} was attached by ${p.by.take(8)}, who could not pay that cost", p.id, p.ownerId)
         }
+        // Deletions: by an Organiser, or by whoever added the thing while nobody else had a hand in it.
+        for (x in listOf<List<Owned>>(d.items, d.boxes, d.rooms, d.photos).flatten()) {
+            if (!j.gone(x)) broke(RULES, "${x.javaClass.simpleName.lowercase()} ${x.id.take(8)} (added by ${x.createdBy.take(8)}) was deleted by ${who(x.deletedBy)}, with others' hands on it: ${j.others(x).map { it.take(8) }}", x.id, x.deletedBy.by)
+            if (x.deleted && unsigned(x.deletedBy)) broke(RULES, "${x.id.take(8)} was deleted in nobody's name, though the move had an Organiser then", x.id)
+        }
+        for (p in d.proposals) if (!j.withdrawal(p)) broke(RULES, "suggestion ${p.id.take(8)} is deleted though its author did not withdraw it, or it was ${p.state}", p.id)
         if (!j.settings(d.move)) broke(RULES, "the move settings were changed by ${who(d.move.changedBy)}", d.move.changedBy.by)
         if (unsigned(d.move.changedBy)) broke(RULES, "the move settings carry nobody's name, though the move had an Organiser then: ${short(d.move)}")
         for (p in d.proposals) {
@@ -633,6 +714,21 @@ internal class SimChecks(private val sim: Simulation) {
                 continue
             }
             if (listOfNotNull(a, b).none { it.updatedAt == newest && plain(it) == plain(r) }) bad("changed", k)
+            // Every hand either copy knew of is kept, and none is made up.
+            val handsIn = listOfNotNull(a, b).flatMap { if (it is Owned) it.hands else if (it is BoxEntry) it.hands else emptyList() }.toSet()
+            val handsOut = if (r is Owned) r.hands else if (r is BoxEntry) r.hands else emptyList()
+            if (handsOut.toSet() != handsIn || handsOut != handsOut.distinct().sorted()) bad("lost or invented a hand on", k)
+            if (r is Owned) {
+                // A deletion is kept only when it was allowed, and undone only when it was not.
+                if (r.deleted && !j.gone(r)) bad("kept a deletion its author had no right to make of", k)
+                val dropped = listOfNotNull(a as Owned?, b as Owned?).firstOrNull { it.updatedAt == newest && it.deleted }
+                if (!r.deleted && dropped != null && j.gone(dropped)) bad("undid a deletion its author had the right to make of", k)
+            }
+            if (r is Proposal) {
+                if (!j.withdrawal(r)) bad("deleted a suggestion that was not withdrawn by its author, or was approved or declined, at", k)
+                val withdrawn = listOfNotNull(a as Proposal?, b as Proposal?).any { it.deleted && it.withdrawn.by == it.by && it.by.isNotEmpty() }
+                if (withdrawn && !r.deleted && r.state != ProposalState.APPROVED && r.state != ProposalState.DECLINED) bad("lost the withdrawal of", k)
+            }
             when (r) {
                 is Item -> {
                     part(k, "decision", a, b, r) { j.decision(it as Item) }

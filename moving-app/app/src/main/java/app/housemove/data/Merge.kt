@@ -97,6 +97,8 @@ private fun mergeProposals(a: List<Proposal>, b: List<Proposal>, roles: Roles): 
         if (p.decided.by.isEmpty()) return CLASS.getValue(p.state) < 2 || roles.nobodyToAsk(p.decided.at)
         return roles.organiserAt(p.decided.by, p.decided.at)
     }
+    /** Withdrawn by the person who made it, with the stamp to show it. */
+    fun withdrawnRightly(p: Proposal?): Boolean = p != null && p.deleted && p.withdrawn.by.isNotEmpty() && p.withdrawn.by == p.by && p.withdrawn.sum == p.withdrawnSum()
     return mergeEach(a, b) { x, y, newer ->
         val role = roles.at(newer.by, newer.createdAt) ?: return@mergeEach null
         if (role == Role.HELPER && newer.kind != ProposalKind.QUESTION) return@mergeEach null
@@ -118,7 +120,58 @@ private fun mergeProposals(a: List<Proposal>, b: List<Proposal>, roles: Roles): 
             gy -> y!!
             else -> newer.copy(state = ProposalState.WAITING, reason = "").let { it.copy(decided = Stamp(sum = it.stateSum())) }
         }
-        if (from.updatedAt == newer.updatedAt && from.deleted == newer.deleted) from else from.copy(updatedAt = newer.updatedAt, deleted = newer.deleted)
+        // A suggestion is only ever deleted by its author withdrawing it while it waited. An approval or a
+        // decline made meanwhile on another phone stands instead, whichever came later: it may already have
+        // changed what the suggestion was about.
+        val withdrawal = if (withdrawnRightly(x)) x else if (withdrawnRightly(y)) y else null
+        val gone = withdrawal != null && CLASS.getValue(from.state) < 2
+        val withdrawn = withdrawal?.withdrawn ?: from.withdrawn
+        if (from.updatedAt == newer.updatedAt && from.deleted == gone && from.withdrawn == withdrawn) from
+        else from.copy(updatedAt = newer.updatedAt, deleted = gone, withdrawn = withdrawn)
+    }
+}
+
+/** Two phones' copies of the same records: each keeps every hand either copy knows of. */
+private inline fun <T : Rec> keepHands(a: List<T>, b: List<T>, merged: List<T>, hands: (T) -> List<String>, with: (T, List<String>) -> T): List<T> {
+    if (a.isEmpty() || b.isEmpty()) return merged
+    val mine = HashMap<String, T>(a.size * 2)
+    for (x in a) mine[x.id] = x
+    val theirs = HashMap<String, T>(b.size * 2)
+    for (y in b) theirs[y.id] = y
+    return merged.mapChanged { r ->
+        val x = mine[r.id]
+        val y = theirs[r.id]
+        if (x == null || y == null) return@mapChanged r
+        val all = joinHands(hands(x), hands(y))
+        if (all == hands(r)) r else with(r, all)
+    }
+}
+
+/**
+ * Deletions of items, containers, rooms and photos that the rule does not allow (see Deleting.kt)
+ * are undone: the record comes back as it was when it was deleted. Bringing one thing back can
+ * show that another was not its deleter's to delete (an item comes back into a room), so this
+ * goes round until nothing more comes back. It is worked out from the merged data alone, so
+ * every phone that holds the same reaches the same.
+ */
+internal fun keepDeletionsToTheRule(d: AppData, roles: Roles): AppData {
+    fun doubtful(x: Owned): Boolean {
+        if (!x.deleted) return false
+        val s = x.deletedBy
+        if (s.sum.isEmpty() && s.by.isEmpty()) return false // from before there were roles
+        return !(s.sum == deletedSum() && (s.by.isEmpty() && s.at == 0L || roles.organiserAt(s.by, s.at)))
+    }
+    if (d.items.none(::doubtful) && d.boxes.none(::doubtful) && d.rooms.none(::doubtful) && d.photos.none(::doubtful)) return d
+    var cur = d
+    while (true) {
+        val hands = HandsOn(cur)
+        var back = false
+        fun <T : Owned> List<T>.checked(): List<T> = mapChanged { x ->
+            if (doubtful(x) && !deletionStands(x, roles, hands)) x.undeleted().also { back = true } else x
+        }
+        val next = cur.copy(items = cur.items.checked(), boxes = cur.boxes.checked(), rooms = cur.rooms.checked(), photos = cur.photos.checked())
+        if (!back) return cur
+        cur = next
     }
 }
 
@@ -225,23 +278,22 @@ fun merge(a: AppData, b: AppData): AppData {
     val proposals = mergeProposals(a.proposals, b.proposals, roles)
     val approvals = Approvals(proposals)
     val expenses = mergeExpenses(a.expenses, b.expenses, roles, approvals)
-    return settle(
-        AppData(
-            version = maxOf(a.version, b.version),
-            move = mergeMove(a.move, b.move, roles),
-            rooms = rooms,
-            items = mergeItems(a.items, b.items, roles, approvals, rooms),
-            boxes = mergeList(a.boxes, b.boxes),
-            photos = mergePhotos(a.photos, b.photos, roles, approvals, expenses),
-            tasks = mergeTasks(a.tasks, b.tasks, roles),
-            expenses = expenses,
-            supplies = mergeList(a.supplies, b.supplies),
-            trips = mergeList(a.trips, b.trips),
-            readings = mergeList(a.readings, b.readings),
-            entries = mergeList(a.entries, b.entries),
-            people = people,
-            proposals = proposals,
-            activity = mergeList(a.activity, b.activity),
-        )
+    val merged = AppData(
+        version = maxOf(a.version, b.version),
+        move = mergeMove(a.move, b.move, roles),
+        rooms = keepHands(a.rooms, b.rooms, rooms, { it.hands }) { r, h -> r.copy(hands = h) },
+        items = keepHands(a.items, b.items, mergeItems(a.items, b.items, roles, approvals, rooms), { it.hands }) { r, h -> r.copy(hands = h) },
+        boxes = keepHands(a.boxes, b.boxes, mergeList(a.boxes, b.boxes), { it.hands }) { r, h -> r.copy(hands = h) },
+        photos = keepHands(a.photos, b.photos, mergePhotos(a.photos, b.photos, roles, approvals, expenses), { it.hands }) { r, h -> r.copy(hands = h) },
+        tasks = mergeTasks(a.tasks, b.tasks, roles),
+        expenses = expenses,
+        supplies = mergeList(a.supplies, b.supplies),
+        trips = mergeList(a.trips, b.trips),
+        readings = mergeList(a.readings, b.readings),
+        entries = keepHands(a.entries, b.entries, mergeList(a.entries, b.entries), { it.hands }) { r, h -> r.copy(hands = h) },
+        people = people,
+        proposals = proposals,
+        activity = mergeList(a.activity, b.activity),
     )
+    return settle(keepDeletionsToTheRule(merged, roles))
 }

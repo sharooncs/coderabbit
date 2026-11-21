@@ -37,6 +37,13 @@ enum class Action {
 
     /** Ask for a decision on an item. */
     ASK,
+
+    /**
+     * Delete anything, whoever added it. Anyone may delete an item, container, room or photo they
+     * added themselves while nobody else has had a hand in it: ask [mayDelete] about the particular
+     * thing. Otherwise a Decider or Helper asks an Organiser to delete it ([Store.askToDelete]).
+     */
+    DELETE,
 }
 
 /**
@@ -47,6 +54,7 @@ enum class Action {
  * | MANAGE_PEOPLE, MOVE_SETTINGS, ERASE, RESTORE_BACKUP, DECIDE, APPROVE | yes | no | no |
  * | SUGGEST | yes | yes | no |
  * | CARRY_OUT | yes | once approved | no |
+ * | DELETE (anything) | yes | only what they added and nobody else touched | the same |
  * | WORK, ASK | yes | yes | yes |
  *
  * A move with no Organiser at all (one phone in "helper mode", say) is not
@@ -96,6 +104,7 @@ fun AppData.refusal(person: Person?, action: Action): String? {
         Action.APPROVE -> "Only an Organiser can approve or decline a suggestion."
         Action.SUGGEST -> "Helpers cannot suggest this. You can ask for a decision instead."
         Action.CARRY_OUT -> "Only an Organiser, or a Decider whose suggestion was approved, can do this."
+        Action.DELETE -> "Only an Organiser can delete what someone else added or worked on. You can ask an Organiser to delete it."
         Action.WORK, Action.ASK -> "You cannot do this."
     }
 }

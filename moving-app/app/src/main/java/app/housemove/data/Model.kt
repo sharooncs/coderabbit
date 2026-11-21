@@ -21,6 +21,18 @@ interface Rec {
     val deleted: Boolean
 }
 
+/**
+ * A record whose deletion is protected (items, containers, rooms and photos; see [mayDelete]).
+ * [createdBy] is who added it, [hands] everyone who has changed it since (including them), and
+ * [deletedBy] who deleted it and when, while [deleted] is set. Phones keep every hand either
+ * of them knows of, so a change somebody made is never forgotten by a merge.
+ */
+interface Owned : Rec {
+    val createdBy: String
+    val hands: List<String>
+    val deletedBy: Stamp
+}
+
 enum class Home { ORIGIN, DEST }
 
 /** What the person is using the app for. Sets the wording, the checklist and which parts show. */
@@ -140,9 +152,13 @@ data class Room(
     /** Old-home room: final sweep done. */
     val swept: Boolean = false,
     val sort: Int = 0,
+    /** Who added it. Blank for rooms from before version 2.0, or added while the move had no Organiser. */
+    override val createdBy: String = "",
+    override val hands: List<String> = emptyList(),
+    override val deletedBy: Stamp = Stamp(),
     override val updatedAt: Long = 0,
     override val deleted: Boolean = false,
-) : Rec
+) : Owned
 
 /** A thing catalogued on its own: furniture, appliances, electronics, valuables. */
 @Serializable
@@ -209,9 +225,13 @@ data class Item(
     /** Who carried the decision out: [listed], [gone], [soldFor]. */
     val outcomeBy: Stamp = Stamp(),
     val createdAt: Long = 0,
+    /** Who added it. Blank for items from before version 2.0, or added while the move had no Organiser. */
+    override val createdBy: String = "",
+    override val hands: List<String> = emptyList(),
+    override val deletedBy: Stamp = Stamp(),
     override val updatedAt: Long = 0,
     override val deleted: Boolean = false,
-) : Rec
+) : Owned
 
 /** One thing put in a box and recorded by its own barcode: a book, a game, a boxed product. */
 @Serializable
@@ -223,6 +243,8 @@ data class BoxEntry(
     val title: String = "",
     val author: String = "",
     val createdAt: Long = 0,
+    /** Everyone who has put it in a container or changed it (see [Owned.hands]). */
+    val hands: List<String> = emptyList(),
     override val updatedAt: Long = 0,
     override val deleted: Boolean = false,
 ) : Rec
@@ -258,9 +280,13 @@ data class Box(
     /** The container this one is inside, if any. One level only: see [parentOf]. */
     val parentId: String? = null,
     val createdAt: Long = 0,
+    /** Who added it. Blank for containers from before version 2.0, or added while the move had no Organiser. */
+    override val createdBy: String = "",
+    override val hands: List<String> = emptyList(),
+    override val deletedBy: Stamp = Stamp(),
     override val updatedAt: Long = 0,
     override val deleted: Boolean = false,
-) : Rec
+) : Owned
 
 @Serializable
 data class Photo(
@@ -274,9 +300,13 @@ data class Photo(
     /** Person who took or attached it. Blank for photos from before version 2.0. */
     val by: String = "",
     val createdAt: Long = 0,
+    override val hands: List<String> = emptyList(),
+    override val deletedBy: Stamp = Stamp(),
     override val updatedAt: Long = 0,
     override val deleted: Boolean = false,
-) : Rec
+) : Owned {
+    override val createdBy: String get() = by
+}
 
 @Serializable
 data class Task(
@@ -405,11 +435,26 @@ data class Proposal(
     /** Who approved, declined or overtook it, and when. */
     val decided: Stamp = Stamp(),
     val createdAt: Long = 0,
+    /**
+     * A request to delete what [targetId] names (an item, container, room, photo, task or cost),
+     * made by someone who may not delete it themselves. Its kind is [ProposalKind.QUESTION], so
+     * anyone may make one; an Organiser approves (the thing is deleted) or declines it.
+     */
+    val deletes: Boolean = false,
+    /**
+     * Set when the person who made it withdrew it while it was still waiting: by them, when, and a
+     * check value. A withdrawn suggestion is deleted (so it is in no list), and stays so on every
+     * phone unless an Organiser approved or declined it first, which then stands.
+     */
+    val withdrawn: Stamp = Stamp(),
     override val updatedAt: Long = 0,
     override val deleted: Boolean = false,
 ) : Rec {
     val decidedBy: String get() = decided.by
     val decidedAt: Long get() = decided.at
+
+    /** Withdrawn by the person who made it ([Store.withdraw]). */
+    val isWithdrawn: Boolean get() = deleted && withdrawn.by.isNotEmpty() && withdrawn.by == by
 }
 
 /** One line of the shared log of who did what, e.g. "sealed L012". */
