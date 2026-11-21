@@ -23,6 +23,9 @@ internal class Actor(val data: AppData, val me: Person?) {
     fun refusal(action: Action): String? = data.refusal(me, action)
     fun may(action: Action): Boolean = refusal(action) == null
 
+    /** May this person delete [x] as it is stored now? See [mayDelete]. */
+    fun mayDelete(x: Rec): Boolean = data.mayDelete(me, x) == null
+
     /** The name that goes on what this person sets. Blank while there is no Organiser, as for data from before roles. */
     val signature: String get() = if (open) "" else id
 
@@ -38,7 +41,16 @@ internal class Actor(val data: AppData, val me: Person?) {
  */
 internal fun Actor.guard(old: Item?, x: Item, t: Long, events: Events? = null): Item {
     val was = old?.stamped()
-    var r = x.copy(decisionBy = was?.decisionBy ?: Stamp(), roomBy = was?.roomBy ?: Stamp(), outcomeBy = was?.outcomeBy ?: Stamp())
+    var r = x.copy(
+        decisionBy = was?.decisionBy ?: Stamp(), roomBy = was?.roomBy ?: Stamp(), outcomeBy = was?.outcomeBy ?: Stamp(),
+        createdBy = old?.createdBy ?: signature, hands = old?.hands ?: emptyList(), deletedBy = old?.deletedBy ?: Stamp(),
+    )
+    // Whether it may be deleted at all is asked before this (Draft.saveItems leaves it alone when not).
+    r = when {
+        r.deleted && old?.deleted != true -> r.copy(deletedBy = stamp(t, deletedSum()))
+        r.deleted -> r
+        else -> r.copy(deletedBy = Stamp())
+    }
 
     val wasDisposition = was?.disposition ?: Disposition.UNDECIDED
     if (r.disposition != wasDisposition || r.price != was?.price || r.deadlineDay != was?.deadlineDay) {
@@ -117,6 +129,44 @@ internal fun Actor.guard(old: MoveInfo, x: MoveInfo, t: Long): MoveInfo {
     }
 }
 
+/**
+ * Would saving [x] over [old] delete something this person may not delete? Then nothing is
+ * saved: the save was asked for in order to delete it, and its other values may be stale.
+ */
+internal fun Actor.refusesDeleting(old: Rec?, x: Rec): Boolean = x.deleted && old != null && !old.deleted && !mayDelete(old)
+
+/** [hands] with this person added, when [changed]; a save that changes nothing leaves no hand on a thing. */
+internal fun Actor.handsAfter(hands: List<String>, changed: Boolean): List<String> =
+    if (changed && signature.isNotEmpty() && signature !in hands) joinHands(hands, listOf(signature)) else hands
+
+/** The deletion stamp a record saved as [deleted] gets, over what it was ([old]). */
+internal fun Actor.deletionStamp(old: Owned?, deleted: Boolean, t: Long): Stamp = when {
+    !deleted -> Stamp()
+    old?.deleted == true -> old.deletedBy
+    else -> stamp(t, deletedSum())
+}
+
+/** A room as this person saves it: who added it and whose hands have been on it come from the stored copy. */
+internal fun Actor.guard(old: Room?, x: Room, t: Long): Room {
+    val r = x.copy(createdBy = old?.createdBy ?: signature, hands = old?.hands ?: emptyList(), deletedBy = deletionStamp(old, x.deleted, t), updatedAt = t)
+    return r.copy(hands = handsAfter(r.hands, old == null || r.copy(updatedAt = old.updatedAt) != old))
+}
+
+/** A photo as this person saves it. Who took it is never changed once it is recorded. */
+internal fun Actor.guard(old: Photo?, x: Photo, t: Long): Photo {
+    val r = x.copy(
+        by = old?.by ?: x.by, hands = old?.hands ?: emptyList(), deletedBy = deletionStamp(old, x.deleted, t), updatedAt = t,
+        createdAt = old?.createdAt?.takeIf { it != 0L } ?: x.createdAt.takeIf { it != 0L } ?: t,
+    )
+    return r.copy(hands = handsAfter(r.hands, old == null || r.copy(updatedAt = old.updatedAt) != old))
+}
+
+/** Something scanned into a container, as this person saves it: whoever puts it in a container has a hand in it. */
+internal fun Actor.guard(old: BoxEntry?, x: BoxEntry, t: Long): BoxEntry {
+    val r = x.copy(hands = old?.hands ?: emptyList(), updatedAt = t, createdAt = old?.createdAt?.takeIf { it != 0L } ?: x.createdAt.takeIf { it != 0L } ?: t)
+    return r.copy(hands = handsAfter(r.hands, old == null || r.copy(updatedAt = old.updatedAt) != old))
+}
+
 // ---- words for the activity log ---------------------------------------------------------
 
 internal fun decisionVerb(d: Disposition) = when (d) {
@@ -179,18 +229,21 @@ internal class Draft(var d: AppData, val actor: Actor, val t: Long) {
         val known = HashSet<String>()
         val moves = LinkedHashMap<String, Pair<Stage, String?>>()
         fun one(old: Item?, x: Item): Item {
+            if (actor.refusesDeleting(old, x)) return old!!
             var r = actor.guard(old, x, t, events).copy(updatedAt = t, createdAt = if (x.createdAt == 0L) old?.createdAt?.takeIf { it != 0L } ?: t else x.createdAt)
             val carrier = if (old != null && r.boxId == old.boxId) d.carrierOf(old) else null
             val moved = old != null && (r.stage != old.stage || r.tripId != old.tripId)
+            fun handed(r: Item) = r.copy(hands = actor.handsAfter(r.hands, old == null || r.copy(updatedAt = old.updatedAt, hands = old.hands) != old.stamped()))
             if (carrier != null && moved) {
                 if (r.stage == Stage.DONE) r = r.copy(boxId = null) // taken out and put in its place
                 else {
                     moves[carrier.id] = r.stage to r.tripId
-                    return r.copy(stage = old!!.stage, tripId = old.tripId)
+                    return handed(r.copy(stage = old!!.stage, tripId = old.tripId))
                 }
             }
-            if (old != null && r.stage.ordinal > old.stage.ordinal) events.add(stageVerb(r.stage), r.title(), r.id)
-            return r
+            if (old != null && r.stage.ordinal > old.stage.ordinal) events.add(stageVerb(r.stage, r.carriedByHand()), r.title(), r.id)
+            if (r.deleted && old != null && !old.deleted) events.add("deleted", r.title(), r.id)
+            return handed(r)
         }
         val items = d.items.map { old -> wanted[old.id]?.let { known += old.id; one(old, it) } ?: old } +
             desired.filter { it.id !in known }.distinctBy { it.id }.map { one(null, it) }
@@ -206,10 +259,18 @@ internal class Draft(var d: AppData, val actor: Actor, val t: Long) {
         val moves = LinkedHashMap<String, Pair<Stage, String?>>()
         val deleted = HashSet<String>()
         fun one(old: Box?, x: Box): Box {
-            var r = x.copy(updatedAt = t, createdAt = if (x.createdAt == 0L) old?.createdAt?.takeIf { it != 0L } ?: t else x.createdAt)
+            if (actor.refusesDeleting(old, x)) return old!!
+            var r = x.copy(
+                updatedAt = t, createdAt = if (x.createdAt == 0L) old?.createdAt?.takeIf { it != 0L } ?: t else x.createdAt,
+                createdBy = old?.createdBy ?: actor.signature, hands = old?.hands ?: emptyList(), deletedBy = actor.deletionStamp(old, x.deleted, t),
+            )
+            fun handed(r: Box) = r.copy(hands = actor.handsAfter(r.hands, old == null || r.copy(updatedAt = old.updatedAt, hands = old.hands) != old))
             if (r.deleted) {
-                if (old?.deleted != true) deleted += r.id
-                return r
+                if (old != null && !old.deleted) {
+                    deleted += r.id
+                    events.add("deleted", r.logName(), r.id)
+                }
+                return handed(r)
             }
             // One level of nesting only: a new parent that would break that is not taken.
             if (r.parentId != old?.parentId && r.parentId != null && d.whyNotNest(r.id, r.parentId!!) != null) r = r.copy(parentId = old?.parentId)
@@ -221,10 +282,10 @@ internal class Draft(var d: AppData, val actor: Actor, val t: Long) {
                     moves[parent.id] = r.stage to r.tripId
                     r = r.copy(stage = old!!.stage, tripId = old.tripId)
                 }
-            } else if (old != null && r.stage.ordinal > old.stage.ordinal) events.add(stageVerb(r.stage), r.logName(), r.id)
+            } else if (old != null && r.stage.ordinal > old.stage.ordinal) events.add(stageVerb(r.stage, r.carriedByHand()), r.logName(), r.id)
             if (old != null && r.sealed != old.sealed) events.add(if (r.sealed) "sealed" else "opened", r.logName(), r.id)
             if (r.damaged && old?.damaged != true) events.add("reported damage to", r.logName(), r.id)
-            return r
+            return handed(r)
         }
         val boxes = d.boxes.map { old -> wanted[old.id]?.let { known += old.id; one(old, it) } ?: old } +
             desired.filter { it.id !in known }.distinctBy { it.id }.map { one(null, it) }
@@ -252,9 +313,9 @@ internal class Draft(var d: AppData, val actor: Actor, val t: Long) {
     }
 }
 
-private fun stageVerb(s: Stage) = when (s) {
+private fun stageVerb(s: Stage, byHand: Boolean = false) = when (s) {
     Stage.AT_ORIGIN -> "brought back"
-    Stage.LOADED -> "loaded"
+    Stage.LOADED -> if (byHand) "took along" else "loaded"
     Stage.DELIVERED -> "delivered"
     Stage.DONE -> "unpacked"
 }

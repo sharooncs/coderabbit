@@ -107,7 +107,7 @@ class PeopleTest {
         // Every value 1.3 saved is still there: compare with the stamps (which are new) taken off.
         assertEquals(old.move, d.move.copy(changedBy = Stamp()))
         assertEquals(old.rooms, d.rooms)
-        assertEquals(old.items, d.items.map { it.copy(decisionBy = Stamp(), roomBy = Stamp(), outcomeBy = Stamp()) })
+        assertEquals(old.items, d.items.map { it.copy(decisionBy = Stamp(), roomBy = Stamp(), outcomeBy = Stamp(), deletedBy = Stamp()) })
         assertEquals(old.boxes, d.boxes)
         assertEquals(old.photos, d.photos)
         assertEquals(old.tasks, d.tasks.map { it.copy(planBy = Stamp(), doneBy = Stamp()) })

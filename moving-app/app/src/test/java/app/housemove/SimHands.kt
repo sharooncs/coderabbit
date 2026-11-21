@@ -44,6 +44,8 @@ internal class Hands(private val p: Simulation.Phone) {
         2 to ::settings, 1 to ::printLabels,
         1 to ::backup, 1 to ::restore, 1 to ::tryErase,
         3 to ::openForLater,
+        // Deleting by the rule (an own thing nobody else touched, or an Organiser's), asking for it, and taking a suggestion back.
+        4 to ::deleteOwn, 3 to ::askToDelete, 3 to ::withdraw, 3 to ::saveOrSuggest,
     )
     private val total = menu.sumOf { it.first }
 
@@ -92,8 +94,56 @@ internal class Hands(private val p: Simulation.Phone) {
 
     private fun deleteItem(): String? {
         val item = pick(d.liveItems) ?: return null
+        if (chance(50)) return "deleted item ${id(item.id)} " + said(s.tryDelete(item, withPhotos = chance(50)))
         s.delete(item)
-        return "deleted item ${id(item.id)} → ok"
+        return "deleted item ${id(item.id)} " + took(d.item(item.id) == null, "the item")
+    }
+
+    /** Something this phone's person added: they may delete it while nobody else has had a hand in it. */
+    private fun deleteOwn(): String? {
+        val me = p.personId
+        val things = d.liveItems.filter { it.createdBy == me } + d.liveBoxes.filter { it.createdBy == me } +
+            d.liveRooms.filter { it.createdBy == me } + d.livePhotos.filter { it.by == me }
+        val x = pick(things) ?: return null
+        val o = when (x) {
+            is Item -> s.tryDelete(x)
+            is Box -> s.tryDelete(x)
+            is Room -> s.tryDelete(x)
+            is Photo -> s.tryDelete(x)
+            else -> return null
+        }
+        return "deleted its own ${x.javaClass.simpleName.lowercase()} ${id(x.id)} " + said(o)
+    }
+
+    private fun askToDelete(): String? {
+        val x: Rec = when (r.nextInt(6)) {
+            0 -> pick(d.liveItems)
+            1 -> pick(d.liveBoxes)
+            2 -> pick(d.liveRooms)
+            3 -> pick(d.livePhotos)
+            4 -> pick(d.liveTasks)
+            else -> pick(d.liveExpenses)
+        } ?: return null
+        val o = s.askToDelete(x.id, if (chance(50)) "Not needed" else "")
+        return "asked to delete ${x.javaClass.simpleName.lowercase()} ${id(x.id)}${o.valueOrNull()?.let { " as " + id(it.id) } ?: ""} " + said(o)
+    }
+
+    private fun withdraw(): String? {
+        val mine = d.waitingProposals().filter { it.by == p.personId }
+        val prop = (if (chance(85)) pick(mine) else pick(d.waitingProposals())) ?: return null
+        return "withdrew suggestion ${id(prop.id)} about ${id(prop.targetId)} " + said(s.withdraw(prop.id))
+    }
+
+    /** A task or cost changed through the calls that say what happened: saved for an Organiser, a suggestion for a Decider. */
+    private fun saveOrSuggest(): String? {
+        if (chance(50)) {
+            val t = (if (chance(50)) pick(d.liveTasks)?.let { it.copy(title = "Sort the " + pick(stuff) + " " + r.nextInt(99), deleted = chance(10)) } else null) ?: task()
+            val o = if (chance(50)) s.saveTask(t) else s.saveOrSuggest(t, pick(words)!!)
+            return "saved or suggested task ${id(t.id)}${if (t.deleted) " deleted" else ""}${(o.valueOrNull() as? Proposal)?.let { " as suggestion " + id(it.id) } ?: ""} " + said(o)
+        }
+        val e = (if (chance(50)) pick(d.liveExpenses)?.let { it.copy(amount = (1 + r.nextInt(500)).toDouble(), planned = if (chance(20)) !it.planned else it.planned) } else null) ?: cost()
+        val o = if (chance(50)) s.saveCost(e) else s.saveOrSuggest(e, "")
+        return "saved or suggested cost ${id(e.id)}${(o.valueOrNull() as? Proposal)?.let { " as suggestion " + id(it.id) } ?: ""} " + said(o)
     }
 
     private fun photograph(): String? {
@@ -112,8 +162,9 @@ internal class Hands(private val p: Simulation.Phone) {
 
     private fun deletePhoto(): String? {
         val photo = pick(d.livePhotos) ?: return null
+        if (chance(50)) return "deleted photo ${id(photo.id)} " + said(s.tryDelete(photo))
         s.delete(photo)
-        return "deleted photo ${id(photo.id)} → ok"
+        return "deleted photo ${id(photo.id)} " + took(d.livePhotos.none { it.id == photo.id }, "the photo")
     }
 
     private fun disposition() = Disposition.entries[r.nextInt(Disposition.entries.size)]
@@ -157,7 +208,7 @@ internal class Hands(private val p: Simulation.Phone) {
     }
 
     private fun approve(): String? {
-        val waiting = d.waitingProposals().filter { it.kind != ProposalKind.QUESTION }
+        val waiting = d.waitingProposals().filter { it.kind != ProposalKind.QUESTION || it.deletes }
         val prop = (if (chance(90)) pick(waiting) else pick(d.liveProposals)) ?: return null
         return "approved suggestion ${id(prop.id)} about ${id(prop.targetId)} " + said(s.approve(prop.id))
     }
@@ -174,7 +225,7 @@ internal class Hands(private val p: Simulation.Phone) {
     }
 
     private fun answer(): String? {
-        val q = pick(d.waitingProposals().filter { it.kind == ProposalKind.QUESTION }) ?: return null
+        val q = pick(d.waitingProposals().filter { it.kind == ProposalKind.QUESTION && (!it.deletes || chance(10)) }) ?: return null
         val what = disposition()
         val o = s.answer(q.id, what, price(what))
         return "answered question ${id(q.id)} about ${id(q.targetId)} with ${what.name}${o.valueOrNull()?.takeIf { it.id != q.id }?.let { " as suggestion " + id(it.id) } ?: ""} " + said(o)
@@ -289,8 +340,9 @@ internal class Hands(private val p: Simulation.Phone) {
 
     private fun deleteContainer(): String? {
         val box = pick(d.liveBoxes) ?: return null
+        if (chance(50)) return "deleted container ${id(box.id)} " + said(s.tryDelete(box, withPhotos = chance(50)))
         s.delete(box)
-        return "deleted container ${id(box.id)} → ok"
+        return "deleted container ${id(box.id)} " + took(d.box(box.id) == null, "the container")
     }
 
     private fun scan(): String? {
@@ -305,6 +357,7 @@ internal class Hands(private val p: Simulation.Phone) {
 
     private fun deleteEntry(): String? {
         val e = pick(d.liveEntries) ?: return null
+        if (chance(50)) return "removed scanned thing ${id(e.id)} " + said(s.tryDelete(e))
         s.delete(e)
         return "removed scanned thing ${id(e.id)} → ok"
     }
@@ -330,8 +383,9 @@ internal class Hands(private val p: Simulation.Phone) {
     private fun deleteRoom(): String? {
         val room = pick(d.liveRooms) ?: return null
         if (d.liveRooms.size < 5) return null
+        if (chance(50)) return "deleted room ${id(room.id)} " + said(s.tryDelete(room))
         s.delete(room)
-        return "deleted room ${id(room.id)} → ok"
+        return "deleted room ${id(room.id)} " + took(d.room(room.id) == null, "the room")
     }
 
     // ---- costs and tasks -------------------------------------------------------------------
@@ -353,6 +407,7 @@ internal class Hands(private val p: Simulation.Phone) {
 
     private fun deleteCost(): String? {
         val e = pick(d.liveExpenses) ?: return null
+        if (chance(50)) return "deleted cost ${id(e.id)} " + said(s.tryDelete(e))
         s.delete(e)
         return "deleted cost ${id(e.id)} " + took(d.expense(e.id) == null, "the cost")
     }
@@ -394,6 +449,7 @@ internal class Hands(private val p: Simulation.Phone) {
 
     private fun deleteTask(): String? {
         val t = pick(d.liveTasks) ?: return null
+        if (chance(50)) return "deleted task ${id(t.id)} " + said(s.tryDelete(t))
         s.delete(t)
         return "deleted task ${id(t.id)} " + took(d.task(t.id) == null, "the task")
     }

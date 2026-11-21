@@ -130,6 +130,18 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
     private val rnd = Random(seed)
     private val local = listOf("127.0.0.1")
 
+    /**
+     * A phone that is not in the move: someone who photographed a code or an invite, or a phone
+     * still on 1.3. It tries what it should not be able to use, and must never get anything.
+     */
+    private val outsiderIds = SimIds(seed * 7_777 + 3)
+    private val outsiderUi: ExecutorService = Executors.newSingleThreadExecutor { r -> Thread({ SimIds.local.set(outsiderIds); r.run() }, "ui-X1").apply { isDaemon = true } }
+    lateinit var outsider: Store
+        private set
+
+    /** How the outsider's tries went, for the report. */
+    val outsiderTries = ArrayList<String>()
+
     // ---- notes -------------------------------------------------------------------------
 
     fun broke(invariant: String, message: String, ids: Collection<String?> = emptyList()) {
@@ -217,7 +229,62 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
             p.ui.shutdownNow()
             p.net.shutdownNow()
         }
+        try {
+            if (::outsider.isInitialized) outsiderUi.submit { outsider.close() }.get(30, TimeUnit.SECONDS)
+        } catch (_: Exception) {
+        }
+        outsiderUi.shutdownNow()
         pool.shutdownNow()
+    }
+
+    private fun <T> asOutsider(f: () -> T): T = outsiderUi.submit(Callable { f() }).get(120, TimeUnit.SECONDS)
+
+    /**
+     * The outsider tries one thing on [m]'s phone: its plain code as the screens show it on a shared
+     * move (new phones kept out), a hello in the words of 1.3, or a code that is not the one shown.
+     * Each must be turned away, and [m]'s data must not change.
+     */
+    private fun outsiderTriesOn(m: Phone) {
+        val before = m.data
+        val how = rnd.nextInt(3)
+        val said: String = when (how) {
+            0 -> {
+                val heard = LinkedBlockingQueue<WifiSync.Result>()
+                val h = m.onUi { WifiSync.host(m.store, m.clock, letNewPhonesIn = false) { heard.add(it) } }
+                try {
+                    val r = asOutsider { WifiSync.join(outsider, h.invite(local)) }
+                    val hosted = heard.poll(30, TimeUnit.SECONDS)
+                    if (r.ok || hosted?.ok != false) broke(OUTSIDERS, "a phone outside the move synced with ${m.tag} by its plain code: ${r.error} / ${hosted?.error}")
+                    "the plain code: ${r.error}"
+                } finally {
+                    h.stop()
+                }
+            }
+            else -> {
+                val token = if (how == 1) m.host.token else "WRONG" + rnd.nextInt(999)
+                val answer = try {
+                    java.net.Socket("127.0.0.1", m.host.port).use { s ->
+                        s.soTimeout = 10_000
+                        val out = java.io.DataOutputStream(s.getOutputStream().buffered())
+                        out.writeUTF(if (how == 1) "HMSYNC2" else "HMSYNC3"); out.writeUTF(token); out.writeUTF("Visitor"); out.writeUTF("V")
+                        out.writeInt(if (how == 1) 3 else SCHEMA)
+                        if (how == 2) { out.writeUTF(""); out.writeUTF("") }
+                        out.flush()
+                        java.io.DataInputStream(s.getInputStream()).readUTF()
+                    }
+                } catch (e: Exception) {
+                    "nothing ($e)"
+                }
+                // The phone's own host noted the attempt; it is not one of the syncs the run waits for.
+                m.heard.poll(30, TimeUnit.SECONDS)
+                val wanted = if (how == 1) "VERSION" else "NO"
+                if (answer != wanted) broke(OUTSIDERS, "${m.tag} answered a ${if (how == 1) "1.3 hello" else "wrong code"} with $answer, not $wanted")
+                if (how == 1) "a 1.3 hello: $answer" else "a wrong code: $answer"
+            }
+        }
+        if (m.data != before) broke(OUTSIDERS, "${m.tag}'s data changed when a phone outside the move tried ${said.substringBefore(':')}")
+        synchronized(outsiderTries) { outsiderTries += said }
+        m.say("a phone outside the move tried $said")
     }
 
     private fun setUp() {
@@ -239,6 +306,10 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
             p.host = p.onUi { WifiSync.host(p.store, p.clock) { p.heard.add(it) } }
             phones += p
         }
+        val xdir = File(root, "X1").apply { mkdirs() }
+        File(xdir, "device.json").writeText("""{"name":"Visitor","letter":"V"}""")
+        outsider = asOutsider { Store(xdir) { time + 7_000 } }
+        asOutsider { outsider.createBox("V1", null) }
         val o1 = phones[0]
         o1.onUi {
             val s = o1.store
@@ -299,11 +370,19 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
         p.hold(); by.hold()
         p.say("!joined as ${p.name} (${p.role.label}, letter ${p.store.device.value.letter}) from ${by.tag}'s invite")
         if (p.store.myRole != p.role) broke(RUN, "${p.tag} joined as ${p.store.myRole}, not ${p.role}")
+        // Someone who photographed the invite tries it after it has been used.
+        val hostWas = by.data
+        val again = asOutsider { WifiSync.join(outsider, invite) }
+        val told = by.heard.poll(40, TimeUnit.SECONDS)
+        if (again.error != WifiSync.INVITE_EXPIRED || told?.error != WifiSync.INVITE_EXPIRED) broke(OUTSIDERS, "an invite already used by ${p.tag} was tried again: ${again.error} / ${told?.error}")
+        if (by.data != hostWas) broke(OUTSIDERS, "${by.tag}'s data changed when its used invite was tried again")
+        synchronized(outsiderTries) { outsiderTries += "an invite already used: ${again.error}" }
     }
 
     private fun oneRound() {
         round++
         time += 20 + rnd.nextInt(if (rnd.nextInt(6) == 0) 40_000 else 2_500)
+        if (rnd.nextInt(10) == 0) outsiderTriesOn(phones[rnd.nextInt(phones.size)])
         val free = phones.shuffled(rnd).toMutableList()
         val jobs = ArrayList<Future<*>>()
         repeat(listOf(0, 1, 1, 1, 2, 2, 3)[rnd.nextInt(7)]) {
@@ -437,6 +516,7 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
         const val MOVE = "move:"
         const val REFUSED = "→ no: "
         const val RUN = "The run finished and the phones went quiet"
+        const val OUTSIDERS = "A phone outside the move (a used or photographed code, a wrong code, version 1.3) got nothing and changed nothing"
     }
 }
 
@@ -494,6 +574,7 @@ internal class SimStats {
             .replace(Regex("^.* has been removed from the move\\.$"), "(They) have been removed from the move.")
             .replace(Regex("^.* is already inside .*\\. Containers only go one inside another\\.$"), "(That container) is already inside another. Containers only go one inside another.")
             .replace(Regex("^.* has containers inside it, so it cannot go inside another\\.$"), "(That container) has containers inside it, so it cannot go inside another.")
+            .replace(Regex("^.* (has|have) worked on it since you added it, (.*)$"), "(Someone else) has worked on it since you added it, $2")
             .take(160)
     }
 }
