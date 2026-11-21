@@ -1,20 +1,32 @@
 package app.housemove.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Checklist
+import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.Payments
+import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Share as ShareIcon
+import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -24,22 +36,35 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.housemove.data.Part
+import app.housemove.data.PhotoKind
+import app.housemove.data.Ratio
 import app.housemove.data.fmtNum
 import app.housemove.data.movables
 import app.housemove.data.movingItems
+import app.housemove.data.uses
 import app.housemove.pdf.Csv
 import app.housemove.pdf.Pdf
 import app.housemove.pdf.Share
 import app.housemove.ui.Hint
 import app.housemove.ui.LocalNav
 import app.housemove.ui.LocalStore
-import app.housemove.ui.MenuRow
+import app.housemove.ui.PhotoThumb
+import app.housemove.ui.Pic
+import app.housemove.ui.Ring
 import app.housemove.ui.Screen
 import app.housemove.ui.ScrollColumn
-import app.housemove.ui.Section
+import app.housemove.ui.StepRow
+import app.housemove.ui.TileGrid
 import app.housemove.ui.appData
+import app.housemove.ui.deviceInfo
 import app.housemove.ui.open
 import app.housemove.ui.toast
 import kotlinx.coroutines.Dispatchers
@@ -59,9 +84,13 @@ fun ReportsScreen() {
 
     val all = data.movables()
     val items = data.movingItems()
-    val damaged = all.count { it.damaged }
+    val boxes = data.liveBoxes
+    val damaged = all.filter { it.damaged }
     val paid = data.liveExpenses.filter { !it.planned }.sumOf { it.amount }
-    val tasksLeft = data.liveTasks.count { !it.done }
+    val tasks = data.liveTasks
+    val tasksLeft = tasks.count { !it.done }
+    val damagePhoto = damaged.firstNotNullOfOrNull { m -> data.photosOf(m.id, PhotoKind.DAMAGE).firstOrNull() }
+    val device = deviceInfo()
 
     // Build the file off the main thread, then hand it to another app.
     fun produce(mime: String, open: Boolean, make: () -> File) {
@@ -84,92 +113,137 @@ fun ReportsScreen() {
 
     Screen("Reports and close-out") {
         ScrollColumn {
-            Section("Summary") {
-                MdStatRow("Items moved", "${items.count { mdArrived(it.stage) }} of ${items.size}")
-                MdStatRow("Boxes", "${data.liveBoxes.count { mdArrived(it.stage) }} of ${data.liveBoxes.size} delivered")
-                MdStatRow("Damaged", damaged.toString())
-                MdStatRow("Total paid", (data.move.currency.trim() + " " + fmtNum(paid)).trim())
-            }
+            // How the move went, in four numbers.
+            val stats = listOfNotNull(
+                MdStatOf("Items moved") { MdStatRing(Ratio(items.count { mdArrived(it.stage) }, items.size)) },
+                MdStatOf("Boxes moved") { MdStatRing(Ratio(boxes.count { mdArrived(it.stage) }, boxes.size)) }
+                    .takeIf { boxes.isNotEmpty() || data.uses(Part.BOXES) },
+                MdStatOf("Damaged") { MdStatIcon(Pic.Damage, damaged.size.toString(), error = damaged.isNotEmpty()) },
+                MdStatOf("Total paid") { MdStatIcon(Icons.Default.Payments, (data.move.currency.trim() + " " + fmtNum(paid)).trim()) }
+                    .takeIf { paid != 0.0 || data.uses(Part.BUDGET) },
+            )
+            // Four in a row; two rows of two on a small phone, so no number is cut short.
+            TileGrid(stats, columns = if (mdNarrow()) 2 else stats.size) { stat, m -> MdStat(stat.label, m, stat.picture) }
 
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
 
-            Section("Inventory (PDF)") {
-                Hint("Every item and box with rooms, sizes and the load estimate. Open it to read or print.")
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(
-                        enabled = !busy,
-                        onClick = { produce("application/pdf", open = true) { Pdf.inventory(context, data) } },
-                        modifier = Modifier.heightIn(min = 48.dp),
-                    ) { Text("Open") }
-                    OutlinedButton(
-                        enabled = !busy,
-                        onClick = { produce("application/pdf", open = false) { Pdf.inventory(context, data) } },
-                        modifier = Modifier.heightIn(min = 48.dp),
-                    ) { Text("Share") }
-                }
-            }
+            MdReport(
+                Icons.Default.PictureAsPdf, "Inventory", "Every item and box, with its room and size.",
+                enabled = !busy,
+                onOpen = { produce("application/pdf", open = true) { Pdf.inventory(context, data) } },
+                onShare = { produce("application/pdf", open = false) { Pdf.inventory(context, data) } },
+            )
+            MdReport(
+                Icons.Default.TableChart, "Inventory spreadsheet", "The same list for Excel or Google Sheets.",
+                enabled = !busy,
+                onOpen = null,
+                onShare = { produce("text/csv", open = false) { Csv.inventory(context, data) } },
+            )
+            MdReport(
+                Pic.Damage, "Damage report",
+                if (damaged.isEmpty()) "Nothing is marked as damaged."
+                else "${damaged.size} damaged, with before and after photos.",
+                enabled = !busy,
+                onOpen = { produce("application/pdf", open = true) { Pdf.damageReport(context, store) } },
+                onShare = { produce("application/pdf", open = false) { Pdf.damageReport(context, store) } },
+                // Led by a real photo of the damage when there is one.
+                picture = if (damagePhoto == null) null else {
+                    { PhotoThumb(damagePhoto, Modifier.size(56.dp)) }
+                },
+            )
 
-            Section("Inventory (spreadsheet)") {
-                Hint("The same list as a CSV file for Excel or Google Sheets.")
-                OutlinedButton(
-                    enabled = !busy,
-                    onClick = { produce("text/csv", open = false) { Csv.inventory(context, data) } },
-                    modifier = Modifier.heightIn(min = 48.dp),
-                ) { Text("Share") }
-            }
-
-            Section("Damage report (PDF)") {
-                Hint(
-                    if (damaged == 0) "Nothing is marked as damaged. Mark damage while unloading, or on the box or item itself."
-                    else "$damaged damaged, each with its photos from before and after the move. Useful for the van hire company or your insurer."
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(
-                        enabled = !busy,
-                        onClick = { produce("application/pdf", open = true) { Pdf.damageReport(context, store) } },
-                        modifier = Modifier.heightIn(min = 48.dp),
-                    ) { Text("Open") }
-                    OutlinedButton(
-                        enabled = !busy,
-                        onClick = { produce("application/pdf", open = false) { Pdf.damageReport(context, store) } },
-                        modifier = Modifier.heightIn(min = 48.dp),
-                    ) { Text("Share") }
-                }
-            }
-
-            Card(Modifier.fillMaxWidth()) {
-                Column {
-                    Text(
-                        "Close-out checklist",
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
-                    )
-                    MenuRow(
+            // The last few jobs, on a white card like the Move day steps.
+            OutlinedCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    if (data.uses(Part.TIMELINE)) StepRow(
                         Icons.Default.Checklist,
-                        if (tasksLeft == 0) "All tasks done" else if (tasksLeft == 1) "1 task left" else "$tasksLeft tasks left",
-                        "Address changes, deposit, final bills",
-                    ) { nav.open("tasks") }
-                    HorizontalDivider()
-                    MenuRow(
-                        Icons.Default.Backup,
-                        "Back up the data",
-                        "Save one file with everything, photos included",
-                    ) { nav.open("sync") }
-                    HorizontalDivider()
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("• Keep the inventory PDF for your home insurance.", style = MaterialTheme.typography.bodyMedium)
-                        Text("• Flatten the boxes and pass them on to someone else who is moving.", style = MaterialTheme.typography.bodyMedium)
-                    }
+                        if (tasksLeft == 0) "All tasks done" else mdCount(tasksLeft, "task") + " left",
+                        onClick = { nav.open("tasks") },
+                        ratio = Ratio(tasks.size - tasksLeft, tasks.size),
+                        status = "Address changes, deposit, final bills",
+                    )
+                    StepRow(
+                        Icons.Default.Backup, "Back up the data", onClick = { nav.open("sync") },
+                        status = if (device.lastBackupAt == 0L) "One file with everything, photos included"
+                        else "Last backup ${agoText(device.lastBackupAt)}",
+                        done = device.lastBackupAt != 0L,
+                    )
                 }
             }
+            Hint("Keep the inventory for your insurance. Pass the flattened boxes on.")
         }
     }
 }
 
+private class MdStatOf(val label: String, val picture: @Composable () -> Unit)
+
+/** One number of the summary: a picture or ring on top, what it counts underneath. */
 @Composable
-private fun MdStatRow(label: String, value: String) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-        Text(value, style = MaterialTheme.typography.titleMedium)
+private fun MdStat(label: String, modifier: Modifier = Modifier, picture: @Composable () -> Unit) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Box(Modifier.heightIn(min = 56.dp), contentAlignment = Alignment.Center) { picture() }
+        Text(
+            label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center, maxLines = 2,
+        )
+    }
+}
+
+@Composable
+private fun MdStatRing(ratio: Ratio) {
+    Ring(ratio, size = 56.dp, stroke = 5.dp, color = MaterialTheme.colorScheme.tertiary) {
+        Text("${ratio.done}/${ratio.total}", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun MdStatIcon(icon: ImageVector, value: String, error: Boolean = false) {
+    val tint = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(26.dp))
+        Text(
+            value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
+            color = if (error) tint else MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** One report: its picture, what it is for in one line, and the buttons to open or share it. */
+@Composable
+private fun MdReport(
+    icon: ImageVector,
+    title: String,
+    purpose: String,
+    enabled: Boolean,
+    onOpen: (() -> Unit)?,
+    onShare: () -> Unit,
+    picture: (@Composable () -> Unit)? = null,
+) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (picture != null) picture() else Box(
+                    Modifier.size(56.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center,
+                ) { Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(30.dp)) }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(title, style = MaterialTheme.typography.titleMedium)
+                    Text(purpose, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (onOpen != null) Button(enabled = enabled, onClick = onOpen, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+                    Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Open")
+                }
+                OutlinedButton(enabled = enabled, onClick = onShare, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+                    Icon(Icons.Default.ShareIcon, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Share")
+                }
+            }
+        }
     }
 }
