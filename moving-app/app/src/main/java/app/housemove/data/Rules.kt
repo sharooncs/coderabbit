@@ -23,11 +23,19 @@ package app.housemove.data
 
 // ---- check values ------------------------------------------------------------------
 
-/** A short check value over the values of one protected part. */
+/**
+ * A short check value over the values of one protected part. Numbers go in by
+ * their bits, not their text, so every phone works out the same value whatever
+ * its version of Android prints for a number.
+ */
 internal fun seal(vararg parts: Any?): String {
     var h = 1125899906842597L
     for (p in parts) {
-        val s = p?.toString() ?: "\u0000"
+        val s = when (p) {
+            null -> "\u0000"
+            is Double -> java.lang.Double.doubleToLongBits(p).toString()
+            else -> p.toString()
+        }
         for (ch in s) h = 31 * h + ch.code
         h = 31 * h + 0x1F
     }
@@ -123,8 +131,6 @@ internal class Approvals(proposals: List<Proposal>) {
     init {
         for (p in proposals) if (p.state == ProposalState.APPROVED && !p.deleted) byTarget.getOrPut(p.targetId) { ArrayList() }.add(p)
     }
-
-    fun of(kind: ProposalKind, targetId: String): List<Proposal> = byTarget[targetId]?.filter { it.kind == kind } ?: emptyList()
 
     /** The approved suggestion, if any, that put [reg] on the target: the one whose approval is still what stands. */
     fun standing(kind: ProposalKind, targetId: String, reg: Stamp): Proposal? =
