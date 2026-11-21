@@ -591,20 +591,38 @@ class ItemFlowsTest {
     // ---- what a role is not offered, and what became of a suggestion -------------------------------
 
     @Test
-    fun deletingAnItemIsNotOfferedToAHelperInASharedMove() {
+    fun deletingFollowsTheStoresRuleAndAnyoneElseCanAskAndWithdraw() {
         team()
-        // The Store has no rule for deleting, so the screen leaves it out for a Helper.
+        // Hal did not add the sofa: deleting it is not his, but asking an Organiser to is, with the reason why.
         show(hal, "item/$sofa")
         tap("More")
         see("Room in the old home")
-        dontSee("Delete item")
-        show(dee, "item/$sofa")
-        tap("More")
-        see("Delete item")
-        show(asha, "item/$sofa")
+        cannotTap("Delete item")
+        see("Only an Organiser can delete something someone else added.")
+        tap("Ask to delete")
+        val asked = hal.waiting().single()
+        assertTrue(asked.deletes)
+        see("You asked to delete it")
+        cannotTap("Ask to delete") // asked once is enough
+        // He thinks better of it: his own request can be taken back where it is shown.
+        tap("Withdraw")
+        assertTrue(hal.waiting().isEmpty())
+        tap("Ask to delete")
+        assertEquals(1, hal.waiting().size)
+
+        // Dee may delete what she added herself while nobody else has touched it.
+        val rug = dee.createItem("Old rug", oldLounge.id).id
+        show(dee, "item/$rug")
         tap("More")
         tap("Delete item")
         tap("Delete")
+        assertNull(dee.data.value.item(rug))
+
+        // The Organiser finds Hal's request on the sofa itself, and approving it deletes the sofa.
+        sync(asha, hal)
+        show(asha, "item/$sofa")
+        see("Hal asked to delete it")
+        tap("Approve")
         assertNull(asha.data.value.item(sofa))
     }
 

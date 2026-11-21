@@ -144,10 +144,11 @@ internal val CODE_ORDER = compareBy<Box>(
 
 // ---- where a container has got to ----------------------------------------------------
 
-/** The states a container goes through, as lists show and filter them. */
-internal enum class PackState { OPEN, SEALED, ON_VAN, DELIVERED, UNPACKED }
+/** The states a container goes through, as lists show and filter them. One carried by hand is never "on the van". */
+internal enum class PackState { OPEN, SEALED, ON_VAN, BY_HAND, DELIVERED, UNPACKED }
 
 internal fun Box.packState(): PackState = when {
+    stage == Stage.LOADED && carriedByHand() -> PackState.BY_HAND
     stage == Stage.LOADED -> PackState.ON_VAN
     stage == Stage.DELIVERED -> PackState.DELIVERED
     stage == Stage.DONE -> PackState.UNPACKED
@@ -159,6 +160,7 @@ internal fun PackState.label(vehicle: String): String = when (this) {
     PackState.OPEN -> "Open"
     PackState.SEALED -> "Sealed"
     PackState.ON_VAN -> stageText(Stage.LOADED, isBox = true, vehicle)
+    PackState.BY_HAND -> "Carried by hand"
     PackState.DELIVERED -> stageText(Stage.DELIVERED, isBox = true, vehicle)
     PackState.UNPACKED -> stageText(Stage.DONE, isBox = true, vehicle)
 }
@@ -167,6 +169,7 @@ internal fun PackState.picture(): ImageVector = when (this) {
     PackState.OPEN -> Icons.Default.LockOpen
     PackState.SEALED -> Icons.Default.Lock
     PackState.ON_VAN -> Stage.LOADED.icon()
+    PackState.BY_HAND -> Pic.WithMe
     PackState.DELIVERED -> Stage.DELIVERED.icon()
     PackState.UNPACKED -> Stage.DONE.icon()
 }

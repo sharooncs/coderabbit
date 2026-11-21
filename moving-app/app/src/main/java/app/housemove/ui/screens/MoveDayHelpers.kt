@@ -89,12 +89,6 @@ internal data class MdResult(val tone: MdTone, val title: String, val detail: St
 /** True once something has reached the new home. */
 internal fun mdArrived(stage: Stage) = stage == Stage.DELIVERED || stage == Stage.DONE
 
-/**
- * Carried by hand, not in the van: it travels with the person ("With me" on Load) and was
- * not put on a trip. Such things are never "still on the van", on any screen.
- */
-internal fun Movable.byHand(): Boolean = travelsWithMe && tripId == null
-
 /** Move one box or item to [stage]. The trip is kept unless [tripId] is given. */
 internal fun mdSetStage(store: Store, m: Movable, stage: Stage, tripId: String? = m.tripId) {
     if (m.isBox) store.updateBoxes(listOf(m.id)) { it.copy(stage = stage, tripId = tripId) }
@@ -335,7 +329,7 @@ internal fun MdThingRow(
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 RoomBadge(data.room(m.destRoomId))
                 InsideChip(carried)
-                if (showStage) IconFlag(m.stage.icon(), stageText(m.stage, m.isBox, data.vehicle()))
+                if (showStage) IconFlag(if (m.onTheVan() || m.stage != Stage.LOADED) m.stage.icon() else Pic.WithMe, data.statusText(m))
                 m.flags().forEach { (picture, word) -> IconFlag(picture, word) }
                 if (open) IconFlag(Icons.Default.LockOpen, "Open")
                 if (m.damaged) IconFlag(Pic.Damage, "Damaged", error = true)

@@ -30,15 +30,6 @@ import app.housemove.ui.*
 private val ANSWERS = listOf(Disposition.MOVE, Disposition.SELL, Disposition.DONATE, Disposition.BIN, Disposition.STORE)
     .map { Choice(it, it.label, it.icon()) }
 
-/** One-tap reasons for saying no, most likely first for each kind of suggestion. */
-private fun declineReasons(kind: ProposalKind): List<String> = when (kind) {
-    ProposalKind.ITEM_DECISION -> listOf("We're keeping it", "Not yet", "Different price", "Let's talk first")
-    ProposalKind.ITEM_ROOM -> listOf("Won't fit there", "Not yet", "Let's talk first")
-    ProposalKind.COST -> listOf("Too expensive", "Not needed", "Not yet", "Let's talk first")
-    ProposalKind.TASK -> listOf("Not needed", "Already planned", "Let's talk first")
-    ProposalKind.QUESTION -> listOf("Not sure yet", "Ask me in person")
-}
-
 /**
  * Suggestions and questions. For someone who may approve, this is the inbox of what is
  * waiting; for everyone else it is the list of what they suggested or asked and what
@@ -57,7 +48,8 @@ private fun Inbox() {
     val context = LocalContext.current
     val data = appData()
     val waiting = data.waitingProposals()
-    val approvable = waiting.filter { it.kind != ProposalKind.QUESTION }
+    // Questions are answered by deciding; everything else, requests to delete included, is approved.
+    val approvable = waiting.filter { !it.isQuestion }
     var picked by rememberSaveable { mutableStateOf(listOf<String>()) }
     val chosen = approvable.filter { it.id in picked }
     var declining by rememberSaveable { mutableStateOf<String?>(null) }
@@ -121,7 +113,7 @@ private fun Inbox() {
                 WaitingCard(
                     p,
                     selected = p.id in picked,
-                    onSelect = if (p.kind == ProposalKind.QUESTION || approvable.size < 2) null else ({ picked = if (p.id in picked) picked - p.id else picked + p.id }),
+                    onSelect = if (p.isQuestion || approvable.size < 2) null else ({ picked = if (p.id in picked) picked - p.id else picked + p.id }),
                     declining = declining == p.id,
                     onDeclining = { declining = if (it) p.id else null },
                     onApprove = { approve(listOf(p)) },
@@ -145,7 +137,7 @@ private fun WaitingCard(
     val store = LocalStore.current
     val context = LocalContext.current
     val data = appData()
-    val question = p.kind == ProposalKind.QUESTION
+    val question = p.isQuestion
     val what = data.describe(p)
     // On a narrow screen or with large text the question keeps the width, and "Not now" goes under the answers.
     val tight = tightScreen()
@@ -155,7 +147,7 @@ private fun WaitingCard(
                 ProposalPicture(p, Modifier.size(76.dp))
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Asker(p, if (question) "asks" else "suggests")
+                    Asker(p, if (question || p.deletes) "asks" else "suggests")
                     Text(what, style = MaterialTheme.typography.titleMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
                     standsNow(data, p)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Night.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                     if (p.note.isNotBlank()) Text("“${p.note}”", style = MaterialTheme.typography.bodyMedium, fontStyle = FontStyle.Italic, color = Night.TextSoft)
@@ -213,7 +205,7 @@ private fun DeclinePanel(p: Proposal, onDone: () -> Unit) {
             GlassChip("Cancel", onClick = onDone)
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            declineReasons(p.kind).forEach { r -> GlassChip(r, onClick = { decline(r) }) }
+            reasonsToDecline(p).forEach { r -> GlassChip(r, onClick = { decline(r) }) }
             GlassChip("No reason", onClick = { decline("") })
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -246,7 +238,7 @@ private fun Asker(p: Proposal, verb: String) {
 }
 
 /** How the thing a suggestion is about stands at the moment, for comparison. */
-private fun standsNow(data: AppData, p: Proposal): String? = when (p.kind) {
+private fun standsNow(data: AppData, p: Proposal): String? = if (p.deletes) null else when (p.kind) {
     ProposalKind.ITEM_DECISION, ProposalKind.QUESTION -> data.item(p.targetId)?.let { i ->
         "Now: " + i.disposition.label + if (i.disposition == Disposition.SELL && i.price != null) " for " + (data.move.currency + " " + fmtNum(i.price)).trim() else ""
     }
@@ -261,9 +253,11 @@ private fun standsNow(data: AppData, p: Proposal): String? = when (p.kind) {
 private fun ProposalPicture(p: Proposal, modifier: Modifier = Modifier) {
     val nav = LocalNav.current
     val data = appData()
-    val icon: ImageVector? = when (p.kind) {
-        ProposalKind.COST -> Icons.Default.Payments
-        ProposalKind.TASK -> Icons.Default.Checklist
+    // A request to delete can be about a task or a room as well as an item or a container.
+    val icon: ImageVector? = when {
+        p.kind == ProposalKind.COST -> Icons.Default.Payments
+        p.kind == ProposalKind.TASK || data.task(p.targetId) != null -> Icons.Default.Checklist
+        data.room(p.targetId) != null -> Pic.Room
         else -> null
     }
     if (icon != null) {
@@ -272,9 +266,13 @@ private fun ProposalPicture(p: Proposal, modifier: Modifier = Modifier) {
         }
     } else {
         val item = data.item(p.targetId)
+        val box = data.box(p.targetId)
+        val route = item?.let { "item/${it.id}" } ?: box?.let { "box/${it.id}" }
         OwnerThumb(
             p.targetId,
-            modifier.clip(RoundedCornerShape(14.dp)).then(if (item != null) Modifier.clickable(onClickLabel = "Open ${item.title()}") { nav.open("item/${item.id}") } else Modifier),
+            modifier.clip(RoundedCornerShape(14.dp))
+                .then(if (route != null) Modifier.clickable(onClickLabel = "Open ${item?.title() ?: box?.shownName()}") { nav.open(route) } else Modifier),
+            isBox = box != null,
         )
     }
 }
@@ -300,8 +298,8 @@ private fun ProposalState.icon(): ImageVector = when (this) {
 private fun outcomeText(data: AppData, p: Proposal): String {
     val by = data.personName(p.decidedBy).ifBlank { "an Organiser" }
     return when (p.state) {
-        ProposalState.WAITING -> if (p.kind == ProposalKind.QUESTION) "Waiting for an answer" else "Waiting for approval"
-        ProposalState.APPROVED -> (if (p.kind == ProposalKind.QUESTION) "Answered by " else "Approved by ") + by
+        ProposalState.WAITING -> if (p.isQuestion) "Waiting for an answer" else "Waiting for approval"
+        ProposalState.APPROVED -> (if (p.isQuestion) "Answered by " else "Approved by ") + by
         ProposalState.DECLINED -> "Declined by $by"
         ProposalState.OVERTAKEN, ProposalState.NOT_CHOSEN -> p.state.label
     }
@@ -380,8 +378,10 @@ private fun Mine() {
 @Composable
 private fun OutcomeCard(p: Proposal, me: Person?) {
     val nav = LocalNav.current
+    val store = LocalStore.current
+    val context = LocalContext.current
     val data = appData()
-    val question = p.kind == ProposalKind.QUESTION
+    val question = p.isQuestion
     GlassCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(26.dp), sheen = p.state == ProposalState.WAITING) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row {
@@ -390,17 +390,28 @@ private fun OutcomeCard(p: Proposal, me: Person?) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(data.describe(p), style = MaterialTheme.typography.titleMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
                     Text(
-                        (if (question) "Asked " else "Suggested ") + agoText(p.createdAt), style = MaterialTheme.typography.bodySmall,
+                        (if (question || p.deletes) "Asked " else "Suggested ") + agoText(p.createdAt), style = MaterialTheme.typography.bodySmall,
                         color = Night.TextDim, maxLines = 1,
                     )
                     if (p.note.isNotBlank()) Text("“${p.note}”", style = MaterialTheme.typography.bodySmall, fontStyle = FontStyle.Italic, color = Night.TextSoft)
                 }
             }
-            // Every card ends the same way: how it stands as a chip, then the why in words.
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            // Every card ends the same way: how it stands as a chip, then the why in words. While it
+            // waits, the person who made it can take it back.
+            FlowRow(
+                Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp),
+                itemVerticalAlignment = Alignment.CenterVertically,
+            ) {
                 GlassChip(outcomeText(data, p), icon = p.state.icon(), tone = p.state.tone())
                 if (question && p.state == ProposalState.APPROVED) {
                     data.item(p.targetId)?.let { GlassChip(it.disposition.label, icon = it.disposition.icon()) }
+                }
+                if (p.state == ProposalState.WAITING && p.by == me?.id) {
+                    Spacer(Modifier.weight(1f))
+                    RowButton(
+                        "Withdraw", onClick = { if (store.withdraw(p.id).okOrSay(context)) toast(context, "Withdrawn") },
+                        forward = false, icon = Icons.Default.Undo,
+                    )
                 }
             }
             whyText(p)?.let {

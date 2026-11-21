@@ -46,7 +46,7 @@ fun TriageScreen() {
 
     val all = data.liveItems
     val waiting = data.waitingProposals()
-        .filter { it.kind == ProposalKind.ITEM_DECISION || it.kind == ProposalKind.QUESTION }
+        .filter { it.kind == ProposalKind.ITEM_DECISION || it.isQuestion }
         .groupBy { it.targetId }
     // What is still to do here: for an Organiser everything undecided and everything someone has
     // suggested or asked about; for the others, the undecided things they have not spoken up on yet.
@@ -124,7 +124,7 @@ fun TriageScreen() {
                 suggestions.forEach { p -> Suggestion(p, data) }
                 // Back in the queue because what this person suggested was declined: they are told why, once.
                 data.declinedOn(current.id, store.me, seen.ids, ProposalKind.ITEM_DECISION, ProposalKind.QUESTION)?.let { p ->
-                    DeclinedNote(p, data, what = data.proposalText(p).takeIf { p.kind != ProposalKind.QUESTION }, onSeen = { seen.mark(p.id) })
+                    DeclinedNote(p, data, what = data.proposalText(p).takeIf { !p.isQuestion }, onSeen = { seen.mark(p.id) })
                 }
 
                 fun done() {

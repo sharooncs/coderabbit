@@ -57,7 +57,9 @@ private fun nextStep(data: AppData, suggests: Boolean = false): NextStep {
     val p = data.progress()
     val mv = data.movables()
     val delivered = mv.count { it.stage == Stage.DELIVERED || it.stage == Stage.DONE }
-    val loaded = mv.count { it.stage == Stage.LOADED }
+    // On the way: in the van, or carried by hand by someone (the Store's onTheVan and carriedByHand).
+    val loaded = mv.count { it.onTheVan() }
+    val carried = mv.count { it.stage == Stage.LOADED && it.carriedByHand() }
     val inventoryOnly = data.move.kind == MoveKind.INVENTORY
     val van = data.vehicle()
     return when {
@@ -74,6 +76,8 @@ private fun nextStep(data: AppData, suggests: Boolean = false): NextStep {
             NextStep((if (suggests) "Suggest a room for every item in " else "Give every item a room in ") + data.move.destName.lowercase() + ".", "Plan destinations", "plan", Icons.Default.Map)
         data.uses(Part.MOVE_DAY) && loaded > 0 && delivered < mv.size ->
             NextStep("$loaded on the $van. Scan each thing as it comes off.", "Unload", "unload", Icons.Default.Download)
+        data.uses(Part.MOVE_DAY) && carried > 0 && delivered < mv.size ->
+            NextStep("${countOf(carried, "thing")} carried by hand. Tick each one off as it comes in.", "Unload", "unload", Icons.Default.Download)
         data.uses(Part.UNPACK) && mv.isNotEmpty() && delivered == mv.size && p.unpacked.done < p.unpacked.total ->
             NextStep("Everything has arrived. First-night boxes first.", "Unpack", "unpack", Icons.Default.Unarchive)
         mv.isNotEmpty() && delivered == mv.size ->
@@ -374,7 +378,7 @@ internal fun suggestionStrip(data: AppData, device: DeviceInfo, now: Long = Syst
     if (data.can(device, Action.APPROVE)) {
         val waiting = data.waitingProposals()
         if (waiting.isEmpty()) return null
-        val questions = waiting.count { it.kind == ProposalKind.QUESTION }
+        val questions = waiting.count { it.isQuestion }
         val suggestions = waiting.size - questions
         return SuggestionStrip(
             people = waiting.map { it.by }.distinct().take(3).map { data.person(it) },

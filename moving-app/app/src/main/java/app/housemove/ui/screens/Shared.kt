@@ -52,10 +52,12 @@ import java.io.File
  *
  *   Words        money, countOf, whoIs
  *   Counting     carriedBy, carriedCounts, InsideChip: what a container holds, counted one way
- *   Rules        mayOrSay, mayDelete: when the Store says no, its reason is always shown
- *                (guarded calls use the kit's okOrSay and orSay)
+ *   Rules        every change goes through a Store call that answers, and its refusal is shown
+ *                with the kit's okOrSay or orSay
+ *   Deleting     deleteRight, DeleteOrAsk, DeleteRequests: the Store's delete rule on every page;
+ *                who may not delete may ask an Organiser to
  *   Suggestions  Suggestion, ProposalReview, DeclinedNote, proposalText: shown on the thing they are
- *                about (the waiting tag itself, and its words, are the kit's WaitingTag)
+ *                about (the waiting tag itself, its words and its Withdraw are the kit's WaitingTag)
  *   Entry        AmountPicker: a sum of money; QuickAdd: a name, both without the keyboard
  *   Lists        ProgressCard, ListHeading, MenuChip, RoomFilterChip, ListFab, RowButton,
  *                DeleteButton, narrowScreen
@@ -277,25 +279,106 @@ internal fun PhotoCamera(hint: String, onPhoto: (File) -> Unit, onClose: () -> U
 }
 
 // ---- when the Store says no ------------------------------------------------------------
-// A refusal from a guarded call is shown with the kit's Outcome.okOrSay and Outcome.orSay (PeopleKit.kt).
+// Every change that may be refused goes through a Store call that answers (tryDelete, saveTask,
+// saveOrSuggest and the like); the refusal is shown with the kit's Outcome.okOrSay or orSay.
 
-/**
- * For the Store's plain saves, which cannot answer: ask first whether this phone's person
- * may do [action], and say why not. True when the save may go ahead.
- */
-internal fun Store.mayOrSay(context: Context, action: Action): Boolean {
-    val why = data.value.refusal(me, action) ?: return true
-    toast(context, why)
-    return false
+// ---- deleting, by the Store's rule -------------------------------------------------------------
+
+/** What this phone's person may do about deleting one thing, by the Store's rule ([mayDelete]). */
+internal sealed class DeleteRight {
+    /** They may delete it. */
+    object Delete : DeleteRight()
+
+    /** They may not, but may ask an Organiser to; [why] is the Store's reason they may not themselves. */
+    class Ask(val why: String) : DeleteRight()
+
+    /** They may do neither, so nothing about deleting it is offered. */
+    class Neither(val why: String) : DeleteRight()
 }
 
 /**
- * Whether deleting a record is offered. The Store has no rule for deleting; where several
- * people share the move, taking something off the list for everyone is not offered to a
- * Helper. With one person, or with nobody an Organiser, it is always offered.
+ * Whether this phone's person may delete [x], or ask an Organiser to. Anyone may ask about an
+ * item, container, room, photo or task; about a cost, whoever may suggest costs (it is then a
+ * suggested deletion). The rule itself is the Store's, never worked out here.
  */
 @Composable
-internal fun mayDelete(): Boolean = !appData().shared() || allowed(Action.SUGGEST)
+internal fun deleteRight(x: Rec): DeleteRight {
+    val data = appData()
+    val me = myPerson()
+    val why = data.mayDelete(me, x) ?: return DeleteRight.Delete
+    val mayAsk = me != null && !me.removed && when (x) {
+        is Expense -> allowed(Action.SUGGEST)
+        is Item, is Box, is Room, is Photo, is Task -> allowed(Action.ASK)
+        else -> false
+    }
+    return if (mayAsk) DeleteRight.Ask(why) else DeleteRight.Neither(why)
+}
+
+/** Requests still waiting to delete [targetId]: asked for, or a suggested change that deletes it. */
+internal fun AppData.deleteRequests(targetId: String): List<Proposal> =
+    liveProposals.filter { it.targetId == targetId && it.state == ProposalState.WAITING && it.asksToDelete }
+
+/**
+ * The last thing on the page of something that can be deleted, by the Store's rule:
+ *
+ *   may delete it          "Delete …" on red glass; it asks first, then [onDelete] deletes it
+ *                          through the Store (which says why if it refuses) and [onDeleted] follows
+ *   may only ask           the Store's reason, and "Ask to delete": one tap, or with a few words said
+ *                          (typed on a phone with no speech); gone once their request is waiting
+ *   may do neither         nothing
+ *
+ * A request already waiting is shown on the thing itself with [DeleteRequests].
+ */
+@Composable
+internal fun DeleteOrAsk(
+    x: Rec,
+    label: String,
+    confirmTitle: String,
+    confirmText: String,
+    modifier: Modifier = Modifier,
+    onDelete: () -> Boolean,
+    onDeleted: () -> Unit = {},
+) {
+    val store = LocalStore.current
+    val data = appData()
+    var confirm by remember { mutableStateOf(false) }
+    when (val right = deleteRight(x)) {
+        DeleteRight.Delete -> DeleteButton(label, onClick = { confirm = true }, modifier = modifier)
+        is DeleteRight.Ask -> if (data.deleteRequests(x.id).none { it.by == store.me?.id }) AskToDelete(x.id, right.why, modifier)
+        is DeleteRight.Neither -> Unit
+    }
+    if (confirm) ConfirmDialog(confirmTitle, confirmText, onConfirm = { if (onDelete()) onDeleted() }, onDismiss = { confirm = false })
+}
+
+/** "Ask to delete", with the Store's reason the person may not delete it themselves. */
+@Composable
+private fun AskToDelete(targetId: String, why: String, modifier: Modifier = Modifier) {
+    val store = LocalStore.current
+    val context = LocalContext.current
+    var typing by rememberSaveable(targetId) { mutableStateOf(false) }
+    fun ask(note: String = "") {
+        if (store.askToDelete(targetId, note).okOrSay(context)) toast(context, "Asked. An Organiser decides.")
+    }
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // The button says what can be done instead, so the reason stops before "You can ask…".
+        Hint(why.substringBefore(" You can "))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            RowButton("Ask to delete", onClick = { ask() }, Modifier.weight(1f), forward = false, icon = Icons.Default.DeleteOutline)
+            SayOrType("Why should it go?", "Ask to delete it, with a spoken note", "Ask to delete it, with a typed note", typing, onType = { typing = !typing }) { ask(it) }
+        }
+        if (typing) TypedLine("Why should it go?", "Ask") { ask(it) }
+    }
+}
+
+/**
+ * Requests to delete [targetId] that are waiting, on the thing itself: an Organiser approves
+ * (it is deleted) or declines them here; whoever asked sees that it waits, and can withdraw it.
+ */
+@Composable
+internal fun DeleteRequests(targetId: String, modifier: Modifier = Modifier) {
+    val data = appData()
+    data.deleteRequests(targetId).forEach { p -> Suggestion(p, data, modifier, what = null) }
+}
 
 // ---- buttons ---------------------------------------------------------------------------
 
@@ -588,20 +671,24 @@ internal fun RoomFilterChip(rooms: List<Room>, selectedId: String?, onPick: (Str
 
 // ---- suggestions, on the thing they are about --------------------------------------------
 
-/** One-tap reasons for saying no, the same ones the Approvals inbox offers for each kind of suggestion. */
-internal fun reasonsToDecline(kind: ProposalKind): List<String> = when (kind) {
-    ProposalKind.ITEM_DECISION -> listOf("We're keeping it", "Not yet", "Different price", "Let's talk first")
-    ProposalKind.ITEM_ROOM -> listOf("Won't fit there", "Not yet", "Let's talk first")
-    ProposalKind.COST -> listOf("Too expensive", "Not needed", "Not yet", "Let's talk first")
-    ProposalKind.TASK -> listOf("Not needed", "Already planned", "Let's talk first")
-    ProposalKind.QUESTION -> listOf("Not sure yet", "Ask me in person")
+/** One-tap reasons for saying no to a suggestion, a question or a request, the same on its target and in the Approvals inbox. */
+internal fun reasonsToDecline(p: Proposal): List<String> = when {
+    p.asksToDelete -> listOf("We still need it", "Not yet", "Let's talk first")
+    else -> when (p.kind) {
+        ProposalKind.ITEM_DECISION -> listOf("We're keeping it", "Not yet", "Different price", "Let's talk first")
+        ProposalKind.ITEM_ROOM -> listOf("Won't fit there", "Not yet", "Let's talk first")
+        ProposalKind.COST -> listOf("Too expensive", "Not needed", "Not yet", "Let's talk first")
+        ProposalKind.TASK -> listOf("Not needed", "Already planned", "Let's talk first")
+        ProposalKind.QUESTION -> listOf("Not sure yet", "Ask me in person")
+    }
 }
 
-/** What a suggestion asks for, short enough for a callout on the thing itself: "Sell for £ 80", "To Kitchen". */
-internal fun AppData.proposalText(p: Proposal): String = when (p.kind) {
-    ProposalKind.ITEM_DECISION -> (p.disposition ?: Disposition.UNDECIDED).label + (p.price?.let { " for " + money(move.currency, it) } ?: "")
-    ProposalKind.ITEM_ROOM -> "To " + (room(p.roomId)?.name ?: "no room")
-    ProposalKind.QUESTION -> p.note.ifBlank { "What should happen to it?" }
+/** What a suggestion asks for, short enough for a callout on the thing itself: "Sell for £ 80", "To Kitchen", "Delete it". */
+internal fun AppData.proposalText(p: Proposal): String = when {
+    p.asksToDelete -> "Delete it"
+    p.kind == ProposalKind.ITEM_DECISION -> (p.disposition ?: Disposition.UNDECIDED).label + (p.price?.let { " for " + money(move.currency, it) } ?: "")
+    p.kind == ProposalKind.ITEM_ROOM -> "To " + (room(p.roomId)?.name ?: "no room")
+    p.kind == ProposalKind.QUESTION -> p.note.ifBlank { "What should happen to it?" }
     else -> describe(p)
 }
 
@@ -615,7 +702,8 @@ internal fun AppData.proposalText(p: Proposal): String = when (p.kind) {
 internal fun ProposalReview(p: Proposal, data: AppData, modifier: Modifier = Modifier, what: String? = data.proposalText(p)) {
     val store = LocalStore.current
     val context = LocalContext.current
-    val question = p.kind == ProposalKind.QUESTION
+    // A question is answered by deciding; a request to delete is approved or declined like any suggestion.
+    val question = p.isQuestion
     val (title, value) = waitingLines(p, data, store.me?.id, what)
     var declining by rememberSaveable(p.id) { mutableStateOf(false) }
     GlassCard(modifier.fillMaxWidth(), tone = GlassTone.Amber, shape = RoundedCornerShape(22.dp)) {
@@ -653,7 +741,7 @@ internal fun ProposalReview(p: Proposal, data: AppData, modifier: Modifier = Mod
                     SayOrType("Why not?", "Say why not", "Type why not", typing, onType = { typing = !typing }) { why -> store.decline(p.id, why).okOrSay(context) }
                 }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    reasonsToDecline(p.kind).forEach { reason -> GlassChip(reason, onClick = { store.decline(p.id, reason).okOrSay(context) }) }
+                    reasonsToDecline(p).forEach { reason -> GlassChip(reason, onClick = { store.decline(p.id, reason).okOrSay(context) }) }
                     GlassChip("No reason", onClick = { store.decline(p.id).okOrSay(context) })
                     GlassChip("Keep it waiting", icon = Icons.Default.Undo, tone = GlassTone.Amber, onClick = { declining = false })
                 }

@@ -289,12 +289,13 @@ val JOURNEY: List<JourneyPhase> = listOf(
             JourneyStep(
                 "Reconcile", Icons.Default.FactCheck, "reconcile", part = Part.MOVE_DAY,
                 status = { d, _ ->
-                    val onVan = d.movables().count { it.stage == Stage.LOADED }
+                    // What someone carries by hand is with them, not on the van.
+                    val onVan = d.movables().count { it.onTheVan() }
                     if (onVan > 0) "$onVan still on the ${d.vehicle()}" else "Nothing on the ${d.vehicle()}"
                 },
                 alert = { d ->
                     val mv = d.movables()
-                    mv.any { it.stage == Stage.LOADED } && mv.any { it.stage == Stage.DELIVERED || it.stage == Stage.DONE }
+                    mv.any { it.onTheVan() } && mv.any { it.stage == Stage.DELIVERED || it.stage == Stage.DONE }
                 },
             ),
         ),

@@ -14,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -49,6 +50,8 @@ fun ScanInDialog(box: Box, onClose: () -> Unit) {
     val device = deviceInfo()
     val scope = rememberCoroutineScope()
     val entries = data.entriesOf(box.id)
+    val me = myPerson()
+    val context = LocalContext.current
     var note by remember { mutableStateOf(ScanNote("Point the camera at the barcode on a book or product")) }
     var typed by remember { mutableStateOf("") }
     // The keyboard is the last resort: its field only shows once it is asked for.
@@ -200,7 +203,10 @@ fun ScanInDialog(box: Box, onClose: () -> Unit) {
                                         if (sub.isNotBlank()) Hint(sub)
                                     }
                                 }
-                                GlassOrb(Icons.Default.Close, "Remove ${e.title.ifBlank { e.code }}", size = 36.dp, onClick = { store.delete(e) })
+                                // Part of the work: anyone working on the move may take it out, as the Store's rule says.
+                                if (data.canDelete(me, e)) {
+                                    GlassOrb(Icons.Default.Close, "Remove ${e.title.ifBlank { e.code }}", size = 36.dp, onClick = { store.tryDelete(e).okOrSay(context) })
+                                }
                             }
                         }
                     }

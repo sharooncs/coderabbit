@@ -14,7 +14,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.FrontHand
+import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lightbulb
@@ -40,6 +42,7 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.semantics.contentDescription
@@ -54,6 +57,7 @@ import app.housemove.data.Outcome
 import app.housemove.data.Person
 import app.housemove.data.Proposal
 import app.housemove.data.ProposalKind
+import app.housemove.data.ProposalState
 import app.housemove.data.Role
 import app.housemove.data.can
 import app.housemove.data.me
@@ -68,8 +72,10 @@ import app.housemove.sync.WifiSync
  *   PersonOrb                  someone's initial in a coloured ball (white for this phone's person)
  *   RoleChip                   a role as a small pill
  *   PersonPill                 a wide pill about one person: who this phone is, and the way to People
- *   WaitingTag                 the amber "Waiting for approval" callout for a suggestion's target, full size or compact
+ *   WaitingTag                 the amber "Waiting for approval" callout for a suggestion's target, full size or compact,
+ *                              with "Withdraw" for the person who made it
  *   waitingLines               the words it says, which a review card says too: one wording everywhere
+ *   Proposal.isQuestion, .asksToDelete   a question to answer by deciding, and a request to delete something
  *   allowed(), myRole(), myPerson()  what the Store's rules say, re-read whenever people or roles change
  *   AppData.shared()           more than one person on the move, so roles are worth showing
  *   Outcome.orSay(context)     shows why the Store refused something, and hands back what it saved otherwise
@@ -130,10 +136,11 @@ fun <T> Outcome<T>.okOrSay(context: Context): Boolean {
 }
 
 /**
- * The addresses another phone can reach this one at, for the code it shows.
+ * The addresses another phone can reach this one at, for the code it shows: the same ones
+ * [WifiSync.networkProblem] asks about, so none means no Wi-Fi ([WifiSync.NO_NETWORK]).
  * Tests provide "127.0.0.1" so two stores can meet on one machine.
  */
-val LocalSyncAddresses = staticCompositionLocalOf<() -> List<String>> { { WifiSync.localAddresses() } }
+val LocalSyncAddresses = staticCompositionLocalOf<() -> List<String>> { { WifiSync.addresses() } }
 
 /** What an invite's QR picture says, for tests that stand in for the camera. Screen readers do not read it. */
 val InviteText = SemanticsPropertyKey<String>("InviteText")
@@ -244,10 +251,23 @@ fun PersonPill(
 }
 
 /**
- * The two lines a waiting suggestion or question is announced with, in the same words
- * wherever it is shown (on its target, in a review card): that it waits, and who wants what.
+ * A question about what should happen to an item, answered by deciding it. A request to
+ * delete something is made as a question too ([Proposal.deletes]), but it is approved or
+ * declined like a suggestion, so it is not one of these.
+ */
+val Proposal.isQuestion: Boolean get() = kind == ProposalKind.QUESTION && !deletes
+
+/** Asks for something to be deleted: a request to delete it ([Store.askToDelete]), or a suggested change that deletes a cost or a task. */
+val Proposal.asksToDelete: Boolean
+    get() = deletes || (kind == ProposalKind.COST && expense?.deleted == true) || (kind == ProposalKind.TASK && task?.deleted == true)
+
+/**
+ * The two lines a waiting suggestion, question or request is announced with, in the same
+ * words wherever it is shown (on its target, in a review card): that it waits, and who
+ * wants what.
  *
  *   "Waiting for approval"   "Suggested by Dee", or with [what] "Dee: Sell for £ 80"
+ *   "Waiting for approval"   "Hal asked to delete it", "Dee suggested deleting it"
  *   "Waiting for an answer"  "Hal asked: one leg is broken"
  *
  * The person this phone belongs to ([meId]) is "you".
@@ -255,22 +275,34 @@ fun PersonPill(
 fun waitingLines(p: Proposal, data: AppData, meId: String?, what: String?): Pair<String, String> {
     val who = if (meId != null && p.by == meId) "you" else data.personName(p.by).ifBlank { "someone" }
     val name = who.replaceFirstChar { it.uppercase() }
-    return if (p.kind == ProposalKind.QUESTION) "Waiting for an answer" to (name + " asked" + if (p.note.isBlank()) "" else ": " + p.note)
-    else "Waiting for approval" to if (what.isNullOrBlank()) "Suggested by $who" else "$name: $what"
+    return when {
+        p.deletes -> "Waiting for approval" to "$name asked to delete it"
+        p.asksToDelete -> "Waiting for approval" to "$name suggested deleting it"
+        p.isQuestion -> "Waiting for an answer" to (name + " asked" + if (p.note.isBlank()) "" else ": " + p.note)
+        else -> "Waiting for approval" to if (what.isNullOrBlank()) "Suggested by $who" else "$name: $what"
+    }
 }
 
-/** The picture of something waiting: a question mark for a question, an hourglass for a suggestion. */
-fun Proposal.waitingIcon(): ImageVector = if (kind == ProposalKind.QUESTION) Icons.Default.QuestionMark else Icons.Default.HourglassTop
+/** The picture of something waiting: a question mark for a question, a bin for a request to delete, an hourglass for a suggestion. */
+fun Proposal.waitingIcon(): ImageVector = when {
+    asksToDelete -> Icons.Default.DeleteOutline
+    isQuestion -> Icons.Default.QuestionMark
+    else -> Icons.Default.HourglassTop
+}
 
 /**
- * The amber callout on anything with a suggestion or question waiting, in the words of
- * [waitingLines]. [what] is what it would change, when the row it sits on does not already
- * say so. [compact] is the same callout drawn smaller, for a card in a grid or a row of a list.
+ * The amber callout on anything with a suggestion, question or request waiting, in the
+ * words of [waitingLines]. [what] is what it would change, when the row it sits on does
+ * not already say so. The person who made it can take it back here with "Withdraw".
+ * [compact] is the same callout drawn smaller, for a card in a grid or a row of a list;
+ * it leaves Withdraw to the page the card opens.
  */
 @Composable
 fun WaitingTag(proposal: Proposal, modifier: Modifier = Modifier, compact: Boolean = false, what: String? = null) {
-    val (title, value) = waitingLines(proposal, appData(), deviceInfo().personId, what)
+    val me = deviceInfo().personId
+    val (title, value) = waitingLines(proposal, appData(), me, what)
     val icon = proposal.waitingIcon()
+    val mine = me.isNotEmpty() && proposal.by == me && proposal.state == ProposalState.WAITING
     if (compact) {
         // In a narrow card the hourglass and one word say that it waits; who wants what gets the room.
         Row(
@@ -288,19 +320,28 @@ fun WaitingTag(proposal: Proposal, modifier: Modifier = Modifier, compact: Boole
         }
         return
     }
+    val store = LocalStore.current
+    val context = LocalContext.current
     Row(
-        modifier.glass(RoundedCornerShape(24.dp), shadow = 8.dp).padding(start = 6.dp, top = 6.dp, bottom = 6.dp, end = 16.dp),
+        modifier.glass(RoundedCornerShape(24.dp), shadow = 8.dp).padding(start = 6.dp, top = 6.dp, bottom = 6.dp, end = if (mine) 6.dp else 16.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Box(Modifier.size(36.dp).drawBehind { drawOrb(OrbKind.Amber, ring = false) }, contentAlignment = Alignment.Center) {
             Icon(icon, contentDescription = null, tint = Night.OnAmber, modifier = Modifier.size(18.dp))
         }
-        Column(Modifier.weight(1f, fill = false)) {
+        // With Withdraw at its end the tag takes the width, so the button sits at the far side.
+        Column(Modifier.weight(1f, fill = mine)) {
             Text(title, color = Night.AmberPale, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(value, color = Night.Text, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            if (proposal.kind != ProposalKind.QUESTION && proposal.note.isNotBlank()) {
+            if (!proposal.isQuestion && proposal.note.isNotBlank()) {
                 Text("“${proposal.note}”", style = MaterialTheme.typography.bodySmall, color = Night.TextSoft)
             }
+        }
+        if (mine) {
+            PillButton(
+                "Withdraw", primary = false, icon = Icons.Default.Undo,
+                onClick = { if (store.withdraw(proposal.id).okOrSay(context)) toast(context, "Withdrawn") },
+            )
         }
     }
 }

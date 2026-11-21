@@ -624,10 +624,11 @@ class ContainerFlowsTest {
         assertTrue(data.box(b.id)!!.sealed)
         // Nothing was refused, and nothing on the way mentioned roles.
         for (word in listOf("Helper", "Organiser", "Decider", "Only an")) dontSee(word)
-        // One thing is left out for him, without a word about why: taking the box off everyone's list.
+        // He added the box, but Asha's camera is in it now: taking it off everyone's list is an Organiser's, and he may ask.
         tap("More")
         see("Change label")
         dontSee("Delete this box")
+        see("Ask to delete")
         go("boxes"); for (word in listOf("Helper", "Organiser", "Decider")) dontSee(word)
     }
 

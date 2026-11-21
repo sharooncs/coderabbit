@@ -115,6 +115,18 @@ fun SyncScreen(code: String? = null) {
             }
 
             val h = host
+            // With no Wi-Fi there is no code to show or scan: said first, in the sync's own words, until it is back.
+            var looked by remember { mutableIntStateOf(0) }
+            val problem = remember(looked, h) { if (addressesNow().isEmpty()) WifiSync.NO_NETWORK else null }
+            if (h == null && problem != null) {
+                Section(tone = GlassTone.Red) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Icon(Icons.Default.WifiOff, contentDescription = null, tint = Night.RedPale)
+                        Text(problem, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    }
+                    GlassChip("Check again", icon = Icons.Default.Refresh, onClick = { looked++ })
+                }
+            }
             if (h == null) {
                 // Two phones, changes going both ways: the picture is the explanation.
                 Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
@@ -129,13 +141,13 @@ fun SyncScreen(code: String? = null) {
                             // Only a move with a single person lets an unknown phone in by this code; see Joiner.
                             host = WifiSync.host(store, letNewPhonesIn = store.isAlone()) { r ->
                                 scope.launch {
-                                    if (r.ok) store.setDevice { it.copy(lastSyncAt = System.currentTimeMillis()) }
+                                    if (r.listsSynced()) store.setDevice { it.copy(lastSyncAt = System.currentTimeMillis()) }
                                     say(syncReport(r.copy(joinedAs = null), store))
                                 }
                             }
                             say(null)
-                        } catch (e: Exception) {
-                            say(SyncReport(false, "Could not start", e.message ?: ""))
+                        } catch (_: Exception) {
+                            say(SyncReport(false, "Could not start", "This phone could not start showing its code. Try again, or restart HouseMove."))
                         }
                     },
                 )
@@ -143,7 +155,7 @@ fun SyncScreen(code: String? = null) {
             } else {
                 val addresses = remember(h) { addressesNow() }
                 if (addresses.isEmpty()) {
-                    Section(tone = GlassTone.Red) { Text("This phone is not on a Wi-Fi network or hotspot. Connect, then try again.") }
+                    Section(tone = GlassTone.Red) { Text(WifiSync.NO_NETWORK) }
                 } else {
                     val code = remember(h) { h.invite(addresses).encode() }
                     val qr = remember(code) { qrBitmap(code, 640).asImageBitmap() }

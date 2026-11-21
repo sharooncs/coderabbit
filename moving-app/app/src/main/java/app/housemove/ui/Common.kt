@@ -651,6 +651,12 @@ fun stageText(stage: Stage, isBox: Boolean, vehicle: String = "van"): String = w
     Stage.DONE -> if (isBox) "Unpacked" else "In place"
 }
 
+/**
+ * Where something is now, in words: as [stageText] says it, except "Carried by hand" for what
+ * is on its way with someone rather than on the van (the Store's [statusOf]).
+ */
+fun AppData.statusText(m: Movable): String = statusOf(m).let { if (it == m.stage.label) stageText(m.stage, m.isBox, vehicle()) else it }
+
 /** One row for a box or item, with its destination colour, where it is, and warning flags. */
 @Composable
 fun MovableRow(
@@ -684,7 +690,7 @@ fun MovableRow(
             Text(m.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
-                    "→ " + (dest?.name ?: "no room") + " · " + stageText(m.stage, m.isBox, data.vehicle()),
+                    "→ " + (dest?.name ?: "no room") + " · " + data.statusText(m),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,

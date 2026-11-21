@@ -106,9 +106,9 @@ fun UnloadScreen() {
     val filter = tripFilter?.takeIf { id -> trips.any { it.id == id } }
     val order = compareBy<Movable>({ it.priority.ordinal }, { data.room(it.destRoomId)?.name ?: "~" }, { it.title })
     // What travels with the person is not on the van: it is listed on its own, to be ticked off as it comes in.
-    val stillOn = all.count { it.stage == Stage.LOADED && !it.byHand() }
-    val onVan = all.filter { it.stage == Stage.LOADED && !it.byHand() && (filter == null || it.tripId == filter) }.sortedWith(order)
-    val withMe = if (filter != null) emptyList() else all.filter { it.stage == Stage.LOADED && it.byHand() }.sortedWith(order)
+    val stillOn = all.count { it.onTheVan() }
+    val onVan = all.filter { it.onTheVan() && (filter == null || it.tripId == filter) }.sortedWith(order)
+    val withMe = if (filter != null) emptyList() else all.filter { it.stage == Stage.LOADED && it.carriedByHand() }.sortedWith(order)
     val shown = arrival?.let { a -> if (a.isBox) data.box(a.id)?.toMovable() else data.item(a.id)?.toMovable() }
 
     Screen("Unload") {

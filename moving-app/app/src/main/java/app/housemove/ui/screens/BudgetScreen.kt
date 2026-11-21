@@ -112,6 +112,7 @@ private fun mdCostTitle(e: Expense, vehicle: String): String = e.title.ifBlank {
 
 /** What a suggested change to a cost would do, in a few words. */
 private fun mdCostChange(now: Expense, p: Expense, currency: String, vehicle: String): String {
+    if (p.deleted) return "Delete it"
     val parts = ArrayList<String>()
     if (p.amount != now.amount) parts += money(currency, now.amount) + " → " + money(currency, p.amount)
     if (p.category != now.category) parts += mdCategoryLabel(p.category, vehicle)
@@ -157,7 +158,7 @@ private fun MdSupplies(modifier: Modifier) {
     var typing by rememberSaveable { mutableStateOf(false) }
     var newName by rememberSaveable { mutableStateOf("") }
     var removing by remember { mutableStateOf<Supply?>(null) }
-    val canDelete = mayDelete()
+    val me = myPerson()
     fun add(said: String) {
         val name = said.trim().replaceFirstChar { it.uppercase() }
         if (name.isNotEmpty()) store.put(Supply(newId(), name, 1))
@@ -205,7 +206,7 @@ private fun MdSupplies(modifier: Modifier) {
                         modifier = Modifier.weight(1f),
                     )
                     if (s.have < s.need) IconFlag(Icons.Default.ShoppingCart, "${s.need - s.have} to buy")
-                    if (canDelete) GlassOrb(Icons.Default.Delete, "Remove ${s.name}", size = 36.dp, onClick = { removing = s })
+                    if (data.canDelete(me, s)) GlassOrb(Icons.Default.Delete, "Remove ${s.name}", size = 36.dp, onClick = { removing = s })
                     else Spacer(Modifier.width(10.dp))
                 }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -491,7 +492,6 @@ private fun MdCostEditor(existing: Expense?, onClose: () -> Unit) {
     var planned by rememberSaveable { mutableStateOf(existing?.planned ?: false) }
     var title by rememberSaveable { mutableStateOf(existing?.title ?: "") }
     var day by rememberSaveable { mutableStateOf(existing?.day ?: today()) }
-    var confirmDelete by remember { mutableStateOf(false) }
     // Paying and the receipt are for an Organiser, or the Decider whose suggestion for this cost was approved.
     val mayPay = if (existing != null) data.mayPay(store.me, existing) else mayPlan
 
@@ -501,25 +501,17 @@ private fun MdCostEditor(existing: Expense?, onClose: () -> Unit) {
         onClose()
     }
 
+    /** Saved for an Organiser, suggested for a Decider, through the Store's guarded call, which says why when it refuses. */
     fun save() {
         if (existing == null) {
-            val e = Expense(id = id, title = title.trim(), amount = amount, category = category, day = day, planned = planned)
-            if (!mayPlan) {
-                if (store.suggestCost(e.copy(planned = true)).okOrSay(context)) close(keepPhotos = true)
-            } else if (store.mayOrSay(context, Action.DECIDE)) {
-                store.put(e)
-                close(keepPhotos = true)
-            }
+            // A suggested cost waits as not paid yet: paying it comes once it is approved.
+            val e = Expense(id = id, title = title.trim(), amount = amount, category = category, day = day, planned = planned || !mayPlan)
+            if (store.saveOrSuggest(e).okOrSay(context)) close(keepPhotos = true)
         } else {
             val now = store.data.value.expense(id) ?: existing
             val next = now.copy(title = title.trim(), amount = amount, category = category, day = day)
             if (next == now) onClose()
-            else if (!mayPlan) {
-                if (store.suggestCost(next).okOrSay(context)) onClose()
-            } else if (store.mayOrSay(context, Action.DECIDE)) {
-                store.put(next)
-                onClose()
-            }
+            else if (store.saveOrSuggest(next).okOrSay(context)) onClose()
         }
     }
 
@@ -588,21 +580,17 @@ private fun MdCostEditor(existing: Expense?, onClose: () -> Unit) {
             },
             onClick = { save() }, primary = !untouched, enabled = amount > 0.0,
         )
-        if (existing != null && mayPlan) {
-            DeleteButton("Delete this cost", onClick = { confirmDelete = true }, modifier = Modifier.align(Alignment.CenterHorizontally))
-        }
+        // Deleting it, for an Organiser; for a Decider, suggesting that it is deleted.
+        if (existing != null) DeleteOrAsk(
+            existing, "Delete this cost", "Delete this cost?", mdCostTitle(existing, vehicle) + " · " + money(currency, existing.amount),
+            Modifier.align(Alignment.CenterHorizontally),
+            onDelete = {
+                store.tryDelete(existing).okOrSay(context).also { done ->
+                    // Its receipts go with it, once it is gone.
+                    if (done) store.data.value.photosOf(existing.id).forEach { store.delete(it) }
+                }
+            },
+            onDeleted = onClose,
+        )
     }
-
-    if (confirmDelete && existing != null) ConfirmDialog(
-        title = "Delete this cost?",
-        text = mdCostTitle(existing, vehicle) + " · " + money(currency, existing.amount),
-        onConfirm = {
-            if (store.mayOrSay(context, Action.DECIDE)) {
-                store.data.value.photosOf(existing.id).forEach { store.delete(it) }
-                store.delete(existing)
-                onClose()
-            }
-        },
-        onDismiss = { confirmDelete = false },
-    )
 }

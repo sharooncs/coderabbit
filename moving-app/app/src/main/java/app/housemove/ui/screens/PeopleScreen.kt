@@ -346,14 +346,14 @@ fun PersonScreen(id: String, showInvite: Boolean = false) {
         invite = null
         val addresses = addressesNow()
         if (addresses.isEmpty()) {
-            problem = "This phone is not on a Wi-Fi network or hotspot. Connect, then try again."
+            problem = WifiSync.NO_NETWORK
             return
         }
         try {
             // Nobody gets in through this screen except with the invite made here.
             val h = host ?: WifiSync.host(store, letNewPhonesIn = false) { r ->
                 scope.launch {
-                    if (r.ok) store.setDevice { it.copy(lastSyncAt = System.currentTimeMillis()) }
+                    if (r.listsSynced()) store.setDevice { it.copy(lastSyncAt = System.currentTimeMillis()) }
                     if (r.ok && r.joinedAs?.id == id) {
                         joined = true
                         invite = null
@@ -364,8 +364,8 @@ fun PersonScreen(id: String, showInvite: Boolean = false) {
                 is Outcome.Ok -> invite = ShownInvite(made.value.encode(), LocalTime.now().plusMinutes(WifiSync.INVITE_MINUTES.toLong()).format(CLOCK))
                 is Outcome.Refused -> problem = made.reason
             }
-        } catch (e: Exception) {
-            problem = "Could not start: ${e.message}"
+        } catch (_: Exception) {
+            problem = "This phone could not start showing the invite. Try again, or restart HouseMove."
         }
     }
 

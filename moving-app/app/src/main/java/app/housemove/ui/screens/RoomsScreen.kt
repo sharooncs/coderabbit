@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -103,7 +104,9 @@ private val DOOR_WIDTHS = listOf(60.0, 70.0, 76.0, 80.0, 90.0)
 @Composable
 private fun RoomDialog(room: Room, onClose: () -> Unit) {
     val store = LocalStore.current
+    val context = LocalContext.current
     val data = appData()
+    val right = deleteRight(room)
     var confirmDelete by remember { mutableStateOf(false) }
     val inUse = data.liveItems.count { it.originRoomId == room.id || it.destRoomId == room.id } +
         data.liveBoxes.count { it.originRoomId == room.id || it.destRoomId == room.id }
@@ -112,11 +115,13 @@ private fun RoomDialog(room: Room, onClose: () -> Unit) {
         onDismiss = onClose,
         icon = Pic.Room,
         buttons = {
-            PillButton("Delete room", onClick = { confirmDelete = true }, icon = Icons.Default.Delete, primary = false, tone = GlassTone.Red)
+            // Deleting is by the Store's rule: whoever may not delete it may ask an Organiser to, at the end of the dialog.
+            if (right is DeleteRight.Delete) PillButton("Delete room", onClick = { confirmDelete = true }, icon = Icons.Default.Delete, primary = false, tone = GlassTone.Red)
             PillButton("Done", onClick = onClose)
         },
     ) {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            DeleteRequests(room.id)
             TextInput(room.name, { v -> store.put(room.copy(name = v)) }, "Name", key = room.id)
             if (room.home == Home.ORIGIN) {
                 Text("Most things from here go to", style = MaterialTheme.typography.labelLarge)
@@ -166,12 +171,13 @@ private fun RoomDialog(room: Room, onClose: () -> Unit) {
                 }
                 Hint("Selected: ${roomColor(room.color).name}. Matching coloured tape on boxes makes unloading faster.")
             }
+            if (right is DeleteRight.Ask) DeleteOrAsk(room, "Delete room", "", "", onDelete = { false })
         }
     }
     if (confirmDelete) ConfirmDialog(
         title = "Delete ${room.name}?",
         text = if (inUse > 0) "$inUse item(s) or box(es) use this room. They will be left with no room." else "This room is not used by anything.",
-        onConfirm = { store.delete(room); onClose() },
+        onConfirm = { if (store.tryDelete(room).okOrSay(context)) onClose() },
         onDismiss = { confirmDelete = false },
     )
 }
