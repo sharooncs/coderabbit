@@ -24,8 +24,14 @@ import java.util.concurrent.TimeUnit
  * except at the fixed points of a sync that [Wire] offers. So the same seed
  * gives the same run, down to the bytes on the wire, and a failure can be
  * looked at again.
+ *
+ * With [loose] set the phones are let off that lead: each goes on doing things
+ * on its own thread while its syncs run on others, as a person does who keeps
+ * packing while the phone syncs. That finds what only real overlap finds, at
+ * the price that such a run cannot be repeated exactly; the checks of each
+ * single merge, which need to know exactly what went in, are left out.
  */
-internal class Simulation(val seed: Long, private val root: File, private val rounds: Int = 0) {
+internal class Simulation(val seed: Long, private val root: File, private val rounds: Int = 0, val loose: Boolean = false) {
 
     /** Something that should never happen. [ids] are the records it is about, to pick the trace by. */
     class Violation(val invariant: String, val message: String, val ids: Set<String>)
@@ -34,7 +40,14 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
         val rnd = Random(sim.seed * 1_000_003 + index * 7919L + 17)
         private val ids = SimIds(sim.seed * 104_729 + index)
         val ui: ExecutorService = Executors.newSingleThreadExecutor { r -> Thread({ SimIds.local.set(ids); r.run() }, "ui-$tag").apply { isDaemon = true } }
-        val net: ExecutorService = Executors.newSingleThreadExecutor { r -> Thread(r, "net-$tag").apply { isDaemon = true } }
+        val net: ExecutorService = Executors.newSingleThreadExecutor { r -> Thread({ SimIds.local.set(ids); r.run() }, "net-$tag").apply { isDaemon = true } }
+
+        /** Has this phone ever been more than a Helper's phone, under whichever person? Then it may hold what Helpers are not sent. */
+        @Volatile
+        var sawMore = false
+
+        /** Every person this phone has been. It gets a new one when the move turns out never to have had the one it joined as. */
+        val selves = HashSet<String>()
         val dir = File(sim.root, tag).apply { mkdirs() }
         val clock: () -> Long = { sim.time + offset }
         lateinit var store: Store
@@ -45,28 +58,31 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
         /** Codes [Store.nextHandCode] gave this phone. */
         val handCodes = ArrayList<String>()
 
-        /** The newest version of each record this phone has ever held. */
-        val held = HashMap<String, Long>()
+        /** Every version (by its stamp) of each record this phone has ever held. */
+        val held = HashMap<String, HashSet<Long>>()
         var labelsSeen = 0
         var backup: ByteArray? = null
 
         /** An edit opened on a screen earlier and not saved yet. */
         var pending: (() -> String)? = null
         private var said = 0
+        private val lock = Any()
 
         val data: AppData get() = store.data.value
         val personId: String get() = store.device.value.personId
 
         fun <T> onUi(f: () -> T): T = ui.submit(Callable { f() }).get(120, TimeUnit.SECONDS)
 
-        fun say(text: String) {
+        fun say(text: String) = synchronized(lock) {
             sim.trace(this, said++, text)
         }
 
-        fun hold(d: AppData = data) {
-            for ((k, r) in d.records()) if ((held[k] ?: -1) < r.updatedAt) held[k] = r.updatedAt
-            if ((held[MOVE] ?: -1) < d.move.updatedAt) held[MOVE] = d.move.updatedAt
+        fun hold(d: AppData = data) = synchronized(lock) {
+            for ((k, r) in d.records()) held.getOrPut(k) { HashSet() }.add(r.updatedAt)
+            held.getOrPut(MOVE) { HashSet() }.add(d.move.updatedAt)
             if (d.move.labelsPrinted > labelsSeen) labelsSeen = d.move.labelsPrinted
+            if (d.person(personId)?.role.let { it != null && it != Role.HELPER }) sawMore = true
+            selves += personId
         }
 
         /** One random action, with everything it wrote noted down. Runs on this phone's own thread. */
@@ -159,15 +175,27 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
         return picked.takeLast(last).map { "r%02d %s %s".format(it.round, phones[it.phone].tag, it.text.removePrefix("!")) }
     }
 
+    /** The last things one phone did or was told, for a failure that is about that phone. */
+    fun lately(p: Phone, last: Int = 8): String =
+        synchronized(lines) { lines.filter { it.phone == p.index }.sortedWith(compareBy({ it.round }, { it.n })) }.takeLast(last)
+            .joinToString("") { "\n      r%02d %s %s".format(it.round, p.tag, it.text.removePrefix("!").take(230)) }
+
     // ---- the run -----------------------------------------------------------------------
 
     fun run(): Simulation {
         try {
-            setUp()
+            var t0 = System.nanoTime()
+            fun lap(what: String) {
+                val t = System.nanoTime()
+                stats.millis.merge(what, (t - t0) / 1_000_000, Long::plus)
+                t0 = t
+            }
+            setUp(); lap("setting up")
             val n = if (rounds > 0) rounds else 36 + rnd.nextInt(20)
             repeat(n) { oneRound() }
-            settle()
-            SimChecks(this).all()
+            lap("the rounds")
+            settle(); lap("syncing until quiet")
+            SimChecks(this).all(); lap("checking")
         } catch (e: Throwable) {
             broke(RUN, "the run stopped: $e\n" + e.stackTrace.take(8).joinToString("\n") { "    at $it" })
         } finally {
@@ -207,7 +235,8 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
                 p.store = Store(p.dir, p.clock)
                 p.hands = Hands(p)
             }
-            p.host = WifiSync.host(p.store, p.clock) { p.heard.add(it) }
+            // Started from the phone's own thread, so that the threads that serve its syncs take their ids from the same seeded source.
+            p.host = p.onUi { WifiSync.host(p.store, p.clock) { p.heard.add(it) } }
             phones += p
         }
         val o1 = phones[0]
@@ -287,9 +316,9 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
             val retry = cut != null && rnd.nextInt(4) != 0
             jobs += pool.submit { sync(h, j, cut, busy, Random(plan), retry) }
         }
-        for (p in free) {
+        for (p in if (loose) phones else free) {
             if (rnd.nextInt(5) == 0) continue
-            val n = 1 + rnd.nextInt(4)
+            val n = 1 + rnd.nextInt(if (loose) 8 else 4)
             jobs += p.ui.submit { repeat(n) { p.act() } }
         }
         for (j in jobs) j.get(180, TimeUnit.SECONDS)
@@ -347,7 +376,7 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
         x.hostAtStart = h.data
         x.joinerAtStart = j.data
         fun meanwhile(p: Phone, where: String) {
-            if (!busy || plan.nextInt(100) >= 30) return
+            if (loose || !busy || plan.nextInt(100) >= 30) return
             x.quiet = false
             synchronized(stats) { stats.midSync++ }
             p.onUi { repeat(1 + plan.nextInt(2)) { p.act(" [while syncing with ${(if (p === h) j else h).tag}: $where]") } }
@@ -379,7 +408,9 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
             if (ok) stats.syncsOk++
             for (e in (listOf(r.error) + hosted.map { it.error }).filterNotNull().toSet()) stats.syncErrors.merge(SimStats.rule(e), 1, Int::plus)
         }
-        SimChecks(this).exchange(x, wire)
+        val c0 = System.nanoTime()
+        if (!loose) SimChecks(this).exchange(x, wire, ok)
+        synchronized(stats) { stats.millis.merge("(of which checking each merge)", (System.nanoTime() - c0) / 1_000_000, Long::plus) }
         // Joining stamps nothing in an ordinary sync, but note any new stamp all the same.
         wrote(x.hostAtStart!!, h.data, onlyNewStamps = true)
         wrote(x.joinerAtStart!!, j.data, onlyNewStamps = true)
@@ -408,10 +439,13 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
 /** Seeded ids, one source per phone thread, so that a run can be repeated exactly. Other threads get random ids as usual. */
 internal class SimIds(seed: Long) {
     private val rnd = Random(seed)
+
+    @Synchronized
     fun next(): String = UUID(rnd.nextLong(), rnd.nextLong()).toString()
 
     companion object {
-        val local = ThreadLocal<SimIds?>()
+        /** Inherited, so that the threads a phone's sync host starts for its visitors belong to that phone too. */
+        val local = InheritableThreadLocal<SimIds?>()
         private val random: () -> String = { UUID.randomUUID().toString() }
         fun install() {
             idSource = { local.get()?.next() ?: random() }
@@ -436,11 +470,15 @@ internal class SimStats {
     val syncErrors = TreeMap<String, Int>()
     val notes = TreeMap<String, Int>()
 
+    /** Where the time went. */
+    val millis = TreeMap<String, Long>()
+
     fun add(o: SimStats) {
         actions += o.actions; accepted += o.accepted; midSync += o.midSync; syncs += o.syncs; syncsOk += o.syncsOk; cut += o.cut; retried += o.retried
         for ((k, v) in o.refusals) refusals.merge(k, v, Int::plus)
         for ((k, v) in o.syncErrors) syncErrors.merge(k, v, Int::plus)
         for ((k, v) in o.notes) notes.merge(k, v, Int::plus)
+        for ((k, v) in o.millis) millis.merge(k, v, Long::plus)
     }
 
     companion object {

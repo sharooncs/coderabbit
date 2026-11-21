@@ -390,6 +390,35 @@ class PhonesTogetherTest {
         }
     }
 
+    @Test
+    fun anOrganiserWhoTakesThemselvesOutIsOutForEveryone() {
+        val asha = phone("Asha")
+        val omar = invited(asha, "Omar", Role.ORGANISER)
+        val hal = invited(asha, "Hal", Role.HELPER)
+        everyone(asha, omar, hal)
+        // Omar removes himself on his own phone. From that moment the others' phones would refuse his, so he has nobody to tell...
+        assertTrue(omar.removePerson(omar.id).ok)
+        assertEquals(Role.ORGANISER, asha.data.value.person(omar.id)!!.role)
+        assertFalse(asha.data.value.person(omar.id)!!.removed)
+        // ...except that the phone that turns his away takes note of what his says about himself, and passes it on.
+        val (atHal, atOmar) = sync(hal, omar)
+        assertEquals(WifiSync.REMOVED_SELF, atOmar.error)
+        assertTrue(atHal.error, atHal.error!!.contains("has been removed from this move"))
+        assertTrue(hal.data.value.person(omar.id)!!.removed)
+        synced(asha, hal)
+        assertTrue(asha.data.value.person(omar.id)!!.removed)
+        // So Asha knows she is the only Organiser left, and cannot step down as well.
+        assertEquals("A move needs at least one Organiser. Make someone else an Organiser first.", asha.setRole(asha.id, Role.HELPER).reason)
+        // Only what his phone says about himself is taken, and only what the rules allow: a Helper's phone that claims a
+        // promotion for its person while being turned away changes nothing.
+        assertTrue(asha.removePerson(hal.id).ok)
+        val t = hal.now()
+        hal.update { d -> d.copy(people = d.people.map { if (it.id == hal.id) it.copy(role = Role.ORGANISER, grants = it.grants + Grant(Role.ORGANISER, false, t, hal.id), updatedAt = t) else it }) }
+        assertEquals(WifiSync.REMOVED_SELF, sync(asha, hal).second.error)
+        assertTrue(asha.data.value.person(hal.id)!!.removed)
+        assertEquals(Role.HELPER, asha.data.value.person(hal.id)!!.role)
+    }
+
     // ---- containers and labels ---------------------------------------------------------------
 
     @Test
@@ -485,6 +514,8 @@ class PhonesTogetherTest {
             val hisPhoto = hal.photo(his.id, PhotoKind.CONTENTS, 20_000)
             val (hosted, joined) = syncVia(asha, hal, cut)
             assertFalse("cut in phase ${cut.phase}", hosted.ok && joined.ok)
+            // Whoever noticed is told what happened in words, and never that the versions differ.
+            for (r in listOf(hosted, joined)) if (!r.ok) assertTrue("cut in phase ${cut.phase}: ${r.error}", r.error in listOf(WifiSync.CONNECTION_LOST, "Connection lost during photo transfer"))
             // Each phone has either all of the other's data or none of it, and no half-received photo.
             assertEquals("cut in phase ${cut.phase}: has Asha merged?", cut.phase >= 4, asha.data.value.box(his.id) != null)
             assertEquals("cut in phase ${cut.phase}: has Hal merged?", cut.phase >= 5, hal.data.value.box(hers.id) != null)

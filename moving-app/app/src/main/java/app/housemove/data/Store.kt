@@ -694,7 +694,35 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
      */
     internal fun offerFor(personId: String): AppData = synchronized(lock) {
         val d = _data.value
-        if (isAlone() && _device.value.personId != personId) leavingOwnMove(d) else d
+        val mine = _device.value.personId
+        when {
+            isAlone() && mine != personId -> leavingOwnMove(d)
+            // A stand-in the phone gave itself when it turned out to be nobody ([ensureMe]) is not taken along either.
+            mine != personId && d.person(mine)?.let { p -> p.joinedAt != 0L && p.grants.size == 1 && p.grants[0].by.isEmpty() && p.role == Role.HELPER } == true ->
+                d.copy(people = d.people.filter { it.id != mine })
+            else -> d
+        }
+    }
+
+    /**
+     * Take in what another phone says about its own person, when the two phones are not going to
+     * sync: someone who has been removed. They may know more about that than this phone does (an
+     * Organiser who took themselves out of the move has nobody else to tell), and it must reach the
+     * rest of the move. As in a merge, every grant either phone knows is kept and each is checked.
+     */
+    internal fun hearAbout(peer: Person?) {
+        if (peer == null) return
+        synchronized(lock) {
+            val d = _data.value
+            if (d.people.none { it.id == peer.id }) return
+            val people = mergePeople(d.people, listOf(peer))
+            if (people == d.people) return
+            val seen = maxOf(peer.updatedAt, peer.grants.maxOfOrNull { it.at } ?: 0L)
+            lastStamp.updateAndGet { maxOf(it, seen) }
+            _data.value = d.copy(people = people)
+            mirrorMe()
+        }
+        scheduleSave()
     }
 
     /** Note that [personId]'s phone has joined. Called on the phone that showed the invite. */
@@ -936,7 +964,9 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
             val seen = maxStamp(remote)
             lastStamp.updateAndGet { maxOf(it, seen) }
             _data.value = merge(distrustUnstamped(_data.value), distrustUnstamped(remote))
-            mirrorMe()
+            // What arrived can show that this phone's person was never rightly in the move (whoever added them had
+            // already lost the right to). The phone is not left as nobody: it goes on as a Helper nobody has added yet.
+            ensureMe()
         }
         scheduleSave()
         forgetDeletedPhotos()

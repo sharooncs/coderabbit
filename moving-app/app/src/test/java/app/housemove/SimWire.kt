@@ -69,6 +69,8 @@ internal class Wire(
                 val n = accepted.incrementAndGet()
                 try {
                     val host = Socket("127.0.0.1", targetPort)
+                    host.tcpNoDelay = true
+                    joiner.tcpNoDelay = true
                     Talk(joiner, host, planned = n == 1).also { synchronized(talks) { talks += it } }.start()
                 } catch (_: IOException) {
                     joiner.close()

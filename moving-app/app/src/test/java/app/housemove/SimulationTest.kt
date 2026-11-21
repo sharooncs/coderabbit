@@ -39,9 +39,9 @@ class SimulationTest {
 
     private class Outcome(val seed: Long, val stats: SimStats, val failures: List<Simulation.Violation>, val traces: List<List<String>>, val whole: List<String>)
 
-    private fun runSeed(seed: Long, folder: String = "seed$seed"): Outcome {
+    private fun runSeed(seed: Long, folder: String = "seed$seed", loose: Boolean = false): Outcome {
         val dir = File(tmp.root, folder).apply { mkdirs() }
-        val sim = Simulation(seed, dir).run()
+        val sim = Simulation(seed, dir, loose = loose).run()
         dir.deleteRecursively()
         return Outcome(seed, sim.stats, sim.violations.toList(), sim.violations.map { sim.trace(it.ids, last = 30) }, sim.trace(last = 100_000))
     }
@@ -73,6 +73,39 @@ class SimulationTest {
         if (env("HM_SIM_REPORT") != null) report(first, count, seconds, outcomes, text.toString())
         env("HM_SIM_TRACE")?.let { File(it).writeText(outcomes.joinToString("\n\n") { o -> "SEED ${o.seed}\n" + o.whole.joinToString("\n") }) }
         if (failed.isNotEmpty()) fail("${failed.size} of $count seeds broke an invariant: seeds ${failed.joinToString { it.seed.toString() }}$text")
+    }
+
+    /**
+     * The same, with the phones let off the lead: each keeps doing things on its own thread while its syncs run.
+     * Real overlap cannot be repeated exactly, so a failure here names its seed but may not come back on the next run.
+     */
+    @Test
+    fun phonesThatKeepWorkingWhileTheySyncStillEndUpAgreeing() {
+        val first = env("HM_SIM_FIRST")?.toLong() ?: 1L
+        val count = env("HM_SIM_LOOSE")?.toInt() ?: 2
+        val outcomes = (first until first + count).map { runSeed(it, "loose$it", loose = true) }
+        val failed = outcomes.filter { it.failures.isNotEmpty() }
+        val text = StringBuilder()
+        for (o in failed.take(4)) {
+            text.append("\n\nSEED ${o.seed}, phones working while they sync")
+            for ((n, v) in o.failures.take(4).withIndex()) {
+                text.append("\n  BROKEN: ${v.invariant}\n    ${v.message}\n    what led to it:")
+                for (line in o.traces[n]) text.append("\n      ").append(line.take(260))
+            }
+        }
+        if (env("HM_SIM_REPORT") != null) {
+            val all = SimStats().also { s -> outcomes.forEach { s.add(it.stats) } }
+            File("build/audit").mkdirs()
+            File("build/audit/simulation-loose.md").writeText(
+                "\n## Phones that keep working while they sync\n\n" +
+                    "$count more seeds (from $first) were run with every phone doing things on its own thread while its syncs were under way: " +
+                    "${all.actions} actions, ${all.syncs} syncs (${all.syncsOk} completed). The checks made at the end are the same; " +
+                    "the check of each single merge is left out, since what went into it is not known exactly. " +
+                    (if (failed.isEmpty()) "All invariants held." else "FAILED on seeds ${failed.joinToString { it.seed.toString() }}.") +
+                    "\n" + (if (text.isNotBlank()) "\n```\n${text.trim()}\n```\n" else ""),
+            )
+        }
+        if (failed.isNotEmpty()) fail("${failed.size} of $count seeds broke an invariant with phones working while they synced: seeds ${failed.joinToString { it.seed.toString() }}$text")
     }
 
     /** The promise that a failure can be looked at again: one seed, run twice, does exactly the same things. */
@@ -110,6 +143,7 @@ class SimulationTest {
             md.append("\n## Seen along the way (not failures)\n\n| Times | What |\n| ---: | --- |\n")
             for ((what, n) in all.notes.entries.sortedByDescending { it.value }) md.append("| $n | $what |\n")
         }
+        md.append("\nTime per seed: " + all.millis.entries.joinToString(", ") { "${it.key} ${it.value / count} ms" } + ".\n")
         if (failures.isNotBlank()) md.append("\n## Failures\n\n```\n").append(failures.trim()).append("\n```\n")
         File("build/audit").mkdirs()
         File("build/audit/simulation.md").writeText(md.toString())

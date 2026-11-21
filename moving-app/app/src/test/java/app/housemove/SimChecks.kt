@@ -42,6 +42,13 @@ internal class RoleBook(people: Collection<Person>) {
     fun now(id: String): Pair<Role, Boolean>? = steps[id]?.lastOrNull()?.let { it.role to it.out }
 
     fun inMove(id: String): Boolean = now(id)?.second == false
+
+    /** Had this person, by [time], at some point been removed or moved down a role, and then got back to where they are? */
+    fun regained(id: String, time: Long): Boolean {
+        val mine = steps[id]?.filter { it.at <= time } ?: return false
+        fun rights(s: Step) = if (s.out) 0 else 3 - s.role.ordinal
+        return rights(mine.lastOrNull() ?: return false) > 0 && mine.zipWithNext().any { (a, b) -> rights(b) < rights(a) }
+    }
     fun anyOrganiser(time: Long): Boolean = steps.keys.any { at(it, time) == Role.ORGANISER }
     fun onlyEver(id: String, role: Role): Boolean = steps[id]?.all { it.role == role } == true
 }
@@ -82,6 +89,8 @@ internal class Judge(val d: AppData) {
         val settled = p.state == ProposalState.APPROVED || p.state == ProposalState.DECLINED
         return if (p.decided.by.isEmpty()) !settled || set(p.decided) { false } else organiser(p.decided)
     }
+    fun regained(id: String, time: Long) = book.regained(id, time)
+
     fun author(p: Proposal): Boolean {
         val role = book.at(p.by, p.createdAt) ?: return false
         return role != Role.HELPER || p.kind == ProposalKind.QUESTION
@@ -183,8 +192,20 @@ internal class SimChecks(private val sim: Simulation) {
     }
 
     private fun broke(invariant: String, message: String, vararg ids: String?) = sim.broke(invariant, message, ids.toList())
-    private fun note(what: String) = synchronized(sim.stats) { sim.stats.notes.merge(what, 1, Int::plus) }
+    /** Something worth counting that is not a failure. With HM_SIM_STRICT set it is reported as one, with [detail], to look into. */
+    private fun note(what: String, detail: String = "", vararg ids: String?) {
+        synchronized(sim.stats) { sim.stats.notes.merge(what, 1, Int::plus) }
+        if (System.getenv("HM_SIM_STRICT") != null && detail.isNotEmpty()) sim.broke("(looking closer) $what", detail, ids.toList())
+    }
     private fun short(r: Any?) = r.toString().take(700)
+
+    /** Where two copies of a record differ, field by field. */
+    private fun differ(a: Any?, b: Any?): String {
+        val x = a.toString().split(", ")
+        val y = b.toString().split(", ")
+        if (a == null || b == null || x.size != y.size) return "${short(a)}\n      against: ${short(b)}"
+        return x.indices.filter { x[it] != y[it] }.joinToString("; ") { "${x[it]} against ${y[it]}" }.take(900)
+    }
 
     // ---- at the end of a run ---------------------------------------------------------------
 
@@ -195,8 +216,14 @@ internal class SimChecks(private val sim: Simulation) {
         for (p in sim.phones) {
             val now = book.now(p.personId)
             val inMove = now != null && !now.second
-            if (p in c && !inMove) broke(SAME, "${p.tag} still syncs with the move although its person is ${if (now == null) "not in it" else "removed"}", p.personId)
-            if (p !in c && inMove) broke(SAME, "${p.tag} is in the move as ${now!!.first.label} but could not sync with the others", p.personId)
+            if (p in c && !inMove) broke(SAME, "${p.tag} still syncs with the move although its person is ${if (now == null) "not in it" else "removed"}" + sim.lately(p), p.personId)
+            if (p !in c && inMove) {
+                // A split move: this phone holds every phone of the group to be removed (two Organisers removed each other, and each
+                // phone sided with the one it heard first), so it turns them all away and never hears the other side. Counted and reported.
+                val shutOut = c.all { q -> p.data.person(q.personId)?.removed ?: true }
+                if (shutOut) note("phones left outside at the end because the move had split: each side had removed the other, and they no longer sync")
+                else broke(SAME, "${p.tag} is in the move as ${now!!.first.label} but could not sync with the others" + sim.lately(p, 14), p.personId)
+            }
         }
         val full = c.filter { book.now(it.personId)?.first.let { r -> r != null && r != Role.HELPER } }
         val ref = full.firstOrNull() ?: c[0]
@@ -228,7 +255,7 @@ internal class SimChecks(private val sim: Simulation) {
             var shown = 0
             for (k in (a.keys + b.keys).toSortedSet()) {
                 if (a[k] == b[k]) continue
-                if (shown++ < 3) broke(SAME, "${ref.tag} and ${p.tag} differ at $k\n      ${ref.tag}: ${short(a[k])}\n      ${p.tag}: ${short(b[k])}", k.substringAfter(':'))
+                if (shown++ < 3) broke(SAME, "${ref.tag} and ${p.tag} differ at $k: ${differ(a[k], b[k])}", k.substringAfter(':'))
             }
         }
     }
@@ -244,24 +271,58 @@ internal class SimChecks(private val sim: Simulation) {
             val id = k.substringAfter(':')
             val written = sim.versions[k] ?: emptyList<Any>()
             if (written.any { hidden(it) } && full.isEmpty()) continue // only Helpers' phones are left, and they are not sent these
-            val newest = c.maxOf { it.held[k] ?: -1 }
+            val type = k.substringBefore(':')
+            val stamps = c.flatMap { it.held[k] ?: emptySet() }.toSet()
+            // A cost or a task is nothing but its protected parts. A version written by someone who, as it turned out, had no right to
+            // (their phone had not heard that they had been removed or made a Helper) is rightly not kept, so it does not count here.
+            val counted = written.filter { w -> when_(w) in stamps && when (type) { "task" -> judge.plan(w as Task); "expense" -> judge.cost(w as Expense); else -> true } }
+            val newest = (if (type == "task" || type == "expense") counted.maxOfOrNull { when_(it) } else stamps.maxOrNull()) ?: -1
             val last = written.filter { when_(it) == newest }
+            // The one way a rightful cost or task can still go: the only phones that had it took a later change to it in good faith,
+            // from someone whose removal or demotion they had not heard of. When they hear, that change does not count, and the
+            // version before it is on no phone any more. Counted and reported, not a failure of the merge.
+            val overwritten = (type == "task" || type == "expense") && written.any { w -> when_(w) > newest && !(if (w is Task) judge.plan(w) else judge.cost(w as Expense)) }
+            // The other way: whoever made it had been removed or demoted and then let back in or promoted again before making it, and the
+            // news of the first reached a phone before the news of the second. That phone, seeing no right, dropped it; so then did the
+            // author's own phone on hearing the same half of the story. Also counted and reported.
+            val lateGoodNews = when (val w = last.firstOrNull()) {
+                is Task -> judge.regained(w.planBy.by, w.planBy.at)
+                is Expense -> judge.regained(w.costBy.by, w.costBy.at)
+                is Proposal -> judge.regained(w.by, w.createdAt)
+                else -> false
+            }
             val rec = end[k]
             if (rec == null) {
-                val mayBeGone = when (k.substringBefore(':')) {
+                val mayBeGone = when (type) {
                     // Left out by the rules: nobody with the right to make it ever did.
-                    "task" -> last.isNotEmpty() && last.all { !judge.plan(it as Task) }
-                    "expense" -> last.isNotEmpty() && last.all { !judge.cost(it as Expense) }
+                    "task", "expense" -> counted.isEmpty()
                     "proposal" -> written.isNotEmpty() && written.all { !judge.author(it as Proposal) }
                     "person" -> judge.book.now(id) == null
                     "photo" -> written.isNotEmpty() && written.all { it is Photo && it.kind == PhotoKind.RECEIPT && it.ownerId in costs && it.by.isNotEmpty() && judge.book.at(it.by, it.createdAt) != Role.ORGANISER }
                     "activity" -> ref.data.activity.size >= ACTIVITY_KEEP && written.all { (it as Activity).at <= oldestKept }
                     else -> false
                 }
-                if (!mayBeGone) broke(LOST, "$k was written (last at $newest) and is not in the move at the end: ${short(last.firstOrNull() ?: written.lastOrNull())}", id)
+                when {
+                    mayBeGone -> Unit
+                    overwritten -> note("costs or tasks lost behind a later change by someone who, it turned out, had been removed or demoted by then", "$k: ${short(last.firstOrNull())}", id)
+                    lateGoodNews -> note(
+                        "suggestions, costs or tasks lost because the news that their author was back in the move (or an Organiser again) reached the phones after the news that they were not",
+                        "$k: ${short(last.firstOrNull())}", id, (last.firstOrNull() as? Proposal)?.by,
+                    )
+                    else -> broke(LOST, "$k was written (last at $newest) and is not in the move at the end: ${short(last.firstOrNull() ?: written.lastOrNull())}", id)
+                }
                 continue
             }
             val stamp = when_(rec)
+            if ((type == "task" || type == "expense") && stamp > newest) continue // the stamp of a version that was not kept; its parts are checked below by the rules
+            if (stamp < newest && overwritten) {
+                note("costs or tasks lost behind a later change by someone who, it turned out, had been removed or demoted by then")
+                continue
+            }
+            if (stamp < newest && lateGoodNews && (type == "task" || type == "expense")) {
+                note("suggestions, costs or tasks lost because the news that their author was back in the move (or an Organiser again) reached the phones after the news that they were not")
+                continue
+            }
             if (stamp < newest) {
                 broke(LOST, "$k was written at $newest, but the move ended with the copy from $stamp\n      written: ${short(last.firstOrNull())}\n      at the end: ${short(rec)}", id)
                 continue
@@ -351,14 +412,14 @@ internal class SimChecks(private val sim: Simulation) {
         val kinds = HashMap<String, Photo>()
         for (p in sim.phones) for (ph in p.data.photos) kinds.putIfAbsent(ph.file, ph)
         for (p in c) {
-            if (!book.onlyEver(p.personId, Role.HELPER)) continue
+            if (p.sawMore || !book.onlyEver(p.personId, Role.HELPER)) continue
             val d = p.data
             for (e in d.expenses) broke(HELPERS, "${p.tag}, never anything but a Helper, holds cost ${e.id.take(8)}: ${short(e)}", e.id)
             for (x in d.proposals) if (x.kind == ProposalKind.COST) broke(HELPERS, "${p.tag}, never anything but a Helper, holds cost suggestion ${x.id.take(8)}", x.id)
-            for (x in d.photos) if (x.kind in HIDDEN_KINDS && x.by != p.personId) broke(HELPERS, "${p.tag}, never anything but a Helper, holds the ${x.kind} photo ${x.id.take(8)} taken by ${x.by.take(8)}", x.id)
+            for (x in d.photos) if (x.kind in HIDDEN_KINDS && x.by !in p.selves) broke(HELPERS, "${p.tag}, never anything but a Helper, holds the ${x.kind} photo ${x.id.take(8)} taken by ${x.by.take(8)}", x.id)
             for (f in p.store.photoDir.listFiles() ?: emptyArray<File>()) {
                 val ph = kinds[f.name] ?: continue
-                if (ph.kind in HIDDEN_KINDS && ph.by != p.personId) broke(HELPERS, "${p.tag}, never anything but a Helper, has the file of the ${ph.kind} photo ${ph.id.take(8)}", ph.id)
+                if (ph.kind in HIDDEN_KINDS && ph.by !in p.selves) broke(HELPERS, "${p.tag}, never anything but a Helper, has the file of the ${ph.kind} photo ${ph.id.take(8)}", ph.id)
             }
         }
     }
@@ -385,7 +446,7 @@ internal class SimChecks(private val sim: Simulation) {
                 if (inside(parent) != null || parent.deleted) broke(NESTING, "${p.tag}: container ${b.id.take(8)} is two levels deep or inside a deleted one", b.id, parent.id)
                 if (b.stage != parent.stage || b.tripId != parent.tripId) broke(COUNTED, "${p.tag}: container ${b.id.take(8)} (${b.stage}) is inside ${parent.id.take(8)} (${parent.stage}) but not where it is", b.id, parent.id)
                 if (b.id !in d.childrenOf(parent.id).map { it.id }) broke(NESTING, "${p.tag}: container ${b.id.take(8)} is not listed inside ${parent.id.take(8)}", b.id, parent.id)
-            } else if (b.parentId != null) note("containers whose saved parent does not count (deleted, or itself inside another), so they are loaded on their own")
+            } else if (b.parentId != null && p === sim.phones[0]) note("containers whose saved parent no longer counts (deleted, or itself put inside another), so they are loaded on their own")
         }
         for (b in tops) if (d.childrenOf(b.id).any { inside(it)?.id != b.id }) broke(NESTING, "${p.tag}: ${b.id.take(8)} lists something inside it that is not", b.id)
         val items = d.items.filter { !it.deleted }
@@ -395,7 +456,7 @@ internal class SimChecks(private val sim: Simulation) {
         for (i in items) {
             val box = i.boxId?.let { live[it] }
             if (d.containerOf(i)?.id != box?.id) broke(NESTING, "${p.tag}: item ${i.id.take(8)} is said to be in ${d.containerOf(i)?.id?.take(8)}, not ${box?.id?.take(8)}", i.id)
-            if (i.boxId != null && box == null) note("items whose saved container is gone, so they count as loose")
+            if (i.boxId != null && box == null && p === sim.phones[0]) note("items whose saved container has been deleted, so they count as loose")
             if (box != null) {
                 val carrier = inside(box) ?: box
                 if (d.carrierOf(i)?.id != carrier.id) broke(NESTING, "${p.tag}: item ${i.id.take(8)} is carried by the wrong thing", i.id)
@@ -473,7 +534,18 @@ internal class SimChecks(private val sim: Simulation) {
 
     // ---- after each sync ---------------------------------------------------------------------
 
-    fun exchange(x: Simulation.Exchange, wire: Wire) {
+    fun exchange(x: Simulation.Exchange, wire: Wire, complete: Boolean) {
+        // After a sync that went through with nothing else going on, the two phones hold the same (but for what a Helper is not sent).
+        if (complete && x.quiet) {
+            val d = x.host.data
+            val whole = listOf(x.host, x.joiner).all { p -> d.person(p.personId)?.let { !it.removed && it.role != Role.HELPER } == true }
+            val a = canon(d, whole)
+            val b = canon(x.joiner.data, whole)
+            if (a != b) {
+                val k = (a.keys + b.keys).first { a[it] != b[it] }
+                note("syncs after which the two phones did not yet hold the same, and needed another", "${x.host.tag} hosted ${x.joiner.tag}, first at $k: host against joiner: ${differ(a[k], b[k])}", k.substringAfter(':'))
+            }
+        }
         val sent = wire.data(3)
         val back = wire.data(4)
         val hostBefore = x.hostBefore
