@@ -54,6 +54,13 @@ private val SIZE_ICONS: Map<BoxSize, ImageVector> by lazy {
     )
 }
 
+/**
+ * Furniture and appliances are catalogued as well, and nobody packs a wardrobe into a box:
+ * what plainly cannot go in a container is not offered as a picture to tap.
+ */
+private fun Item.couldBePacked(): Boolean =
+    !twoPerson && !needsDisassembly && !keepUpright && (volumeM3() ?: 0.0) <= ContainerKind.WARDROBE.m3
+
 /** "Suitcase 1 (B1)" or "Suitcase B1": a container's name with the code to look for. */
 private fun Box.nameAndCode(): String = if (name.isBlank()) "${kind.noun} $label" else "$name ($label)"
 
@@ -104,9 +111,11 @@ fun BoxScreen(id: String) {
     val category = data.categoryOf(box)
     val handwritten = !PRINTED_CODE.matches(box.label)
     val labelClash = box.label.uppercase() in data.duplicateLabels()
-    // Catalogued things from the same room that could go in: not packed yet, and in the same place as this.
-    val loose = data.looseItems().filter { it.originRoomId == box.originRoomId && it.stage == box.stage }
-    val anyLoose = loose.isNotEmpty() || data.looseItems().any { it.stage == box.stage }
+    // Catalogued things that could go in: not packed yet, and in the same place as this. Those from
+    // the same room are offered as pictures; anything else goes in by scanning its own label.
+    val nearby = data.looseItems().filter { it.stage == box.stage }
+    val loose = nearby.filter { it.originRoomId == box.originRoomId && it.couldBePacked() }
+    val anyLoose = nearby.isNotEmpty()
     val lines = contentsLines(box.contents)
     val missing = listOfNotNull(
         "a room to go to".takeIf { dest == null && parent == null },

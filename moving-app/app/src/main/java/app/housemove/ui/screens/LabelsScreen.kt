@@ -294,7 +294,7 @@ fun LabelsScreen() {
                 }
             }
 
-            Fold("How it works", Icons.Default.HelpOutline, summary = "Stickers for boxes, tags for luggage, signs for doors") {
+            Fold("How it works", Icons.Default.HelpOutline, summary = "Stickers, hang tags and door signs") {
                 Text("Every box gets a sticker with a number and a square code. Scanning the code opens that box in the app: what's inside, where it goes, where it is now.")
                 Text("A sticker does not stay on a suitcase or a bag, so those get a tag tied to the handle. It carries the same kind of number and code.")
                 Text("Every room in the new home gets a sign on its door in its own colour, so anyone carrying a box can see where to put it down. Tape the signs up before unloading starts.")
