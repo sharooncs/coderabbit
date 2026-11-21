@@ -45,6 +45,17 @@ private fun speechIntent(prompt: String) = Intent(RecognizerIntent.ACTION_RECOGN
 }
 
 /**
+ * Can this phone take spoken words? When it cannot, [SpeakButton] draws nothing, so words
+ * beside it ("Say their name") should say "type" instead.
+ */
+@Composable
+fun canSpeak(): Boolean {
+    if (LocalSpeech.current != null) return true
+    val context = LocalContext.current
+    return remember { speechIntent("").resolveActivity(context.packageManager) != null }
+}
+
+/**
  * A round microphone button: say it instead of typing it.
  *
  * It opens the phone's own speech sheet, so the app itself needs no microphone

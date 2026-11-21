@@ -240,7 +240,12 @@ fun AddPersonScreen() {
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    if (name.isBlank()) "Say their name, or keep this one" else "Letter $letter on their box codes",
+                    when {
+                        name.isNotBlank() -> "Letter $letter on their box codes"
+                        // With no speech on this phone there is no microphone: only the pencil.
+                        canSpeak() -> "Say their name, or keep this one"
+                        else -> "Type their name, or keep this one"
+                    },
                     style = MaterialTheme.typography.bodySmall, color = Night.TextDim, textAlign = TextAlign.Center,
                 )
                 Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {

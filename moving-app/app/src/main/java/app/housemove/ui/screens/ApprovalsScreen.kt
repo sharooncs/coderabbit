@@ -2,6 +2,8 @@ package app.housemove.ui.screens
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -110,23 +112,22 @@ private fun Inbox() {
                 PillButton("Approve ${chosen.size}", onClick = { approve(chosen) }, icon = Icons.Default.DoneAll)
             }
         }
-        Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 20.dp),
+        // Built as it scrolls: a busy move can have a hundred suggestions waiting.
+        LazyColumn(
+            Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            waiting.forEach { p ->
-                key(p.id) {
-                    WaitingCard(
-                        p,
-                        selected = p.id in picked,
-                        onSelect = if (p.kind == ProposalKind.QUESTION || approvable.size < 2) null else ({ picked = if (p.id in picked) picked - p.id else picked + p.id }),
-                        declining = declining == p.id,
-                        onDeclining = { declining = if (it) p.id else null },
-                        onApprove = { approve(listOf(p)) },
-                    )
-                }
+            items(waiting, key = { it.id }) { p ->
+                WaitingCard(
+                    p,
+                    selected = p.id in picked,
+                    onSelect = if (p.kind == ProposalKind.QUESTION || approvable.size < 2) null else ({ picked = if (p.id in picked) picked - p.id else picked + p.id }),
+                    declining = declining == p.id,
+                    onDeclining = { declining = if (it) p.id else null },
+                    onApprove = { approve(listOf(p)) },
+                )
             }
-            DecidedLately(data)
+            item(key = "decided") { DecidedLately(data) }
         }
     }
 }
@@ -359,17 +360,19 @@ private fun Mine() {
             )
             return@Screen
         }
-        Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 20.dp),
+        LazyColumn(
+            Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                ProposalState.entries.forEach { s ->
-                    val n = counts[s] ?: 0
-                    if (n > 0) GlassChip("$n ${s.label.lowercase()}", icon = s.icon(), tone = s.tone())
+            item(key = "counts") {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    ProposalState.entries.forEach { s ->
+                        val n = counts[s] ?: 0
+                        if (n > 0) GlassChip("$n ${s.label.lowercase()}", icon = s.icon(), tone = s.tone())
+                    }
                 }
             }
-            mine.forEach { p -> key(p.id) { OutcomeCard(p, me) } }
+            items(mine, key = { it.id }) { p -> OutcomeCard(p, me) }
         }
     }
 }
