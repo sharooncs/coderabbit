@@ -394,7 +394,7 @@ class FlowsTest {
         tap("Damaged in the move")
         assertTrue(it().damaged)
 
-        tapDesc("Delete item")
+        tap("Delete item") // at the very end of the page
         tap("Delete")
         assertNull(data.item(item.id))
         go("item/${item.id}")
@@ -412,18 +412,21 @@ class FlowsTest {
         // Furniture is not asked for a serial number unless you switch it on.
         go("item/${wardrobe.id}")
         dontSee("Scan the serial number barcode")
-        tap("It has a make, model and serial number")
+        tap("It has a serial number")
         see("Scan the serial number barcode")
         assertEquals(true, data.item(wardrobe.id)!!.electronic)
 
         // A TV is recognised by its name.
         go("item/${tv.id}")
         tap("Make, model and serial number") // each section opens when tapped
+        tapDesc("Edit make, model and serial number") // typing them is behind the pencil
         type("Make", "Samsung")
         type("Model", "QE55Q60")
         type("Serial number", "0AB3HCPT500123X")
         tap("What travels with it")
-        type("Remote, leads, stand, screws…", "Remote, power lead, stand and 4 screws")
+        tap("Remote") // one tap each, nothing typed
+        tap("Power lead")
+        tap("Stand")
         tap("Bagged and marked with this item's name")
         tap("Size and handling")
         tap("Keep upright")
@@ -431,8 +434,9 @@ class FlowsTest {
         tap("Cables labelled and bagged")
         assertEquals("Samsung QE55Q60", it().makeModel())
         assertEquals("0AB3HCPT500123X", it().serial)
+        assertEquals("Remote, Power lead, Stand", it().accessories)
         assertTrue(it().accessoriesPacked && it().keepUpright && it().prepCablesLabelled)
-        see("never flat") // the advice for moving a TV
+        see("never flat") // the advice for moving a TV, with the steps for getting it ready
 
         // The barcode on the serial label can fill the field in (typed here in place of the camera).
         tap("Scan the serial number barcode")
