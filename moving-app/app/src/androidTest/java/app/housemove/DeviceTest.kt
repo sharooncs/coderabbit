@@ -80,7 +80,8 @@ class DeviceTest {
     private fun reset(seed: Boolean) {
         store.photoDir.listFiles()?.forEach { it.delete() }
         store.replaceAll(AppData())
-        store.setDevice { DeviceInfo(name = "Tester", letter = "T", nextSeq = 1) }
+        // Keep who this phone is: wiping it would leave the phone with no person and so no right to set the move up.
+        store.setDevice { DeviceInfo(name = "Tester", letter = "T", nextSeq = 1, personId = it.personId) }
         if (seed) {
             store.setMove { it.copy(name = "Device test", moveDay = today() + 7, setupDone = true) }
             val newKitchen = store.createRoom(Home.DEST, "Kitchen")
