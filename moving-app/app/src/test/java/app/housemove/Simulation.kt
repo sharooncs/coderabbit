@@ -244,7 +244,7 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
      * move (new phones kept out), a hello in the words of 1.3, or a code that is not the one shown.
      * Each must be turned away, and [m]'s data must not change.
      */
-    private fun outsiderTries(m: Phone) {
+    private fun outsiderTriesOn(m: Phone) {
         val before = m.data
         val how = rnd.nextInt(3)
         val said: String = when (how) {
@@ -382,7 +382,7 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
     private fun oneRound() {
         round++
         time += 20 + rnd.nextInt(if (rnd.nextInt(6) == 0) 40_000 else 2_500)
-        if (rnd.nextInt(10) == 0) outsiderTries(phones[rnd.nextInt(phones.size)])
+        if (rnd.nextInt(10) == 0) outsiderTriesOn(phones[rnd.nextInt(phones.size)])
         val free = phones.shuffled(rnd).toMutableList()
         val jobs = ArrayList<Future<*>>()
         repeat(listOf(0, 1, 1, 1, 2, 2, 3)[rnd.nextInt(7)]) {
