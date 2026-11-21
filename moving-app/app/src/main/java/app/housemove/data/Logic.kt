@@ -97,6 +97,25 @@ fun Item.toMovable() = Movable(
     if (firstNight) Priority.FIRST_NIGHT else Priority.WHENEVER, travelsWithMe, keepUpright,
 )
 
+/**
+ * Carried by hand, not on the van: it travels with the person ("With me" when loading) and was not
+ * put on a trip. Such a thing is never "still on the van", however long it stays at [Stage.LOADED];
+ * it is marked delivered at the new home like anything else. Something packed inside a container
+ * goes the way that container goes: ask about [AppData.carrierOf] it.
+ */
+fun Movable.carriedByHand(): Boolean = travelsWithMe && tripId == null
+fun Box.carriedByHand(): Boolean = travelsWithMe && tripId == null
+fun Item.carriedByHand(): Boolean = travelsWithMe && tripId == null
+
+/** Taken from the old home and not yet at the new one, in the van rather than by hand. */
+fun Movable.onTheVan(): Boolean = stage == Stage.LOADED && !carriedByHand()
+
+/** Where in the journey something is, in a word or two: [Stage.label], except "Carried by hand" for what is on its way with someone. */
+fun AppData.statusOf(m: Movable): String {
+    val c = carrierOf(m)
+    return if (c.stage == Stage.LOADED && c.carriedByHand()) "Carried by hand" else m.stage.label
+}
+
 /** Every item marked Move, including those packed in a container. See [looseItems] for the ones that travel on their own. */
 fun AppData.movingItems(): List<Item> = liveItems.filter { it.disposition == Disposition.MOVE }
 
@@ -254,7 +273,8 @@ fun AppData.issues(now: Long = today()): List<Issue> {
     val out = ArrayList<Issue>()
     val mv = movables()
     val anyDelivered = mv.any { it.stage == Stage.DELIVERED || it.stage == Stage.DONE }
-    val onVan = mv.count { it.stage == Stage.LOADED }
+    // What someone carries by hand is with them, not left on the van.
+    val onVan = mv.count { it.onTheVan() }
     if (uses(Part.MOVE_DAY) && anyDelivered && onVan > 0) out += Issue("$onVan loaded but not yet delivered", "reconcile", severe = true)
     val dup = duplicateLabels()
     if (dup.isNotEmpty()) out += Issue("Label used twice: ${dup.take(4).joinToString()}", "boxes", severe = true)
@@ -338,7 +358,7 @@ fun AppData.whereIs(m: Movable): String {
 
 private fun AppData.placeOf(m: Movable): String = when (m.stage) {
     Stage.AT_ORIGIN -> "${move.originName}: ${room(m.originRoomId)?.name ?: "no room"}"
-    Stage.LOADED -> "On the ${vehicle()}" + (trip(m.tripId)?.let { " (${it.name})" } ?: "")
+    Stage.LOADED -> if (m.carriedByHand()) "Carried by hand, on its way to ${move.destName}" else "On the ${vehicle()}" + (trip(m.tripId)?.let { " (${it.name})" } ?: "")
     Stage.DELIVERED, Stage.DONE -> "${move.destName}: ${room(m.destRoomId)?.name ?: "no room"}"
 }
 

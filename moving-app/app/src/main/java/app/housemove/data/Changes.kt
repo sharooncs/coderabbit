@@ -241,7 +241,7 @@ internal class Draft(var d: AppData, val actor: Actor, val t: Long) {
                     return handed(r.copy(stage = old!!.stage, tripId = old.tripId))
                 }
             }
-            if (old != null && r.stage.ordinal > old.stage.ordinal) events.add(stageVerb(r.stage), r.title(), r.id)
+            if (old != null && r.stage.ordinal > old.stage.ordinal) events.add(stageVerb(r.stage, r.carriedByHand()), r.title(), r.id)
             if (r.deleted && old != null && !old.deleted) events.add("deleted", r.title(), r.id)
             return handed(r)
         }
@@ -282,7 +282,7 @@ internal class Draft(var d: AppData, val actor: Actor, val t: Long) {
                     moves[parent.id] = r.stage to r.tripId
                     r = r.copy(stage = old!!.stage, tripId = old.tripId)
                 }
-            } else if (old != null && r.stage.ordinal > old.stage.ordinal) events.add(stageVerb(r.stage), r.logName(), r.id)
+            } else if (old != null && r.stage.ordinal > old.stage.ordinal) events.add(stageVerb(r.stage, r.carriedByHand()), r.logName(), r.id)
             if (old != null && r.sealed != old.sealed) events.add(if (r.sealed) "sealed" else "opened", r.logName(), r.id)
             if (r.damaged && old?.damaged != true) events.add("reported damage to", r.logName(), r.id)
             return handed(r)
@@ -313,9 +313,9 @@ internal class Draft(var d: AppData, val actor: Actor, val t: Long) {
     }
 }
 
-private fun stageVerb(s: Stage) = when (s) {
+private fun stageVerb(s: Stage, byHand: Boolean = false) = when (s) {
     Stage.AT_ORIGIN -> "brought back"
-    Stage.LOADED -> "loaded"
+    Stage.LOADED -> if (byHand) "took along" else "loaded"
     Stage.DELIVERED -> "delivered"
     Stage.DONE -> "unpacked"
 }
