@@ -389,6 +389,39 @@ class PeopleTest {
     }
 
     @Test
+    fun aNewPhoneCanTakeOverAPersonAfterRestoringABackup() {
+        val o = store("o")
+        o.setDevice { it.copy(name = "Asha", letter = "A") }
+        o.createBox("L001", null)
+        val dee = joined(o, "Dee", Role.DECIDER)
+        val backup = ByteArrayOutputStream().also { Backup.export(o, it) }.toByteArray()
+
+        // Asha's phone is lost. A new one starts as its own person, restores the backup, and says who it is.
+        val replacement = store("replacement")
+        val started = replacement.me!!.id
+        Backup.import(replacement, ByteArrayInputStream(backup))
+        assertEquals(3, replacement.data.value.people.size)
+        assertNotNull(replacement.becomePerson("nobody").reason)
+        val me = replacement.becomePerson(o.me!!.id).valueOrNull()!!
+        assertEquals("Asha", me.name)
+        assertEquals(o.me!!.id, replacement.device.value.personId)
+        assertEquals("Asha", replacement.device.value.name)
+        assertEquals("A", replacement.device.value.letter)
+        assertEquals(Role.ORGANISER, replacement.myRole)
+        // The person it started as steps out, so the move does not gain an Organiser nobody knows.
+        assertTrue(replacement.data.value.person(started)!!.removed)
+        assertEquals(setOf("Asha", "Dee"), replacement.data.value.livePeople.map { it.name }.toSet())
+        // It carries on as Asha, and the others' phones accept what it does.
+        assertTrue(replacement.setRole(dee.me!!.id, Role.ORGANISER).ok)
+        dee.mergeIn(replacement.data.value)
+        assertEquals(Role.ORGANISER, dee.myRole)
+        // Someone who has been removed cannot be taken over.
+        val hal = replacement.addPerson("Hal", Role.HELPER).valueOrNull()!!
+        replacement.removePerson(hal.id)
+        assertNotNull(store("another").apply { mergeIn(replacement.data.value) }.becomePerson(hal.id).reason)
+    }
+
+    @Test
     fun erasingStartsAFreshPersonSoAnErasedPhoneCannotComeBackWithMoreRights() {
         val o = store("o")
         val hal = joined(o, "Hal", Role.HELPER)

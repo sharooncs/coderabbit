@@ -357,6 +357,55 @@ class SyncPeopleTest {
         assertTrue(File(asha.photoDir, later.name).isFile)
     }
 
+    // ---- coming from 1.3 --------------------------------------------------------------
+
+    @Test
+    fun twoPhonesThatSharedAMoveIn13StillSyncAfterBothUpdate() {
+        // The same move on two phones as 1.3 left it; each had made a change the other had not seen.
+        fun saved(sofa: String, tick: String) = """{"version":3,"move":{"name":"Maple Road","setupDone":true,"updatedAt":100},
+            "items":[{"id":"sofa","name":"Sofa",$sofa}],
+            "boxes":[{"id":"b1","label":"L001","contents":"Plates","updatedAt":10}],
+            "tasks":[{"id":"k1","title":"Book the van",$tick}],
+            "expenses":[{"id":"e1","title":"Van hire","amount":180.0,"planned":true,"updatedAt":30}]}"""
+        val dirA = tmp.newFolder("upgradeA")
+        val dirB = tmp.newFolder("upgradeB")
+        File(dirA, "data.json").writeText(saved(""""disposition":"SELL","price":120.0,"updatedAt":50""", """"done":true,"updatedAt":70"""))
+        File(dirA, "device.json").writeText("""{"name":"Asha","letter":"A"}""")
+        File(dirB, "data.json").writeText(saved(""""disposition":"MOVE","updatedAt":60""", """"done":false,"updatedAt":40"""))
+        File(dirB, "device.json").writeText("""{"name":"Ben","letter":"B","helper":true}""")
+        val a = Store(dirA)
+        val b = Store(dirB)
+        assertEquals(Role.ORGANISER, a.myRole)
+        assertEquals(Role.HELPER, b.myRole)
+
+        // The ordinary code, no invite: both phones were in this move before there were people.
+        val (atA, atB) = sync(a, b)
+        assertTrue(atA.error, atA.ok)
+        assertTrue(atB.error, atB.ok)
+        for (s in listOf(a, b)) {
+            val d = s.data.value
+            assertEquals(setOf("Asha", "Ben"), d.livePeople.map { it.name }.toSet())
+            // As in 1.3, the newer copy of each record won.
+            assertEquals(Disposition.MOVE, d.item("sofa")!!.disposition)
+            assertTrue(d.task("k1")!!.done)
+            assertEquals("Maple Road", d.move.name)
+            assertEquals(1, d.liveBoxes.size)
+        }
+        assertEquals(Role.ORGANISER, b.data.value.person(a.me!!.id)!!.role)
+        assertEquals(Role.HELPER, a.data.value.person(b.me!!.id)!!.role)
+        // Ben's phone was in helper mode, so he is a Helper: from now on it is sent no costs, but keeps the one it had.
+        a.put(Expense(id = "e2", title = "Fuel", amount = 40.0))
+        assertTrue(sync(a, b).second.ok)
+        assertEquals(listOf("e1"), b.data.value.expenses.map { it.id })
+        assertEquals(2, a.data.value.liveExpenses.size)
+        // And his phone no longer changes decisions, while Asha's does.
+        b.put(b.data.value.item("sofa")!!.copy(disposition = Disposition.BIN))
+        assertEquals(Disposition.MOVE, b.data.value.item("sofa")!!.disposition)
+        assertTrue(a.decide("sofa", Disposition.STORE).ok)
+        assertTrue(sync(b, a).second.ok)
+        assertEquals(Disposition.STORE, b.data.value.item("sofa")!!.disposition)
+    }
+
     // ---- other versions ---------------------------------------------------------------
 
     @Test

@@ -26,6 +26,13 @@ fun AppData.carrierOf(i: Item): Box? = containerOf(i)?.let { carrierOf(it) }
 fun AppData.carrierOf(m: Movable): Movable =
     (if (m.isBox) box(m.id)?.let { carrierOf(it) } else item(m.id)?.let { carrierOf(it) })?.toMovable() ?: m
 
+/**
+ * What a code scanned at the van stands for: [findByAnyCode], and if that is
+ * packed inside a container, the container. (Changing the stage of something
+ * inside a container moves the container anyway; this is for showing the right thing.)
+ */
+fun AppData.findCarrier(code: String): Movable? = findByAnyCode(code)?.let { carrierOf(it) }
+
 /** Containers directly inside this one. */
 fun AppData.childrenOf(boxId: String): List<Box> = liveBoxes.filter { it.parentId == boxId && parentOf(it) != null }.sortedBy { it.label }
 

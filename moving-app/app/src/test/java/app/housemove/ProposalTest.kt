@@ -331,6 +331,29 @@ class ProposalTest {
     }
 
     @Test
+    fun aRoomSuggestionChangesOnlyTheRoomAndLeavesTheDecisionAlone() {
+        asha.decide(sofa, Disposition.MOVE)
+        val decision = dee.suggestDecision(sofa, Disposition.STORE).valueOrNull()!!
+        val toHall = dee.suggestRoom(sofa, hall.id, "It blocks the lounge door").valueOrNull()!!
+        val nowhere = dan.suggestRoom(sofa, null).valueOrNull()!!
+        assertEquals("Sofa to Hall", dee.data.value.describe(toHall))
+        sync(asha, dee)
+        sync(asha, dan)
+        assertTrue(asha.approve(toHall.id).ok)
+        assertEquals(hall.id, asha.item(sofa).destRoomId)
+        assertEquals(asha.me!!.id, asha.item(sofa).roomBy.by)
+        assertEquals(Disposition.MOVE, asha.item(sofa).disposition)
+        // The other room suggestion is closed; the suggestion about the decision is a different matter and still waits.
+        assertEquals(ProposalState.NOT_CHOSEN, asha.proposal(nowhere.id).state)
+        assertEquals(ProposalState.WAITING, asha.proposal(decision.id).state)
+        assertEquals(listOf(decision.id), asha.data.value.waitingProposals().map { it.id })
+        // Approving where it goes is not a go-ahead to sell or bin it.
+        sync(asha, dee)
+        assertFalse(dee.data.value.mayCarryOut(dee.me, dee.item(sofa)))
+        assertEquals(hall.id, dee.item(sofa).destRoomId)
+    }
+
+    @Test
     fun withNoOrganiserNothingWaitsForApproval() {
         // One phone in the old "helper mode": a move with nobody to approve anything.
         val solo = store("solo")
