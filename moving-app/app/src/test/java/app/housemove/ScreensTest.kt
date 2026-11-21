@@ -94,16 +94,21 @@ class ScreensTest {
         s.put(Expense(id = "e2", title = "Boxes and tape", amount = 62.5, category = "Supplies", day = today() - 4))
         s.put(Supply(id = "s1", name = "Medium boxes", need = 30, have = 12))
         s.put(Reading(id = "r1", home = Home.ORIGIN, kind = "Electricity", value = "48213", day = today()))
+        // Someone else on the move, so the screens about people and roles have something in them.
+        s.addPerson("Priya", Role.DECIDER)
         s.flush()
         return s
     }
+
+    private fun fileOf(route: String) = route.replace(Regex("[^A-Za-z0-9]+"), "_")
 
     private val routes = listOf(
         "home", "overview", "items", "item/wardrobe", "item/bed", "item/sofa", "item/fridge", "item/tv", "item/missing", "walk", "triage", "plan", "disposal",
         "electronics", "box/box5",
         "boxes", "box/box1", "box/box3", "box/missing", "pack", "labels", "lists", "packorder", "tasks",
         "moveday", "load", "unload", "reconcile", "sweep", "records/ORIGIN", "records/DEST", "unpack", "budget", "reports",
-        "rooms", "more", "sync", "settings", "search", "scan",
+        "rooms", "more", "sync", "sync?code=not-a-code", "settings", "search", "scan",
+        "people", "people/add", "person/missing", "approvals", "activity",
     )
 
     @Test
@@ -116,7 +121,7 @@ class ScreensTest {
             rule.runOnUiThread { nav!!.navigate(route) }
             rule.waitForIdle()
             rule.onRoot().assertExists()
-            rule.onRoot().captureRoboImage("build/screens/" + route.replace('/', '_') + ".png")
+            rule.onRoot().captureRoboImage("build/screens/" + fileOf(route) + ".png")
         }
     }
 
@@ -133,8 +138,8 @@ class ScreensTest {
             rule.runOnUiThread { nav!!.navigate(route) }
             rule.waitForIdle()
             rule.onRoot().assertExists()
-            if (route in setOf("home", "overview", "box/box1", "unload", "item/wardrobe", "load", "pack")) {
-                rule.onRoot().captureRoboImage("build/screens/small-dark-" + route.replace('/', '_') + ".png")
+            if (route in setOf("home", "overview", "box/box1", "unload", "item/wardrobe", "load", "pack", "people", "people/add", "more", "sync", "settings")) {
+                rule.onRoot().captureRoboImage("build/screens/small-dark-" + fileOf(route) + ".png")
             }
         }
     }
