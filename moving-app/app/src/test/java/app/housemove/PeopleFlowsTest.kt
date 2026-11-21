@@ -5,6 +5,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertCountEquals
@@ -14,6 +15,7 @@ import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
@@ -25,6 +27,7 @@ import app.housemove.ui.InviteText
 import app.housemove.ui.LocalSpeech
 import app.housemove.ui.LocalSyncAddresses
 import app.housemove.ui.Speech
+import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Rule
@@ -32,6 +35,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import org.robolectric.shadows.ShadowToast
@@ -164,7 +168,13 @@ class PeopleFlowsTest {
     private fun waitFor(text: String) = try {
         rule.waitUntil(20_000) { rule.onAllNodes(hasText(text, substring = true)).fetchSemanticsNodes().isNotEmpty() }
     } catch (e: Throwable) {
-        throw AssertionError("Timed out waiting to see: $text", e)
+        val onScreen = try {
+            rule.onAllNodes(hasText("", substring = true)).fetchSemanticsNodes()
+                .flatMap { n -> n.config.getOrElse(SemanticsProperties.Text) { emptyList() }.map { it.text } }.joinToString(" | ")
+        } catch (_: Throwable) {
+            "?"
+        }
+        throw AssertionError("Timed out waiting to see: $text. On the screen: $onScreen", e)
     }
 
     /** What the code on the screen says, as the other phone's camera would read it. */
@@ -191,9 +201,10 @@ class PeopleFlowsTest {
         said = "sam"
         tapDesc("Say the name")
         see("Sam")
-        see("Photographs, packs") // Helper is chosen to start with
+        see("A Helper can") // Helper is chosen to start with
         tap("Decider")
-        see("Suggests what to keep")
+        see("A Decider can")
+        see("for an Organiser to approve")
         noTextFields()
         tap("Add and show invite")
 
@@ -601,6 +612,54 @@ class PeopleFlowsTest {
         see("Asha sealed L012")
         tap("Asha sealed L012")
         assertEquals("box/{id}", route())
+    }
+
+    // ---- small screens -----------------------------------------------------------------
+
+    /** A small phone with large text: the new screens open, and their main actions can still be reached. */
+    @Test
+    @Config(sdk = [34], qualifiers = "w320dp-h568dp-night-xhdpi")
+    fun theNewScreensWorkOnASmallPhoneWithLargeText() {
+        RuntimeEnvironment.setFontScale(1.3f)
+        val asha = organiser()
+        val dee = joined(asha, "Dee", Role.DECIDER)
+        val hal = joined(asha, "Hal", Role.HELPER)
+        val sell = dee.suggestDecision("sofa", Disposition.SELL, 80.0, note = "Too big for the new lounge").valueOrNull()!!
+        hal.ask("lamp")
+        asha.mergeIn(dee.data.value)
+        asha.mergeIn(hal.data.value)
+        fun shot(name: String) = rule.onRoot().captureRoboImage("build/screens/small-$name.png")
+
+        show(asha)
+        tap("Review")
+        assertEquals("approvals", route())
+        shot("approvals")
+        tap("Decline")
+        shot("approvals-decline")
+        tap("Not yet")
+        assertEquals("Not yet", data.proposal(sell.id)!!.reason)
+        tap("Donate")
+        assertEquals(Disposition.DONATE, data.item("lamp")!!.disposition)
+
+        go("people")
+        shot("people")
+        tap("Add a person")
+        shot("people-add")
+        tap("Add and show invite")
+        see("Works once")
+        shot("person-invite")
+        go("activity")
+        shot("activity")
+
+        dee.mergeIn(asha.data.value)
+        hal.mergeIn(asha.data.value.visibleTo(Role.HELPER))
+        show(dee)
+        shot("home-decider")
+        tap("View")
+        see("Declined by Asha")
+        shot("my-suggestions")
+        show(hal)
+        shot("home-helper")
     }
 
     // ---- as little typing as possible ----------------------------------------------------

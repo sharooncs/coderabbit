@@ -117,11 +117,18 @@ private fun PersonRow(p: Person, isMe: Boolean, showRole: Boolean, onClick: (() 
         Row(Modifier.padding(start = 12.dp, top = 11.dp, bottom = 11.dp, end = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             PersonOrb(p, size = 48.dp, me = isMe)
             Spacer(Modifier.width(12.dp))
+            // The role sits at the right where there is room, and under the name where there is not.
+            val tight = tightScreen()
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(p.shownName(), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                PersonStatus(p, isMe)
+                Text(if (isMe && p.name.isBlank()) "You" else p.shownName(), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (tight && showRole) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        RoleChip(p.role, Modifier.align(Alignment.CenterVertically))
+                        Box(Modifier.align(Alignment.CenterVertically)) { PersonStatus(p, isMe) }
+                    }
+                } else PersonStatus(p, isMe)
             }
-            if (showRole) RoleChip(p.role)
+            if (showRole && !tight) RoleChip(p.role)
             if (onClick != null) Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Night.TextDim, modifier = Modifier.padding(start = 4.dp))
         }
     }
@@ -230,14 +237,15 @@ fun AddPersonScreen() {
                         name = said.replaceFirstChar { it.uppercase() }
                         spoken++
                     }
+                    Spacer(Modifier.width(4.dp))
                     GlassOrb(Icons.Default.Edit, "Type the name") { typing = !typing }
                 }
             }
             if (typing) TextInput(name, { name = it }, "Name", key = "new-person-$spoken")
 
             Text("What will they do?", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 6.dp))
-            IconChoice(ROLE_CHOICES, role, { role = it }, large = true, columns = 3)
-            Text(role.line(), style = MaterialTheme.typography.bodyMedium, color = Night.TextSoft)
+            IconChoice(ROLE_CHOICES, role, { role = it }, large = !tightScreen(), columns = 3)
+            RoleAbilities(role)
         }
         BigAction(
             Icons.Default.QrCode2, "Add and show invite",
@@ -248,6 +256,39 @@ fun AddPersonScreen() {
             },
             modifier = Modifier.padding(16.dp),
         )
+    }
+}
+
+/**
+ * What someone with [role] can do, in three lines with a tick, an hourglass or a bar.
+ * Every line is asked of the Store's own table ([AppData.can]), so the screen cannot say
+ * anything the rules do not.
+ */
+@Composable
+private fun RoleAbilities(role: Role) {
+    val data = appData()
+    val work = data.can(role, Action.WORK)
+    val manage = data.can(role, Action.MANAGE_PEOPLE)
+    Section(role.withArticle().replaceFirstChar { it.uppercase() } + " can") {
+        Ability(if (work) Icons.Default.CheckCircle else Icons.Default.Block, "Photograph, pack, scan on and off the van, unpack", work)
+        when {
+            data.can(role, Action.DECIDE) -> Ability(Icons.Default.CheckCircle, "Decide what to keep, sell or buy", true)
+            data.can(role, Action.SUGGEST) -> Ability(Icons.Default.HourglassTop, "Suggest what to keep, sell or buy, for an Organiser to approve", true, amber = true)
+            else -> Ability(Icons.Default.Block, "Decide what to keep, sell or buy", false)
+        }
+        Ability(if (manage) Icons.Default.CheckCircle else Icons.Default.Block, "Add people and change the move", manage)
+    }
+}
+
+@Composable
+private fun Ability(icon: ImageVector, text: String, can: Boolean, amber: Boolean = false) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            icon, contentDescription = if (can) "Can" else "Cannot",
+            tint = if (amber) Night.Amber else if (can) Night.MintLight else Night.Slate, modifier = Modifier.size(20.dp),
+        )
+        Spacer(Modifier.width(10.dp))
+        Text(text, style = MaterialTheme.typography.bodyMedium, color = if (can) Night.Text else Night.TextDim)
     }
 }
 
@@ -328,10 +369,12 @@ fun PersonScreen(id: String, showInvite: Boolean = false) {
         ScrollColumn {
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 PersonOrb(p, size = 84.dp, me = isMe)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (data.shared() || p.removed) RoleChip(p.role)
-                    PersonStatus(p, isMe)
-                    if (p.letter.isNotBlank()) GlassChip("Box codes ${p.letter}1, ${p.letter}2…")
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    if (data.shared() || p.removed) RoleChip(p.role, Modifier.align(Alignment.CenterVertically))
+                    Box(Modifier.align(Alignment.CenterVertically)) { PersonStatus(p, isMe) }
+                    if (p.letter.isNotBlank()) GlassChip("Letter ${p.letter}", Modifier.align(Alignment.CenterVertically))
                 }
             }
             if (naming) {
@@ -358,7 +401,7 @@ fun PersonScreen(id: String, showInvite: Boolean = false) {
                 }
             }
             problem?.let { Section(tone = GlassTone.Red) { Text(it) } }
-            invite?.let { InviteCard(name, it) }
+            invite?.let { InviteCard(name, isMe, it) }
 
             if (!manage) {
                 Text(p.role.line(), style = MaterialTheme.typography.bodyMedium, color = Night.TextSoft, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
@@ -374,16 +417,18 @@ fun PersonScreen(id: String, showInvite: Boolean = false) {
                     Icons.Default.QrCode2,
                     when {
                         invite != null -> "Make a new invite"
+                        isMe -> "Move to a new phone"
                         waitingToJoin -> "Show $name's invite"
                         else -> "New phone for this person"
                     },
                     onClick = { makeInvite() }, primary = waitingToJoin && invite == null,
                 )
-                Section("Role") {
+                // With one person on the move there is no role to choose and nobody to remove.
+                if (data.shared()) Section("Role") {
                     IconChoice(ROLE_CHOICES, p.role, { r -> store.setRole(id, r).orSay(context) }, columns = 3)
                     Text(p.role.line(), style = MaterialTheme.typography.bodySmall, color = Night.TextDim)
                 }
-                Fold("Remove from the move", Icons.Default.PersonRemove, summary = "Their phone can no longer sync", key = "remove-$id") {
+                if (data.shared()) Fold("Remove from the move", Icons.Default.PersonRemove, summary = "Their phone can no longer sync", key = "remove-$id") {
                     Text("What $name did stays, and you can add them back.", style = MaterialTheme.typography.bodyMedium)
                     BigAction(
                         Icons.Default.PersonRemove, "Remove $name",
@@ -400,19 +445,23 @@ fun PersonScreen(id: String, showInvite: Boolean = false) {
 
 /** The invite as a code to scan, saying plainly that it works once and for how long. */
 @Composable
-private fun InviteCard(name: String, invite: ShownInvite) {
+private fun InviteCard(name: String, isMe: Boolean, invite: ShownInvite) {
     val qr = remember(invite.text) { qrBitmap(invite.text, 640).asImageBitmap() }
     Section {
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("$name's invite", style = MaterialTheme.typography.titleMedium)
+            Text(if (isMe) "Invite for your new phone" else "$name's invite", style = MaterialTheme.typography.titleMedium)
             Image(
                 qr, contentDescription = "Invite code for $name",
                 modifier = Modifier.size(232.dp).clip(RoundedCornerShape(20.dp)).background(Color.White).padding(10.dp)
                     .semantics { this[InviteText] = invite.text },
             )
-            GlassChip("Works once · for ${WifiSync.INVITE_MINUTES} minutes, until ${invite.until}", icon = Icons.Default.Timer, tone = GlassTone.Amber)
+            // The two things to know about it, each whole on any screen.
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                GlassChip("Works once", icon = Icons.Default.LooksOne, tone = GlassTone.Amber)
+                GlassChip("For ${WifiSync.INVITE_MINUTES} minutes, until ${invite.until}", icon = Icons.Default.Timer, tone = GlassTone.Amber)
+            }
             Text(
-                "On $name's phone: open HouseMove and tap \"Second phone for the same move?\"",
+                "On " + (if (isMe) "the new phone" else "$name's phone") + ": open HouseMove and tap \"Second phone for the same move?\"",
                 style = MaterialTheme.typography.bodyMedium, color = Night.TextSoft, textAlign = TextAlign.Center,
             )
         }

@@ -13,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.housemove.data.*
@@ -98,14 +99,41 @@ fun SetupScreen() {
 
     // A phone that took in a move that is already set up skips the wizard, once it has been told who it now is.
     LaunchedEffect(data.move.setupDone, joiner.busy, report) {
-        if (data.move.setupDone && !joiner.busy && report == null) goHome()
+        // Read as they are now, not as they were when this was composed: the end of a join sets both at once.
+        if (store.data.value.move.setupDone && !joiner.busy && joiner.report == null) goHome()
     }
 
     // This phone has just met another one: say what came of it before anything else.
     if (report != null && report.ok) {
         Screen(title = if (report.joinedAs != null) "You are in" else "Synced", back = false) {
             ScrollColumn(Modifier.weight(1f)) {
-                SyncReportCard(report)
+                val who = report.joinedAs
+                if (who == null) SyncReportCard(report) else {
+                    // Who this phone now is, large, so there is no doubt about it.
+                    Column(
+                        Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 8.dp), horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        PersonOrb(who, size = 104.dp, me = true)
+                        Text(report.title, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
+                        Text(report.text, style = MaterialTheme.typography.bodyLarge, color = Night.TextSoft, textAlign = TextAlign.Center)
+                    }
+                    Section {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            GlassOrb(Icons.Default.Home, null, size = 40.dp)
+                            Spacer(Modifier.width(12.dp))
+                            Column {
+                                Text(data.move.name.ifBlank { "The move" }, style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    listOfNotNull(
+                                        "${data.livePeople.size} people", data.move.moveDay?.let { "move day " + fmtDay(it) },
+                                    ).joinToString(" · "),
+                                    style = MaterialTheme.typography.bodySmall, color = Night.TextDim,
+                                )
+                            }
+                        }
+                    }
+                }
                 if (!data.move.setupDone) Hint("That move is not set up yet. You can finish setting it up here.")
             }
             BigAction(
@@ -188,6 +216,7 @@ private fun MoveDetails(inventoryOnly: Boolean) {
                 store.setDevice { it.copy(name = said.replaceFirstChar { c -> c.uppercase() }) }
                 spoken++
             }
+            Spacer(Modifier.width(4.dp))
             GlassOrb(Icons.Default.Edit, "Type your name") { naming = !naming }
         }
     }

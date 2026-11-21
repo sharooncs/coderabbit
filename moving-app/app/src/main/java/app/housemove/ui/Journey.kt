@@ -81,7 +81,7 @@ val JOURNEY: List<JourneyPhase> = listOf(
                     val toJoin = d.livePeople.count { it.joinedAt == 0L }
                     when {
                         !d.shared() -> "Just you"
-                        toJoin > 0 -> "${d.livePeople.size} people · $toJoin to join"
+                        toJoin > 0 -> "$toJoin still to join"
                         else -> "${d.livePeople.size} people"
                     }
                 },

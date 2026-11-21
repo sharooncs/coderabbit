@@ -15,7 +15,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -28,6 +27,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -56,6 +56,7 @@ import app.housemove.sync.WifiSync
  *   allowed(), myRole(), myPerson()  what the Store's rules say, re-read whenever people or roles change
  *   AppData.shared()           more than one person on the move, so roles are worth showing
  *   Outcome.orSay(context)     shows why the Store refused something
+ *   tightScreen()              a narrow screen or large text: stack what would otherwise sit side by side
  *
  * Screens never work out a rule themselves: they ask with [allowed] (or `store.can`).
  */
@@ -94,6 +95,10 @@ fun AppData.shared(): Boolean = livePeople.size > 1
 /** The name to show for someone: their own, or a stand-in that still tells people apart. */
 fun Person.shownName(): String = name.ifBlank { if (letter.isBlank()) "No name yet" else "Phone $letter" }
 
+/** True on a narrow screen or with large text, where things side by side would break words: stack them instead. */
+@Composable
+fun tightScreen(): Boolean = LocalConfiguration.current.let { it.screenWidthDp / it.fontScale < 380f }
+
 /** Shows why the Store refused, and hands back what it saved when it did not. Never fails silently. */
 fun <T> Outcome<T>.orSay(context: Context): T? {
     if (this is Outcome.Refused) toast(context, reason)
@@ -112,7 +117,7 @@ val InviteText = SemanticsPropertyKey<String>("InviteText")
 // ---- a person as a ball ------------------------------------------------------------------
 
 private val PERSON_TINTS = listOf(
-    Color(0xFFB7A6FF), Color(0xFF8CC6FF), Color(0xFFFFB98A), Color(0xFFFF9FC6), Color(0xFFC3E68C), Color(0xFF7FDCE0),
+    Color(0xFFB7A6FF), Color(0xFF8CC6FF), Color(0xFFFFB98A), Color(0xFFFF9FC6), Color(0xFFC3E68C), Color(0xFF7FDCE0), Color(0xFFFFDB8A),
 )
 
 /** The colour that stands for a person, from their letter, so it is the same on every phone. */
@@ -122,7 +127,7 @@ fun personTint(p: Person?): Color {
 }
 
 /** A glass ball in one colour, lit from the upper left like the orbs in Glass.kt. */
-private fun DrawScope.drawTintedOrb(tint: Color) {
+private fun DrawScope.drawTintedOrb(tint: Color, lit: Boolean = true) {
     val d = size.minDimension
     val r = d / 2f
     val c = Offset(size.width / 2f, size.height / 2f)
@@ -137,14 +142,14 @@ private fun DrawScope.drawTintedOrb(tint: Color) {
     }
     drawCircle(
         Brush.radialGradient(
-            0f to lerp(Color.White, tint, 0.15f), 0.45f to tint, 1f to lerp(tint, Color(0xFF1B2740), 0.45f),
+            0f to lerp(Color.White, tint, if (lit) 0.15f else 0.7f), 0.45f to tint, 1f to lerp(tint, Color(0xFF1B2740), 0.45f),
             center = hot, radius = d * 1.05f,
         ),
         r, c,
     )
     val w = 1.dp.toPx()
     drawCircle(
-        Brush.verticalGradient(0f to Color.White.copy(alpha = 0.85f), 0.5f to Color.White.copy(alpha = 0.1f), 1f to Color.White.copy(alpha = 0.1f), startY = c.y - r, endY = c.y + r),
+        Brush.verticalGradient(0f to Color.White.copy(alpha = if (lit) 0.85f else 0.4f), 0.5f to Color.White.copy(alpha = 0.1f), 1f to Color.White.copy(alpha = 0.1f), startY = c.y - r, endY = c.y + r),
         r - w / 2f, c, style = Stroke(w),
     )
 }
@@ -157,14 +162,16 @@ private fun DrawScope.drawTintedOrb(tint: Color) {
 @Composable
 fun PersonOrb(person: Person?, modifier: Modifier = Modifier, size: Dp = 44.dp, me: Boolean = false) {
     val initial = person?.name?.trim()?.firstOrNull()?.uppercaseChar()
-    val tint = if (person?.removed == true) Night.Slate else personTint(person)
+    val gone = person?.removed == true
+    // Someone removed is a dull slate ball: drawn that way, not faded, so its shadow stays whole.
+    val tint = if (gone) Night.SlateDeep else personTint(person)
+    val ink = if (gone) Night.TextDim else Night.OnWhite
     Box(
-        modifier.size(size).alpha(if (person?.removed == true) 0.6f else 1f)
-            .drawBehind { if (me) drawOrb(OrbKind.Selected, halo = false) else drawTintedOrb(tint) },
+        modifier.size(size).drawBehind { if (me && !gone) drawOrb(OrbKind.Selected, halo = false) else drawTintedOrb(tint, lit = !gone) },
         contentAlignment = Alignment.Center,
     ) {
-        if (initial != null) Text(initial.toString(), color = Night.OnWhite, fontSize = (size.value * 0.4f).sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-        else Icon(Icons.Default.Person, contentDescription = null, tint = Night.OnWhite, modifier = Modifier.size(size * 0.5f))
+        if (initial != null) Text(initial.toString(), color = ink, fontSize = (size.value * 0.4f).sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        else Icon(Icons.Default.Person, contentDescription = null, tint = ink, modifier = Modifier.size(size * 0.5f))
     }
 }
 

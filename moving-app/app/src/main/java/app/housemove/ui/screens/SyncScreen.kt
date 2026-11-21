@@ -112,7 +112,7 @@ fun SyncScreen(code: String? = null) {
                     Column(Modifier.weight(1f)) {
                         Text("This phone is ${mine.shownName()}", style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
-                            if (allowed(Action.MANAGE_PEOPLE)) "Add a new phone under People" else mine.role.label,
+                            if (allowed(Action.MANAGE_PEOPLE)) "Add a new phone under People" else "Everyone on the move",
                             style = MaterialTheme.typography.bodySmall, color = Night.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
                     }

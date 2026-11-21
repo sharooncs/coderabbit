@@ -172,7 +172,7 @@ class AuditShotsTest {
         // What they suggested and asked: two already decided, three still waiting.
         val toOffice = priya.suggestRoom("tv", dOffice.id).valueOrNull()!!
         val donateBike = priya.suggestDecision("bike", Disposition.DONATE).valueOrNull()!!
-        priya.suggestDecision("desk", Disposition.SELL, 40.0, note = "Too big for the new office")
+        priya.suggestDecision("table", Disposition.SELL, 40.0, note = "Too big for the new kitchen")
         priya.suggestCost(Expense(id = "e3", title = "20 more boxes", amount = 35.0, category = "Supplies", day = today()))
         tom.ask("mirror", note = "Is this coming with us?")
         for (phone in listOf(priya, tom)) s.mergeIn(phone.data.value)
@@ -262,6 +262,19 @@ class AuditShotsTest {
             }
             node.performClick()
             rule.waitForIdle()
+        }
+
+        // The inbox while approving several at once, and while declining one.
+        go("approvals")
+        tap("Select all")
+        shot("approvals_selected")
+        tap("Clear")
+        tap("Decline")
+        shot("approvals_decline")
+        // Someone who has joined, and someone removed.
+        for (name in listOf("Priya", "Alex")) {
+            go("person/" + phones.organiser.data.value.people.first { it.name == name }.id)
+            shot("person_" + name.lowercase())
         }
 
         // Each role's view of the same move.

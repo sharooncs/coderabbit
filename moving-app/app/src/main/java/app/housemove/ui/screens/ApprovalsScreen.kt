@@ -19,7 +19,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role as SemanticsRole
 import androidx.compose.ui.text.font.FontStyle
@@ -169,23 +168,28 @@ private fun WaitingCard(
                     if (p.note.isNotBlank()) Text("“${p.note}”", style = MaterialTheme.typography.bodyMedium, fontStyle = FontStyle.Italic, color = Night.TextSoft)
                 }
                 if (onSelect != null) {
+                    // An empty ring until chosen, so it never looks ticked when it is not.
                     GlassOrb(
-                        Icons.Default.Check, (if (selected) "Selected: " else "Select: ") + what,
+                        if (selected) Icons.Default.Check else Icons.Default.RadioButtonUnchecked, (if (selected) "Selected: " else "Select: ") + what,
                         kind = if (selected) OrbKind.Primary else OrbKind.Plain, size = 36.dp, onClick = onSelect,
                     )
+                } else if (question && !declining) {
+                    GlassChip("Not now", onClick = { onDeclining(true) })
                 }
             }
             if (question) {
                 // An Organiser's answer is the decision.
                 // Five in a row where the words fit; on a narrow screen or with large text, three.
-                val roomy = LocalConfiguration.current.let { it.screenWidthDp / it.fontScale >= 380f }
                 IconChoice(
-                    ANSWERS, selected = null, columns = if (roomy) 5 else 3,
+                    ANSWERS, selected = null, columns = if (tightScreen()) 3 else 5,
                     onPick = { d -> if (store.answer(p.id, d).orSay(context) != null) toast(context, "Answered: ${d.label}") },
                 )
-                if (!declining) TextButton(onClick = { onDeclining(true) }, modifier = Modifier.align(Alignment.End)) { Text("Not now") }
             } else if (!declining) {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                // Side by side where both words fit whole; one above the other where they would not.
+                if (tightScreen()) {
+                    BigAction(Icons.Default.Check, "Approve", onClick = onApprove)
+                    BigAction(Icons.Default.Close, "Decline", onClick = { onDeclining(true) }, primary = false)
+                } else Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     BigAction(Icons.Default.Check, "Approve", onClick = onApprove, modifier = Modifier.weight(1f))
                     BigAction(Icons.Default.Close, "Decline", onClick = { onDeclining(true) }, modifier = Modifier.weight(1f), primary = false)
                 }
