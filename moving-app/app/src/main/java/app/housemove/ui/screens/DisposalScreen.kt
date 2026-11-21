@@ -72,15 +72,11 @@ fun DisposalScreen() {
             item(key = "totals") {
                 val gone = everything.count { it.gone }
                 val late = everything.count { !it.gone && (it.deadlineDay ?: Long.MAX_VALUE) < now }
-                ProgressCard(Ratio(gone, everything.size), if (gone == everything.size) "All gone" else "$gone of ${everything.size} gone") {
-                    if (selling.isNotEmpty()) {
-                        Text(
-                            "Asking " + money(currency, selling.sumOf { it.price ?: 0.0 }) +
-                                " · sold " + money(currency, selling.filter { it.gone }.sumOf { it.soldFor ?: it.price ?: 0.0 }),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                ProgressCard(
+                    Ratio(gone, everything.size), if (gone == everything.size) "All gone" else "$gone of ${everything.size} gone",
+                    sub = if (selling.isEmpty()) null else "Asking " + money(currency, selling.sumOf { it.price ?: 0.0 }) +
+                        " · sold " + money(currency, selling.filter { it.gone }.sumOf { it.soldFor ?: it.price ?: 0.0 }),
+                ) {
                     if (late > 0) IconFlag(Icons.Default.Schedule, "$late past ${if (late == 1) "its" else "their"} date", error = true)
                 }
             }

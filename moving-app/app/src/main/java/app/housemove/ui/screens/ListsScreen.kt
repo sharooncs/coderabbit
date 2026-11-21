@@ -195,12 +195,8 @@ fun PackOrderScreen() {
                     ProgressCard(
                         Ratio(packed, rooms.size), "$packed of ${countOf(rooms.size, "room")} fully packed",
                         Modifier.padding(horizontal = 16.dp), tone = GlassTone.Mint,
-                    ) {
-                        Text(
-                            "${boxes.count { it.sealed }} of ${countOf(boxes.size, "box", "boxes")} sealed",
-                            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                        sub = "${boxes.count { it.sealed }} of ${countOf(boxes.size, "box", "boxes")} sealed",
+                    )
                 }
             } else {
                 item(key = "no-rooms") {

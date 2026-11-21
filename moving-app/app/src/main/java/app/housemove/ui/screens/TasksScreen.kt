@@ -141,14 +141,8 @@ fun TasksScreen() {
                 ProgressCard(
                     Ratio(done.size, tasks.size), "${done.size} of ${countOf(tasks.size, "job")} done",
                     Modifier.padding(horizontal = 16.dp, vertical = 6.dp), tone = GlassTone.Mint,
-                ) {
-                    data.move.moveDay?.let { day ->
-                        Text(
-                            "Move day ${fmtDay(day)} · ${relDay(day, now)}",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
+                    sub = data.move.moveDay?.let { day -> "Move day ${fmtDay(day)} · ${relDay(day, now)}" },
+                )
             }
             if (data.move.moveDay == null && maySetDate) item(key = "date") { MoveDateCard { nav.open("settings") } }
             if (maySuggest) item(key = "add") { TaskAdder(mayPlan) }
