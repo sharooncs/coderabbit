@@ -742,23 +742,41 @@ class PhonesTogetherTest {
 
     @Test
     fun aPhoneTriedOutAloneBringsItsThingsButNothingItDecidedWhenItIsInvited() {
-        for (helperMode in listOf(false, true)) {
+        for (how in listOf("as it comes", "in the old helper mode", "with data from 1.3")) {
             val asha = phone("Asha")
             asha.setMove { it.copy(name = "Maple Road", moveDay = 20_600, vanCapacityM3 = 18.0, currency = "£", setupDone = true) }
             asha.put(Task(id = "t1", title = "Book the van"))
             asha.put(Expense(id = "van", title = "Van hire", amount = 180.0))
             val hana = asha.addPerson("Hana", Role.HELPER).valueOrNull()!!
 
-            // Her phone was tried out on its own first, with the old "helper mode" switch on or off, and after Asha had started the move.
-            val phone = phone("My phone")
-            if (helperMode) phone.setDevice { it.copy(helper = true) }
-            phone.setMove { it.copy(name = "Trying it out", vanCapacityM3 = 9.0, setupDone = true) }
-            val bike = phone.createItem("Bike", null)
-            assertTrue(phone.decide(bike.id, Disposition.SELL, 300.0).ok)
-            assertTrue(phone.carryOut(bike.id, listed = true).ok)
-            val box = phone.createBox("X1", null)
-            phone.put(Task(id = "own-task", title = "My own checklist"))
-            phone.put(Expense(id = "own-cost", title = "Bubble wrap", amount = 5.0))
+            // Her phone was used on its own first, after Asha had started the move: as a new phone comes, or with the old
+            // "helper mode" switch on (nothing is locked there, and what is set carries nobody's name), or with version 1.3.
+            val phone: Store
+            if (how == "with data from 1.3") {
+                val dir = tmp.newFolder("old" + folders++)
+                File(dir, "data.json").writeText(
+                    """{"version":3,"move":{"name":"Trying it out","vanCapacityM3":9.0,"setupDone":true,"updatedAt":100},
+                    "items":[{"id":"bike","name":"Bike","disposition":"SELL","price":300.0,"listed":true,"updatedAt":50}],
+                    "boxes":[{"id":"x1","label":"X1","updatedAt":10}],
+                    "tasks":[{"id":"own-task","title":"My own checklist","updatedAt":60}],
+                    "expenses":[{"id":"own-cost","title":"Bubble wrap","amount":5.0,"updatedAt":70}]}""",
+                )
+                File(dir, "device.json").writeText("""{"name":"My phone","letter":"M"}""")
+                phone = Store(dir) { now++ }
+            } else {
+                phone = phone("My phone")
+                if (how == "in the old helper mode") phone.setDevice { it.copy(helper = true) }
+                phone.setMove { it.copy(name = "Trying it out", vanCapacityM3 = 9.0, setupDone = true) }
+                phone.put(Item(id = "bike", name = "Bike"))
+                assertTrue(phone.decide("bike", Disposition.SELL, 300.0).ok)
+                assertTrue(phone.carryOut("bike", listed = true).ok)
+                phone.put(Box(id = "x1", label = "X1"))
+                phone.put(Task(id = "own-task", title = "My own checklist"))
+                phone.put(Expense(id = "own-cost", title = "Bubble wrap", amount = 5.0))
+            }
+            val bike = phone.data.value.item("bike")!!
+            val box = phone.data.value.box("x1")!!
+            assertEquals(Disposition.SELL, bike.disposition)
             assertEquals(1, phone.data.value.liveExpenses.size)
 
             val h = hosting(asha)
@@ -769,10 +787,10 @@ class PhonesTogetherTest {
             for (s in listOf(asha, phone)) {
                 val d = s.data.value
                 // The move's own settings, tasks and costs are untouched by what the phone had.
-                assertEquals("helper mode $helperMode", "Maple Road", d.move.name)
+                assertEquals(how, "Maple Road", d.move.name)
                 assertEquals(18.0, d.move.vanCapacityM3, 0.0)
                 assertEquals(20_600L, d.move.moveDay)
-                assertEquals(listOf("Book the van"), d.liveTasks.map { it.title })
+                assertEquals(how, listOf("Book the van"), d.liveTasks.map { it.title })
                 // What she catalogued and packed is kept; what she decided about it alone is not a decision of this move.
                 assertNotNull(d.box(box.id))
                 assertEquals("Bike", d.item(bike.id)!!.name)
@@ -781,12 +799,49 @@ class PhonesTogetherTest {
                 assertFalse(d.item(bike.id)!!.listed)
             }
             // The Organiser's phone gained no cost from her, and hers, a Helper's phone now, holds none.
-            assertEquals(listOf("van"), asha.data.value.expenses.map { it.id })
-            assertTrue(phone.data.value.expenses.isEmpty())
+            assertEquals(how, listOf("van"), asha.data.value.expenses.map { it.id })
+            assertTrue(how, phone.data.value.expenses.isEmpty())
             synced(asha, phone)
             assertEquals(listOf("van"), asha.data.value.expenses.map { it.id })
             assertSame(asha, phone, costs = false)
         }
+    }
+
+    @Test
+    fun whatWasSetInNobodysNameCountsOnlyFromATimeWhenThereWasNobodyToAsk() {
+        val asha = phone("Asha")
+        asha.setMove { it.copy(name = "Maple Road", setupDone = true) }
+        asha.put(Task(id = "t1", title = "Book the van"))
+        // A phone in the old helper mode, on its own. Nothing is locked there, and what it sets carries nobody's name.
+        val ben = phone("Ben")
+        ben.setDevice { it.copy(helper = true) }
+        ben.setMove { it.copy(name = "Ben's list", setupDone = true) }
+        val chair = ben.createItem("Chair", null).id
+        assertTrue(ben.decide(chair, Disposition.SELL, 10.0).ok)
+        ben.put(Task(id = "bens", title = "Ben's task"))
+        ben.put(Expense(id = "bens-cost", title = "Tape", amount = 3.0))
+        val box = ben.createBox("X1", null).id
+        // Asha shows the ordinary code and lets the phone in as it is: a Helper. All of the above was set while her move
+        // already had an Organiser to ask, so none of it counts there, although every bit of it is newer than hers.
+        synced(asha, ben)
+        for (s in listOf(asha, ben)) {
+            val d = s.data.value
+            assertEquals(Role.HELPER, d.person(ben.id)!!.role)
+            assertEquals("Maple Road", d.move.name)
+            assertEquals(listOf("Book the van"), d.liveTasks.map { it.title })
+            assertTrue(d.expenses.none { it.id == "bens-cost" })
+            assertEquals(Disposition.UNDECIDED, d.item(chair)!!.disposition)
+            assertNotNull(d.box(box)) // his packing is welcome
+        }
+        // On a phone that is still on its own it goes on counting: there really is nobody to ask.
+        val solo = phone("Solo")
+        solo.setDevice { it.copy(helper = true) }
+        val lamp = solo.createItem("Lamp", null).id
+        assertTrue(solo.decide(lamp, Disposition.BIN).ok)
+        val copy = ByteArrayOutputStream().also { Backup.export(solo, it) }.toByteArray()
+        solo.put(solo.item(lamp).copy(notes = "brass"))
+        Backup.import(solo, ByteArrayInputStream(copy))
+        assertEquals(Disposition.BIN, solo.item(lamp).disposition)
     }
 
     // ---- backups -------------------------------------------------------------------------------

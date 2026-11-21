@@ -202,7 +202,13 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
         try {
             io.execute {
                 try {
-                    deviceFile.writeText(AppJson.encodeToString(next))
+                    // Written whole or not at all: this file says who the phone is, and half of it would say nobody.
+                    val tmp = File(dir, "device.json.tmp")
+                    tmp.writeText(AppJson.encodeToString(next))
+                    if (!tmp.renameTo(deviceFile)) {
+                        tmp.copyTo(deviceFile, overwrite = true)
+                        tmp.delete()
+                    }
                 } catch (_: Exception) {
                 }
             }
@@ -720,7 +726,7 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
             val seen = maxOf(peer.updatedAt, peer.grants.maxOfOrNull { it.at } ?: 0L)
             lastStamp.updateAndGet { maxOf(it, seen) }
             _data.value = d.copy(people = people)
-            mirrorMe()
+            ensureMe()
         }
         scheduleSave()
     }
