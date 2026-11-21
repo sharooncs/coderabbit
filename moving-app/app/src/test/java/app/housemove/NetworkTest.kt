@@ -259,9 +259,14 @@ class NetworkTest {
         // A member still syncs with the same code.
         assertTrue(WifiSync.join(hal, photographed).ok)
         assertTrue(h.result().ok)
-        // Once the code is no longer shown, nothing answers at all.
+        // Once the code is no longer shown, nothing on Asha's phone answers it, not even for a member. (The port itself may
+        // since have been taken by some other program on this machine, so what is said is not checked, only what is got.)
         h.host.stop()
-        assertEquals(WifiSync.UNREACHABLE, WifiSync.join(stranger, photographed, connectTimeoutMs = 1000).error)
+        val later = asha.createBox("L002", null).id
+        for (s in listOf(stranger, hal)) {
+            WifiSync.join(s, photographed, connectTimeoutMs = 1000)
+            assertNull(s.data.value.box(later))
+        }
         // An invite for a person that someone else has already used, or that has run out, lets nobody in.
         val p = asha.addPerson("Dee", Role.DECIDER).valueOrNull()!!
         val again = hosting(asha, letNewPhonesIn = false)
