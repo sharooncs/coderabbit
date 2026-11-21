@@ -522,6 +522,36 @@ class ContainerFlowsTest {
         see("Inside Suitcase 1 (B1)")
     }
 
+    @Test
+    fun theOverviewHomeAndMoveDayCountAContainerInsideAnotherOnceWithItsCarrier() {
+        start()
+        val suitcase = store.createContainer("B1", oldBedroom.id, ContainerKind.SUITCASE)
+        val bag = store.createContainer("B2", oldBedroom.id, ContainerKind.BAG)
+        assertTrue(store.nest(bag.id, suitcase.id).ok)
+        assertTrue(store.putInto(movingItem("Camera", oldBedroom).id, bag.id).ok)
+        store.put(data.box(suitcase.id)!!.copy(sealed = true, travelsWithMe = false))
+        settle()
+
+        // The bag is sealed and carried with the suitcase: the bedroom has one container, and it is sealed.
+        see("1/1") // boxes sealed, on Home
+        go("overview")
+        rule.onAllNodes(hasContentDescription("Bedroom: 1 of 1 boxes sealed", substring = true)).onFirst().assertExists()
+        see("All sealed")
+        go("boxes")
+        see("All 1"); see("Inside another 1")
+        go("load")
+        see("0 of 1 loaded"); see("2 things inside")
+
+        // Delivered, it is one thing in, one thing to unpack, with the bag and the camera to come out of it.
+        store.updateBoxes(listOf(suitcase.id)) { it.copy(stage = Stage.DELIVERED) }
+        go("unload")
+        see("1 of 1 delivered")
+        go("reconcile")
+        see("Everything is accounted for"); see("1 delivered")
+        go("unpack")
+        see("Boxes (1)"); see("Furniture (0)"); see("2 things to come out")
+    }
+
     // ---- hang tags ---------------------------------------------------------------------
 
     @Test

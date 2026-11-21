@@ -332,7 +332,7 @@ private fun RoomSetup(home: Home) {
                     Spacer(Modifier.width(12.dp))
                     Text(r.name, modifier = Modifier.weight(1f))
                     if (home == Home.DEST) Hint(roomColor(r.color).name)
-                    IconButton(onClick = { store.delete(r) }) { Icon(Icons.Default.Close, contentDescription = "Remove ${r.name}") }
+                    GlassOrb(Icons.Default.Close, "Remove ${r.name}", Modifier.padding(4.dp), size = 36.dp, onClick = { store.delete(r) })
                 }
             }
         }

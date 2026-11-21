@@ -200,9 +200,7 @@ fun ScanInDialog(box: Box, onClose: () -> Unit) {
                                         if (sub.isNotBlank()) Hint(sub)
                                     }
                                 }
-                                IconButton(onClick = { store.delete(e) }) {
-                                    Icon(Icons.Default.Close, contentDescription = "Remove ${e.title.ifBlank { e.code }}", tint = Night.TextDim)
-                                }
+                                GlassOrb(Icons.Default.Close, "Remove ${e.title.ifBlank { e.code }}", size = 36.dp, onClick = { store.delete(e) })
                             }
                         }
                     }
@@ -212,25 +210,17 @@ fun ScanInDialog(box: Box, onClose: () -> Unit) {
     }
 
     if (askLookup) {
-        AlertDialog(
-            modifier = Modifier.dialogRim(),
-            onDismissRequest = { askLookup = false },
-            title = { Text("Look up book titles online?") },
-            text = {
-                Text(
-                    "Titles come from Open Library, a free public catalogue. Only the barcode number is sent. " +
-                        "If you say no, you name the books yourself. You can change this in Settings."
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
+        GlassDialog(
+            "Look up book titles online?", onDismiss = { askLookup = false }, icon = Icons.AutoMirrored.Filled.MenuBook,
+            text = "Titles come from Open Library, a free public catalogue. Only the barcode number is sent. " +
+                "If you say no, you name the books yourself. You can change this in Settings.",
+            buttons = {
+                DialogCancel({ store.setDevice { it.copy(bookLookup = false) }; askLookup = false }, "No, stay offline")
+                PillButton("Look up titles", onClick = {
                     store.setDevice { it.copy(bookLookup = true) }
                     askLookup = false
                     store.data.value.entriesOf(box.id).filter { it.title.isBlank() && isIsbn(it.code) }.forEach { lookUp(it.id, it.code) }
-                }) { Text("Look up titles") }
-            },
-            dismissButton = {
-                TextButton(onClick = { store.setDevice { it.copy(bookLookup = false) }; askLookup = false }) { Text("No, stay offline") }
+                })
             },
         )
     }

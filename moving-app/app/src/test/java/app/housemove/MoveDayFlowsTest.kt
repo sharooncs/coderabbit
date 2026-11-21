@@ -31,7 +31,7 @@ import app.housemove.ui.Speech
 import app.housemove.ui.screens.LocalMdScans
 import app.housemove.ui.screens.MdScans
 import app.housemove.ui.screens.mdCurrentStep
-import app.housemove.ui.screens.okOrSay
+import app.housemove.ui.okOrSay
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Assert.*
 import org.junit.Rule

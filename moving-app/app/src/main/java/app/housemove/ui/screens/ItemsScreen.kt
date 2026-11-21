@@ -247,7 +247,7 @@ private fun ItemCard(x: Item, data: AppData, waiting: List<Proposal>, modifier: 
                     if (x.damaged) IconFlag(Pic.Damage, "Damaged", error = true)
                 }
             }
-            waiting.firstOrNull()?.let { WaitingTag(it, data, Modifier.fillMaxWidth(), compact = true) }
+            waiting.firstOrNull()?.let { WaitingTag(it, Modifier.fillMaxWidth(), compact = true, what = data.proposalText(it)) }
         }
     }
 }

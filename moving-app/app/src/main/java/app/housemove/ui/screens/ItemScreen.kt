@@ -565,6 +565,7 @@ fun ItemScreen(id: String) {
             title = "New container $code?",
             text = "Nothing has the label $code yet. Start a new container with it and put ${item.title()} in it?",
             confirm = "Start it",
+            danger = false,
             onConfirm = {
                 val box = store.createContainer(code, item.originRoomId)
                 store.putInto(id, box.id).okOrSay(context)

@@ -195,7 +195,7 @@ internal fun ContainerRefusal(reason: String, modifier: Modifier = Modifier, onD
             Icon(Icons.Default.Block, contentDescription = null, tint = Night.RedPale, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(10.dp))
             Text(reason, color = Night.RedPale, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(vertical = 8.dp))
-            IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = Night.RedPale) }
+            GlassOrb(Icons.Default.Close, "Dismiss", Modifier.padding(end = 4.dp), size = 36.dp, onClick = onDismiss)
         }
     }
 }
@@ -411,7 +411,8 @@ internal fun ContainerRow(
                     // The code is what people look for on the thing itself, so it is never cut short: the room's name gives way.
                     Text(box.label, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
                     // Something inside another goes where that one goes, so it shows no room of its own.
-                    if (showRoom) RoomBadge(data.room(box.destRoomId), Modifier.weight(1f, fill = false))
+                    // A long room name takes a second line before it is shortened.
+                    if (showRoom) RoomBadge(data.room(box.destRoomId), Modifier.weight(1f, fill = false), maxLines = 2)
                 }
                 val words = box.rowWords()
                 val nothing = words.isEmpty() && carried == 0 && scanned == 0

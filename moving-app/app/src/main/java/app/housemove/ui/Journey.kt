@@ -164,8 +164,9 @@ val JOURNEY: List<JourneyPhase> = listOf(
             ),
             JourneyStep(
                 "Plan rooms", Icons.Default.Map, "plan", part = Part.PLAN, who = ::decidesOrSuggests,
+                // As the room plan counts them: something packed in a container goes where the container goes.
                 status = { d, _ ->
-                    val moving = d.movingItems()
+                    val moving = d.looseItems()
                     val noRoom = moving.count { d.room(it.destRoomId) == null }
                     val wontFit = moving.count { d.fitOf(it) == Fit.NO && !it.needsDisassembly }
                     when {
@@ -175,8 +176,8 @@ val JOURNEY: List<JourneyPhase> = listOf(
                         else -> "All placed"
                     }
                 },
-                done = { d -> d.movingItems().let { m -> m.isNotEmpty() && m.all { d.room(it.destRoomId) != null } } },
-                alert = { d -> d.movingItems().any { d.fitOf(it) == Fit.NO && !it.needsDisassembly } },
+                done = { d -> d.looseItems().let { m -> m.isNotEmpty() && m.all { d.room(it.destRoomId) != null } } },
+                alert = { d -> d.looseItems().any { d.fitOf(it) == Fit.NO && !it.needsDisassembly } },
             ),
             JourneyStep(
                 "Sell, donate, bin", Icons.Default.Sell, "disposal", part = Part.TRIAGE,

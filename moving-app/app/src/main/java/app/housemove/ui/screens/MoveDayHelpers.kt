@@ -326,8 +326,12 @@ internal fun MdThingRow(
         ThingThumb(m.id, m.picture())
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            // Two lines, so a long name is still told apart from its neighbours on a small phone.
-            Text(m.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            // Two lines, three on a small phone where the button beside it takes a third of the width,
+            // so a long name ("Box L001 · Kettle, mugs, tea, cutlery") is read whole.
+            Text(
+                m.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium,
+                maxLines = if (trailing != null && narrowScreen(360f)) 3 else 2, overflow = TextOverflow.Ellipsis,
+            )
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 RoomBadge(data.room(m.destRoomId))
                 InsideChip(carried)

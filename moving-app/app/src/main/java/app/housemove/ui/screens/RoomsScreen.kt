@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -106,66 +107,67 @@ private fun RoomDialog(room: Room, onClose: () -> Unit) {
     var confirmDelete by remember { mutableStateOf(false) }
     val inUse = data.liveItems.count { it.originRoomId == room.id || it.destRoomId == room.id } +
         data.liveBoxes.count { it.originRoomId == room.id || it.destRoomId == room.id }
-    AlertDialog(
-        modifier = Modifier.dialogRim(),
-        onDismissRequest = onClose,
-        title = { Text(if (room.home == Home.ORIGIN) "Old-home room" else "New-home room") },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                TextInput(room.name, { v -> store.put(room.copy(name = v)) }, "Name", key = room.id)
-                if (room.home == Home.ORIGIN) {
-                    Text("Most things from here go to", style = MaterialTheme.typography.labelLarge)
-                    RoomPicker(Home.DEST, room.mapsTo, { id -> store.put(room.copy(mapsTo = id)) })
-                    SwitchRow("Fully packed", room.packed, { v -> store.put(room.copy(packed = v)) })
-                } else {
-                    // The tightest door, hallway or stair turn on the way in: a tap for the usual widths.
-                    Text("Narrowest opening on the way in", style = MaterialTheme.typography.labelLarge)
-                    var otherWidth by remember(room.id) { mutableStateOf(room.doorWidthCm != null && room.doorWidthCm !in DOOR_WIDTHS) }
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        DOOR_WIDTHS.forEach { w ->
-                            GlassChip("${fmtNum(w)} cm", selected = !otherWidth && room.doorWidthCm == w, onClick = {
-                                otherWidth = false
-                                store.put(room.copy(doorWidthCm = if (room.doorWidthCm == w) null else w))
-                            })
-                        }
-                        GlassChip("Other", selected = otherWidth, onClick = { otherWidth = !otherWidth })
-                    }
-                    if (otherWidth) {
-                        NumberInput(room.doorWidthCm, { v -> store.put(room.copy(doorWidthCm = v)) }, "Width in cm", Modifier.fillMaxWidth(), key = room.id + "door")
-                    }
-                    Fold(
-                        "Label code and directions", Icons.Default.Edit,
-                        summary = listOfNotNull(room.code.ifBlank { null }, room.floor.ifBlank { null }).joinToString(" · "), key = "code-" + room.id,
-                    ) {
-                        TextInput(room.code, { v -> store.put(room.copy(code = v.uppercase().take(6))) }, "Short code for labels", key = room.id + "code")
-                        TextInput(room.floor, { v -> store.put(room.copy(floor = v)) }, "Floor / directions (e.g. Upstairs, first left)", key = room.id + "floor", mic = true)
-                    }
-                    Text("Colour", style = MaterialTheme.typography.labelLarge)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        ROOM_COLORS.forEachIndexed { i, c ->
-                            Box(
-                                Modifier.size(40.dp).clip(CircleShape).background(c.color())
-                                    .border(
-                                        if (room.color == i) 3.dp else 1.dp,
-                                        if (room.color == i) MaterialTheme.colorScheme.onSurface else Color.White.copy(alpha = 0.35f),
-                                        CircleShape,
-                                    )
-                                    .selectable(selected = room.color == i, role = androidx.compose.ui.semantics.Role.RadioButton) { store.put(room.copy(color = i)) }
-                                    .semantics { contentDescription = c.name },
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                // The chosen colour has a tick as well as a ring.
-                                if (room.color == i) Icon(Icons.Default.Check, contentDescription = null, tint = c.onColor(), modifier = Modifier.size(20.dp))
-                            }
-                        }
-                    }
-                    Hint("Selected: ${roomColor(room.color).name}. Matching coloured tape on boxes makes unloading faster.")
-                }
-            }
+    GlassDialog(
+        title = if (room.home == Home.ORIGIN) "Old-home room" else "New-home room",
+        onDismiss = onClose,
+        icon = Pic.Room,
+        buttons = {
+            PillButton("Delete room", onClick = { confirmDelete = true }, icon = Icons.Default.Delete, primary = false, tone = GlassTone.Red)
+            PillButton("Done", onClick = onClose)
         },
-        confirmButton = { TextButton(onClick = onClose) { Text("Done") } },
-        dismissButton = { TextButton(onClick = { confirmDelete = true }) { Text("Delete room") } },
-    )
+    ) {
+        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            TextInput(room.name, { v -> store.put(room.copy(name = v)) }, "Name", key = room.id)
+            if (room.home == Home.ORIGIN) {
+                Text("Most things from here go to", style = MaterialTheme.typography.labelLarge)
+                RoomPicker(Home.DEST, room.mapsTo, { id -> store.put(room.copy(mapsTo = id)) })
+                SwitchRow("Fully packed", room.packed, { v -> store.put(room.copy(packed = v)) })
+            } else {
+                // The tightest door, hallway or stair turn on the way in: a tap for the usual widths.
+                Text("Narrowest opening on the way in", style = MaterialTheme.typography.labelLarge)
+                var otherWidth by remember(room.id) { mutableStateOf(room.doorWidthCm != null && room.doorWidthCm !in DOOR_WIDTHS) }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    DOOR_WIDTHS.forEach { w ->
+                        GlassChip("${fmtNum(w)} cm", selected = !otherWidth && room.doorWidthCm == w, onClick = {
+                            otherWidth = false
+                            store.put(room.copy(doorWidthCm = if (room.doorWidthCm == w) null else w))
+                        })
+                    }
+                    GlassChip("Other", selected = otherWidth, onClick = { otherWidth = !otherWidth })
+                }
+                if (otherWidth) {
+                    NumberInput(room.doorWidthCm, { v -> store.put(room.copy(doorWidthCm = v)) }, "Width in cm", Modifier.fillMaxWidth(), key = room.id + "door")
+                }
+                Fold(
+                    "Label code and directions", Icons.Default.Edit,
+                    summary = listOfNotNull(room.code.ifBlank { null }, room.floor.ifBlank { null }).joinToString(" · "), key = "code-" + room.id,
+                ) {
+                    TextInput(room.code, { v -> store.put(room.copy(code = v.uppercase().take(6))) }, "Short code for labels", key = room.id + "code")
+                    TextInput(room.floor, { v -> store.put(room.copy(floor = v)) }, "Floor / directions (e.g. Upstairs, first left)", key = room.id + "floor", mic = true)
+                }
+                Text("Colour", style = MaterialTheme.typography.labelLarge)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ROOM_COLORS.forEachIndexed { i, c ->
+                        Box(
+                            Modifier.size(40.dp).clip(CircleShape).background(c.color())
+                                .border(
+                                    if (room.color == i) 3.dp else 1.dp,
+                                    if (room.color == i) MaterialTheme.colorScheme.onSurface else Color.White.copy(alpha = 0.35f),
+                                    CircleShape,
+                                )
+                                .selectable(selected = room.color == i, role = androidx.compose.ui.semantics.Role.RadioButton) { store.put(room.copy(color = i)) }
+                                .semantics { contentDescription = c.name },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            // The chosen colour has a tick as well as a ring.
+                            if (room.color == i) Icon(Icons.Default.Check, contentDescription = null, tint = c.onColor(), modifier = Modifier.size(20.dp))
+                        }
+                    }
+                }
+                Hint("Selected: ${roomColor(room.color).name}. Matching coloured tape on boxes makes unloading faster.")
+            }
+        }
+    }
     if (confirmDelete) ConfirmDialog(
         title = "Delete ${room.name}?",
         text = if (inUse > 0) "$inUse item(s) or box(es) use this room. They will be left with no room." else "This room is not used by anything.",

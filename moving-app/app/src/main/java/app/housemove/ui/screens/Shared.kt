@@ -11,6 +11,7 @@ import android.speech.RecognizerIntent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -51,8 +52,10 @@ import java.io.File
  *
  *   Words        money, countOf, whoIs
  *   Counting     carriedBy, carriedCounts, InsideChip: what a container holds, counted one way
- *   Rules        okOrSay, mayOrSay, mayDelete: when the Store says no, its reason is always shown
- *   Suggestions  WaitingTag, ProposalReview, DeclinedNote: shown on the thing they are about
+ *   Rules        mayOrSay, mayDelete: when the Store says no, its reason is always shown
+ *                (guarded calls use the kit's okOrSay and orSay)
+ *   Suggestions  Suggestion, ProposalReview, DeclinedNote, proposalText: shown on the thing they are
+ *                about (the waiting tag itself, and its words, are the kit's WaitingTag)
  *   Entry        AmountPicker: a sum of money; QuickAdd: a name, both without the keyboard
  *   Lists        ProgressCard, ListHeading, MenuChip, RoomFilterChip, ListFab, RowButton,
  *                DeleteButton, narrowScreen
@@ -238,8 +241,7 @@ internal fun PhotoCamera(hint: String, onPhoto: (File) -> Unit, onClose: () -> U
     }
     Dialog(onDismissRequest = onClose) {
         Column(
-            Modifier.fillMaxWidth().drawBehind { drawRoundRect(Night.Panel, cornerRadius = CornerRadius(28.dp.toPx())) }
-                .glass(RoundedCornerShape(28.dp), sheen = true, shadow = 0.dp).padding(18.dp),
+            Modifier.fillMaxWidth().dialogPanel().padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -275,12 +277,7 @@ internal fun PhotoCamera(hint: String, onPhoto: (File) -> Unit, onClose: () -> U
 }
 
 // ---- when the Store says no ------------------------------------------------------------
-
-/** The Store said no: tell the person why. True when the call went through. */
-internal fun Outcome<*>.okOrSay(context: Context): Boolean {
-    reason?.let { toast(context, it) }
-    return ok
-}
+// A refusal from a guarded call is shown with the kit's Outcome.okOrSay and Outcome.orSay (PeopleKit.kt).
 
 /**
  * For the Store's plain saves, which cannot answer: ask first whether this phone's person
@@ -544,7 +541,12 @@ internal fun MenuChip(
                 }
             }
         }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) { menu { open = false } }
+        // A solid panel with the rim of glass, like a dialog.
+        DropdownMenu(
+            expanded = open, onDismissRequest = { open = false },
+            shape = RoundedCornerShape(20.dp), containerColor = Night.Panel, tonalElevation = 0.dp,
+            border = BorderStroke(1.dp, Night.GlassRim),
+        ) { menu { open = false } }
     }
 }
 
@@ -603,57 +605,6 @@ internal fun AppData.proposalText(p: Proposal): String = when (p.kind) {
     else -> describe(p)
 }
 
-/** The two lines every waiting suggestion is announced with: that it waits, and who wants what. */
-private fun waitingLines(p: Proposal, data: AppData, me: Person?, what: String?): Pair<String, String> {
-    val who = whoIs(data, p.by, me)
-    val name = who.replaceFirstChar { it.uppercase() }
-    return if (p.kind == ProposalKind.QUESTION) "Waiting for an answer" to (name + " asked" + if (p.note.isBlank()) "" else ": " + p.note)
-    else "Waiting for approval" to if (what.isNullOrBlank()) "Suggested by $who" else "$name: $what"
-}
-
-private fun waitingIcon(p: Proposal) = if (p.kind == ProposalKind.QUESTION) Icons.Default.QuestionMark else Icons.Default.HourglassTop
-
-/**
- * The amber callout on anything with a suggestion waiting: "Waiting for approval", and who
- * suggested what. [what] is what it would change, when the row it sits on does not already
- * say so. [compact] is the same callout drawn smaller, for a card in a grid.
- */
-@Composable
-internal fun WaitingTag(p: Proposal, data: AppData, modifier: Modifier = Modifier, compact: Boolean = false, what: String? = data.proposalText(p)) {
-    val (title, value) = waitingLines(p, data, LocalStore.current.me, what)
-    val icon = waitingIcon(p)
-    if (compact) {
-        // In a narrow card the hourglass and one word say that it waits; who wants what gets the room.
-        Row(
-            modifier.glass(RoundedCornerShape(16.dp), shadow = 4.dp).semantics(mergeDescendants = true) { contentDescription = "$title. $value" }
-                .padding(start = 4.dp, top = 4.dp, bottom = 4.dp, end = 8.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Box(Modifier.size(24.dp).drawBehind { drawOrb(OrbKind.Amber, halo = false) }, contentAlignment = Alignment.Center) {
-                Icon(icon, contentDescription = null, tint = Night.OnAmber, modifier = Modifier.size(13.dp))
-            }
-            Text(
-                value, color = Night.Text, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold,
-                maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
-            )
-        }
-        return
-    }
-    Row(
-        modifier.glass(RoundedCornerShape(24.dp), shadow = 8.dp).padding(start = 6.dp, top = 6.dp, bottom = 6.dp, end = 16.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Box(Modifier.size(36.dp).drawBehind { drawOrb(OrbKind.Amber, ring = false) }, contentAlignment = Alignment.Center) {
-            Icon(icon, contentDescription = null, tint = Night.OnAmber, modifier = Modifier.size(18.dp))
-        }
-        Column(Modifier.weight(1f, fill = false)) {
-            Text(title, color = Night.AmberPale, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(value, color = Night.Text, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            if (p.kind != ProposalKind.QUESTION && p.note.isNotBlank()) Text("“${p.note}”", style = MaterialTheme.typography.bodySmall, color = Night.TextSoft)
-        }
-    }
-}
-
 /**
  * A waiting suggestion as an Organiser sees it, on the thing it is about: who asks for
  * what, with Approve and Decline right there. Declining offers a few reasons to tap, the
@@ -665,13 +616,13 @@ internal fun ProposalReview(p: Proposal, data: AppData, modifier: Modifier = Mod
     val store = LocalStore.current
     val context = LocalContext.current
     val question = p.kind == ProposalKind.QUESTION
-    val (title, value) = waitingLines(p, data, store.me, what)
+    val (title, value) = waitingLines(p, data, store.me?.id, what)
     var declining by rememberSaveable(p.id) { mutableStateOf(false) }
     GlassCard(modifier.fillMaxWidth(), tone = GlassTone.Amber, shape = RoundedCornerShape(22.dp)) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Box(Modifier.size(36.dp).drawBehind { drawOrb(OrbKind.Amber, ring = false) }, contentAlignment = Alignment.Center) {
-                    Icon(waitingIcon(p), contentDescription = null, tint = Night.OnAmber, modifier = Modifier.size(18.dp))
+                    Icon(p.waitingIcon(), contentDescription = null, tint = Night.OnAmber, modifier = Modifier.size(18.dp))
                 }
                 Column(Modifier.weight(1f)) {
                     Text(title, style = MaterialTheme.typography.bodySmall, color = Night.AmberPale, maxLines = 1)
@@ -715,7 +666,7 @@ internal fun ProposalReview(p: Proposal, data: AppData, modifier: Modifier = Mod
 /** A waiting suggestion on its target, as whoever is holding the phone sees it: to settle for an Organiser, to wait on for the rest. */
 @Composable
 internal fun Suggestion(p: Proposal, data: AppData, modifier: Modifier = Modifier, what: String? = data.proposalText(p)) {
-    if (allowed(Action.APPROVE)) ProposalReview(p, data, modifier, what) else WaitingTag(p, data, modifier, what = what)
+    if (allowed(Action.APPROVE)) ProposalReview(p, data, modifier, what) else WaitingTag(p, modifier, what = what)
 }
 
 // ---- answers this person has read ----------------------------------------------------------

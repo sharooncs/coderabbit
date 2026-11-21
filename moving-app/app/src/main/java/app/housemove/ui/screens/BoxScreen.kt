@@ -244,9 +244,7 @@ fun BoxScreen(id: String) {
                     }
                     items.forEach { i ->
                         ContainerItemRow(i, onOpen = { nav.open("item/${i.id}") }) {
-                            IconButton(onClick = { itemTrouble = store.takeOut(i.id).reason }) {
-                                Icon(Icons.Default.Close, contentDescription = "Take ${i.title()} out")
-                            }
+                            GlassOrb(Icons.Default.Close, "Take ${i.title()} out", size = 36.dp, onClick = { itemTrouble = store.takeOut(i.id).reason })
                         }
                     }
                     if (loose.isNotEmpty()) {
@@ -267,9 +265,7 @@ fun BoxScreen(id: String) {
                         ContainerRow(
                             c, data, showRoom = false, onOpen = { nav.open("box/${it.id}") },
                             trailing = {
-                                IconButton(onClick = { nestTrouble = store.nest(c.id, null).reason }) {
-                                    Icon(Icons.Default.Close, contentDescription = "Take ${c.shownName()} out")
-                                }
+                                GlassOrb(Icons.Default.Close, "Take ${c.shownName()} out", size = 36.dp, onClick = { nestTrouble = store.nest(c.id, null).reason })
                             },
                         )
                     }

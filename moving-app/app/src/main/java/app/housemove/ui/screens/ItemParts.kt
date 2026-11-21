@@ -404,23 +404,6 @@ internal fun DateChip(day: Long?, label: String, modifier: Modifier = Modifier, 
         if (day == null) label else "$label ${fmtDayShort(day)}", modifier, icon = Icons.Default.Event,
         tone = if (day != null && day < today()) GlassTone.Red else GlassTone.Plain, onClick = { open = true },
     )
-    if (open) {
-        val state = rememberDatePickerState(initialSelectedDateMillis = (day ?: today()) * 86_400_000L)
-        DatePickerDialog(
-            onDismissRequest = { open = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    state.selectedDateMillis?.let { onPick(Math.floorDiv(it, 86_400_000L)) }
-                    open = false
-                }) { Text("OK") }
-            },
-            dismissButton = {
-                Row {
-                    TextButton(onClick = { onPick(null); open = false }) { Text("Clear") }
-                    TextButton(onClick = { open = false }) { Text("Cancel") }
-                }
-            },
-        ) { DatePicker(state = state) }
-    }
+    if (open) DatePickerPanel(day, label, allowClear = true, onPick = onPick, onClose = { open = false })
 }
 
