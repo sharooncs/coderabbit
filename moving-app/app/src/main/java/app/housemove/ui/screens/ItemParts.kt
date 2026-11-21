@@ -39,25 +39,16 @@ import app.housemove.ui.*
  * Devices), so they look alike and follow the same two rules:
  *
  *   No typing    ItemNamer      a name by one tap on a chip suited to the room, or by saying it
- *                AmountPicker   a price by likely amounts and minus / plus
  *                QuickText      a few words by chips or by saying them; the keyboard is behind "Edit"
  *
  *   Roles        decideOrSuggest   an Organiser decides, a Decider's same tap makes a suggestion
- *                WaitingTag        the amber callout on anything with a suggestion waiting
- *                ProposalReview    the same suggestion as an Organiser sees it: Approve, Decline
+ *                MyLastAnswer      what became of this person's own suggestion about an item
  *
- * Who may do what is always asked of the Store, never worked out here.
+ * The waiting tag, Approve and Decline, and the price picker are in Shared.kt: the packing
+ * and move-day screens use the same ones. Who may do what is always asked of the Store.
  */
 
 // ---- words --------------------------------------------------------------------------
-
-internal fun money(currency: String, amount: Double): String = (currency.trim() + " " + fmtNum(amount)).trim()
-
-/** The Store said no: tell the person why. Returns true when the call went through. */
-internal fun <T> Outcome<T>.okOrSay(context: Context): Boolean {
-    reason?.let { toast(context, it) }
-    return ok
-}
 
 private val PLACEHOLDER_NAME = Regex("^(.* )?item \\d+$", RegexOption.IGNORE_CASE)
 
@@ -86,14 +77,6 @@ private val ANY_ROOM_NAMES = listOf("Table", "Chair", "Cabinet", "Shelf unit", "
 internal fun itemNameChips(roomName: String?): List<String> {
     val n = roomName?.lowercase() ?: return ANY_ROOM_NAMES
     return ROOM_ITEM_NAMES.firstOrNull { (words, _) -> words.any { it in n } }?.second ?: ANY_ROOM_NAMES
-}
-
-/** What a suggestion asks for, short enough for a callout on the item itself: "Sell for £ 80", "To Kitchen". */
-internal fun AppData.proposalText(p: Proposal): String = when (p.kind) {
-    ProposalKind.ITEM_DECISION -> (p.disposition ?: Disposition.UNDECIDED).label + (p.price?.let { " for " + money(move.currency, it) } ?: "")
-    ProposalKind.ITEM_ROOM -> "To " + (room(p.roomId)?.name ?: "no room")
-    ProposalKind.QUESTION -> p.note.ifBlank { "What should happen to it?" }
-    else -> describe(p)
 }
 
 /** Suggestions and questions still waiting about one item, oldest first. */
@@ -157,93 +140,32 @@ internal fun Store.planOrSuggestRoom(context: Context, itemId: String, roomId: S
     return suggestRoom(itemId, roomId).okOrSay(context)
 }
 
-// ---- suggestions on the thing they are about --------------------------------------------
-
 /**
- * The amber callout on anything with a suggestion waiting: "Waiting for approval", and who
- * suggested what. [compact] is the same callout drawn smaller, for a card in a grid.
+ * What a Helper has in place of the decision tiles: one tap tells the Organisers this
+ * thing needs them. The microphone asks with a few words of why; on a phone with no
+ * speech a keyboard button takes its place. [onAsked] runs once the question is sent.
  */
 @Composable
-internal fun WaitingTag(p: Proposal, data: AppData, modifier: Modifier = Modifier, compact: Boolean = false) {
-    val me = LocalStore.current.me?.id
-    val who = if (p.by == me) "You" else data.personName(p.by).ifBlank { "Someone" }
-    val question = p.kind == ProposalKind.QUESTION
-    val title = if (question) "Needs a decision" else "Waiting for approval"
-    val value = if (question) who + " asked" + (if (p.note.isBlank()) "" else ": " + p.note) else who + ": " + data.proposalText(p)
-    val icon = if (question) Icons.Default.QuestionMark else Icons.Default.HourglassTop
-    if (!compact) {
-        GlassTag(title = title, value = value, icon = icon, modifier = modifier, kind = OrbKind.Amber)
-        return
-    }
-    Row(
-        modifier.glass(CircleShape, shadow = 4.dp).padding(start = 4.dp, top = 4.dp, bottom = 4.dp, end = 10.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Box(Modifier.size(24.dp).drawBehind { drawOrb(OrbKind.Amber, halo = false) }, contentAlignment = Alignment.Center) {
-            Icon(icon, contentDescription = null, tint = Night.OnAmber, modifier = Modifier.size(13.dp))
-        }
-        Column(Modifier.weight(1f, fill = false)) {
-            Text(title, color = Night.AmberPale, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(value, color = Night.Text, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-    }
-}
-
-/**
- * A waiting suggestion as an Organiser sees it, on the thing it is about: who asks for what,
- * with Approve and Decline right there. Declining needs no reason; the microphone takes one.
- * A question has nothing to approve: it is answered by deciding, or dismissed.
- */
-@Composable
-internal fun ProposalReview(p: Proposal, data: AppData, modifier: Modifier = Modifier) {
+internal fun AskForDecision(itemId: String, primary: Boolean, modifier: Modifier = Modifier, onAsked: () -> Unit = {}) {
     val store = LocalStore.current
     val context = LocalContext.current
-    val question = p.kind == ProposalKind.QUESTION
-    val who = data.personName(p.by).ifBlank { "Someone" }
-    GlassCard(modifier.fillMaxWidth(), tone = GlassTone.Amber, shape = RoundedCornerShape(22.dp)) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Box(Modifier.size(36.dp).drawBehind { drawOrb(OrbKind.Amber, ring = false) }, contentAlignment = Alignment.Center) {
-                    Icon(
-                        if (question) Icons.Default.QuestionMark else Icons.Default.HourglassTop, contentDescription = null,
-                        tint = Night.OnAmber, modifier = Modifier.size(18.dp),
-                    )
-                }
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        if (question) "Needs a decision" else "Waiting for approval",
-                        style = MaterialTheme.typography.bodySmall, color = Night.AmberPale, maxLines = 1,
-                    )
-                    Text(
-                        if (question) "$who asked" else who + ": " + data.proposalText(p),
-                        style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                    )
-                    if (p.note.isNotBlank()) Text("“${p.note}”", style = MaterialTheme.typography.bodySmall, color = Night.TextSoft)
-                }
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (question) {
-                    Text("Choose what happens to it to answer.", style = MaterialTheme.typography.bodySmall, color = Night.TextSoft, modifier = Modifier.weight(1f))
-                } else {
-                    // Tight padding, so both words still fit side by side on a small phone with large text.
-                    Button(
-                        onClick = { store.approve(p.id).okOrSay(context) }, modifier = Modifier.weight(1f).heightIn(min = 44.dp),
-                        contentPadding = PaddingValues(horizontal = 6.dp),
-                    ) { Text("Approve", maxLines = 1) }
-                }
-                OutlinedButton(
-                    onClick = { store.decline(p.id).okOrSay(context) },
-                    modifier = (if (question) Modifier else Modifier.weight(1f)).heightIn(min = 44.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Night.Text),
-                    contentPadding = PaddingValues(horizontal = if (question) 16.dp else 6.dp),
-                ) { Text(if (question) "Dismiss" else "Decline", maxLines = 1) }
-                if (!question) {
-                    SpeakButton("Why not?", contentDescription = "Decline and say why", size = 40.dp) { why -> store.decline(p.id, why).okOrSay(context) }
-                }
-            }
+    var typing by rememberSaveable(itemId) { mutableStateOf(false) }
+    fun ask(note: String = "") {
+        if (store.ask(itemId, note).okOrSay(context)) onAsked()
+    }
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            BigAction(Icons.Default.QuestionMark, "Needs a decision", onClick = { ask() }, modifier = Modifier.weight(1f), primary = primary)
+            SayOrType(
+                "What should they know about it?", "Ask with a spoken note", "Ask with a typed note",
+                typing, onType = { typing = !typing }, size = 56.dp,
+            ) { ask(it) }
         }
+        if (typing) TypedLine("What should they know about it?", "Ask") { ask(it) }
     }
 }
+
+// ---- what became of a suggestion ----------------------------------------------------------
 
 /** What became of this person's latest suggestion about an item, once it is no longer waiting. Nothing when there is none. */
 @Composable
@@ -251,6 +173,11 @@ internal fun MyLastAnswer(itemId: String, data: AppData, modifier: Modifier = Mo
     val me = LocalStore.current.me?.id ?: return
     val last = data.proposalsFor(itemId).firstOrNull { it.by == me } ?: return
     if (last.state == ProposalState.WAITING) return
+    // Turned down: the same note, in the same words, as on the lists, and kept here as the item's record.
+    if (last.state == ProposalState.DECLINED) {
+        DeclinedNote(last, data, modifier, what = data.proposalText(last).takeIf { last.kind != ProposalKind.QUESTION })
+        return
+    }
     val by = data.personName(last.decidedBy)
     val (text, tone, icon) = when (last.state) {
         ProposalState.APPROVED -> Triple(
@@ -344,25 +271,6 @@ internal fun MarkButton(icon: ImageVector, label: String, checked: Boolean, desc
     }
 }
 
-/** The number a list screen is about, as a ring with a sentence beside it and room for a few marks. */
-@Composable
-internal fun SummaryCard(ratio: Ratio, title: String, modifier: Modifier = Modifier, extra: @Composable ColumnScope.() -> Unit = {}) {
-    GlassCard(modifier.fillMaxWidth(), shape = RoundedCornerShape(26.dp), sheen = true) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            val done = ratio.total > 0 && ratio.done >= ratio.total
-            Ring(ratio, size = 64.dp, color = if (done) Night.MintLight else Night.Mint) {
-                if (done) Icon(Icons.Default.Check, contentDescription = null, tint = Night.MintLight)
-                else Text("${ratio.done}/${ratio.total}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 1)
-            }
-            Spacer(Modifier.width(16.dp))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
-                extra()
-            }
-        }
-    }
-}
-
 // ---- entering things without the keyboard ------------------------------------------------
 
 /** A row of one-tap chips that scrolls sideways when there are more than fit. */
@@ -377,18 +285,39 @@ internal fun ChipStrip(options: List<String>, modifier: Modifier = Modifier, sel
  * The name of an item without a keyboard. While it still has the name the app gave it,
  * chips offer what is usually found in its room: one tap names it. The microphone takes
  * a spoken name at any time, and the pencil opens a field for typing one.
- * [showName] is off where the name is already written next to this.
+ *
+ * [showName] is off where the name is already written next to this: on the item's own
+ * page it is the title, and the pencil is in the bar ([typing] then says whether the
+ * field is open).
  */
 @Composable
-internal fun ItemNamer(item: Item, modifier: Modifier = Modifier) {
+internal fun ItemNamer(item: Item, modifier: Modifier = Modifier, showName: Boolean = true, typing: Boolean? = null) {
     val store = LocalStore.current
     val data = appData()
-    var editing by rememberSaveable(item.id) { mutableStateOf(false) }
-    // Bumped when the name is set by voice, so the text field picks the new value up.
-    var heard by remember { mutableIntStateOf(0) }
+    var own by rememberSaveable(item.id) { mutableStateOf(false) }
+    val editing = typing ?: own
+    // Bumped when the name is set by a chip or by voice, so the text field picks the new value up.
+    var named by remember { mutableIntStateOf(0) }
     val unnamed = item.hasPlaceholderName()
     fun rename(v: String) {
         store.data.value.item(item.id)?.let { store.put(it.copy(name = v)) }
+    }
+    val mic: @Composable (Dp) -> Unit = { size ->
+        SpeakButton("What is it?", contentDescription = "Say the name of ${item.title()}", size = size) { said ->
+            rename(said.replaceFirstChar { it.uppercase() })
+            named++
+        }
+    }
+    val entry: @Composable (Modifier) -> Unit = { m ->
+        if (editing) TextInput(value = item.name, onChange = { rename(it) }, label = "Name", modifier = m, key = "${item.id}-name-$named")
+        else ChipStrip(itemNameChips(data.room(item.originRoomId)?.name), m) { rename(it) }
+    }
+    if (!showName) {
+        Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            entry(Modifier.weight(1f))
+            mic(44.dp)
+        }
+        return
     }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -397,23 +326,14 @@ internal fun ItemNamer(item: Item, modifier: Modifier = Modifier) {
                 color = if (unnamed) Night.TextDim else Night.Text, modifier = Modifier.weight(1f),
             )
             // Once it has a name of its own, the pencil alone is enough: fewer buttons down a long list.
-            if (unnamed || editing) {
-                SpeakButton("What is it?", contentDescription = "Say the name of ${item.title()}", size = 40.dp) { said ->
-                    rename(said.replaceFirstChar { it.uppercase() })
-                    heard++
-                }
-            }
+            if (unnamed || editing) mic(40.dp)
             GlassOrb(
                 if (editing) Icons.Default.Check else Icons.Default.Edit,
                 if (editing) "Done naming ${item.title()}" else "Edit the name of ${item.title()}",
-                size = 40.dp, onClick = { editing = !editing },
+                size = 40.dp, onClick = { own = !own },
             )
         }
-        if (editing) {
-            TextInput(value = item.name, onChange = { rename(it) }, label = "Name", key = "${item.id}-name-$heard")
-        } else if (unnamed) {
-            ChipStrip(itemNameChips(data.room(item.originRoomId)?.name)) { rename(it) }
-        }
+        if (editing || unnamed) entry(Modifier.fillMaxWidth())
     }
 }
 
@@ -465,50 +385,15 @@ internal fun QuickText(
     }
 }
 
-private fun stepFor(v: Double): Double = when {
-    v < 20 -> 1.0
-    v < 100 -> 5.0
-    v < 500 -> 10.0
-    v < 2000 -> 50.0
-    else -> 100.0
-}
+private val DAMAGE_CHIPS = listOf("Scratched", "Dented", "Cracked", "Broken", "Torn", "Wet", "Part missing")
 
-internal val PRICE_PRESETS = listOf(5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0)
-
-/**
- * A sum of money without a keyboard: likely amounts to tap, and minus and plus to
- * adjust in sensible steps. Null means none has been set.
- */
+/** What happened to something that was damaged: the usual words to tap, or said, or typed behind the pencil. */
 @Composable
-internal fun AmountPicker(
-    value: Double?,
-    onChange: (Double?) -> Unit,
-    label: String,
-    currency: String,
-    modifier: Modifier = Modifier,
-    presets: List<Double> = PRICE_PRESETS,
-) {
-    val v = value ?: 0.0
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(label, style = MaterialTheme.typography.labelLarge, color = Night.TextDim)
-                Text(
-                    if (value == null) "Not set" else money(currency, value),
-                    style = MaterialTheme.typography.headlineSmall, color = if (value == null) Night.TextDim else Night.Text, maxLines = 1,
-                )
-            }
-            GlassOrb(Icons.Default.Remove, "$label: less", size = 44.dp, onClick = {
-                val down = v - stepFor(v - 0.01)
-                onChange(if (down <= 0.0) null else down)
-            })
-            Spacer(Modifier.width(8.dp))
-            GlassOrb(Icons.Default.Add, "$label: more", size = 44.dp, onClick = { onChange(v + stepFor(v)) })
-        }
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            presets.distinct().forEach { p -> GlassChip(money(currency, p), selected = value == p, onClick = { onChange(p) }) }
-        }
-    }
+internal fun DamageText(value: String, onChange: (String) -> Unit, key: String, modifier: Modifier = Modifier) {
+    QuickText(
+        value, onChange, label = "What happened?", prompt = "What happened to it?",
+        key = key, modifier = modifier, chips = DAMAGE_CHIPS, empty = "Not described yet",
+    )
 }
 
 /** A date as a chip: tap to choose it. Small enough to sit beside other chips. */
@@ -539,13 +424,3 @@ internal fun DateChip(day: Long?, label: String, modifier: Modifier = Modifier, 
     }
 }
 
-/** A small heading over a group of rows, with a picture and an optional count at the end. */
-@Composable
-internal fun GroupHeading(icon: ImageVector, title: String, modifier: Modifier = Modifier, trailing: String? = null) {
-    Row(modifier.fillMaxWidth().padding(top = 6.dp, start = 4.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, contentDescription = null, tint = Night.Mint, modifier = Modifier.size(20.dp))
-        Spacer(Modifier.width(8.dp))
-        Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-        if (trailing != null) Text(trailing, style = MaterialTheme.typography.labelMedium, color = Night.TextDim, textAlign = TextAlign.End)
-    }
-}

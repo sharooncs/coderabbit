@@ -319,8 +319,8 @@ class FlowsTest {
         tapDesc("Edit what's inside") // typing is still there for whatever the chips do not cover
         type("What's inside", "Glasses, mugs")
         tap("Fragile"); tap("This way up")
+        tap("Packing details") // when to unpack it and its size are rarely changed, so they are folded away
         tap("First night")
-        tap("Box size") // rarely changed, so it is folded away
         tap("Small")
         tapDesc("Going to") // the room it goes to is filled in already; this opens the others
         tap("Bedroom") // send it to a different room than the default
@@ -337,7 +337,7 @@ class FlowsTest {
         assertFalse(data.box(a.id)!!.sealed)
 
         // Relabel: a label that is already on another box is refused.
-        tap("Label")
+        tap("More")
         tap("Change label")
         type("Or type the code", "L002")
         tap("OK")
@@ -347,7 +347,7 @@ class FlowsTest {
         assertEquals("L099", data.box(a.id)!!.label)
         assertTrue(data.duplicateLabels().isEmpty())
 
-        tapDesc("Delete this box")
+        tap("Delete this box") // at the very end of the last section
         tap("Delete")
         assertNull(data.box(a.id))
         assertFalse(photo.exists())
@@ -374,7 +374,8 @@ class FlowsTest {
         tap("Move")
         assertEquals(Disposition.MOVE, it().disposition)
         assertEquals(newBedroom.id, it().destRoomId)
-        tap("Kitchen") // new-home picker; the old-home picker is inside "Notes and old room"
+        tapDesc("Going to") // the room it goes to is one line; this opens the others
+        tap("Kitchen")
         assertEquals(newKitchen.id, it().destRoomId)
 
         tap("Size and handling") // sections other than the decision open when tapped
@@ -382,17 +383,18 @@ class FlowsTest {
         assertEquals(80.0, it().widthCm!!, 0.001)
         assertEquals(190.0, it().heightCm!!, 0.001)
 
-        tap("Label")
+        tap("Getting it ready") // which includes labelling it
         tap("Use a handwritten code")
         assertEquals("S1", it().label)
         tap("Remove label")
         assertNull(it().label)
 
-        tap("Damage")
+        tap("More") // before it leaves the old home, where it is and any damage wait in the last section
         tap("Damaged in the move")
         assertTrue(it().damaged)
+        see("On the move") // once damaged, they have a section of their own
 
-        tap("Delete item") // at the very end of the page
+        tap("Delete item") // at the very end of the last section, which is still open
         tap("Delete")
         assertNull(data.item(item.id))
         go("item/${item.id}")
@@ -410,6 +412,7 @@ class FlowsTest {
         // Furniture is not asked for a serial number unless you switch it on.
         go("item/${wardrobe.id}")
         dontSee("Scan the serial number barcode")
+        tap("More")
         tap("It has a serial number")
         see("Scan the serial number barcode")
         assertEquals(true, data.item(wardrobe.id)!!.electronic)
@@ -421,7 +424,7 @@ class FlowsTest {
         type("Make", "Samsung")
         type("Model", "QE55Q60")
         type("Serial number", "0AB3HCPT500123X")
-        tap("What travels with it")
+        see("What travels with it") // in the same section
         tap("Remote") // one tap each, nothing typed
         tap("Power lead")
         tap("Stand")
@@ -452,7 +455,7 @@ class FlowsTest {
         see("S/N ZX81-0042")
         see("No serial number") // the wardrobe that was switched on but not filled in
         go("load")
-        see("Upright")
+        see("Keep upright")
     }
 
     @Test
@@ -538,7 +541,7 @@ class FlowsTest {
         val wardrobe = store.createItem("Wardrobe", oldBedroom.id)
         store.put(data.item(wardrobe.id)!!.copy(disposition = Disposition.MOVE, widthCm = 120.0, depthCm = 80.0, heightCm = 200.0))
         go("plan")
-        see("Needs a room (1)")
+        see("Needs a room")
         tap("Kitchen")
         assertEquals(newKitchen.id, data.item(desk.id)!!.destRoomId)
         assertTrue(data.issues().any { it.route == "plan" && it.severe })
@@ -591,8 +594,8 @@ class FlowsTest {
         tap("Here")
         val first = data.liveBoxes.first { it.stage == Stage.DELIVERED }
         tap("Report damage") // opens in place of the arrival panel: the photo first, the note optional
-        tapDesc("Type a note")
-        type("What is damaged?", "Corner crushed")
+        tapDesc("Edit: What happened?")
+        type("What happened?", "Corner crushed")
         tap("Save")
         assertTrue(data.box(first.id)!!.damaged)
         assertEquals("Corner crushed", data.box(first.id)!!.damageNote)

@@ -17,7 +17,9 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.isSelectable
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onRoot
@@ -158,6 +160,25 @@ class ContainerFlowsTest {
 
     private fun picked(text: String) = rule.onAllNodes(hasText(text) and isSelectable()).onFirst().assertIsSelected()
 
+    /** Open one of the two pickers under the ticket ("Kind" or "Contents") and choose a tile; choosing closes it. */
+    private fun choose(picker: String, tile: String) {
+        tap(picker)
+        pick(tile)
+    }
+
+    /** What one of the two pickers under the ticket is set to, read off its tiles. */
+    private fun chosen(picker: String, tile: String) {
+        tap(picker)
+        picked(tile)
+        tap(picker)
+    }
+
+    /** Choose from one of the filter chips of the list that open a menu. */
+    private fun filter(chip: String, choice: String) {
+        tapDesc(chip)
+        tap(choice)
+    }
+
     /** Stand in for the scanner: the code goes into its "or type the code" field. */
     private fun scan(code: String) {
         val node = rule.onAllNodes(hasSetTextAction() and hasText("Or type the code")).onFirst()
@@ -203,9 +224,9 @@ class ContainerFlowsTest {
         assertEquals(newKitchen.id, b.destRoomId)
         see("Kitchen box 1")
         see("Write it on the top and one side")
-        // The suggested kind and category are the ones selected, and the photo, the chips and Seal are all here.
-        picked("Box")
-        picked("Kitchen")
+        // The suggested kind and category are the ones set, and the photo, the chips and Seal are all here.
+        chosen("Kind", "Box")
+        chosen("Contents", "Kitchen")
         rule.onAllNodes(hasContentDescription("Take a photo of what's inside") and hasClickAction()).onFirst().assertExists()
         rule.onAllNodes(hasText("Seal box") and hasClickAction()).onFirst().assertIsDisplayed()
         noKeyboardNeeded()
@@ -250,9 +271,9 @@ class ContainerFlowsTest {
         start("pack")
         tap("Bedroom")
         tap("No sticker? Use a handwritten code")
-        picked("Box")
-        picked("Clothes") // what a bedroom suggests
-        pick("Suitcase")
+        chosen("Kind", "Box")
+        chosen("Contents", "Clothes") // what a bedroom suggests
+        choose("Kind", "Suitcase")
         var b = box("S1")
         assertEquals(ContainerKind.SUITCASE, b.kind)
         assertEquals("Suitcase 1", b.name) // the automatic name follows the kind
@@ -271,22 +292,22 @@ class ContainerFlowsTest {
         see("Travels with me (1)")
         see("Suitcase 1")
         go("box/${b.id}")
-        tap("Keep off the van")
+        tap("Packing details") // rarely changed, so it is folded away
         tap("Travels with me")
         assertFalse(box("S1").travelsWithMe)
         // As another kind it gets that kind's name, and goes on the van like any bag.
-        pick("Bag")
+        choose("Kind", "Bag")
         assertEquals("Bag 1", box("S1").name)
         assertFalse(box("S1").travelsWithMe)
         tap("Travels with me") // this bag is to stay with us: said by the person, so it is kept
-        pick("Crate or tub")
+        choose("Kind", "Crate or tub")
         assertTrue(box("S1").travelsWithMe)
         assertEquals("Crate 1", box("S1").name)
 
         // A name someone chose is left alone when the kind changes.
         store.put(box("S1").copy(name = "Holiday things"))
         settle()
-        pick("Bag")
+        choose("Kind", "Bag")
         assertEquals("Holiday things", box("S1").name)
         // The next thing packed in the bedroom starts as what the last one was.
         go("pack")
@@ -359,33 +380,33 @@ class ContainerFlowsTest {
         val chair = movingItem("Chair", oldKitchen, label = "L070")
 
         go("box/${bag.id}")
-        tap("Put inside another container")
+        tap("Put in another container")
         scan("B1")
         assertEquals(suitcase.id, data.parentOf(box("B2"))!!.id)
         see("Inside Suitcase 1 (B1)")
-        dontSee("Put inside another container")
+        dontSee("Put in another container")
         // It is no longer a separate thing to load.
         assertEquals(setOf("B1", "L001", "L070"), data.movables().map { it.label }.toSet())
 
         // The outer one shows what is in it, and cannot itself go inside something.
         go("box/${suitcase.id}")
-        see("Inside this suitcase (1)")
+        see("Containers inside (1)")
         see("B2")
-        dontSee("Put inside another container")
+        dontSee("Put in another container")
 
         // One inside another and no deeper: the reason is the Store's.
         go("box/${carton.id}")
-        tap("Put inside another container")
+        tap("Put in another container")
         scan("B2")
         see("Bag 1 (B2) is already inside Suitcase 1 (B1). Containers only go one inside another.")
         assertNull(box("L001").parentId)
-        tap("Put inside another container")
+        tap("Put in another container")
         scan("L001")
         see("A container cannot go inside itself.")
-        tap("Put inside another container")
+        tap("Put in another container")
         scan("ZZ9")
         see("No container has the label ZZ9.")
-        tap("Put inside another container")
+        tap("Put in another container")
         scan("L070")
         see("Chair is an item, not a container.")
         tapDesc("Dismiss")
@@ -396,16 +417,45 @@ class ContainerFlowsTest {
         go("box/${bag.id}")
         tap("Take out")
         assertNull(box("B2").parentId)
-        see("Put inside another container")
+        see("Put in another container")
         assertEquals(4, data.movables().size)
 
         // From the outer side: scanning a container's label where items are scanned puts it in.
         go("box/${suitcase.id}")
-        tapDesc("Scan an item's label to put it in")
+        tap("Put an item in") // nothing loose in this room to tap: one line, which opens the scanner
         scan("B2")
         assertEquals(suitcase.id, data.parentOf(box("B2"))!!.id)
         tapDesc("Take Bag 1 out")
         assertNull(box("B2").parentId)
+    }
+
+    @Test
+    fun aLongListOfContentsIsCutShortAndARefusedCameraOffersAWayForward() {
+        start()
+        val b = store.createContainer("L001", oldKitchen.id)
+        val things = (1..30).map { "Thing $it" }
+        store.put(data.box(b.id)!!.copy(contents = things.joinToString(", ")))
+        go("box/${b.id}")
+        // Thirty things written down: the first few show with three of the usual things to add,
+        // and the rest wait behind "more", so the items and Seal stay in reach.
+        see("Thing 1"); see("Thing 6")
+        dontSee("Thing 7")
+        rule.onAllNodes(hasText("Seal box") and hasClickAction()).onFirst().assertIsDisplayed()
+        tap("33 more") // 24 more of its own, and 9 of the usual kitchen things
+        see("Thing 30"); see("Tea towels")
+        tap("Fewer")
+        dontSee("Thing 30")
+        tap("Thing 3") // one tap takes a thing off again
+        assertEquals(29, contentsLines(box("L001").contents).size)
+
+        // The camera is not allowed on this phone. The notice says so and offers what can be done instead.
+        tapDesc("Take a photo of what's inside")
+        see("The camera is switched off for HouseMove")
+        see("Choose photos instead")
+        see("Open the phone's settings")
+        tap("Not now")
+        dontSee("The camera is switched off")
+        noKeyboardNeeded()
     }
 
     // ---- the list ----------------------------------------------------------------------
@@ -427,36 +477,42 @@ class ContainerFlowsTest {
         see("Open 2"); see("Sealed 1")
         see("Inside another 1")
         assertEquals(data.progress().sealed.total, 3)
+        // What kind and what is inside are one chip each, which opens a list with the counts.
+        tapDesc("Choose a kind of container")
         see("Boxes 2"); see("Suitcases 1"); see("Bags 1")
+        tap("All kinds")
+        tapDesc("Choose what is inside")
         see("Kitchen 2"); see("Clothes 2")
+        tap("All contents")
         // Each row says what kind it is with a picture, and the bag sits under its suitcase.
         rule.onAllNodes(hasContentDescription("Suitcase")).onFirst().assertExists()
         rule.onAllNodes(hasContentDescription("Inside suitcase B1")).onFirst().assertExists()
-        see("B2"); see("1 item"); see("Plates")
+        // The suitcase carries the camera and the bag: counted as everywhere else, each thing once.
+        see("B2"); see("2 things inside"); see("Plates")
 
-        tap("Bags 1")
+        filter("Choose a kind of container", "Bags 1")
         see("B2"); see("Inside suitcase B1")
         dontSee("L001"); dontSee("L002")
-        tap("Bags 1") // tapping again shows everything
+        filter("Choose a kind of container", "All kinds")
         see("L001")
 
-        tap("Suitcases 1")
-        see("B1"); see("1 inside")
+        filter("Choose a kind of container", "Suitcases 1")
+        see("B1"); see("2 things inside")
         dontSee("L002"); dontSee("B2")
-        tap("Suitcases 1")
+        filter("Choose a kind of container", "All kinds")
 
-        tap("Kitchen 2")
+        filter("Choose what is inside", "Kitchen 2")
         see("L001"); see("L002"); dontSee("B1")
-        tap("Kitchen 2")
+        filter("Choose what is inside", "All contents")
         tap("Sealed 1")
         see("L001"); dontSee("L002"); dontSee("B1")
         tap("All 3")
 
         tap("Inside another 1")
         see("B2"); see("Inside suitcase B1"); dontSee("L001")
-        tap("Boxes 2") // no cartons are inside anything
-        see("No boxes match")
-        tap("Show all boxes")
+        filter("Choose a kind of container", "Boxes 2") // no cartons are inside anything
+        see("Nothing matches")
+        tap("Show everything")
         see("L002"); see("B1")
         noKeyboardNeeded()
 
@@ -531,13 +587,17 @@ class ContainerFlowsTest {
         tap("Plates")
         tapBelow("Camera")
         assertEquals(b.id, data.item(item.id)!!.boxId)
-        tap("Put inside another container")
+        tap("Put in another container")
         scan("B1")
         assertEquals(suitcase.id, data.box(b.id)!!.parentId)
         tap("Seal box")
         assertTrue(data.box(b.id)!!.sealed)
         // Nothing was refused, and nothing on the way mentioned roles.
         for (word in listOf("Helper", "Organiser", "Decider", "Only an")) dontSee(word)
+        // One thing is left out for him, without a word about why: taking the box off everyone's list.
+        tap("More")
+        see("Change label")
+        dontSee("Delete this box")
         go("boxes"); for (word in listOf("Helper", "Organiser", "Decider")) dontSee(word)
     }
 
@@ -636,8 +696,8 @@ class ContainerFlowsTest {
             rule.onRoot().captureRoboImage("build/audit/$kind/$name.png")
         }
         go("boxes"); shot("c_boxes")
-        tap("Bags 2"); shot("c_boxes_bags")
-        tap("Bags 2")
+        filter("Choose a kind of container", "Bags 2"); shot("c_boxes_bags")
+        filter("Choose a kind of container", "All kinds")
         go("pack"); shot("c_pack")
         // A container the moment it has been created, before anything is tapped.
         tap("No sticker? Use a handwritten code"); shot("c_box_new")
@@ -645,6 +705,11 @@ class ContainerFlowsTest {
         go("box/${ids["b1"]}"); shot("c_box_suitcase")
         go("box/${ids["b2"]}"); shot("c_box_inside")
         go("box/${ids["l1"]}"); shot("c_box_sealed")
+        // The scanner for books and products opens over the page, in a window of its own.
+        tapDesc("Scan barcodes of books and products")
+        settle()
+        rule.onAllNodes(isRoot()).onLast().captureRoboImage("build/audit/$kind/c_scanin.png")
+        tap("Done")
         go("labels"); shot("c_labels")
         go("lists"); shot("c_lists")
         go("packorder"); shot("c_packorder")
@@ -657,4 +722,9 @@ class ContainerFlowsTest {
     @Test
     @Config(sdk = [34], qualifiers = "w411dp-h2300dp-mdpi")
     fun picturesOfWholeScreens() = shots("tall")
+
+    /** The same screens on a 360dp phone, the most common small size: what is inside must not push the items under Seal. */
+    @Test
+    @Config(sdk = [34], qualifiers = "w360dp-h740dp-xhdpi")
+    fun picturesOnA360dpPhone() = shots("c-360")
 }

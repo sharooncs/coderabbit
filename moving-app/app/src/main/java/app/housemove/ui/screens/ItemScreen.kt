@@ -12,7 +12,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -25,14 +24,14 @@ import kotlin.math.roundToLong
 private val DECISIONS = listOf(Disposition.MOVE, Disposition.SELL, Disposition.DONATE, Disposition.BIN, Disposition.STORE)
 
 private val ACCESSORY_CHIPS = listOf("Remote", "Power lead", "Cables", "Stand", "Screws", "Shelves", "Manual")
-private val DAMAGE_CHIPS = listOf("Scratched", "Dented", "Cracked", "Broken", "Torn", "Wet", "Part missing")
 private val WORTH_PRESETS = listOf(50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0)
 
 /**
- * Everything about one catalogued item, in place and without the keyboard: the photo, the
- * name (a chip, a spoken word, or typed behind the pencil), what happens to it, where it
- * goes and what it is packed in are always showing; the rest waits in sections that open
- * when tapped, each saying in one line what is already set.
+ * Everything about one catalogued item, in place and without the keyboard. Always showing:
+ * the photo, what happens to it, where it goes (one line that opens the rooms) and what
+ * it is packed in. The rest waits in a few sections that open when tapped, each saying in
+ * one line what is already set: device details, size and handling, getting it ready, how
+ * it fares on the move, and a last one for notes and what is rarely wanted.
  *
  * What happens to it depends on who is holding the phone. An Organiser decides with the
  * picture tiles and finds other people's suggestions here with Approve and Decline. A
@@ -59,6 +58,7 @@ fun ItemScreen(id: String) {
     val mayDecide = store.can(Action.DECIDE)
     val maySuggest = store.can(Action.SUGGEST)
     val mayCarryOut = data.mayCarryOut(me, item)
+    val mayDelete = mayDelete()
     val waitingDecision = data.waitingFor(id, ProposalKind.ITEM_DECISION, ProposalKind.QUESTION)
     val waitingRoom = data.waitingFor(id, ProposalKind.ITEM_ROOM)
 
@@ -71,10 +71,13 @@ fun ItemScreen(id: String) {
     var newContainer by remember { mutableStateOf<String?>(null) }
     // Bumped when a scan fills the serial number in, so the text field picks the new value up.
     var serialScans by remember { mutableIntStateOf(0) }
-    // Set when "It has a make, model…" is switched on here, so its section appears already open.
+    // Set when "It has a serial number" is switched on here, so its section appears already open.
     var deviceJustOn by rememberSaveable { mutableStateOf(false) }
     var editingDevice by rememberSaveable { mutableStateOf(false) }
     var naming by rememberSaveable { mutableStateOf(false) }
+    // Bumped when the size is said, so the three fields pick the new numbers up.
+    var sizeSaid by remember { mutableIntStateOf(0) }
+    var choosingRoom by rememberSaveable(id) { mutableStateOf(false) }
     // A Decider choosing Sell names an asking price before the suggestion is sent.
     var pricing by rememberSaveable { mutableStateOf(false) }
     var askingDraft by remember(id, item.price) { mutableStateOf(item.price) }
@@ -100,8 +103,7 @@ fun ItemScreen(id: String) {
     // journey are left out for a plain list, unless something is already recorded in them.
     val movesHouse = data.uses(Part.PLAN) || data.uses(Part.BOXES) || data.uses(Part.MOVE_DAY) || data.uses(Part.UNPACK)
     // On a small screen or with large text, tiles go fewer to a row so their words still fit.
-    val config = LocalConfiguration.current
-    val narrow = config.screenWidthDp / config.fontScale < 340
+    val narrow = narrowScreen()
 
     Screen(
         title = item.title(),
@@ -114,7 +116,7 @@ fun ItemScreen(id: String) {
 
             // The name is in the bar above. Until it has a real one, one tap or a spoken word gives it one;
             // the pencil up there opens a field for typing it.
-            if (naming || item.hasPlaceholderName()) NameRow(item, typing = naming)
+            if (naming || item.hasPlaceholderName()) ItemNamer(item, showName = false, typing = naming)
 
             // ---- what happens to it ------------------------------------------------------
 
@@ -130,7 +132,7 @@ fun ItemScreen(id: String) {
                     }
                 }
                 // What others suggested or asked sits here, on the item: an Organiser settles it, the rest see it wait.
-                waitingDecision.forEach { p -> if (mayDecide) ProposalReview(p, data) else WaitingTag(p, data) }
+                waitingDecision.forEach { p -> Suggestion(p, data) }
                 if (!mayDecide && !item.gone && waitingDecision.none { it.by == me?.id }) MyLastAnswer(id, data)
 
                 if (maySuggest) {
@@ -160,16 +162,7 @@ fun ItemScreen(id: String) {
                     }
                 } else if (waitingDecision.none { it.by == me?.id }) {
                     // One tap asks the Organisers; the microphone asks with a few words of why.
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        BigAction(
-                            Icons.Default.QuestionMark, "Needs a decision",
-                            onClick = { store.ask(id).okOrSay(context) },
-                            modifier = Modifier.weight(1f), primary = item.disposition == Disposition.UNDECIDED,
-                        )
-                        SpeakButton("What should they know about it?", contentDescription = "Ask with a spoken note", size = 56.dp) { said ->
-                            store.ask(id, said).okOrSay(context)
-                        }
-                    }
+                    AskForDecision(id, primary = item.disposition == Disposition.UNDECIDED)
                 }
 
                 // Carrying the decision out, for whoever may: listed, gone, and what it went for.
@@ -217,18 +210,29 @@ fun ItemScreen(id: String) {
                 }
             }
 
-            // ---- where it goes ---------------------------------------------------------
+            // ---- where it goes: one line, which opens the rooms ---------------------------
 
             if (moving && (movesHouse || dest != null)) {
+                // With no room yet the rooms are open already, unless it is packed: then it goes where its container goes.
+                val roomsOpen = maySuggest && (choosingRoom || (dest == null && container == null))
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(if (maySuggest && !mayDecide) "Suggest where it goes" else "Where it goes", style = MaterialTheme.typography.titleMedium)
-                    waitingRoom.forEach { p -> if (mayDecide) ProposalReview(p, data) else WaitingTag(p, data) }
-                    if (maySuggest) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            if (maySuggest && !mayDecide) "Suggest where it goes" else "Where it goes",
+                            style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f),
+                        )
+                        if (maySuggest) GoingTo(dest, roomsOpen, onToggle = { choosingRoom = !roomsOpen })
+                        else RoomBadge(dest)
+                    }
+                    waitingRoom.forEach { p -> Suggestion(p, data) }
+                    if (roomsOpen) {
                         RoomTiles(
                             Home.DEST, item.destRoomId, allowNone = mayDecide,
-                            onPick = { rid -> if (mayDecide || rid != item.destRoomId) store.planOrSuggestRoom(context, id, rid) },
+                            onPick = { rid ->
+                                if ((mayDecide || rid != item.destRoomId) && store.planOrSuggestRoom(context, id, rid)) choosingRoom = false
+                            },
                         )
-                    } else RoomBadge(dest)
+                    }
                     if (data.uses(Part.PLAN)) {
                         FitLine(
                             item, dest, data.fitOf(item), inches,
@@ -241,7 +245,8 @@ fun ItemScreen(id: String) {
 
             // ---- what it is packed in -----------------------------------------------------
 
-            if (container != null || (data.uses(Part.BOXES) && !leaving)) {
+            // A wardrobe or a fridge goes in no container: what plainly cannot be packed is not offered it.
+            if (container != null || (data.uses(Part.BOXES) && !leaving && item.couldBePacked())) {
                 ContainerBlock(
                     item, container, data,
                     onScan = { scanningContainer = true },
@@ -254,8 +259,10 @@ fun ItemScreen(id: String) {
             if (electronic) {
                 Fold(
                     "Make, model and serial number", Pic.Device,
-                    summary = listOf(item.makeModel(), if (item.serial.isBlank()) "" else "S/N ${item.serial}")
-                        .filter { it.isNotBlank() }.joinToString(" · ")
+                    summary = listOf(
+                        item.makeModel(), if (item.serial.isBlank()) "" else "S/N ${item.serial}",
+                        item.accessories.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty(),
+                    ).filter { it.isNotBlank() }.joinToString(" · ")
                         .ifBlank { if (data.photosOf(id, PhotoKind.SERIAL).isNotEmpty()) "Serial label photographed" else "Nothing recorded yet" },
                     open = deviceJustOn,
                     key = "device-$deviceJustOn",
@@ -284,52 +291,31 @@ fun ItemScreen(id: String) {
                         TextInput(item.model, { v -> edit { it.copy(model = v) } }, "Model", key = "$id-model")
                         TextInput(item.serial, { v -> edit { it.copy(serial = v.trim()) } }, "Serial number", key = "$id-serial-$serialScans")
                     }
-                    Button(onClick = { scanningSerial = true }, modifier = Modifier.fillMaxWidth()) {
-                        Icon(Icons.Default.QrCodeScanner, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Scan the serial number barcode")
-                    }
+                    BigAction(Icons.Default.QrCodeScanner, "Scan the serial number barcode", onClick = { scanningSerial = true }, primary = item.serial.isBlank())
                     PhotoStrip(item.id, PhotoKind.SERIAL, label = "Photo of the serial label")
                     PhotoStrip(item.id, PhotoKind.RECEIPT, label = "Receipt or warranty card")
                     DateButton(item.boughtDay, { d -> edit { it.copy(boughtDay = d) } }, "Bought", Modifier.fillMaxWidth())
                     DateButton(item.warrantyDay, { d -> edit { it.copy(warrantyDay = d) } }, "Warranty until", Modifier.fillMaxWidth())
-                    SwitchRow("It has a serial number", true, { v -> deviceJustOn = false; edit { it.copy(electronic = v) } })
-                }
 
-                Fold(
-                    "What travels with it", Icons.Default.Cable,
-                    summary = item.accessories.lineSequence().firstOrNull { it.isNotBlank() }
-                        ?.let { it + if (item.accessoriesPacked) " · bagged" else "" } ?: "Nothing listed",
-                ) {
+                    // What travels with it: the remote, the leads, the stand.
+                    HorizontalDivider(color = Night.Hairline)
                     QuickText(
-                        item.accessories, { v -> edit { it.copy(accessories = v) } }, label = "Accessories", prompt = "What travels with it?",
+                        item.accessories, { v -> edit { it.copy(accessories = v) } }, label = "What travels with it", prompt = "What travels with it?",
                         key = "$id-acc", chips = ACCESSORY_CHIPS, empty = "Nothing listed",
                     )
                     CheckRow("Bagged and marked with this item's name", item.accessoriesPacked, { v -> edit { it.copy(accessoriesPacked = v) } })
                     val accBox = data.findByLabel(item.accessoryBox)
                     if (item.accessoryBox.isBlank()) {
-                        OutlinedButton(onClick = { scanningAccessoryBox = true }, modifier = Modifier.fillMaxWidth()) {
-                            Icon(Icons.Default.QrCodeScanner, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Scan the box they are in")
-                        }
+                        BigAction(Icons.Default.QrCodeScanner, "Scan the box they are in", onClick = { scanningAccessoryBox = true }, primary = false)
                     } else {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text("In " + (accBox?.title ?: "${item.accessoryBox} (no box has this label yet)"), modifier = Modifier.weight(1f))
-                            if (accBox != null) TextButton(onClick = { nav.openMovable(accBox) }) { Text("Open") }
-                            TextButton(onClick = { edit { it.copy(accessoryBox = "") } }) { Text("Clear") }
+                            if (accBox != null) RowButton("Open", onClick = { nav.openMovable(accBox) })
+                            RowButton("Clear", onClick = { edit { it.copy(accessoryBox = "") } }, forward = false)
                         }
                     }
-                }
-            } else if (offerDevice) {
-                GlassCard(Modifier.fillMaxWidth()) {
-                    Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Pic.Device, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.width(14.dp))
-                        Box(Modifier.weight(1f)) {
-                            SwitchRow("It has a serial number", false, { v -> deviceJustOn = v; edit { it.copy(electronic = v) } })
-                        }
-                    }
+                    HorizontalDivider(color = Night.Hairline)
+                    SwitchRow("It has a serial number", true, { v -> deviceJustOn = false; edit { it.copy(electronic = v) } })
                 }
             }
 
@@ -337,7 +323,6 @@ fun ItemScreen(id: String) {
                 "Size and handling", Pic.Size,
                 summary = listOfNotNull(
                     sizeText(item, inches),
-                    item.value?.let { "Worth " + money(currency, it) },
                     "Fragile".takeIf { item.fragile },
                     "Two people".takeIf { item.twoPerson },
                     "Keep upright".takeIf { item.keepUpright },
@@ -345,15 +330,33 @@ fun ItemScreen(id: String) {
                     "Travels with me".takeIf { item.travelsWithMe },
                     "First night".takeIf { item.firstNight },
                     "Hazardous".takeIf { item.hazardous },
+                    item.value?.let { "Worth " + money(currency, it) },
                 ).joinToString(" · ").ifBlank { "No size yet" },
             ) {
                 val unit = if (inches) "in" else "cm"
                 fun shown(cm: Double?): Double? = cm?.let { if (inches) (it / 2.54 * 100).roundToLong() / 100.0 else it }
                 fun toCm(v: Double?): Double? = v?.takeIf { it > 0 }?.let { if (inches) it * 2.54 else it }
+                // All three can be said at once ("200 by 90 by 85"), so measuring needs no keyboard either.
+                if (canSpeak()) Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Width, depth and height in $unit", style = MaterialTheme.typography.labelLarge, color = Night.TextDim, modifier = Modifier.weight(1f))
+                    SpeakButton("Width, depth and height, in $unit", contentDescription = "Say its size", size = 40.dp) { said ->
+                        val n = spokenNumbers(said)
+                        if (n.isNotEmpty()) {
+                            edit {
+                                it.copy(
+                                    widthCm = toCm(n.getOrNull(0)) ?: it.widthCm,
+                                    depthCm = toCm(n.getOrNull(1)) ?: it.depthCm,
+                                    heightCm = toCm(n.getOrNull(2)) ?: it.heightCm,
+                                )
+                            }
+                            sizeSaid++
+                        }
+                    }
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    NumberInput(shown(item.widthCm), { v -> edit { it.copy(widthCm = toCm(v)) } }, "Width $unit", Modifier.weight(1f), key = "$id-w-$unit")
-                    NumberInput(shown(item.depthCm), { v -> edit { it.copy(depthCm = toCm(v)) } }, "Depth $unit", Modifier.weight(1f), key = "$id-d-$unit")
-                    NumberInput(shown(item.heightCm), { v -> edit { it.copy(heightCm = toCm(v)) } }, "Height $unit", Modifier.weight(1f), key = "$id-h-$unit")
+                    NumberInput(shown(item.widthCm), { v -> edit { it.copy(widthCm = toCm(v)) } }, "Width $unit", Modifier.weight(1f), key = "$id-w-$unit-$sizeSaid")
+                    NumberInput(shown(item.depthCm), { v -> edit { it.copy(depthCm = toCm(v)) } }, "Depth $unit", Modifier.weight(1f), key = "$id-d-$unit-$sizeSaid")
+                    NumberInput(shown(item.heightCm), { v -> edit { it.copy(heightCm = toCm(v)) } }, "Height $unit", Modifier.weight(1f), key = "$id-h-$unit-$sizeSaid")
                 }
                 val handling = listOf(
                     Toggle("Fragile", Pic.Fragile, item.fragile) { v -> edit { it.copy(fragile = v) } },
@@ -372,13 +375,42 @@ fun ItemScreen(id: String) {
                 AmountPicker(item.value, { v -> edit { it.copy(value = v) } }, "What it is worth", currency, presets = WORTH_PRESETS)
             }
 
+            // Where it is now and any damage. Until it leaves the old home this is rarely wanted, so it
+            // waits at the end of "More" instead of being a section of its own.
+            val trip = data.trip(item.tripId)?.takeIf { item.stage != Stage.AT_ORIGIN }
+            val travelled = item.stage != Stage.AT_ORIGIN || item.damaged
+            val onTheMove: @Composable ColumnScope.() -> Unit = {
+                Text("Where it is now", style = MaterialTheme.typography.labelLarge, color = Night.TextDim)
+                IconChoice(
+                    options = Stage.entries.map { Choice(it, stageText(it, isBox = false, vehicle), it.icon()) },
+                    selected = item.stage,
+                    onPick = { s -> edit { it.copy(stage = s) } },
+                    columns = 2,
+                )
+                if (trip != null) Hint("Travelled on ${trip.name}")
+                if (item.needsDisassembly && travelled) {
+                    CheckRow("Put back together", item.reassembled, { v -> edit { it.copy(reassembled = v) } })
+                }
+                HorizontalDivider(color = Night.Hairline)
+                SwitchRow("Damaged in the move", item.damaged, { v -> edit { it.copy(damaged = v) } })
+                if (item.damaged) {
+                    DamageText(item.damageNote, { v -> edit { it.copy(damageNote = v) } }, key = "$id-damage")
+                    PhotoStrip(item.id, PhotoKind.DAMAGE, label = "Damage photos")
+                }
+            }
+
             if (moving) {
                 val steps = listOfNotNull(
                     item.prepEmptied, item.prepPhotos, item.prepDisassembled.takeIf { item.needsDisassembly },
                     item.prepHardware, item.prepCables, item.prepWrapped,
                     item.prepCablesLabelled.takeIf { electronic }, item.prepSignedOut.takeIf { electronic },
                 )
-                if (movesHouse || steps.any { it }) Fold("Getting it ready", Icons.Default.Checklist, summary = "${steps.count { it }} of ${steps.size} done") {
+                // Getting it ready includes labelling it, so its label lives here too.
+                val offerLabel = movesHouse || data.uses(Part.LABELS) || item.label != null
+                if (movesHouse || steps.any { it } || offerLabel) Fold(
+                    "Getting it ready", Icons.Default.Checklist,
+                    summary = "${steps.count { it }} of ${steps.size} done" + if (offerLabel) " · " + (item.label ?: "no label yet") else "",
+                ) {
                     // Advice for this kind of device comes first: it says what "ready" means for it.
                     if (electronic) handlingTips(item.name).forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium, color = Night.TextSoft) }
                     CheckRow("Emptied", item.prepEmptied, { v -> edit { it.copy(prepEmptied = v) } })
@@ -396,78 +428,54 @@ fun ItemScreen(id: String) {
                         CheckRow("Backed up and ready to unplug", item.prepSignedOut, { v -> edit { it.copy(prepSignedOut = v) } })
                     }
                     CheckRow("Wrapped and protected", item.prepWrapped, { v -> edit { it.copy(prepWrapped = v) } })
-                }
-
-                if (movesHouse || data.uses(Part.LABELS) || item.label != null) Fold("Label", Pic.Label, summary = item.label ?: "No label yet") {
-                    val label = item.label
-                    if (label != null) {
-                        Text(label, style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold)
-                        TextButton(onClick = { edit { it.copy(label = null) } }) { Text("Remove label") }
-                    } else {
-                        Button(onClick = { scanning = true }, modifier = Modifier.fillMaxWidth()) {
-                            Icon(Icons.Default.QrCodeScanner, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Scan a printed label")
-                        }
-                        OutlinedButton(
-                            onClick = {
-                                val code = store.nextHandCode()
-                                edit { it.copy(label = code) }
-                                toast(context, "Write $code on the item with a marker.")
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Use a handwritten code")
+                    if (offerLabel) {
+                        HorizontalDivider(color = Night.Hairline)
+                        val label = item.label
+                        if (label != null) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("Its label", style = MaterialTheme.typography.labelLarge, color = Night.TextDim)
+                                    Text(label, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                                RowButton("Remove label", onClick = { edit { it.copy(label = null) } }, forward = false)
+                            }
+                        } else {
+                            BigAction(Icons.Default.QrCodeScanner, "Scan a printed label", onClick = { scanning = true }, primary = false)
+                            BigAction(
+                                Icons.Default.Edit, "Use a handwritten code", primary = false,
+                                onClick = {
+                                    val code = store.nextHandCode()
+                                    edit { it.copy(label = code) }
+                                    toast(context, "Write $code on the item with a marker.")
+                                },
+                            )
                         }
                     }
                 }
 
-                val trip = data.trip(item.tripId)?.takeIf { item.stage != Stage.AT_ORIGIN }
-                if (movesHouse || item.stage != Stage.AT_ORIGIN) Fold(
-                    "Where it is now", Pic.Where,
-                    summary = stageText(item.stage, isBox = false, vehicle) + (trip?.let { " · ${it.name}" } ?: ""),
-                ) {
-                    IconChoice(
-                        options = Stage.entries.map { Choice(it, stageText(it, isBox = false, vehicle), it.icon()) },
-                        selected = item.stage,
-                        onPick = { s -> edit { it.copy(stage = s) } },
-                        columns = 2,
-                    )
-                    if (trip != null) Hint("Travelled on ${trip.name}")
-                    if (item.needsDisassembly) {
-                        CheckRow("Put back together", item.reassembled, { v -> edit { it.copy(reassembled = v) } })
-                    }
-                }
-
-                if (movesHouse || item.damaged) Fold(
-                    "Damage", Pic.Damage,
-                    summary = if (item.damaged) item.damageNote.ifBlank { "Damaged in the move" } else "None",
-                ) {
-                    SwitchRow("Damaged in the move", item.damaged, { v -> edit { it.copy(damaged = v) } })
-                    if (item.damaged) {
-                        QuickText(
-                            item.damageNote, { v -> edit { it.copy(damageNote = v) } }, label = "What happened?", prompt = "What happened to it?",
-                            key = "$id-damage", chips = DAMAGE_CHIPS, empty = "Not described yet",
-                        )
-                        PhotoStrip(item.id, PhotoKind.DAMAGE, label = "Damage photos")
-                    }
-                }
+                // Once it has left the old home, or was damaged, how it fares is a section of its own.
+                // Opened when it first appears because damage was just reported, so what happened can be added at once.
+                if (travelled) Fold(
+                    "On the move", Pic.Where, open = item.damaged, key = "move",
+                    summary = stageText(item.stage, isBox = false, vehicle) + (trip?.let { " · ${it.name}" } ?: "") +
+                        if (item.damaged) " · " + item.damageNote.ifBlank { "Damaged" } else "",
+                ) { onTheMove() }
             }
 
+            // Notes, and what is rarely wanted: the room it came from, whether it is a device, deleting it.
             Fold(
-                "Notes and old room", Pic.Notes,
+                "More", Pic.Notes,
                 summary = listOfNotNull(
                     "From ${origin?.name ?: "no room"}",
                     item.notes.lineSequence().firstOrNull { it.isNotBlank() },
                 ).joinToString(" · "),
+                key = "more",
             ) {
                 QuickText(
                     item.notes, { v -> edit { it.copy(notes = v) } }, label = "Notes", prompt = "Anything to note about it?",
                     key = "$id-notes", empty = "No notes",
                 )
-                Text("Room in the old home", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Room in the old home", style = MaterialTheme.typography.labelLarge, color = Night.TextDim)
                 RoomTiles(Home.ORIGIN, item.originRoomId, onPick = { rid ->
                     edit { cur ->
                         val mapped = store.data.value.room(rid)?.mapsTo
@@ -477,16 +485,18 @@ fun ItemScreen(id: String) {
                         )
                     }
                 })
-            }
-
-            // Rarely wanted and not undone: at the very end, out of the way of everything else.
-            TextButton(
-                onClick = { confirmDelete = true }, modifier = Modifier.align(Alignment.CenterHorizontally),
-                colors = ButtonDefaults.textButtonColors(contentColor = Night.Red),
-            ) {
-                Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Delete item")
+                if (offerDevice && !electronic) {
+                    SwitchRow("It has a serial number", false, { v -> deviceJustOn = v; edit { it.copy(electronic = v) } }, sub = "Adds make, model and serial number")
+                }
+                if (moving && movesHouse && !travelled) {
+                    HorizontalDivider(color = Night.Hairline)
+                    onTheMove()
+                }
+                // Not undone, so it is the last thing in the last section.
+                if (mayDelete) {
+                    HorizontalDivider(color = Night.Hairline)
+                    DeleteButton("Delete item", onClick = { confirmDelete = true }, modifier = Modifier.align(Alignment.CenterHorizontally))
+                }
             }
         }
     }
@@ -590,31 +600,9 @@ fun ItemScreen(id: String) {
     }
 }
 
-/**
- * Naming the item under its photo: chips for what is usually found in its room, or the
- * field for typing when the pencil in the bar is on, and the microphone either way.
- */
-@Composable
-private fun NameRow(item: Item, typing: Boolean) {
-    val store = LocalStore.current
-    val data = appData()
-    // Bumped when the name is set by a chip or by voice, so the text field picks the new value up.
-    var set by remember { mutableIntStateOf(0) }
-    fun rename(v: String) {
-        store.data.value.item(item.id)?.let { store.put(it.copy(name = v)) }
-    }
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (typing) {
-            TextInput(value = item.name, onChange = { rename(it) }, label = "Name", modifier = Modifier.weight(1f), key = "${item.id}-name-$set")
-        } else {
-            ChipStrip(itemNameChips(data.room(item.originRoomId)?.name), Modifier.weight(1f)) { rename(it) }
-        }
-        SpeakButton("What is it?", contentDescription = "Say the name", size = 44.dp) { said ->
-            rename(said.replaceFirstChar { it.uppercase() })
-            set++
-        }
-    }
-}
+/** The numbers in what was said, in order: "200 by 90 by 85" gives 200, 90 and 85. A decimal comma counts as a point. */
+internal fun spokenNumbers(said: String): List<Double> =
+    Regex("\\d+(?:[.,]\\d+)?").findAll(said).map { it.value.replace(',', '.').toDouble() }.toList()
 
 /** An empty circle until it has gone, then a tick: the same picture as on the Sell, donate, bin list. */
 private fun goneIcon(gone: Boolean) = if (gone) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked
@@ -633,7 +621,7 @@ private fun sizeText(item: Item, inches: Boolean): String? {
 /**
  * What the item is packed in. Loose, it offers "Put in a container": scan the container's
  * label, or tap one of the open containers from the same room. Packed, it says which
- * container and where that is now, with "Take out".
+ * container it is inside and where that is now, with "Take out".
  */
 @Composable
 private fun ContainerBlock(item: Item, container: Box?, data: AppData, onScan: () -> Unit, onOpen: (Box) -> Unit) {
@@ -643,29 +631,34 @@ private fun ContainerBlock(item: Item, container: Box?, data: AppData, onScan: (
     // Once it is packed, by a tap or by a scan, the choice is made: taking it out again starts afresh.
     LaunchedEffect(container?.id) { if (container != null) choosing = false }
     if (container != null) {
+        // "Take out" sits beside where it is, or under it on a small phone, so the container's name is not cut short.
+        val stacked = narrowScreen(360f)
         GlassCard(Modifier.fillMaxWidth(), tone = GlassTone.Mint, shape = RoundedCornerShape(22.dp)) {
-            Row(Modifier.padding(start = 10.dp, top = 8.dp, bottom = 8.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Row(Modifier.weight(1f).clip(RoundedCornerShape(16.dp)).clickable { onOpen(container) }, verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(44.dp).drawBehind { drawOrb(OrbKind.Plain) }, contentAlignment = Alignment.Center) {
-                        Icon(Pic.Box, contentDescription = null, tint = Night.Mint, modifier = Modifier.size(22.dp))
-                    }
+            FlowRow(
+                Modifier.fillMaxWidth().padding(start = 10.dp, top = 8.dp, bottom = 8.dp, end = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End), verticalArrangement = Arrangement.spacedBy(6.dp),
+                itemVerticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    (if (stacked) Modifier.fillMaxWidth() else Modifier.weight(1f)).clip(RoundedCornerShape(16.dp)).clickable { onOpen(container) },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ContainerThumb(container, data, 44.dp)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
-                        Text("In " + container.shortName(), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("Inside " + container.nameAndCode(), style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Text(
                             data.whereIs(container.toMovable()), style = MaterialTheme.typography.bodySmall, color = Night.TextSoft,
                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
-                OutlinedButton(onClick = { store.takeOut(item.id).okOrSay(context) }, colors = ButtonDefaults.outlinedButtonColors(contentColor = Night.Text)) {
-                    Text("Take out")
-                }
+                RowButton("Take out", onClick = { store.takeOut(item.id).okOrSay(context) }, forward = false)
             }
         }
         return
     }
-    val near = data.liveBoxes.filter { it.originRoomId == item.originRoomId && !it.sealed && it.stage == Stage.AT_ORIGIN }.sortedBy { it.label }
+    val near = data.liveBoxes.filter { it.originRoomId == item.originRoomId && !it.sealed && it.stage == Stage.AT_ORIGIN }.sortedWith(CODE_ORDER)
     GlassCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp)) {
         Row(
             Modifier.fillMaxWidth().clickable { choosing = !choosing }.padding(horizontal = 16.dp, vertical = 14.dp),
@@ -681,11 +674,7 @@ private fun ContainerBlock(item: Item, container: Box?, data: AppData, onScan: (
         }
         if (choosing) {
             Column(Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onScan, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                    Icon(Icons.Default.QrCodeScanner, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Scan the container's label")
-                }
+                BigAction(Icons.Default.QrCodeScanner, "Scan the container's label", onClick = onScan)
                 if (near.isNotEmpty()) {
                     Text(
                         "Or one that is open in " + (data.room(item.originRoomId)?.name ?: "no room"),
@@ -695,13 +684,13 @@ private fun ContainerBlock(item: Item, container: Box?, data: AppData, onScan: (
                         Row(
                             Modifier.fillMaxWidth().glass(RoundedCornerShape(16.dp), shadow = 0.dp)
                                 .clickable { if (store.putInto(item.id, b.id).okOrSay(context)) choosing = false }
-                                .heightIn(min = 52.dp).padding(horizontal = 12.dp, vertical = 6.dp),
+                                .heightIn(min = 52.dp).padding(horizontal = 8.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Icon(Pic.Box, contentDescription = null, tint = Night.TextDim, modifier = Modifier.size(20.dp))
+                            ContainerThumb(b, data, 40.dp)
                             Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f)) {
-                                Text(b.shortName(), style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(b.nameAndCode(), style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 if (b.contents.isNotBlank()) {
                                     Text(b.contents.lineSequence().first(), style = MaterialTheme.typography.bodySmall, color = Night.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
@@ -715,9 +704,6 @@ private fun ContainerBlock(item: Item, container: Box?, data: AppData, onScan: (
     }
 }
 
-/** "Box L001", or the container's own name with its code: "Kitchen box 4 (L004)". */
-private fun Box.shortName(): String = if (name.isBlank()) "${kind.noun} $label" else "$name ($label)"
-
 /** The doorway check as a flag and a few plain words. */
 @Composable
 private fun FitLine(item: Item, dest: Room?, fit: Fit, inches: Boolean, onTakeApart: () -> Unit, onAddDoor: () -> Unit) {
@@ -725,14 +711,18 @@ private fun FitLine(item: Item, dest: Room?, fit: Fit, inches: Boolean, onTakeAp
     val door = dest.doorWidthCm
     val doorText = door?.let { if (inches) "${fmtNum(it / 2.54)} in" else "${fmtNum(it)} cm" } ?: ""
     val scheme = MaterialTheme.colorScheme
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    // Words and the one thing to do side by side where they fit; the button goes under them on a small phone.
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp),
+        itemVerticalAlignment = Alignment.CenterVertically,
+    ) {
         when (fit) {
             Fit.UNKNOWN -> if (door == null || door <= 0) {
-                Hint("No door width for ${dest.name} yet, so the fit is not checked.", Modifier.weight(1f))
-                TextButton(onClick = onAddDoor) { Text("Add it") }
+                Hint("No door width for ${dest.name} yet, so the fit is not checked.")
+                GlassChip("Add it", onClick = onAddDoor)
             } else {
                 IconFlag(Pic.Size, "Fit not checked")
-                Hint("Add its size to check the $doorText door.", Modifier.weight(1f))
+                Hint("Add its size to check the $doorText door.")
             }
             Fit.OK -> {
                 Icon(Icons.Default.CheckCircle, contentDescription = null, tint = scheme.tertiary, modifier = Modifier.size(18.dp))
@@ -740,15 +730,15 @@ private fun FitLine(item: Item, dest: Room?, fit: Fit, inches: Boolean, onTakeAp
             }
             Fit.TIGHT -> {
                 IconFlag(Icons.Default.Warning, "Tight fit")
-                Text("through the $doorText door", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                Text("through the $doorText door", style = MaterialTheme.typography.bodyMedium)
             }
             Fit.NO -> if (item.needsDisassembly) {
                 IconFlag(Pic.TakeApart, "Take apart")
-                Text("to get through the $doorText door", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                Text("to get through the $doorText door", style = MaterialTheme.typography.bodyMedium)
             } else {
                 IconFlag(Icons.Default.Warning, "Won't fit", error = true)
-                Text("the $doorText door", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                TextButton(onClick = onTakeApart) { Text("Mark: take apart") }
+                Text("through the $doorText door", style = MaterialTheme.typography.bodyMedium)
+                GlassChip("Mark: take apart", icon = Pic.TakeApart, onClick = onTakeApart)
             }
         }
     }

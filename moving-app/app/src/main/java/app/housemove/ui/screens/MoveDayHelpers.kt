@@ -72,6 +72,7 @@ import app.housemove.data.labelFromQr
 import app.housemove.data.newId
 import app.housemove.data.parentOf
 import app.housemove.data.vehicle
+import app.housemove.data.*
 import app.housemove.ui.*
 
 // Shared by the move-day screens (load, unload, reconcile, sweep, unpack).
@@ -87,6 +88,12 @@ internal data class MdResult(val tone: MdTone, val title: String, val detail: St
 
 /** True once something has reached the new home. */
 internal fun mdArrived(stage: Stage) = stage == Stage.DELIVERED || stage == Stage.DONE
+
+/**
+ * Carried by hand, not in the van: it travels with the person ("With me" on Load) and was
+ * not put on a trip. Such things are never "still on the van", on any screen.
+ */
+internal fun Movable.byHand(): Boolean = travelsWithMe && tripId == null
 
 /** Move one box or item to [stage]. The trip is kept unless [tripId] is given. */
 internal fun mdSetStage(store: Store, m: Movable, stage: Stage, tripId: String? = m.tripId) {
@@ -119,50 +126,13 @@ internal fun mdEnsureTrip(store: Store): String {
     return trip.id
 }
 
-/** "1 thing", "3 things". */
-internal fun mdCount(n: Int, one: String, many: String = one + "s") = "$n " + if (n == 1) one else many
-
 // ---- what is inside what ----------------------------------------------------------------
-
-/** The picture for a kind of container; a piece of furniture when it is not a container at all. */
-internal fun mdKindIcon(kind: ContainerKind?): ImageVector = when (kind) {
-    null -> Pic.Item
-    ContainerKind.CARTON -> Pic.Box
-    ContainerKind.SUITCASE -> Icons.Default.Luggage
-    ContainerKind.BAG -> Icons.Default.ShoppingBag
-    ContainerKind.CRATE -> Icons.Default.Inbox
-    ContainerKind.WARDROBE -> Icons.Default.Checkroom
-    ContainerKind.OTHER -> Icons.Default.Category
-}
 
 /** A few words for a thing in the middle of a sentence: "L012", "suitcase B2", "Floor lamp". */
 internal fun mdShort(m: Movable): String = when {
     !m.isBox || m.label.isNullOrBlank() -> m.title
     m.kind == null || m.kind == ContainerKind.CARTON -> m.label
     else -> m.kind.noun.lowercase() + " " + m.label
-}
-
-/**
- * How many things each container carries: the items packed in it, the containers inside it
- * and what those hold. Worked out once per screen, so a long list stays quick.
- */
-internal fun mdCarried(data: AppData): Map<String, Int> {
-    if (data.items.none { it.boxId != null && !it.deleted } && data.boxes.none { it.parentId != null && !it.deleted }) return emptyMap()
-    val out = HashMap<String, Int>()
-    val outer = HashMap<String, String>()
-    val boxes = data.liveBoxes
-    for (b in boxes) {
-        val p = data.parentOf(b) ?: continue
-        outer[b.id] = p.id
-        out.merge(p.id, 1, Int::plus)
-    }
-    val ids = boxes.map { it.id }.toSet()
-    for (i in data.liveItems) {
-        val b = i.boxId?.takeIf { it in ids } ?: continue
-        out.merge(b, 1, Int::plus)
-        outer[b]?.let { out.merge(it, 1, Int::plus) }
-    }
-    return out
 }
 
 /**
@@ -248,56 +218,8 @@ internal fun MdBanner(result: MdResult, modifier: Modifier = Modifier) {
     }
 }
 
-/** The heading above a group of rows, on the open ground: its name, how many, and an optional button on the right. */
-@Composable
-internal fun MdGroupHeader(title: String, count: Int, action: (@Composable () -> Unit)? = null) {
-    Row(
-        Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(start = 22.dp, end = 16.dp, top = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                title, style = MaterialTheme.typography.titleSmall, color = Night.TextSoft, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false).semantics { heading() },
-            )
-            Spacer(Modifier.width(8.dp))
-            GlassChip(count.toString())
-        }
-        if (action != null) {
-            Spacer(Modifier.width(8.dp))
-            action()
-        }
-    }
-}
-
-/**
- * The top of a move-day screen: how far along it is, as a ring with the count in
- * the middle, and one line saying what is counted. [below] holds chips that belong
- * with the count (trips, rooms).
- */
-@Composable
-internal fun MdProgressHeader(
-    ratio: Ratio,
-    title: String,
-    modifier: Modifier = Modifier,
-    sub: String? = null,
-    below: (@Composable () -> Unit)? = null,
-) {
-    val scheme = MaterialTheme.colorScheme
-    val done = ratio.total > 0 && ratio.done >= ratio.total
-    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Ring(ratio, size = 64.dp, stroke = 7.dp, color = if (done) scheme.tertiary else scheme.primary) {
-            if (done) Icon(Icons.Default.Check, contentDescription = "Done", tint = scheme.tertiary, modifier = Modifier.size(30.dp))
-            else Text("${ratio.done}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        }
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            if (!sub.isNullOrBlank()) Text(sub, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
-            below?.invoke()
-        }
-    }
-}
+/** Where a heading over a group of rows sits on a move-day list: in line with the rows' text. */
+internal val MdHeadingPadding = Modifier.padding(start = 22.dp, end = 16.dp, top = 6.dp)
 
 // ---- actions --------------------------------------------------------------------------------
 
@@ -331,44 +253,15 @@ internal fun MdScanAction(scanning: Boolean, label: String, onToggle: () -> Unit
     else MdMainAction(Icons.Default.QrCodeScanner, label, onToggle, Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
 }
 
-/**
- * The button at the end of a row ("Load", "Here", "Undo"): a pill at least 48dp tall.
- * Mint-tinted glass when it carries the row forward, clear glass when it takes something back.
- */
-@Composable
-internal fun MdRowButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, forward: Boolean = true, icon: ImageVector? = null) {
-    val fg = if (forward) Night.MintPale else Night.Text
-    Row(
-        modifier.glass(CircleShape, if (forward) GlassTone.Mint else GlassTone.Plain, shadow = 0.dp)
-            .clickable(role = Role.Button, onClick = onClick)
-            .heightIn(min = 48.dp).widthIn(min = 68.dp).padding(horizontal = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
-    ) {
-        if (icon != null) {
-            Icon(icon, contentDescription = null, tint = fg, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-        }
-        Text(text, style = MaterialTheme.typography.labelLarge, color = fg, maxLines = 1)
-    }
-}
-
 /** A tab with a picture beside its name; the picture is left out where it would squeeze the name. */
 @Composable
 internal fun MdIconTab(selected: Boolean, onClick: () -> Unit, label: String, icon: ImageVector) {
-    if (mdNarrow()) Tab(selected = selected, onClick = onClick, text = { Text(label, maxLines = 1) })
+    if (narrowScreen()) Tab(selected = selected, onClick = onClick, text = { Text(label, maxLines = 1) })
     else LeadingIconTab(
         selected = selected, onClick = onClick,
         text = { Text(label, maxLines = 1) }, icon = { Icon(icon, contentDescription = null) },
     )
 }
-
-/**
- * A small phone, or large text on a medium one: rows of four become rows of two, and tabs
- * drop their pictures. [limit] is the screen width in dp, at normal text size, below which that happens.
- */
-@Composable
-internal fun mdNarrow(limit: Float = 340f): Boolean = LocalConfiguration.current.let { it.screenWidthDp / it.fontScale < limit }
 
 /** Height of the live scanner: about a fifth of the screen, so the result and the list keep most of it. */
 @Composable
@@ -402,21 +295,10 @@ internal fun MdScanner(onText: (String) -> Unit) {
 
 // ---- rows -------------------------------------------------------------------------------------
 
-/** The picture that leads a row: its first photo, or failing that the icon of what it is on a glass tile. */
-@Composable
-internal fun MdThumb(ownerId: String, icon: ImageVector, modifier: Modifier = Modifier, size: Dp = 56.dp) {
-    val photo = appData().photosOf(ownerId).firstOrNull()
-    val shape = RoundedCornerShape(size * 0.28f)
-    if (photo != null) PhotoThumb(photo, modifier.size(size).clip(shape).border(1.dp, Night.GlassRim, shape))
-    else Box(modifier.size(size).glass(shape, shadow = 0.dp), contentAlignment = Alignment.Center) {
-        Icon(icon, contentDescription = null, tint = Night.Mint, modifier = Modifier.size(size * 0.46f))
-    }
-}
-
 /**
  * One box or item on a move-day list, as a glass row led by its photo: what kind of
  * thing it is, the room it goes to in that room's colour, how many things it carries
- * ([carried], from [mdCarried]) and a picture for each warning. Tapping it opens the
+ * ([carried], from [carriedCounts]) and a picture for each warning. Tapping it opens the
  * box or item unless [onClick] is given. [open] marks a box that is not sealed yet,
  * [showStage] adds where it is now, [note] is shown underneath.
  */
@@ -433,7 +315,6 @@ internal fun MdThingRow(
 ) {
     val data = appData()
     val nav = LocalNav.current
-    val icon = mdKindIcon(if (m.isBox) m.kind ?: ContainerKind.CARTON else null)
     Row(
         modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
             .glass(RoundedCornerShape(22.dp), shadow = 4.dp)
@@ -441,23 +322,17 @@ internal fun MdThingRow(
             .padding(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        MdThumb(m.id, icon)
+        // The picture says what kind of thing it is: a container's kind is marked on its photo.
+        ThingThumb(m.id, m.picture())
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Row {
-                Icon(icon, contentDescription = null, tint = Night.TextDim, modifier = Modifier.padding(top = 3.dp).size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                // Two lines, so a long name is still told apart from its neighbours on a small phone.
-                Text(m.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            }
+            // Two lines, so a long name is still told apart from its neighbours on a small phone.
+            Text(m.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 RoomBadge(data.room(m.destRoomId))
-                if (carried > 0) GlassChip(mdCount(carried, "thing") + " inside")
+                InsideChip(carried)
                 if (showStage) IconFlag(m.stage.icon(), stageText(m.stage, m.isBox, data.vehicle()))
-                if (m.priority == Priority.FIRST_NIGHT) IconFlag(Pic.FirstNight, "First night")
-                if (m.fragile) IconFlag(Pic.Fragile, "Fragile")
-                if (m.upright) IconFlag(Pic.Upright, "Upright")
-                if (m.heavy) IconFlag(if (m.isBox) Pic.Heavy else Pic.TwoPeople, if (m.isBox) "Heavy" else "2 people")
+                m.flags().forEach { (picture, word) -> IconFlag(picture, word) }
                 if (open) IconFlag(Icons.Default.LockOpen, "Open")
                 if (m.damaged) IconFlag(Pic.Damage, "Damaged", error = true)
             }

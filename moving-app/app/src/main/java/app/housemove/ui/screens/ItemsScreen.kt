@@ -22,7 +22,6 @@ import androidx.compose.ui.unit.dp
 import app.housemove.data.*
 import app.housemove.ui.*
 
-private const val NO_ROOM = "none"
 private const val LOOSE = "loose"
 private const val PACKED = "packed"
 
@@ -66,8 +65,7 @@ fun ItemsScreen() {
     val waiting = data.waitingProposals().groupBy { it.targetId }
 
     // On a small screen or with large text, tiles go fewer to a row so their words still fit.
-    val config = LocalConfiguration.current
-    val narrow = config.screenWidthDp / config.fontScale < 340
+    val narrow = narrowScreen()
 
     fun addItem() {
         val room = roomFilter?.takeIf { it != NO_ROOM } ?: device.currentRoomId?.takeIf { data.room(it) != null }
@@ -80,14 +78,8 @@ fun ItemsScreen() {
         back = false,
         tab = "items",
         actions = { TopActions() },
-        fab = {
-            ExtendedFloatingActionButton(
-                containerColor = Night.Mint, contentColor = Night.OnMint,
-                onClick = { addItem() },
-                icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                text = { Text("Add item") },
-            )
-        },
+        // With nothing listed yet, the picture in the middle of the page carries the one button.
+        fab = { if (all.isNotEmpty()) ListFab(Icons.Default.Add, "Add item") { addItem() } },
     ) {
         if (all.isEmpty()) {
             ScrollColumn {
@@ -104,7 +96,16 @@ fun ItemsScreen() {
         ) {
             item(key = "shortcuts") {
                 val tiles = shortcuts(data, store.can(Action.SUGGEST), store.can(Action.APPROVE))
-                TileGrid(tiles, Modifier.padding(horizontal = 16.dp), columns = tiles.size.coerceAtMost(if (narrow) 2 else 3)) { s, m ->
+                if (narrowScreen(300f)) {
+                    // A small phone with large text: tiles side by side would break their names in two, so they
+                    // are rows of one panel, which is also shorter.
+                    GlassCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
+                        tiles.forEachIndexed { i, s ->
+                            if (i > 0) HorizontalDivider(color = Night.Hairline)
+                            MenuRow(s.icon, s.title, sub = s.status, onClick = { nav.open(s.route) })
+                        }
+                    }
+                } else TileGrid(tiles, Modifier.padding(horizontal = 16.dp), columns = tiles.size.coerceAtMost(if (narrow) 2 else 3)) { s, m ->
                     Tile(s.icon, s.title, onClick = { nav.open(s.route) }, modifier = m, status = s.status, done = s.done, alert = s.alert)
                 }
             }
@@ -115,14 +116,7 @@ fun ItemsScreen() {
                     horizontalArrangement = Arrangement.spacedBy(2.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (originRooms.isNotEmpty()) {
-                        RoomFilterChip(
-                            rooms = originRooms,
-                            withNoRoom = anyWithoutRoom,
-                            selected = roomFilter,
-                            onPick = { roomFilter = it },
-                        )
-                    }
+                    if (originRooms.isNotEmpty()) RoomFilterChip(originRooms, roomFilter, onPick = { roomFilter = it }, withNoRoom = anyWithoutRoom)
                     GlassChip("All ${all.size}", selected = decision == null && packedFilter == null, onClick = { decision = null; packing = null })
                     if (packedIds.isNotEmpty()) {
                         GlassChip(
@@ -189,7 +183,8 @@ private fun shortcuts(data: AppData, maySuggest: Boolean, mayApprove: Boolean): 
         )
     }
     if (data.uses(Part.PLAN) && maySuggest) {
-        val moving = data.movingItems()
+        // Counted as the room plan and Home count them: something packed in a container goes where that goes.
+        val moving = data.looseItems()
         val noRoom = moving.count { data.room(it.destRoomId) == null }
         val wontFit = moving.count { data.fitOf(it) == Fit.NO && !it.needsDisassembly }
         val toApprove = asked.count { it.kind == ProposalKind.ITEM_ROOM }
@@ -207,30 +202,6 @@ private fun shortcuts(data: AppData, maySuggest: Boolean, mayApprove: Boolean): 
         )
     }
     return out
-}
-
-/** One chip that opens the list of old-home rooms, so rooms do not need a filter row of their own. */
-@Composable
-private fun RoomFilterChip(rooms: List<Room>, withNoRoom: Boolean, selected: String?, onPick: (String?) -> Unit) {
-    var open by remember { mutableStateOf(false) }
-    val label = when (selected) {
-        null -> "All rooms"
-        NO_ROOM -> "No room"
-        else -> rooms.firstOrNull { it.id == selected }?.name ?: "All rooms"
-    }
-    Box {
-        GlassChip(
-            label, selected = selected != null, onClick = { open = true },
-            leading = { Icon(if (selected != null) Icons.Default.Check else Pic.Room, contentDescription = "Choose a room", modifier = Modifier.size(16.dp)) },
-        )
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            DropdownMenuItem(text = { Text("All rooms") }, onClick = { onPick(null); open = false })
-            rooms.forEach { r ->
-                DropdownMenuItem(text = { Text(r.name) }, onClick = { onPick(r.id); open = false })
-            }
-            if (withNoRoom) DropdownMenuItem(text = { Text("No room") }, onClick = { onPick(NO_ROOM); open = false })
-        }
-    }
 }
 
 /**
@@ -262,9 +233,11 @@ private fun ItemCard(x: Item, data: AppData, waiting: List<Proposal>, modifier: 
         }
         Column(Modifier.padding(start = 4.dp, end = 4.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Text(x.title(), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (moving || x.fragile || x.damaged) {
+            // Something packed in a container goes where that goes: it only shows a room if it has one of its own.
+            val showRoom = moving && (container == null || data.room(x.destRoomId) != null)
+            if (showRoom || x.fragile || x.damaged) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    if (moving) RoomBadge(data.room(x.destRoomId))
+                    if (showRoom) RoomBadge(data.room(x.destRoomId))
                     when {
                         fit == Fit.NO && x.needsDisassembly -> IconFlag(Pic.TakeApart, "Take apart")
                         fit == Fit.NO -> IconFlag(Icons.Default.Warning, "Won't fit", error = true)

@@ -125,7 +125,10 @@ class DeviceTest {
     }
 
     private fun type(label: String, value: String) {
-        val node = rule.onAllNodes(hasSetTextAction() and hasText(label)).onFirst()
+        val field = hasSetTextAction() and hasText(label)
+        // A field in a pop-up, or in a section that opens with an animation, can take a moment to appear.
+        waitFor("a field labelled \"$label\"", 10_000) { rule.onAllNodes(field).fetchSemanticsNodes().isNotEmpty() }
+        val node = rule.onAllNodes(field).onFirst()
         try {
             node.performScrollTo()
         } catch (_: AssertionError) {
@@ -382,6 +385,7 @@ class DeviceTest {
 
         tap("Items")
         tap("Oak wardrobe")
+        tap("More") // what is rarely wanted is in the last section
         tap("It has a serial number")
         tapDesc("Edit make, model and serial number") // typing them is behind the pencil
         type("Make", "Acme")
