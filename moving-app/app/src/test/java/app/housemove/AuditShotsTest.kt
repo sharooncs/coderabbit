@@ -8,9 +8,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -18,10 +25,12 @@ import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.onRoot
 import androidx.navigation.NavHostController
 import app.housemove.data.*
+import app.housemove.sync.WifiSync
 import app.housemove.ui.AppBackground
 import app.housemove.ui.AppRoot
 import app.housemove.ui.HouseMarker
@@ -30,7 +39,10 @@ import app.housemove.ui.HouseSpot
 import app.housemove.ui.IsoHouse
 import app.housemove.ui.IsoRoom
 import app.housemove.ui.IsoRooms
+import app.housemove.ui.LocalSpeech
+import app.housemove.ui.LocalSyncAddresses
 import app.housemove.ui.RoomState
+import app.housemove.ui.Speech
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Rule
 import org.junit.Test
@@ -77,7 +89,21 @@ class AuditShotsTest {
         file.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 85, it) }
     }
 
-    private fun seeded(): Store {
+    /** The same move on three phones: the Organiser's (Sam), a Decider's (Priya) and a Helper's (Tom). */
+    private class Phones(val organiser: Store, val decider: Store, val helper: Store)
+
+    /** Someone added to [host]'s move whose phone has joined. Returns that phone. */
+    private fun joined(host: Store, name: String, role: Role): Store {
+        val p = host.addPerson(name, role).valueOrNull()!!
+        val phone = Store(tmp.newFolder())
+        phone.joinAs(p.id, host.data.value.visibleTo(role))
+        host.mergeIn(phone.data.value)
+        return phone
+    }
+
+    private fun seeded(): Store = phones().organiser
+
+    private fun phones(): Phones {
         val s = Store(tmp.newFolder("audit"))
         var n = 0
         fun photo(owner: String, kind: PhotoKind) {
@@ -135,8 +161,38 @@ class AuditShotsTest {
         s.put(Supply(id = "s1", name = "Medium boxes", need = 30, have = 12))
         s.put(Supply(id = "s2", name = "Packing tape rolls", need = 4, have = 4))
         s.put(Reading(id = "r1", home = Home.ORIGIN, kind = "Electricity", value = "48213", day = today()))
+
+        // People: Sam organises, Priya may suggest, Tom helps, Gran has not joined yet, Alex was removed.
+        s.put(Item(id = "mirror", name = "Hall mirror", originRoomId = living.id))
+        photo("mirror", PhotoKind.GENERAL)
+        val priya = joined(s, "Priya", Role.DECIDER)
+        val tom = joined(s, "Tom", Role.HELPER)
+        s.addPerson("Gran", Role.HELPER)
+        s.addPerson("Alex", Role.HELPER).valueOrNull()?.let { s.removePerson(it.id) }
+        // What they suggested and asked: two already decided, three still waiting.
+        val toOffice = priya.suggestRoom("tv", dOffice.id).valueOrNull()!!
+        val donateBike = priya.suggestDecision("bike", Disposition.DONATE).valueOrNull()!!
+        priya.suggestDecision("table", Disposition.SELL, 40.0, note = "Too big for the new kitchen")
+        priya.suggestCost(Expense(id = "e3", title = "20 more boxes", amount = 35.0, category = "Supplies", day = today()))
+        tom.ask("mirror", note = "Is this coming with us?")
+        for (phone in listOf(priya, tom)) s.mergeIn(phone.data.value)
+        s.approve(toOffice.id)
+        s.decline(donateBike.id, "Too worn to give away")
+        for (phone in listOf(priya, tom)) {
+            phone.mergeIn(s.data.value.visibleTo(phone.myRole))
+            s.photoDir.listFiles()?.forEach { f -> f.copyTo(File(phone.photoDir, f.name), overwrite = true) }
+            phone.flush()
+        }
         s.flush()
-        return s
+        return Phones(s, priya, tom)
+    }
+
+    /** The app as on a phone that can listen and is on a network, so microphones and codes are in the picture. */
+    @Composable
+    private fun App(store: Store, onNav: (NavHostController) -> Unit) {
+        CompositionLocalProvider(LocalSpeech provides Speech { _, _ -> }, LocalSyncAddresses provides { listOf("127.0.0.1") }) {
+            AppRoot(store, startRoute = if (store.data.value.move.setupDone) "home" else null, onNav = onNav)
+        }
     }
 
     private val routes = listOf(
@@ -144,17 +200,25 @@ class AuditShotsTest {
         "boxes", "box/box1", "box/box2", "box/box5", "pack", "labels", "lists", "packorder", "tasks",
         "moveday", "load", "unload", "reconcile", "sweep", "records/ORIGIN", "unpack", "budget", "reports",
         "rooms", "more", "sync", "settings", "search", "scan",
+        "people", "people/add", "approvals", "activity",
     )
+
+    /** Picture name and route of every screen. One person's page is added: someone still to join, with their invite showing. */
+    private fun routesFor(store: Store): List<Pair<String, String>> {
+        val people = store.data.value.people
+        val person = people.firstOrNull { it.joinedAt == 0L && !it.removed } ?: people.first()
+        return routes.map { it.replace('/', '_') to it } + ("person" to "person/${person.id}?invite=true")
+    }
 
     private fun capture(kind: String, seededData: Boolean = true) {
         val store = if (seededData) seeded() else Store(tmp.newFolder("empty")).also { s -> s.setMove { it.copy(setupDone = true) } }
         var nav: NavHostController? = null
-        rule.setContent { AppRoot(store, startRoute = "home", onNav = { nav = it }) }
+        rule.setContent { App(store, onNav = { nav = it }) }
         rule.waitForIdle()
-        for (route in routes) {
+        for ((name, route) in routesFor(store)) {
             rule.runOnUiThread { nav!!.navigate(route) }
             settle()
-            rule.onRoot().captureRoboImage("build/audit/$kind/" + route.replace('/', '_') + ".png")
+            rule.onRoot().captureRoboImage("build/audit/$kind/$name.png")
         }
     }
 
@@ -168,18 +232,96 @@ class AuditShotsTest {
         rule.waitForIdle()
     }
 
-    /** The variants of Home and the first-run screens, which the route list does not reach. */
+    /**
+     * What the route list does not reach: Home for other kinds of move, the same screens
+     * on a Decider's and a Helper's phone, a move with one person, and the first-run screens
+     * including a phone that has just joined with an invite.
+     */
     @Test
     @Config(sdk = [34], qualifiers = "w411dp-h1500dp-mdpi")
     fun variants() {
-        val store = seeded()
+        val phones = phones()
+        var shown by mutableStateOf(phones.organiser)
         var nav: NavHostController? = null
-        rule.setContent { AppRoot(store, startRoute = "home", onNav = { nav = it }) }
+        rule.setContent { key(shown) { App(shown, onNav = { nav = it }) } }
         rule.waitForIdle()
-        fun shot(name: String) = rule.onRoot().captureRoboImage("build/audit/tall/$name.png")
-        rule.runOnUiThread { store.setDevice { it.copy(helper = true) } }
-        rule.waitForIdle(); shot("home_helper")
-        rule.runOnUiThread { store.setDevice { it.copy(helper = false) }; store.setMove { it.copy(kind = MoveKind.MOVERS) } }
+        fun shot(name: String) {
+            settle()
+            rule.onRoot().captureRoboImage("build/audit/tall/$name.png")
+        }
+        fun go(route: String) = rule.runOnUiThread { nav!!.navigate(route) }
+        fun use(store: Store) {
+            rule.runOnUiThread { shown = store }
+            rule.waitForIdle()
+        }
+        fun tap(text: String) {
+            val node = rule.onAllNodes(hasText(text) and hasClickAction()).onFirst()
+            try {
+                node.performScrollTo()
+            } catch (_: AssertionError) {
+            }
+            node.performClick()
+            rule.waitForIdle()
+        }
+
+        // The inbox while approving several at once, and while declining one.
+        go("approvals")
+        tap("Select all")
+        shot("approvals_selected")
+        tap("Clear")
+        tap("Decline")
+        shot("approvals_decline")
+        // Someone who has joined, and someone removed.
+        for (name in listOf("Priya", "Alex")) {
+            go("person/" + phones.organiser.data.value.people.first { it.name == name }.id)
+            shot("person_" + name.lowercase())
+        }
+
+        // Each role's view of the same move.
+        for ((who, store) in listOf("decider" to phones.decider, "helper" to phones.helper)) {
+            use(store)
+            shot("home_$who")
+            for (route in listOf("approvals", "people", "settings", "sync", "more")) {
+                go(route)
+                shot(route + "_" + who)
+            }
+        }
+
+        // One person: nothing about roles.
+        val alone = Store(tmp.newFolder("alone"))
+        alone.setDevice { it.copy(name = "Sam", letter = "S") }
+        alone.setMove { it.copy(name = "Maple Road move", moveDay = today() + 9, setupDone = true) }
+        alone.createRoom(Home.ORIGIN, "Kitchen")
+        alone.createRoom(Home.DEST, "Kitchen")
+        use(alone)
+        shot("home_alone")
+        for (route in listOf("people", "settings")) {
+            go(route)
+            shot(route + "_alone")
+        }
+
+        // A new phone joins from the first-run screen with an invite and is told who it now is.
+        val gran = phones.organiser.data.value.people.first { it.name == "Gran" }
+        val host = WifiSync.host(phones.organiser, letNewPhonesIn = false) {}
+        try {
+            use(Store(tmp.newFolder("joining")))
+            tap("Second phone for the same move?")
+            shot("setup_join")
+            tap("Scan the invite")
+            rule.onAllNodes(hasSetTextAction() and hasText("Or type the code")).onFirst()
+                .performTextReplacement(host.inviteFor(gran.id, listOf("127.0.0.1")).valueOrNull()!!.encode())
+            rule.waitForIdle()
+            tap("OK")
+            rule.waitUntil(20_000) { rule.onAllNodes(hasText("You are Gran", substring = true)).fetchSemanticsNodes().isNotEmpty() }
+            shot("setup_joined")
+        } finally {
+            host.stop()
+        }
+
+        // Other kinds of move, and the first-run screens.
+        val store = phones.organiser
+        use(store)
+        rule.runOnUiThread { store.setMove { it.copy(kind = MoveKind.MOVERS) } }
         rule.waitForIdle(); shot("home_movers")
         rule.runOnUiThread { store.setMove { it.copy(kind = MoveKind.INVENTORY, off = partsOffFor(MoveKind.INVENTORY)) } }
         rule.waitForIdle(); shot("home_inventory")
@@ -230,7 +372,7 @@ class AuditShotsTest {
     fun dialogs() {
         val store = seeded()
         var nav: NavHostController? = null
-        rule.setContent { AppRoot(store, startRoute = "home", onNav = { nav = it }) }
+        rule.setContent { App(store, onNav = { nav = it }) }
         rule.waitForIdle()
         fun go(route: String) {
             rule.runOnUiThread { nav!!.navigate(route) }
@@ -261,6 +403,13 @@ class AuditShotsTest {
         tap("Erase all data on this phone")
         shot("confirm")
         tap("Cancel")
+
+        // A new-home room: its door width by a tap, the rest folded away.
+        go("rooms")
+        tap("New home")
+        tap("Main bedroom")
+        shot("room")
+        tap("Done")
 
         go("boxes")
         tap("All rooms")

@@ -85,33 +85,14 @@ fun RoomsScreen() {
     data.room(editing)?.let { r -> RoomDialog(r, onClose = { editing = null }) }
 }
 
+/** Common rooms by a tap, any other by saying its name; typing one is behind "Other". */
 @Composable
 private fun AddRoom(home: Home) {
-    val store = LocalStore.current
-    val rooms = appData().roomsOf(home)
-    var name by remember { mutableStateOf("") }
-    Section("Add a room") {
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            COMMON_ROOMS.filter { n -> rooms.none { it.name.equals(n, ignoreCase = true) } }.forEach { n ->
-                AssistChip(onClick = { store.createRoom(home, n) }, label = { Text(n) })
-            }
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                colors = glassFieldColors(),
-                value = name,
-                onValueChange = { name = it },
-                label = { Text("Room name") },
-                singleLine = true,
-                modifier = Modifier.weight(1f),
-            )
-            Spacer(Modifier.width(8.dp))
-            FilledIconButton(enabled = name.isNotBlank(), onClick = { store.createRoom(home, name); name = "" }) {
-                Icon(Icons.Default.Add, contentDescription = "Add room")
-            }
-        }
-    }
+    Section("Add a room") { RoomAdder(home) }
 }
+
+/** Common widths of a doorway in cm, offered as one-tap choices; any other is typed behind "Other". */
+private val DOOR_WIDTHS = listOf(60.0, 70.0, 76.0, 80.0, 90.0)
 
 @Composable
 private fun RoomDialog(room: Room, onClose: () -> Unit) {
@@ -132,13 +113,28 @@ private fun RoomDialog(room: Room, onClose: () -> Unit) {
                     RoomPicker(Home.DEST, room.mapsTo, { id -> store.put(room.copy(mapsTo = id)) })
                     SwitchRow("Fully packed", room.packed, { v -> store.put(room.copy(packed = v)) })
                 } else {
-                    TextInput(room.code, { v -> store.put(room.copy(code = v.uppercase().take(6))) }, "Short code for labels", key = room.id + "code")
-                    TextInput(room.floor, { v -> store.put(room.copy(floor = v)) }, "Floor / directions (e.g. Upstairs, first left)", key = room.id + "floor")
-                    NumberInput(
-                        room.doorWidthCm, { v -> store.put(room.copy(doorWidthCm = v)) },
-                        "Narrowest opening on the way in (cm)", Modifier.fillMaxWidth(), key = room.id + "door",
-                    )
-                    Hint("Measure the tightest door, hallway or stair turn between the front door and this room.")
+                    // The tightest door, hallway or stair turn on the way in: a tap for the usual widths.
+                    Text("Narrowest opening on the way in", style = MaterialTheme.typography.labelLarge)
+                    var otherWidth by remember(room.id) { mutableStateOf(room.doorWidthCm != null && room.doorWidthCm !in DOOR_WIDTHS) }
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        DOOR_WIDTHS.forEach { w ->
+                            GlassChip("${fmtNum(w)} cm", selected = !otherWidth && room.doorWidthCm == w, onClick = {
+                                otherWidth = false
+                                store.put(room.copy(doorWidthCm = if (room.doorWidthCm == w) null else w))
+                            })
+                        }
+                        GlassChip("Other", selected = otherWidth, onClick = { otherWidth = !otherWidth })
+                    }
+                    if (otherWidth) {
+                        NumberInput(room.doorWidthCm, { v -> store.put(room.copy(doorWidthCm = v)) }, "Width in cm", Modifier.fillMaxWidth(), key = room.id + "door")
+                    }
+                    Fold(
+                        "Label code and directions", Icons.Default.Edit,
+                        summary = listOfNotNull(room.code.ifBlank { null }, room.floor.ifBlank { null }).joinToString(" · "), key = "code-" + room.id,
+                    ) {
+                        TextInput(room.code, { v -> store.put(room.copy(code = v.uppercase().take(6))) }, "Short code for labels", key = room.id + "code")
+                        TextInput(room.floor, { v -> store.put(room.copy(floor = v)) }, "Floor / directions (e.g. Upstairs, first left)", key = room.id + "floor", mic = true)
+                    }
                     Text("Colour", style = MaterialTheme.typography.labelLarge)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         ROOM_COLORS.forEachIndexed { i, c ->
