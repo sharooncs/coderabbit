@@ -3,7 +3,6 @@ package app.housemove.ui.screens
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -12,7 +11,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -20,7 +18,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.Role as SemanticsRole
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -110,14 +107,7 @@ private fun Inbox() {
             } else {
                 Text("${chosen.size} selected", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                 GlassChip("Clear", onClick = { picked = emptyList() })
-                Row(
-                    Modifier.mintPill().clickable(role = SemanticsRole.Button) { approve(chosen) }.heightIn(min = 44.dp).padding(horizontal = 18.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(Icons.Default.DoneAll, contentDescription = null, tint = Night.OnMint, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Approve ${chosen.size}", style = MaterialTheme.typography.labelLarge, color = Night.OnMint)
-                }
+                PillButton("Approve ${chosen.size}", onClick = { approve(chosen) }, icon = Icons.Default.DoneAll)
             }
         }
         Column(
@@ -184,7 +174,8 @@ private fun WaitingCard(
                     ANSWERS, selected = null, columns = if (tightScreen()) 3 else 5,
                     onPick = { d -> if (store.answer(p.id, d).orSay(context) != null) toast(context, "Answered: ${d.label}") },
                 )
-            } else if (!declining) {
+            } else if (!declining && !selected) {
+                // A card chosen to be approved with the others has no buttons of its own: the one at the top answers it.
                 // Side by side where both words fit whole; one above the other where they would not.
                 if (tightScreen()) {
                     BigAction(Icons.Default.Check, "Approve", onClick = onApprove)
@@ -213,16 +204,16 @@ private fun DeclinePanel(p: Proposal, onDone: () -> Unit) {
     }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         HorizontalDivider(color = Night.Hairline)
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Why not? One tap declines it.", style = MaterialTheme.typography.labelLarge, color = Night.AmberPale, modifier = Modifier.weight(1f))
-            TextButton(onClick = onDone) { Text("Cancel") }
+            GlassChip("Cancel", onClick = onDone)
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             declineReasons(p.kind).forEach { r -> GlassChip(r, onClick = { decline(r) }) }
             GlassChip("No reason", onClick = { decline("") })
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SpeakButton("Why not?", contentDescription = "Say why") { said ->
+            SpeakButton("Why not?", contentDescription = "Say why", label = "Say why") { said ->
                 words = said
                 spoken++
             }
@@ -245,7 +236,7 @@ private fun Asker(p: Proposal, verb: String) {
         Spacer(Modifier.width(6.dp))
         Text(
             (if (mine) "You" else data.personName(p.by).ifBlank { "Someone" }) + " " + (if (mine) verb.removeSuffix("s") else verb) + " · " + agoText(p.createdAt),
-            style = MaterialTheme.typography.bodySmall, color = Night.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            style = MaterialTheme.typography.bodySmall, color = Night.TextDim, maxLines = 2, overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -317,7 +308,7 @@ private fun outcomeText(data: AppData, p: Proposal): String {
 private fun DecidedLately(data: AppData) {
     val decided = data.liveProposals.filter { it.state != ProposalState.WAITING }.sortedByDescending { it.decidedAt }.take(8)
     if (decided.isEmpty()) return
-    Fold("Decided lately", Icons.Default.History, summary = decided.take(2).joinToString(" · ") { data.describe(it) }) {
+    Fold("Decided lately", Icons.Default.History, summary = data.describe(decided.first()) + if (decided.size > 1) " · ${decided.size - 1} more" else "") {
         decided.forEach { p ->
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(data.describe(p), style = MaterialTheme.typography.bodyLarge)
@@ -328,10 +319,21 @@ private fun DecidedLately(data: AppData) {
                         color = Night.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
                 }
-                if (p.reason.isNotBlank()) Text("“${p.reason}”", style = MaterialTheme.typography.bodySmall, fontStyle = FontStyle.Italic, color = Night.TextSoft)
+                whyText(p)?.let { Text(it, style = MaterialTheme.typography.bodySmall, fontStyle = FontStyle.Italic, color = Night.TextSoft) }
             }
         }
     }
+}
+
+/**
+ * Why a suggestion ended as it did, for the person who made it: the reason given for a
+ * no (or that none was given), and what happened instead when events passed it by.
+ */
+private fun whyText(p: Proposal): String? = when (p.state) {
+    ProposalState.DECLINED -> if (p.reason.isBlank()) "No reason given" else "“${p.reason.trim()}”"
+    ProposalState.OVERTAKEN -> "An Organiser decided this directly while it waited."
+    ProposalState.NOT_CHOSEN -> "Another suggestion for the same thing was approved."
+    else -> p.reason.trim().takeIf { it.isNotEmpty() }?.let { "“$it”" }
 }
 
 /** For Deciders and Helpers: everything they suggested or asked, newest first, and how each ended. */
@@ -388,29 +390,27 @@ private fun OutcomeCard(p: Proposal, me: Person?) {
                     if (p.note.isNotBlank()) Text("“${p.note}”", style = MaterialTheme.typography.bodySmall, fontStyle = FontStyle.Italic, color = Night.TextSoft)
                 }
             }
-            when (p.state) {
-                ProposalState.WAITING -> WaitingTag(p)
-                else -> {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        GlassChip(outcomeText(data, p), icon = p.state.icon(), tone = p.state.tone())
-                        if (question && p.state == ProposalState.APPROVED) {
-                            data.item(p.targetId)?.let { GlassChip(it.disposition.label, icon = it.disposition.icon()) }
-                        }
-                    }
-                    if (p.reason.isNotBlank()) Text("“${p.reason}”", style = MaterialTheme.typography.bodyMedium, fontStyle = FontStyle.Italic)
-                    if (p.state == ProposalState.OVERTAKEN) {
-                        Text("An Organiser decided this directly while it waited.", style = MaterialTheme.typography.bodySmall, color = Night.TextDim)
-                    }
-                    // An approved suggestion is the go-ahead to carry it out; the item's own page is where that is done.
-                    val item = if (p.kind == ProposalKind.ITEM_DECISION && p.state == ProposalState.APPROVED) data.item(p.targetId) else null
-                    if (item != null && !item.gone && item.disposition != Disposition.MOVE && data.mayCarryOut(me, item)) {
-                        GlassPill(Modifier.fillMaxWidth(), tone = GlassTone.Mint, onClick = { nav.open("item/${item.id}") }) {
-                            Icon(item.disposition.icon(), contentDescription = null, tint = Night.MintPale, modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.width(10.dp))
-                            Text("You can carry it out now", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
-                            Icon(Icons.Default.ChevronRight, contentDescription = null)
-                        }
-                    }
+            // Every card ends the same way: how it stands as a chip, then the why in words.
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                GlassChip(outcomeText(data, p), icon = p.state.icon(), tone = p.state.tone())
+                if (question && p.state == ProposalState.APPROVED) {
+                    data.item(p.targetId)?.let { GlassChip(it.disposition.label, icon = it.disposition.icon()) }
+                }
+            }
+            whyText(p)?.let {
+                Text(
+                    it, style = MaterialTheme.typography.bodyMedium, fontStyle = FontStyle.Italic,
+                    color = if (p.state == ProposalState.DECLINED) Night.RedPale else Night.TextSoft,
+                )
+            }
+            // An approved suggestion is the go-ahead to carry it out; the item's own page is where that is done.
+            val item = if (p.kind == ProposalKind.ITEM_DECISION && p.state == ProposalState.APPROVED) data.item(p.targetId) else null
+            if (item != null && !item.gone && item.disposition != Disposition.MOVE && data.mayCarryOut(me, item)) {
+                GlassPill(Modifier.fillMaxWidth(), tone = GlassTone.Mint, onClick = { nav.open("item/${item.id}") }) {
+                    Icon(item.disposition.icon(), contentDescription = null, tint = Night.MintPale, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Text("You can carry it out now", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+                    Icon(Icons.Default.ChevronRight, contentDescription = null)
                 }
             }
         }

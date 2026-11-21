@@ -18,7 +18,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.housemove.data.Action
 import app.housemove.data.Backup
@@ -109,31 +108,19 @@ fun SyncScreen(code: String? = null) {
             // Who this phone is, once there is more than one person to tell apart.
             val mine = myPerson()
             if (data.shared() && mine != null) {
-                GlassPill(
-                    Modifier.fillMaxWidth(), onClick = { nav.open("people") },
-                    contentPadding = PaddingValues(start = 8.dp, top = 8.dp, bottom = 8.dp, end = 14.dp),
-                ) {
-                    PersonOrb(mine, size = 40.dp, me = true)
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("This phone is ${mine.shownName()}", style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(
-                            if (allowed(Action.MANAGE_PEOPLE)) "Add a new phone under People" else "Everyone on the move",
-                            style = MaterialTheme.typography.bodySmall, color = Night.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    RoleChip(mine.role)
-                    Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Night.TextDim)
-                }
+                PersonPill(
+                    mine, "This phone is ${mine.shownName()}", if (allowed(Action.MANAGE_PEOPLE)) "Add a new phone under People" else "Everyone on the move",
+                    onClick = { nav.open("people") },
+                )
             }
 
             val h = host
             if (h == null) {
                 // Two phones, changes going both ways: the picture is the explanation.
-                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.PhoneAndroid, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(48.dp))
-                    Icon(Icons.Default.SyncAlt, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 12.dp).size(30.dp))
-                    Icon(Icons.Default.PhoneAndroid, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(48.dp))
+                Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                    GlassOrb(Icons.Default.PhoneAndroid, null, size = 64.dp)
+                    Icon(Icons.Default.SyncAlt, contentDescription = null, tint = Night.MintLight, modifier = Modifier.padding(horizontal = 14.dp).size(30.dp))
+                    GlassOrb(Icons.Default.PhoneAndroid, null, size = 64.dp)
                 }
                 BigAction(
                     Icons.Default.QrCode2, "Show sync code",
@@ -190,14 +177,13 @@ fun SyncScreen(code: String? = null) {
                             " · one file with everything, ${data.livePhotos.size} photos",
                     )
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        enabled = !busy,
-                        onClick = { saveBackup.launch("housemove-backup-${LocalDate.now()}.zip") },
-                        modifier = Modifier.weight(1f).heightIn(min = 52.dp),
-                    ) { Text("Save backup") }
-                    OutlinedButton(
-                        enabled = !busy,
+                Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PillButton(
+                        "Save backup", onClick = { saveBackup.launch("housemove-backup-${LocalDate.now()}.zip") },
+                        modifier = Modifier.weight(1f).fillMaxHeight(), icon = Icons.Default.SaveAlt, enabled = !busy,
+                    )
+                    PillButton(
+                        "Share backup", modifier = Modifier.weight(1f).fillMaxHeight(), icon = Icons.Default.Share, primary = false, enabled = !busy,
                         onClick = {
                             scope.launch {
                                 working = true
@@ -214,16 +200,14 @@ fun SyncScreen(code: String? = null) {
                                 if (file != null) Share.send(context, file, "application/zip") else say(SyncReport(false, "Could not create the backup", ""))
                             }
                         },
-                        modifier = Modifier.weight(1f).heightIn(min = 52.dp),
-                    ) { Text("Share backup") }
+                    )
                 }
                 // Restoring is for Organisers; nobody else is shown a button that would only refuse.
                 if (allowed(Action.RESTORE_BACKUP)) {
-                    OutlinedButton(
-                        enabled = !busy,
-                        onClick = { openBackup.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Restore or merge a backup file") }
+                    PillButton(
+                        "Restore or merge a backup file", onClick = { openBackup.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) },
+                        modifier = Modifier.fillMaxWidth(), icon = Icons.Default.Restore, primary = false, enabled = !busy,
+                    )
                 }
             }
 

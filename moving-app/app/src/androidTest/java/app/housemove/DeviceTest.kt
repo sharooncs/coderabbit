@@ -134,6 +134,16 @@ class DeviceTest {
         rule.waitForIdle()
     }
 
+    /**
+     * On "Scan a label": type a code in place of the camera and open what it belongs to.
+     * The field is behind "Type the code" until it is asked for, and stays open after that.
+     */
+    private fun typeCode(code: String) {
+        if (rule.onAllNodes(hasSetTextAction() and hasText("Or type the code on the label")).fetchSemanticsNodes().isEmpty()) tap("Type the code")
+        type("Or type the code on the label", code)
+        tap("Open")
+    }
+
     private fun see(text: String) = rule.onAllNodes(hasText(text, substring = true)).onFirst().assertExists()
 
     private fun waitFor(what: String, timeoutMs: Long = 20_000, condition: () -> Boolean) {
@@ -226,6 +236,7 @@ class DeviceTest {
     fun cameraTakesAPhotoInTheWalkThrough() {
         assumeTrue("no camera on this device", context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY))
         val before = data.liveItems.size
+        tap("Items") // the walk-through is the first shortcut on the Items screen
         tap("Walk-through")
         tap("Kitchen")
         tap("Start shooting")
@@ -267,13 +278,11 @@ class DeviceTest {
         Thread.sleep(4000) // live frames are being analysed for codes during this time
         rule.waitForIdle()
         shot("12-scan")
-        type("Or type the code on the label", "L001")
-        tap("Open")
+        typeCode("L001")
         see("Box L001") // the box's own page, with what is in it as chips
         see("Kettle")
         tapDesc("Back")
-        type("Or type the code on the label", "L555")
-        tap("Open")
+        typeCode("L555")
         see("Label L555 is not in use")
         tap("New box")
         assertNotNull(data.findByLabel("L555"))
@@ -399,12 +408,10 @@ class DeviceTest {
         tapDesc("Back")
 
         tapDesc("Scan a label") // "what is this?" finds things by serial number and by book barcode
-        type("Or type the code on the label", "sn-test-2")
-        tap("Open")
+        typeCode("sn-test-2")
         see("What happens to it?")
         tapDesc("Back")
-        type("Or type the code on the label", "9780140328721")
-        tap("Open")
+        typeCode("9780140328721")
         see("Box L001") // the box the book was scanned into
         see("Scanned in (2)")
     }

@@ -17,7 +17,6 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -152,11 +151,15 @@ fun OverviewScreen() {
             BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 10.dp)) {
                 val tile = (maxWidth - 32.dp - 24.dp) / 4
                 Row(
-                    (if (scrolls) Modifier.horizontalScroll(rememberScrollState()) else Modifier.fillMaxWidth()).padding(horizontal = 16.dp),
+                    // All tiles as tall as the tallest: a long room name takes two lines, never "…".
+                    (if (scrolls) Modifier.horizontalScroll(rememberScrollState()) else Modifier.fillMaxWidth()).height(IntrinsicSize.Min).padding(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     rooms.forEach { r ->
-                        RoomTile(r, selected = r.room.id == shown?.room?.id, modifier = if (scrolls) Modifier.width(tile.coerceAtLeast(76.dp)) else Modifier.weight(1f)) {
+                        RoomTile(
+                            r, selected = r.room.id == shown?.room?.id,
+                            modifier = (if (scrolls) Modifier.width(tile.coerceAtLeast(84.dp)) else Modifier.weight(1f)).fillMaxHeight(),
+                        ) {
                             pickedId = r.room.id
                         }
                     }
@@ -206,27 +209,12 @@ fun OverviewScreen() {
                 }
 
                 // The way on from here.
-                GlassPill(
-                    Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp),
-                    onClick = {
-                        if (next != null) store.setDevice { it.copy(currentRoomId = next.room.id) }
-                        nav.open("pack")
-                    },
-                    sheen = true,
-                    contentPadding = PaddingValues(start = 10.dp, top = 10.dp, bottom = 10.dp, end = 14.dp),
+                ActionPill(
+                    Icons.Outlined.Inventory2, "Pack a box", if (next != null) "${next.room.name} is next" else "Every room is marked packed",
+                    Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp),
                 ) {
-                    Box(Modifier.size(46.dp).drawBehind { drawOrb(OrbKind.Primary, ring = false) }, contentAlignment = Alignment.Center) {
-                        Icon(Icons.Outlined.Inventory2, contentDescription = null, tint = Night.OnMint, modifier = Modifier.size(22.dp))
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("Pack a box", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            if (next != null) "${next.room.name} is next" else "Every room is marked packed",
-                            style = MaterialTheme.typography.bodySmall, fontSize = 13.sp, color = Night.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    Icon(Icons.Default.ChevronRight, contentDescription = null)
+                    if (next != null) store.setDevice { it.copy(currentRoomId = next.room.id) }
+                    nav.open("pack")
                 }
             }
         }
@@ -250,10 +238,11 @@ private fun RoomTile(r: RoomPacking, selected: Boolean, modifier: Modifier = Mod
             .selectable(selected = selected, role = Role.Tab, onClick = onClick)
             .clearAndSetSemantics { contentDescription = r.spoken() }
             .heightIn(min = 64.dp)
-            .padding(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 10.dp),
+            .padding(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 10.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Text(r.room.name, style = MaterialTheme.typography.bodySmall, color = Night.TextSoft, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(r.room.name, style = MaterialTheme.typography.bodySmall, color = Night.TextSoft, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.weight(1f))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
                 if (r.total == 0) "–" else "${r.sealed}/${r.total}",

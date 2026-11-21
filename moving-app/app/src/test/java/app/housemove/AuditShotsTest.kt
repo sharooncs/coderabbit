@@ -1,10 +1,10 @@
 package app.housemove
 
-import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Paint
-import android.graphics.RectF
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -15,6 +15,9 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasSetTextAction
@@ -31,8 +34,10 @@ import androidx.compose.ui.test.onRoot
 import androidx.navigation.NavHostController
 import app.housemove.data.*
 import app.housemove.sync.WifiSync
+import app.housemove.ui.AimMarks
 import app.housemove.ui.AppBackground
 import app.housemove.ui.AppRoot
+import app.housemove.ui.CameraControls
 import app.housemove.ui.HouseMarker
 import app.housemove.ui.HouseMoveTheme
 import app.housemove.ui.HouseSpot
@@ -68,124 +73,9 @@ class AuditShotsTest {
     @get:Rule
     val rule = createComposeRule()
 
-    /** A stand-in photograph: a coloured room with an object in it, different for every seed. */
-    private fun picture(file: File, seed: Int) {
-        val w = 480
-        val h = 360
-        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        val c = Canvas(bmp)
-        val hues = listOf(0xFFB9C7D6, 0xFFD9C6A5, 0xFFC7D8C0, 0xFFE2C4C0, 0xFFCFC7E0, 0xFFE6DDB8)
-        val objs = listOf(0xFF6B4F3A, 0xFF2F4858, 0xFF8A3B2E, 0xFF3F6B4E, 0xFF55407A, 0xFF7A6A2E)
-        c.drawColor(hues[seed % hues.size].toInt())
-        val p = Paint(Paint.ANTI_ALIAS_FLAG)
-        p.color = 0x33000000
-        c.drawRect(0f, h * 0.72f, w.toFloat(), h.toFloat(), p)
-        p.color = objs[(seed / 2) % objs.size].toInt()
-        val ow = w * (0.35f + (seed % 3) * 0.1f)
-        val oh = h * (0.4f + (seed % 4) * 0.08f)
-        c.drawRoundRect(RectF((w - ow) / 2, h * 0.8f - oh, (w + ow) / 2, h * 0.8f), 14f, 14f, p)
-        p.color = 0x22FFFFFF
-        c.drawRoundRect(RectF((w - ow) / 2 + 12, h * 0.8f - oh + 12, (w + ow) / 2 - 12, h * 0.8f - oh * 0.55f), 8f, 8f, p)
-        file.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 85, it) }
-    }
-
-    /** The same move on three phones: the Organiser's (Sam), a Decider's (Priya) and a Helper's (Tom). */
-    private class Phones(val organiser: Store, val decider: Store, val helper: Store)
-
-    /** Someone added to [host]'s move whose phone has joined. Returns that phone. */
-    private fun joined(host: Store, name: String, role: Role): Store {
-        val p = host.addPerson(name, role).valueOrNull()!!
-        val phone = Store(tmp.newFolder())
-        phone.joinAs(p.id, host.data.value.visibleTo(role))
-        host.mergeIn(phone.data.value)
-        return phone
-    }
+    private fun phones() = AuditSampleData.phones { tmp.newFolder() }
 
     private fun seeded(): Store = phones().organiser
-
-    private fun phones(): Phones {
-        val s = Store(tmp.newFolder("audit"))
-        var n = 0
-        fun photo(owner: String, kind: PhotoKind) {
-            val f = s.newPhotoFile()
-            picture(f, n++)
-            s.addPhoto(owner, kind, f)
-        }
-        s.setMove { it.copy(name = "Maple Road move", moveDay = today() + 9, setupDone = true, currency = "£") }
-        s.setDevice { it.copy(name = "Sam", letter = "S") }
-        val dKitchen = s.createRoom(Home.DEST, "Kitchen").copy(doorWidthCm = 76.0, floor = "Ground floor").also { s.put(it) }
-        val dBed = s.createRoom(Home.DEST, "Main bedroom").copy(doorWidthCm = 70.0, floor = "Upstairs, first left").also { s.put(it) }
-        val dLiving = s.createRoom(Home.DEST, "Living room").copy(doorWidthCm = 80.0).also { s.put(it) }
-        val dOffice = s.createRoom(Home.DEST, "Office")
-        val kitchen = s.createRoom(Home.ORIGIN, "Kitchen").copy(mapsTo = dKitchen.id).also { s.put(it) }
-        val bed = s.createRoom(Home.ORIGIN, "Main bedroom").copy(mapsTo = dBed.id, packed = true).also { s.put(it) }
-        val living = s.createRoom(Home.ORIGIN, "Living room").copy(mapsTo = dLiving.id).also { s.put(it) }
-        val loft = s.createRoom(Home.ORIGIN, "Loft")
-        s.setDevice { it.copy(currentRoomId = kitchen.id) }
-        val trip = Trip(id = newId(), name = "Trip 1", sort = 1).also { s.put(it) }
-        s.setDevice { it.copy(currentTripId = trip.id) }
-
-        s.put(Item(id = "wardrobe", name = "Oak wardrobe", originRoomId = bed.id, destRoomId = dBed.id, disposition = Disposition.MOVE,
-            widthCm = 120.0, depthCm = 74.0, heightCm = 205.0, value = 450.0, twoPerson = true, label = "L010", prepEmptied = true, prepPhotos = true))
-        s.put(Item(id = "fridge", name = "Fridge-freezer", originRoomId = kitchen.id, destRoomId = dKitchen.id, disposition = Disposition.MOVE,
-            widthCm = 60.0, depthCm = 65.0, heightCm = 180.0, stage = Stage.LOADED, tripId = trip.id, make = "Bosch", model = "KGN36",
-            serial = "FD9907-000123", keepUpright = true, accessories = "Shelves, ice tray"))
-        s.put(Item(id = "tv", name = "Living room TV", originRoomId = living.id, destRoomId = dLiving.id, disposition = Disposition.MOVE, keepUpright = true, fragile = true))
-        s.put(Item(id = "bed", name = "King bed", originRoomId = bed.id, destRoomId = dBed.id, disposition = Disposition.MOVE,
-            needsDisassembly = true, firstNight = true, stage = Stage.DELIVERED, damaged = true, damageNote = "Scratch on headboard"))
-        s.put(Item(id = "sofa", name = "Old sofa", originRoomId = living.id, disposition = Disposition.SELL, price = 80.0, listed = true, deadlineDay = today() + 3))
-        s.put(Item(id = "books", name = "Bookcase", originRoomId = living.id, disposition = Disposition.DONATE))
-        s.put(Item(id = "lamp", name = "", originRoomId = loft.id))
-        s.put(Item(id = "desk", name = "Desk", originRoomId = bed.id, disposition = Disposition.MOVE))
-        s.put(Item(id = "table", name = "Dining table", originRoomId = kitchen.id, destRoomId = dKitchen.id, disposition = Disposition.MOVE, needsDisassembly = true))
-        s.put(Item(id = "bike", name = "Exercise bike", originRoomId = loft.id, disposition = Disposition.BIN))
-        for (id in listOf("wardrobe", "fridge", "tv", "bed", "sofa", "books", "lamp", "table")) photo(id, PhotoKind.GENERAL)
-        photo("wardrobe", PhotoKind.CONDITION); photo("bed", PhotoKind.DAMAGE)
-
-        s.put(Box(id = "box1", label = "L001", originRoomId = kitchen.id, destRoomId = dKitchen.id, contents = "Kettle, mugs, tea, cutlery",
-            priority = Priority.FIRST_NIGHT, sealed = true, fragile = true))
-        s.put(Box(id = "box2", label = "L002", originRoomId = kitchen.id, destRoomId = dKitchen.id, contents = "Pans and baking trays", heavy = true))
-        s.put(Box(id = "box3", label = "S1", originRoomId = bed.id, destRoomId = dBed.id, contents = "Bedding", sealed = true,
-            stage = Stage.LOADED, tripId = trip.id, priority = Priority.FIRST_NIGHT))
-        s.put(Box(id = "box4", label = "L004", originRoomId = bed.id, destRoomId = dBed.id, contents = "Winter clothes", sealed = true, stage = Stage.DELIVERED))
-        s.put(Box(id = "box5", label = "L005", originRoomId = living.id, destRoomId = dLiving.id, contents = "Books", sealed = true, stage = Stage.DONE))
-        s.put(Box(id = "box6", label = "L006", originRoomId = loft.id, contents = "Passports, documents", travelsWithMe = true, sealed = true))
-        s.put(Box(id = "box7", label = "L007", originRoomId = living.id, destRoomId = dOffice.id, contents = "Cables, router, chargers", thisWayUp = true))
-        for (id in listOf("box1", "box2", "box4", "box5", "box7")) photo(id, PhotoKind.CONTENTS)
-        s.scanInto("box5", "9780140328721", title = "Fantastic Mr. Fox", author = "Roald Dahl")
-        s.scanInto("box5", "", title = "Photo albums")
-
-        seedTasks().forEachIndexed { i, t -> s.put(if (i < 14) t.copy(done = true) else t) }
-        s.put(Expense(id = "e1", title = "Van hire", amount = 180.0, category = "Van", day = today(), planned = true))
-        s.put(Expense(id = "e2", title = "Boxes and tape", amount = 62.5, category = "Supplies", day = today() - 4))
-        s.put(Supply(id = "s1", name = "Medium boxes", need = 30, have = 12))
-        s.put(Supply(id = "s2", name = "Packing tape rolls", need = 4, have = 4))
-        s.put(Reading(id = "r1", home = Home.ORIGIN, kind = "Electricity", value = "48213", day = today()))
-
-        // People: Sam organises, Priya may suggest, Tom helps, Gran has not joined yet, Alex was removed.
-        s.put(Item(id = "mirror", name = "Hall mirror", originRoomId = living.id))
-        photo("mirror", PhotoKind.GENERAL)
-        val priya = joined(s, "Priya", Role.DECIDER)
-        val tom = joined(s, "Tom", Role.HELPER)
-        s.addPerson("Gran", Role.HELPER)
-        s.addPerson("Alex", Role.HELPER).valueOrNull()?.let { s.removePerson(it.id) }
-        // What they suggested and asked: two already decided, three still waiting.
-        val toOffice = priya.suggestRoom("tv", dOffice.id).valueOrNull()!!
-        val donateBike = priya.suggestDecision("bike", Disposition.DONATE).valueOrNull()!!
-        priya.suggestDecision("table", Disposition.SELL, 40.0, note = "Too big for the new kitchen")
-        priya.suggestCost(Expense(id = "e3", title = "20 more boxes", amount = 35.0, category = "Supplies", day = today()))
-        tom.ask("mirror", note = "Is this coming with us?")
-        for (phone in listOf(priya, tom)) s.mergeIn(phone.data.value)
-        s.approve(toOffice.id)
-        s.decline(donateBike.id, "Too worn to give away")
-        for (phone in listOf(priya, tom)) {
-            phone.mergeIn(s.data.value.visibleTo(phone.myRole))
-            s.photoDir.listFiles()?.forEach { f -> f.copyTo(File(phone.photoDir, f.name), overwrite = true) }
-            phone.flush()
-        }
-        s.flush()
-        return Phones(s, priya, tom)
-    }
 
     /** The app as on a phone that can listen and is on a network, so microphones and codes are in the picture. */
     @Composable
@@ -195,19 +85,11 @@ class AuditShotsTest {
         }
     }
 
-    private val routes = listOf(
-        "home", "overview", "items", "item/wardrobe", "item/fridge", "item/sofa", "walk", "triage", "plan", "disposal", "electronics",
-        "boxes", "box/box1", "box/box2", "box/box5", "pack", "labels", "lists", "packorder", "tasks",
-        "moveday", "load", "unload", "reconcile", "sweep", "records/ORIGIN", "unpack", "budget", "reports",
-        "rooms", "more", "sync", "settings", "search", "scan",
-        "people", "people/add", "approvals", "activity",
-    )
-
     /** Picture name and route of every screen. One person's page is added: someone still to join, with their invite showing. */
     private fun routesFor(store: Store): List<Pair<String, String>> {
         val people = store.data.value.people
         val person = people.firstOrNull { it.joinedAt == 0L && !it.removed } ?: people.first()
-        return routes.map { it.replace('/', '_') to it } + ("person" to "person/${person.id}?invite=true")
+        return AuditSampleData.ROUTES.map { it.replace('/', '_') to it } + ("person" to "person/${person.id}?invite=true")
     }
 
     private fun capture(kind: String, seededData: Boolean = true) {
@@ -264,6 +146,15 @@ class AuditShotsTest {
             rule.waitForIdle()
         }
 
+        // What a search finds.
+        go("search")
+        rule.onAllNodes(hasSetTextAction()).onFirst().performTextReplacement("kitchen")
+        shot("search_results")
+        // The typed way round the scanner.
+        go("scan")
+        tap("Type the code")
+        shot("scan_typing")
+
         // The inbox while approving several at once, and while declining one.
         go("approvals")
         tap("Select all")
@@ -305,9 +196,7 @@ class AuditShotsTest {
         val host = WifiSync.host(phones.organiser, letNewPhonesIn = false) {}
         try {
             use(Store(tmp.newFolder("joining")))
-            tap("Second phone for the same move?")
-            shot("setup_join")
-            tap("Scan the invite")
+            tap("Second phone for the same move?") // straight to the scanner
             rule.onAllNodes(hasSetTextAction() and hasText("Or type the code")).onFirst()
                 .performTextReplacement(host.inviteFor(gran.id, listOf("127.0.0.1")).valueOrNull()!!.encode())
             rule.waitForIdle()
@@ -414,6 +303,51 @@ class AuditShotsTest {
         go("boxes")
         tap("All rooms")
         shot("menu")
+        rule.onAllNodes(hasText("All rooms") and hasClickAction()).onLast().performClick()
+        rule.waitForIdle()
+
+        // The scanner as a dialog (with no camera here it explains what it needs), and a photo opened large.
+        go("sync")
+        tap("Scan sync code")
+        shot("scanner")
+        rule.onAllNodes(hasContentDescription("Close") and hasClickAction()).onLast().performClick()
+        rule.waitForIdle()
+        go("item/wardrobe")
+        rule.waitForIdle()
+        Thread.sleep(150)
+        rule.onAllNodes(hasContentDescription("Oak wardrobe") and hasClickAction()).onFirst().performClick()
+        rule.waitForIdle()
+        Thread.sleep(150)
+        rule.waitForIdle()
+        shot("photo")
+    }
+
+    /**
+     * What sits on the live camera: the camera's own controls, and the scanner's marks.
+     * There is no camera in these tests, so they are drawn over a still picture.
+     * Written to build/audit/dialogs/camera.png and scanner_live.png.
+     */
+    @Test
+    @Config(sdk = [34], qualifiers = "w411dp-h891dp-xhdpi")
+    fun camera() {
+        val store = seeded()
+        val photo = store.photoFile(store.data.value.photosOf("wardrobe").first())
+        val still = android.graphics.BitmapFactory.decodeFile(photo.path).asImageBitmap()
+        var scanning by mutableStateOf(false)
+        rule.setContent {
+            HouseMoveTheme {
+                Box(Modifier.fillMaxSize().background(Color.Black)) {
+                    Image(still, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                    if (scanning) AimMarks(Modifier.fillMaxSize())
+                    else CameraControls("Oak wardrobe", taken = 2, busy = false, torch = false, onClose = {}, onTorch = {}, onShoot = {})
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onRoot().captureRoboImage("build/audit/dialogs/camera.png")
+        scanning = true
+        rule.waitForIdle()
+        rule.onRoot().captureRoboImage("build/audit/dialogs/scanner_live.png")
     }
 
     @Test

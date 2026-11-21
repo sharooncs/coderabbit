@@ -24,7 +24,8 @@ import app.housemove.ui.screens.agoText
 /**
  * The move as six phases, each with the screens that belong to it. The same
  * order as the printed step-by-step sheet, so the app and the paper agree.
- * Home shows it as a strip; More shows every step as a tile.
+ * Home shows it as a strip; More shows every step as a tile. Search and the scanner
+ * are not steps: they are the two round buttons at the top of both.
  */
 data class JourneyStep(
     val title: String,
@@ -41,14 +42,28 @@ data class JourneyStep(
     val titleFor: ((AppData) -> String)? = null,
     /** A title that depends on who is looking, e.g. "Approvals" for an Organiser and "My suggestions" for a Decider. */
     val titleBy: ((AppData, DeviceInfo) -> String)? = null,
-    /** Whether this phone's person is shown the step at all. */
+    /** Whether this phone's person is shown the step at all: nobody is offered a screen they cannot act on. */
     val who: (AppData, DeviceInfo) -> Boolean = { _, _ -> true },
+    /** Whether [alert] is this person's to clear. Nobody is flagged something only someone else can put right. */
+    val alertTo: (AppData, DeviceInfo) -> Boolean = { _, _ -> true },
+    /** Something here is waiting for an answer: marked in amber, with an hourglass. */
+    val waiting: (AppData, DeviceInfo) -> Boolean = { _, _ -> false },
 ) {
     fun title(d: AppData): String = titleFor?.invoke(d) ?: title
     fun title(d: AppData, device: DeviceInfo): String = titleBy?.invoke(d, device) ?: title(d)
     fun shownFor(d: AppData): Boolean = part == null || d.uses(part)
     fun shownFor(d: AppData, device: DeviceInfo): Boolean = shownFor(d) && who(d, device)
+    fun alerts(d: AppData, device: DeviceInfo): Boolean = alert(d) && alertTo(d, device)
 }
+
+/** How many suggestions and questions wait: for someone who may approve, all of them; for anyone else, their own. */
+private fun AppData.waitingFor(device: DeviceInfo): Int =
+    if (can(device, Action.APPROVE)) waitingCount() else proposalCounts(device.personId)[ProposalState.WAITING] ?: 0
+
+/** May this phone's person decide such things, or at least suggest them? The rules are the Store's ([can]). */
+private fun decidesOrSuggests(d: AppData, device: DeviceInfo) = d.can(device, Action.DECIDE) || d.can(device, Action.SUGGEST)
+
+private fun AppData.overdue(t: Task) = !t.done && (dueDay(t) ?: Long.MAX_VALUE) < today()
 
 data class JourneyPhase(
     val name: String,
@@ -93,9 +108,10 @@ val JOURNEY: List<JourneyPhase> = listOf(
             ),
             JourneyStep(
                 "Settings", Icons.Default.Settings, "settings",
-                status = { d, _ -> d.move.moveDay?.let { "Move day ${fmtDayShort(it)}" } ?: "No move day yet" },
+                status = { d, _ -> if (d.move.kind == MoveKind.INVENTORY) null else d.move.moveDay?.let { "Move day ${fmtDayShort(it)}" } ?: "No move day yet" },
                 done = { d -> d.move.moveDay != null },
-                alert = { d -> d.move.moveDay == null },
+                alert = { d -> d.move.moveDay == null && d.move.kind != MoveKind.INVENTORY },
+                alertTo = { d, dev -> d.can(dev, Action.MOVE_SETTINGS) },
             ),
         ),
         progress = { d ->
@@ -113,7 +129,7 @@ val JOURNEY: List<JourneyPhase> = listOf(
                 done = { d -> d.liveItems.isNotEmpty() },
             ),
             JourneyStep(
-                "Triage", Icons.Default.Rule, "triage", part = Part.TRIAGE,
+                "Triage", Icons.Default.Rule, "triage", part = Part.TRIAGE, who = ::decidesOrSuggests,
                 status = { d, _ ->
                     val n = d.liveItems.count { it.disposition == Disposition.UNDECIDED }
                     if (n > 0) "$n to decide" else if (d.liveItems.isEmpty()) null else "All decided"
@@ -131,17 +147,15 @@ val JOURNEY: List<JourneyPhase> = listOf(
                         else -> "My suggestions"
                     }
                 },
-                status = { d, dev ->
-                    val n = if (d.can(dev, Action.APPROVE)) d.waitingCount() else d.proposalCounts(dev.personId)[ProposalState.WAITING] ?: 0
-                    if (n == 0) "Nothing waiting" else "$n waiting"
-                },
+                status = { d, dev -> d.waitingFor(dev).let { n -> if (n == 0) "Nothing waiting" else "$n waiting" } },
+                waiting = { d, dev -> d.waitingFor(dev) > 0 },
             ),
             JourneyStep(
                 "Devices", Icons.Default.Tv, "electronics", part = Part.DEVICES,
                 status = { d, _ ->
                     val devices = d.liveItems.filter { it.isElectronic() }
                     val missing = devices.count { it.serial.isBlank() && d.photosOf(it.id, PhotoKind.SERIAL).isEmpty() }
-                    if (devices.isEmpty()) null else if (missing > 0) "$missing need a serial no." else "All recorded"
+                    if (devices.isEmpty()) null else if (missing > 0) plural(missing, "serial") + " missing" else "All recorded"
                 },
                 done = { d ->
                     val devices = d.liveItems.filter { it.isElectronic() }
@@ -149,7 +163,7 @@ val JOURNEY: List<JourneyPhase> = listOf(
                 },
             ),
             JourneyStep(
-                "Plan rooms", Icons.Default.Map, "plan", part = Part.PLAN,
+                "Plan rooms", Icons.Default.Map, "plan", part = Part.PLAN, who = ::decidesOrSuggests,
                 status = { d, _ ->
                     val moving = d.movingItems()
                     val noRoom = moving.count { d.room(it.destRoomId) == null }
@@ -166,6 +180,7 @@ val JOURNEY: List<JourneyPhase> = listOf(
             ),
             JourneyStep(
                 "Sell, donate, bin", Icons.Default.Sell, "disposal", part = Part.TRIAGE,
+                who = { d, dev -> decidesOrSuggests(d, dev) || d.can(dev, Action.CARRY_OUT) },
                 status = { d, _ ->
                     val going = d.liveItems.filter { it.disposition in listOf(Disposition.SELL, Disposition.DONATE, Disposition.BIN) }
                     val left = going.count { !it.gone }
@@ -185,15 +200,17 @@ val JOURNEY: List<JourneyPhase> = listOf(
             JourneyStep(
                 "Timeline", Icons.Default.Checklist, "tasks", part = Part.TIMELINE,
                 status = { d, _ ->
-                    val overdue = d.liveTasks.count { !it.done && (d.dueDay(it) ?: Long.MAX_VALUE) < today() }
+                    val overdue = d.liveTasks.count { d.overdue(it) }
                     val p = d.progress().tasks
                     if (p.total == 0) "No tasks yet" else if (overdue > 0) "$overdue overdue" else "${p.done} of ${p.total} done"
                 },
                 done = { d -> d.progress().tasks.let { it.total > 0 && it.done == it.total } },
-                alert = { d -> d.liveTasks.any { !it.done && (d.dueDay(it) ?: Long.MAX_VALUE) < today() } },
+                alert = { d -> d.liveTasks.any { d.overdue(it) } },
+                alertTo = { d, dev -> d.liveTasks.any { d.overdue(it) && d.mayTick(d.me(dev), it) } },
             ),
             JourneyStep(
                 "Supplies and costs", Icons.Default.ShoppingCart, "budget", part = Part.BUDGET,
+                titleBy = { d, dev -> if (decidesOrSuggests(d, dev)) "Supplies and costs" else "Supplies" },
                 status = { d, _ ->
                     val toBuy = d.liveSupplies.sumOf { (it.need - it.have).coerceAtLeast(0) }
                     if (d.liveSupplies.isEmpty()) "No list yet" else if (toBuy > 0) "$toBuy to buy" else "All bought"
@@ -207,7 +224,7 @@ val JOURNEY: List<JourneyPhase> = listOf(
             ),
             JourneyStep(
                 "Packing order", Icons.Default.FormatListNumbered, "packorder", part = Part.BOXES,
-                status = { d, _ -> d.progress().roomsPacked.let { "${it.done} of ${it.total} rooms packed" } },
+                status = { d, _ -> d.progress().roomsPacked.let { "${it.done} of ${it.total} packed" } },
                 done = { d -> d.progress().roomsPacked.let { it.total > 0 && it.done == it.total } },
             ),
         ),
@@ -221,7 +238,7 @@ val JOURNEY: List<JourneyPhase> = listOf(
         listOf(
             JourneyStep(
                 "Rooms overview", Icons.Default.Roofing, "overview", part = Part.BOXES,
-                status = { d, _ -> d.progress().roomsPacked.let { if (it.total == 0) "No rooms yet" else "${it.done} of ${it.total} rooms packed" } },
+                status = { d, _ -> d.progress().roomsPacked.let { if (it.total == 0) "No rooms yet" else "${it.done} of ${it.total} packed" } },
                 done = { d -> d.progress().roomsPacked.let { it.total > 0 && it.done == it.total } },
             ),
             JourneyStep(
@@ -290,7 +307,6 @@ val JOURNEY: List<JourneyPhase> = listOf(
                 status = { d, _ -> d.progress().unpacked.let { "${it.done} of ${it.total} done" } },
                 done = { d -> d.progress().unpacked.let { it.total > 0 && it.done == it.total } },
             ),
-            JourneyStep("Find anything", Icons.Default.Search, "search"),
             JourneyStep(
                 "Reports", Icons.Default.Description, "reports",
                 status = { d, _ -> d.movables().count { it.damaged }.let { if (it > 0) "$it damaged" else null } },
@@ -300,7 +316,7 @@ val JOURNEY: List<JourneyPhase> = listOf(
     ),
 )
 
-/** The phases that have at least one step for this person, with their position in [JOURNEY]. */
+/** The phases that have at least one step in this move, with their position in [JOURNEY]. */
 fun shownPhases(data: AppData): List<IndexedValue<JourneyPhase>> =
     JOURNEY.withIndex().filter { (_, phase) -> phase.steps.any { it.shownFor(data) } }
 
@@ -381,7 +397,7 @@ fun PhaseTiles(phase: JourneyPhase, data: AppData, device: DeviceInfo, modifier:
     TileGrid(phase.steps.filter { it.route !in skipRoutes && it.shownFor(data, device) }, modifier, columns) { step, m ->
         Tile(
             step.icon, step.title(data, device), onClick = { nav.open(step.route) }, modifier = m,
-            status = step.status(data, device), done = step.done(data), alert = step.alert(data),
+            status = step.status(data, device), done = step.done(data), alert = step.alerts(data, device), waiting = step.waiting(data, device),
         )
     }
 }

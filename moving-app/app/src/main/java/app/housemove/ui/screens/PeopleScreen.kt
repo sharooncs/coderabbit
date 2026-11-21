@@ -14,7 +14,6 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -24,6 +23,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -61,7 +61,7 @@ internal fun ActionPill(icon: ImageVector, title: String, sub: String, modifier:
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
-            Text(sub, style = MaterialTheme.typography.bodySmall, fontSize = 13.sp, color = Night.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(sub, style = MaterialTheme.typography.bodySmall, fontSize = 13.sp, color = Night.TextDim, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         Icon(Icons.Default.ChevronRight, contentDescription = null)
     }
@@ -154,10 +154,10 @@ private fun QuietStatus(icon: ImageVector, text: String) {
     }
 }
 
-/** One line on what each role can do, with the role of this phone's person marked. */
+/** One line on what each role can do, with the role of this phone's person marked. Folded: it is read once. */
 @Composable
 private fun RoleLegend(mine: Role) {
-    Section("Who can do what") {
+    Fold("Who can do what", Icons.Default.HelpOutline, summary = "You are " + mine.withArticle()) {
         Role.entries.forEach { r ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 GlassOrb(size = 36.dp) { Icon(r.icon(), contentDescription = null, tint = Night.Mint, modifier = Modifier.size(18.dp)) }
@@ -178,19 +178,25 @@ private fun Lately(data: AppData) {
     val nav = LocalNav.current
     val latest = data.latestActivity(3)
     if (latest.isEmpty()) return
-    Section("Lately", action = { TextButton(onClick = { nav.open("activity") }) { Text("All activity") } }) {
+    Section("Lately", action = { GlassChip("All activity", icon = Icons.Default.History, onClick = { nav.open("activity") }) }) {
         latest.forEach { a -> ActivityLine(a, data, time = agoText(a.at)) }
     }
 }
 
+/** One line of the log: who, what, when. With [onClick] it is a row to tap, a full 48dp tall, with an arrow. */
 @Composable
-private fun ActivityLine(a: Activity, data: AppData, time: String, modifier: Modifier = Modifier) {
-    Row(modifier.fillMaxWidth().heightIn(min = 36.dp), verticalAlignment = Alignment.CenterVertically) {
-        PersonOrb(data.person(a.by), size = 26.dp, me = a.by == deviceInfo().personId)
+private fun ActivityLine(a: Activity, data: AppData, time: String, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
+    Row(
+        modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .heightIn(min = if (onClick != null) 48.dp else 36.dp).padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        PersonOrb(data.person(a.by), size = 28.dp, me = a.by == deviceInfo().personId)
         Spacer(Modifier.width(10.dp))
         Text(data.line(a), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
         Spacer(Modifier.width(8.dp))
         Text(time, style = MaterialTheme.typography.bodySmall, color = Night.TextDim, maxLines = 1)
+        if (onClick != null) Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Night.TextDim, modifier = Modifier.padding(start = 2.dp).size(18.dp))
     }
 }
 
@@ -221,29 +227,33 @@ fun AddPersonScreen() {
         // What the Store will call them if no name is given.
         val standIn = role.label + " " + (data.people.count { it.role == role } + 1)
         val letter = data.freeLetter()
-        ScrollColumn(Modifier.weight(1f)) {
-            GlassCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(26.dp), sheen = true) {
-                Row(Modifier.padding(start = 14.dp, top = 12.dp, bottom = 12.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    PersonOrb(Person(id = "", name = name.ifBlank { standIn }, letter = letter), size = 56.dp)
-                    Spacer(Modifier.width(14.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(name.ifBlank { standIn }, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(
-                            if (name.isBlank()) "Say their name, or keep this one" else "Letter $letter on their box codes",
-                            style = MaterialTheme.typography.bodySmall, color = Night.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    SpeakButton("What is their name?", contentDescription = "Say the name") { said ->
+        // On a tall phone the person is drawn large and the page sits in the middle; on a short one everything is smaller and scrolls.
+        val roomy = LocalConfiguration.current.let { it.screenHeightDp / it.fontScale >= 700 }
+        Column(
+            Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(if (roomy) 16.dp else 12.dp, Alignment.CenterVertically),
+        ) {
+            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                PersonOrb(Person(id = "", name = name.ifBlank { standIn }, letter = letter), size = if (roomy) 104.dp else 64.dp)
+                Text(
+                    name.ifBlank { standIn }, style = if (roomy) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleLarge,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    if (name.isBlank()) "Say their name, or keep this one" else "Letter $letter on their box codes",
+                    style = MaterialTheme.typography.bodySmall, color = Night.TextDim, textAlign = TextAlign.Center,
+                )
+                Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    SpeakButton("What is their name?", contentDescription = "Say the name", label = "Say their name") { said ->
                         name = said.replaceFirstChar { it.uppercase() }
                         spoken++
                     }
-                    Spacer(Modifier.width(4.dp))
                     GlassOrb(Icons.Default.Edit, "Type the name") { typing = !typing }
                 }
             }
             if (typing) TextInput(name, { name = it }, "Name", key = "new-person-$spoken")
 
-            Text("What will they do?", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 6.dp))
+            Text("What will they do?", style = MaterialTheme.typography.titleMedium)
             IconChoice(ROLE_CHOICES, role, { role = it }, large = !tightScreen(), columns = 3)
             RoleAbilities(role)
         }
@@ -487,37 +497,36 @@ fun ActivityScreen() {
         }
         val zone = remember { ZoneId.systemDefault() }
         val now = today()
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp)) {
-            var lastDay = Long.MIN_VALUE
-            log.forEach { a ->
-                val at = Instant.ofEpochMilli(a.at).atZone(zone)
-                val day = at.toLocalDate().toEpochDay()
-                if (day != lastDay) {
-                    lastDay = day
-                    item(key = "day-$day") {
-                        Text(
-                            when (day) {
-                                now -> "Today"
-                                now - 1 -> "Yesterday"
-                                else -> fmtDay(day)
-                            },
-                            style = MaterialTheme.typography.labelLarge, color = Night.MintPale, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
-                        )
+        // One glass panel for each day. The log is short (the newest 100 lines), so a day is built whole.
+        val days = remember(log, zone) { log.groupBy { Instant.ofEpochMilli(it.at).atZone(zone).toLocalDate().toEpochDay() } }
+        LazyColumn(
+            Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            items(days.entries.toList(), key = { it.key }) { (day, lines) ->
+                Section(
+                    when (day) {
+                        now -> "Today"
+                        now - 1 -> "Yesterday"
+                        else -> fmtDay(day)
+                    },
+                ) {
+                    Column {
+                        lines.forEach { a ->
+                            val route = when {
+                                a.refId == null -> null
+                                data.item(a.refId) != null -> "item/${a.refId}"
+                                data.box(a.refId) != null -> "box/${a.refId}"
+                                data.proposal(a.refId) != null -> "approvals"
+                                manage && data.person(a.refId) != null -> "person/${a.refId}"
+                                else -> null
+                            }
+                            ActivityLine(
+                                a, data, time = Instant.ofEpochMilli(a.at).atZone(zone).toLocalTime().format(CLOCK),
+                                onClick = route?.let { r -> { nav.open(r) } },
+                            )
+                        }
                     }
-                }
-                item(key = a.id) {
-                    val route = when {
-                        a.refId == null -> null
-                        data.item(a.refId) != null -> "item/${a.refId}"
-                        data.box(a.refId) != null -> "box/${a.refId}"
-                        data.proposal(a.refId) != null -> "approvals"
-                        manage && data.person(a.refId) != null -> "person/${a.refId}"
-                        else -> null
-                    }
-                    ActivityLine(
-                        a, data, time = at.toLocalTime().format(CLOCK),
-                        modifier = Modifier.clip(RoundedCornerShape(12.dp)).then(if (route != null) Modifier.clickable { nav.open(route) } else Modifier).padding(vertical = 4.dp),
-                    )
                 }
             }
         }

@@ -46,9 +46,10 @@ import app.housemove.data.*
  *   RoomTiles     pick a room; new-home rooms show their colour
  *   Ring          progress as a circle
  *   BigAction     the one main button of a screen
+ *   PillButton    any other button: mint for the thing to do, glass for the alternative
  *   EmptyState    what a screen shows before there is anything in it
  *   StepRow       one step of an ordered list of things to do
- *   Tile          a tappable square with an icon, a title and a short status
+ *   Tile          a tappable square with an icon, a title and a short status (done, waiting or needing attention)
  *   Meter, Dial   progress as a glowing bar, and as a half-circle gauge
  *
  * Everything here is made of glass (see Glass.kt) and stands on the night ground.
@@ -468,7 +469,45 @@ internal fun Modifier.mintPill(): Modifier = this
     }
     .clip(CircleShape)
 
-/** A tappable square: picture, title, and a short status line. */
+/**
+ * A button as wide as its words (or as wide as its [modifier] says): the glossy mint pill
+ * for the thing to do, glass for the alternative. Use it wherever a stock Material button
+ * would otherwise go, so nothing on a screen is a flat slab. A screen's one main action
+ * is a [BigAction].
+ */
+@Composable
+fun PillButton(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    primary: Boolean = true,
+    enabled: Boolean = true,
+    tone: GlassTone = GlassTone.Plain,
+) {
+    val fg = if (primary) Night.OnMint else if (tone == GlassTone.Plain) Night.Text else tone.accent()
+    val look = if (primary) Modifier.mintPill() else Modifier.glass(CircleShape, tone, shadow = 4.dp)
+    Row(
+        modifier.enabledLook(enabled).then(look)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .heightIn(min = 48.dp).padding(horizontal = 20.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        if (icon != null) {
+            Icon(icon, contentDescription = null, tint = fg, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+        }
+        Text(label, style = MaterialTheme.typography.labelLarge, color = fg, textAlign = TextAlign.Center)
+    }
+}
+
+/**
+ * A tappable square: picture, title, and a short status line.
+ * Three things can be said in its corner, and never by colour alone: [done] is a tick,
+ * [waiting] an amber hourglass (it is with someone else: a suggestion waiting for an
+ * Organiser), [alert] a red mark (it needs this person's attention now).
+ */
 @Composable
 fun Tile(
     icon: ImageVector,
@@ -478,13 +517,21 @@ fun Tile(
     status: String? = null,
     done: Boolean = false,
     alert: Boolean = false,
+    waiting: Boolean = false,
 ) {
     val scheme = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(20.dp)
+    val amber = waiting && !alert
     Column(
         modifier
             .glass(shape, shadow = 5.dp)
-            .then(if (alert) Modifier.border(1.5.dp, scheme.error.copy(alpha = 0.85f), shape) else Modifier)
+            .then(
+                when {
+                    alert -> Modifier.border(1.5.dp, scheme.error.copy(alpha = 0.85f), shape)
+                    amber -> Modifier.border(1.5.dp, Night.Amber.copy(alpha = 0.7f), shape)
+                    else -> Modifier
+                }
+            )
             .clickable(onClick = onClick)
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -492,17 +539,19 @@ fun Tile(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, contentDescription = null, tint = scheme.primary, modifier = Modifier.size(26.dp))
             Spacer(Modifier.weight(1f))
-            // A tick for done, a mark for "needs attention": never the colour alone.
+            // A mark for "needs attention", an hourglass for waiting, a tick for done: never the colour alone.
             if (alert) Icon(Icons.Default.ErrorOutline, contentDescription = "Needs attention", tint = scheme.error, modifier = Modifier.size(20.dp))
+            else if (amber) Icon(Icons.Default.HourglassTop, contentDescription = "Waiting", tint = Night.Amber, modifier = Modifier.size(20.dp))
             else if (done) Icon(Icons.Default.CheckCircle, contentDescription = "Done", tint = scheme.tertiary, modifier = Modifier.size(20.dp))
         }
         Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
         if (!status.isNullOrBlank()) {
+            // Two lines, so a status is whole on a narrow tile too.
             Text(
                 status,
                 style = MaterialTheme.typography.bodySmall,
-                color = if (alert) scheme.error else scheme.onSurfaceVariant,
-                maxLines = 1,
+                color = if (alert) scheme.error else if (amber) Night.AmberPale else scheme.onSurfaceVariant,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
         }
@@ -546,7 +595,7 @@ fun EmptyState(
         }
         if (action != null && onAction != null) {
             Spacer(Modifier.height(2.dp))
-            Button(onClick = onAction, modifier = Modifier.heightIn(min = 48.dp)) { Text(action) }
+            PillButton(action, onAction)
         }
     }
 }

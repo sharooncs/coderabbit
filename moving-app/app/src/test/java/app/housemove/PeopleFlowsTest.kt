@@ -137,6 +137,9 @@ class PeopleFlowsTest {
         return r
     }
 
+    /** How many times a finger went down since this was last set to 0. */
+    private var taps = 0
+
     private fun click(node: SemanticsNodeInteraction) {
         try {
             node.performScrollTo()
@@ -144,6 +147,7 @@ class PeopleFlowsTest {
             // not inside a scrolling container
         }
         node.performClick()
+        taps++
         settle()
     }
 
@@ -152,11 +156,13 @@ class PeopleFlowsTest {
     private fun tapDesc(description: String, sub: Boolean = false) =
         click(rule.onAllNodes(hasContentDescription(description, substring = sub) and hasClickAction()).onFirst())
 
-    /** Type a code where a person would scan it. */
+    /** Type a code where a person would scan it. It stands for pointing the camera, so it counts as neither a tap nor typing. */
     private fun scan(code: String) {
+        val before = taps
         rule.onAllNodes(hasSetTextAction() and hasText("Or type the code")).onFirst().performTextReplacement(code)
         settle()
         tap("OK")
+        taps = before
     }
 
     private fun see(text: String) = rule.onAllNodes(hasText(text, substring = true)).onFirst().assertExists()
@@ -311,8 +317,7 @@ class PeopleFlowsTest {
 
         show(newStore())
         assertEquals("setup", route())
-        tap("Second phone for the same move?")
-        tap("Scan the invite")
+        tap("Second phone for the same move?") // straight to the scanner
         scan(invite.encode())
         waitFor("You are Sam, Helper")
         see("Photographs, packs")
@@ -356,7 +361,6 @@ class PeopleFlowsTest {
         val host = hosting(asha) // as the sync screen does once the move has more than one person
         show(newStore())
         tap("Second phone for the same move?")
-        tap("Scan the invite")
         scan(host.invite(local).encode())
         waitFor("Not added to this move yet")
         see("Ask an Organiser to add you and show you your invite")
@@ -365,7 +369,7 @@ class PeopleFlowsTest {
         assertTrue(data.people.none { it.name == "Asha" })
 
         // Something that is not a code at all.
-        tap("Scan the invite")
+        tap("Second phone for the same move?")
         scan("L001")
         assertEquals("That is not an invite. On the other phone open People and show your invite.", toast())
     }
@@ -519,13 +523,14 @@ class PeopleFlowsTest {
 
         // The Decider: suggests, and sees what became of it.
         show(dee)
+        // A no is said on Home, with the reason, without having to go and look for it.
+        see("Declined: Bin Bike")
+        see("“We're keeping it”")
         see("1 waiting for approval")
-        see("1 approved · 1 declined")
         tap("View")
         assertEquals("approvals", route())
         see("My suggestions")
         see("Waiting for approval")
-        see("Suggested by you")
         see("Approved by Asha")
         see("Declined by Asha")
         see("“We're keeping it”")
@@ -548,6 +553,8 @@ class PeopleFlowsTest {
         dontSee("Restore or merge")
         go("more")
         see("My suggestions")
+        see("Triage") // a Decider suggests there
+        see("Supplies and costs")
         go("people/add") // even by a stale link, the reason is given
         see("Only an Organiser can add people")
 
@@ -560,7 +567,7 @@ class PeopleFlowsTest {
         tap("View")
         see("My questions")
         see("Waiting for an answer")
-        see("Asked by you")
+        see("Asked just now")
         go("people")
         assertFalse(canTap("Add a person"))
         go("settings")
@@ -569,6 +576,45 @@ class PeopleFlowsTest {
         dontSee("Parts of the app")
         go("sync")
         dontSee("Restore or merge")
+        // The list of every screen leaves out what a Helper has no part in.
+        go("more")
+        see("Walk-through")
+        see("Supplies")
+        dontSee("costs")
+        dontSee("Triage")
+        dontSee("Plan rooms")
+        dontSee("Sell, donate, bin")
+    }
+
+    @Test
+    fun aDeclineWithNoReasonSaysSoAndTheMoveDateIsOnlyAskedOfThoseWhoMaySetIt() {
+        val asha = organiser()
+        asha.changeMove { it.copy(moveDay = null) }
+        val dee = joined(asha, "Dee", Role.DECIDER)
+        val no = dee.suggestDecision("sofa", Disposition.BIN).valueOrNull()!!
+        asha.mergeIn(dee.data.value)
+        assertTrue(asha.decline(no.id).ok)
+        dee.mergeIn(asha.data.value)
+
+        // The Organiser is asked for the date, on Home and on the Settings tile.
+        show(asha)
+        see("no date yet")
+        assertTrue(canTap("Set the date"))
+        go("more")
+        rule.onAllNodes(hasText("Settings") and hasContentDescription("Needs attention")).assertCountEquals(1)
+
+        // The Decider is told there is none, and is not asked to do anything about it.
+        show(dee)
+        see("no date yet")
+        dontSee("Set the date")
+        see("Declined: Bin Sofa")
+        see("No reason given")
+        go("more")
+        see("No move day yet")
+        rule.onAllNodes(hasText("Settings") and hasContentDescription("Needs attention")).assertCountEquals(0)
+        go("approvals")
+        see("Declined by Asha")
+        see("No reason given")
     }
 
     @Test
@@ -709,5 +755,114 @@ class PeopleFlowsTest {
         said = "kettle"
         tapDesc("Say what you are looking for")
         see("Box L001")
+    }
+
+    // ---- how much work the main flows are ---------------------------------------------------
+
+    /**
+     * The main flows of the core screens, each walked the short way a person would. Taps are
+     * counted; none of the flows opens the keyboard (names are spoken or left as they are,
+     * codes are scanned, reasons are tapped). The counts are written to build/audit/flows.md,
+     * and each flow has a ceiling, so one that grows by a step fails here.
+     */
+    @Test
+    fun theMainFlowsTakeFewTapsAndNoKeyboard() {
+        val lines = ArrayList<String>()
+        fun flow(name: String, how: String, most: Int, steps: () -> Unit) {
+            taps = 0
+            steps()
+            lines += "| $name | $taps | 0 | $how |"
+            assertTrue("$name took $taps taps; it used to take $most", taps <= most)
+        }
+
+        // First run: what it is for, the move, one room in each home.
+        show(newStore())
+        flow("First run, to Home", "Next, Next, a room, Next, a room, Finish", most = 6) {
+            tap("Next"); tap("Next"); tap("Kitchen"); tap("Next"); tap("Kitchen"); tap("Finish")
+            assertEquals("home", route())
+        }
+        show(newStore())
+        flow("First run, saying your name on the way", "as above, and the microphone on the second page", most = 7) {
+            tap("Next")
+            said = "asha"
+            tapDesc("Say your name")
+            tap("Next"); tap("Kitchen"); tap("Next"); tap("Kitchen"); tap("Finish")
+            assertEquals("Asha", store.device.value.name)
+            assertEquals("home", route())
+        }
+
+        // Add a person: from Home to their invite on the screen.
+        val asha = organiser()
+        show(asha)
+        flow("Add a person, to their invite", "People, Add a person, Add and show invite (a Helper called \"Helper 1\")", most = 3) {
+            tapDesc("People"); tap("Add a person"); tap("Add and show invite")
+            see("Works once")
+        }
+        back()
+        flow("Add a person with a spoken name and another role", "from People: Add a person, microphone, Decider, Add and show invite", most = 4) {
+            tap("Add a person")
+            said = "dee"
+            tapDesc("Say the name")
+            tap("Decider")
+            tap("Add and show invite")
+            see("Dee's invite")
+        }
+        val dee = data.people.single { it.name == "Dee" }
+
+        // Join: a new phone, from its first screen to Home.
+        val invite = hosting(asha).inviteFor(dee.id, local).valueOrNull()!!
+        show(newStore())
+        flow("Join with an invite, to Home", "Second phone for the same move?, point the camera, Start", most = 2) {
+            tap("Second phone for the same move?")
+            scan(invite.encode())
+            waitFor("You are Dee, Decider")
+            tap("Start")
+            assertEquals("home", route())
+        }
+        val deePhone = store
+        assertEquals(dee.id, deePhone.me!!.id)
+        rule.waitUntil(5_000) { asha.data.value.person(dee.id)!!.joinedAt > 0 }
+
+        // Approve and decline: from Home, with two suggestions waiting.
+        deePhone.suggestDecision("sofa", Disposition.SELL, 80.0)
+        deePhone.suggestDecision("bike", Disposition.BIN)
+        show(asha)
+        sync(asha, deePhone)
+        go("home")
+        flow("Approve a suggestion", "Review, Approve", most = 2) {
+            tap("Review"); tap("Approve")
+            assertEquals(Disposition.SELL, data.item("sofa")!!.disposition)
+        }
+        flow("Decline the next one with a reason", "the inbox is open: Decline, a reason", most = 2) {
+            tap("Decline"); tap("We're keeping it")
+            assertEquals("We're keeping it", data.liveProposals.single { it.targetId == "bike" }.reason)
+        }
+
+        // Find something: by saying it, and by tapping its room.
+        store.put(Box(id = "b1", label = "L001", contents = "Kettle and toaster", originRoomId = data.roomsOf(Home.ORIGIN).first().id))
+        go("home")
+        flow("Find something by saying it", "Find anything, microphone, the thing", most = 3) {
+            tapDesc("Find anything")
+            said = "kettle"
+            tapDesc("Say what you are looking for")
+            tap("Box L001 · Kettle and toaster")
+            assertEquals("box/{id}", route())
+        }
+        go("home")
+        flow("Find something by its room", "Find anything, the room, the thing", most = 3) {
+            tapDesc("Find anything")
+            tap("Lounge")
+            tap("Box L001 · Kettle and toaster")
+            assertEquals("box/{id}", route())
+        }
+
+        val out = java.io.File("build/audit/flows.md")
+        out.parentFile?.mkdirs()
+        out.writeText(
+            "# Taps and keyboard uses of the main flows\n\n" +
+                "Counted by PeopleFlowsTest.theMainFlowsTakeFewTapsAndNoKeyboard, which walks each flow the short way.\n" +
+                "Pointing the camera at a code and saying a word are not taps; the tap on the microphone is.\n\n" +
+                "| Flow | Taps | Keyboard | The taps |\n|---|---:|---:|---|\n" + lines.joinToString("\n") + "\n",
+        )
     }
 }
