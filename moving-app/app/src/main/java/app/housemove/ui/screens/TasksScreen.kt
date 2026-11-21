@@ -10,9 +10,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import app.housemove.data.*
@@ -29,6 +32,8 @@ private fun offsetText(offset: Int): String {
     }
 }
 
+private class TaskGroup(val key: String, val title: String, val icon: ImageVector, val tasks: List<Task>)
+
 @Composable
 fun TasksScreen() {
     val store = LocalStore.current
@@ -39,15 +44,21 @@ fun TasksScreen() {
 
     var editingId by remember { mutableStateOf<String?>(null) }
     var draft by remember { mutableStateOf<Task?>(null) }
-    var showDone by rememberSaveable { mutableStateOf(false) }
+    // Groups that are folded away. Finished jobs start out of sight.
+    var closed by rememberSaveable(
+        stateSaver = listSaver<Set<String>, String>(save = { it.toList() }, restore = { it.toSet() }),
+    ) { mutableStateOf(setOf("done")) }
 
     val byDue = compareBy<Task>({ data.dueDay(it) ?: Long.MAX_VALUE }, { it.offsetDays ?: Int.MAX_VALUE }, { it.title })
     val open = tasks.filter { !it.done }.sortedWith(byDue)
-    val overdue = open.filter { (data.dueDay(it) ?: Long.MAX_VALUE) < now }
-    val soon = open.filter { val d = data.dueDay(it); d != null && d >= now && d <= now + 7 }
-    val later = open.filter { (data.dueDay(it) ?: Long.MIN_VALUE) > now + 7 }
-    val undated = open.filter { data.dueDay(it) == null }
     val done = tasks.filter { it.done }.sortedWith(byDue)
+    val groups = listOf(
+        TaskGroup("overdue", "Overdue", Icons.Default.ErrorOutline, open.filter { (data.dueDay(it) ?: Long.MAX_VALUE) < now }),
+        TaskGroup("soon", "Next 7 days", Icons.Default.Today, open.filter { val d = data.dueDay(it); d != null && d >= now && d <= now + 7 }),
+        TaskGroup("later", "Later", Icons.Default.DateRange, open.filter { (data.dueDay(it) ?: Long.MIN_VALUE) > now + 7 }),
+        TaskGroup("undated", "No date yet", Icons.Default.EventBusy, open.filter { data.dueDay(it) == null }),
+        TaskGroup("done", "Done", Icons.Default.CheckCircle, done),
+    )
 
     Screen(
         "Timeline",
@@ -59,62 +70,57 @@ fun TasksScreen() {
     ) {
         if (tasks.isEmpty()) {
             ScrollColumn {
-                Section("Nothing on the timeline yet") {
-                    Text(
-                        "The self-move checklist is a ready-made list of about 50 jobs, from six weeks before the move to " +
-                            "two weeks after: booking the van, changing your address, defrosting the freezer, reading the meters."
-                    )
-                    Text("Each job gets a date worked out from your move day. You can change, add or delete any of them.")
-                    Button(onClick = { seedTasks().forEach { store.put(it) } }) { Text("Add the self-move checklist") }
-                    Hint("Only do this on one phone, then sync. Otherwise every job appears twice.")
-                }
+                val kind = data.move.kind
+                val ready = remember(kind) { seedTasks(kind).size }
+                EmptyState(
+                    Icons.Default.Checklist, "Nothing on the timeline yet",
+                    text = "Start with a ready-made list of $ready jobs, each dated from your move day.",
+                    action = "Add the checklist", onAction = { seedTasks(data.move.kind).forEach { store.put(it) } },
+                )
+                Hint("Add it on one phone only, then sync.", Modifier.fillMaxWidth().wrapContentWidth())
                 if (data.move.moveDay == null) MoveDateCard { nav.open("settings") }
             }
         } else {
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
                 item(key = "progress") {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        ProgressRow("Jobs done", Ratio(done.size, tasks.size))
-                        if (data.move.moveDay == null) MoveDateCard { nav.open("settings") }
-                        else Hint("Move day: ${fmtDay(data.move.moveDay)} (${relDay(data.move.moveDay, now)})")
-                    }
-                }
-                val groups = listOf(
-                    Triple("Overdue", overdue, true),
-                    Triple("Next 7 days", soon, false),
-                    Triple("Later", later, false),
-                    Triple("No date yet", undated, false),
-                )
-                groups.forEach { (title, list, urgent) ->
-                    if (list.isNotEmpty()) {
-                        item(key = "head-$title") { GroupHeader(title, list.size, urgent) }
-                        items(list, key = { it.id }) { t ->
-                            TaskRow(t, data.dueDay(t), now, onToggle = { store.put(t.copy(done = it)) }, onClick = { editingId = t.id })
-                        }
-                    }
-                }
-                if (done.isNotEmpty()) {
-                    item(key = "head-done") {
-                        Row(
-                            Modifier.fillMaxWidth().clickable { showDone = !showDone }.padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
+                        Card(
+                            Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
                         ) {
-                            Text(
-                                "Done (${done.size})",
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.weight(1f),
-                            )
-                            Icon(
-                                if (showDone) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                                contentDescription = if (showDone) "Hide finished jobs" else "Show finished jobs",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Ring(Ratio(done.size, tasks.size), size = 72.dp, stroke = 8.dp) {
+                                    Text(
+                                        "${done.size}", style = MaterialTheme.typography.headlineSmall,
+                                        fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
+                                Spacer(Modifier.width(16.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text("of ${tasks.size} job${if (tasks.size == 1) "" else "s"} done", style = MaterialTheme.typography.titleMedium)
+                                    data.move.moveDay?.let { day ->
+                                        Text(
+                                            "Move day ${fmtDay(day)} · ${relDay(day, now)}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                            }
                         }
+                        if (data.move.moveDay == null) MoveDateCard { nav.open("settings") }
                     }
-                    if (showDone) {
-                        items(done, key = { it.id }) { t ->
-                            TaskRow(t, data.dueDay(t), now, onToggle = { store.put(t.copy(done = it)) }, onClick = { editingId = t.id })
+                }
+                groups.forEach { g ->
+                    if (g.tasks.isNotEmpty()) {
+                        val shown = g.key !in closed
+                        item(key = "head-${g.key}") {
+                            GroupHeader(g, shown) { closed = if (shown) closed + g.key else closed - g.key }
+                        }
+                        if (shown) {
+                            items(g.tasks, key = { it.id }) { t ->
+                                TaskRow(t, data.dueDay(t), now, onToggle = { store.put(t.copy(done = it)) }, onClick = { editingId = t.id })
+                            }
                         }
                     }
                 }
@@ -151,24 +157,44 @@ fun TasksScreen() {
 @Composable
 private fun MoveDateCard(onSet: () -> Unit) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(
-                "Set your move date and every job gets its own due date.",
-                color = MaterialTheme.colorScheme.onSecondaryContainer,
-            )
-            Button(onClick = onSet) { Text("Set the move date") }
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Jobs get their dates from your move day.", color = MaterialTheme.colorScheme.onSecondaryContainer)
+            Button(onClick = onSet) {
+                Icon(Icons.Default.Event, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Set the move date")
+            }
         }
     }
 }
 
+/** A group's title with its count. Being late is said here, once, not on every row. */
 @Composable
-private fun GroupHeader(title: String, count: Int, urgent: Boolean) {
-    Text(
-        "$title ($count)",
-        style = MaterialTheme.typography.titleSmall,
-        color = if (urgent) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
-    )
+private fun GroupHeader(group: TaskGroup, open: Boolean, onToggle: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val color = when (group.key) {
+        "overdue" -> scheme.error
+        "done" -> scheme.tertiary
+        else -> scheme.primary
+    }
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(group.icon, contentDescription = null, tint = color, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(10.dp))
+        Text(
+            "${group.title} (${group.tasks.size})",
+            style = MaterialTheme.typography.titleSmall,
+            color = color,
+            modifier = Modifier.weight(1f),
+        )
+        Icon(
+            if (open) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+            contentDescription = if (open) "Hide these jobs" else "Show these jobs",
+            tint = scheme.onSurfaceVariant,
+        )
+    }
 }
 
 @Composable
@@ -193,12 +219,7 @@ private fun TaskRow(task: Task, due: Long?, now: Long, onToggle: (Boolean) -> Un
             }
             val sub = listOfNotNull(task.category.takeIf { it.isNotBlank() }, timing).joinToString(" · ")
             if (sub.isNotBlank()) {
-                Text(
-                    sub,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (!task.done && due != null && due < now) MaterialTheme.colorScheme.error
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Text(sub, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -225,14 +246,11 @@ private fun TaskDialog(
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 TextInput(title, onChange = { title = it }, label = "What needs doing", key = initial.id, singleLine = false)
-                TextInput(category, onChange = { category = it }, label = "Group (optional)", key = initial.id + ":cat", placeholder = "e.g. Van, Admin, Pack")
+                TextInput(category, onChange = { category = it }, label = "Group (optional)", key = initial.id + ":cat", placeholder = "e.g. Admin, Pack, Settle")
                 DateButton(dueDay, onPick = { dueDay = it }, label = "Due date", modifier = Modifier.fillMaxWidth())
                 val offset = initial.offsetDays
                 if (dueDay == null && offset != null) {
-                    Hint(
-                        "No fixed date: it follows your move day. " + offsetText(offset) +
-                            (moveDay?.let { " (${fmtDayShort(it + offset)})" } ?: "") + "."
-                    )
+                    Hint("Follows your move day: " + offsetText(offset).lowercase() + (moveDay?.let { " (${fmtDayShort(it + offset)})" } ?: "") + ".")
                 }
                 TextInput(notes, onChange = { notes = it }, label = "Notes", key = initial.id + ":notes", singleLine = false)
                 if (onDelete != null) {
