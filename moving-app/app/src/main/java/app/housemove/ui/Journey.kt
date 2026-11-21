@@ -39,9 +39,15 @@ data class JourneyStep(
     val part: Part? = null,
     /** A title that depends on the move, e.g. "Load the truck". */
     val titleFor: ((AppData) -> String)? = null,
+    /** A title that depends on who is looking, e.g. "Approvals" for an Organiser and "My suggestions" for a Decider. */
+    val titleBy: ((AppData, DeviceInfo) -> String)? = null,
+    /** Whether this phone's person is shown the step at all. */
+    val who: (AppData, DeviceInfo) -> Boolean = { _, _ -> true },
 ) {
     fun title(d: AppData): String = titleFor?.invoke(d) ?: title
+    fun title(d: AppData, device: DeviceInfo): String = titleBy?.invoke(d, device) ?: title(d)
     fun shownFor(d: AppData): Boolean = part == null || d.uses(part)
+    fun shownFor(d: AppData, device: DeviceInfo): Boolean = shownFor(d) && who(d, device)
 }
 
 data class JourneyPhase(
@@ -68,6 +74,18 @@ val JOURNEY: List<JourneyPhase> = listOf(
                 "Rooms", Icons.Default.MeetingRoom, "rooms",
                 status = { d, _ -> "${d.roomsOf(Home.ORIGIN).size} old · ${d.roomsOf(Home.DEST).size} new" },
                 done = { d -> d.roomsOf(Home.ORIGIN).isNotEmpty() && d.roomsOf(Home.DEST).isNotEmpty() },
+            ),
+            JourneyStep(
+                "People", Icons.Default.Group, "people",
+                status = { d, _ ->
+                    val toJoin = d.livePeople.count { it.joinedAt == 0L }
+                    when {
+                        !d.shared() -> "Just you"
+                        toJoin > 0 -> "${d.livePeople.size} people · $toJoin to join"
+                        else -> "${d.livePeople.size} people"
+                    }
+                },
+                done = { d -> d.shared() && d.livePeople.all { it.joinedAt != 0L } },
             ),
             JourneyStep(
                 "Sync and backup", Icons.Default.Sync, "sync",
@@ -101,6 +119,22 @@ val JOURNEY: List<JourneyPhase> = listOf(
                     if (n > 0) "$n to decide" else if (d.liveItems.isEmpty()) null else "All decided"
                 },
                 done = { d -> d.liveItems.isNotEmpty() && d.liveItems.none { it.disposition == Disposition.UNDECIDED } },
+            ),
+            // Only on a move with more than one person: alone there is nobody to suggest anything.
+            JourneyStep(
+                "Approvals", Icons.Default.TaskAlt, "approvals",
+                who = { d, _ -> d.shared() || d.liveProposals.isNotEmpty() },
+                titleBy = { d, dev ->
+                    when {
+                        d.can(dev, Action.APPROVE) -> "Approvals"
+                        d.roleOf(dev) == app.housemove.data.Role.HELPER -> "My questions"
+                        else -> "My suggestions"
+                    }
+                },
+                status = { d, dev ->
+                    val n = if (d.can(dev, Action.APPROVE)) d.waitingCount() else d.proposalCounts(dev.personId)[ProposalState.WAITING] ?: 0
+                    if (n == 0) "Nothing waiting" else "$n waiting"
+                },
             ),
             JourneyStep(
                 "Devices", Icons.Default.Tv, "electronics", part = Part.DEVICES,
@@ -344,9 +378,9 @@ fun JourneyStrip(data: AppData, selected: Int, current: Int, onSelect: (Int) -> 
 @Composable
 fun PhaseTiles(phase: JourneyPhase, data: AppData, device: DeviceInfo, modifier: Modifier = Modifier, columns: Int = 2, skipRoutes: Set<String> = emptySet()) {
     val nav = LocalNav.current
-    TileGrid(phase.steps.filter { it.route !in skipRoutes && it.shownFor(data) }, modifier, columns) { step, m ->
+    TileGrid(phase.steps.filter { it.route !in skipRoutes && it.shownFor(data, device) }, modifier, columns) { step, m ->
         Tile(
-            step.icon, step.title(data), onClick = { nav.open(step.route) }, modifier = m,
+            step.icon, step.title(data, device), onClick = { nav.open(step.route) }, modifier = m,
             status = step.status(data, device), done = step.done(data), alert = step.alert(data),
         )
     }

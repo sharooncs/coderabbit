@@ -1,0 +1,475 @@
+package app.housemove.ui.screens
+
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import app.housemove.data.*
+import app.housemove.pdf.qrBitmap
+import app.housemove.sync.WifiSync
+import app.housemove.ui.*
+import kotlinx.coroutines.launch
+import java.time.Instant
+import java.time.LocalTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+
+/** Roles in the order they are offered: the one most people get first. */
+private val ROLE_CHOICES = listOf(Role.HELPER, Role.DECIDER, Role.ORGANISER).map { Choice(it, it.label, it.icon()) }
+
+private val CLOCK: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
+
+/**
+ * A wide glass pill for the way on from a screen: a glowing ball with a picture, two
+ * lines, an arrow. The same shape as "Pack a box" on the rooms overview.
+ */
+@Composable
+internal fun ActionPill(icon: ImageVector, title: String, sub: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    GlassPill(
+        modifier.fillMaxWidth(), onClick = onClick, sheen = true,
+        contentPadding = PaddingValues(start = 10.dp, top = 10.dp, bottom = 10.dp, end = 14.dp),
+    ) {
+        Box(Modifier.size(46.dp).drawBehind { drawOrb(OrbKind.Primary, ring = false) }, contentAlignment = Alignment.Center) {
+            Icon(icon, contentDescription = null, tint = Night.OnMint, modifier = Modifier.size(22.dp))
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(sub, style = MaterialTheme.typography.bodySmall, fontSize = 13.sp, color = Night.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Icon(Icons.Default.ChevronRight, contentDescription = null)
+    }
+}
+
+// ---- everyone on the move ---------------------------------------------------------------
+
+/**
+ * Everyone on the move, with their role and whether their phone has joined. Organisers
+ * add people from here and open one to change their role, invite a phone or remove them;
+ * everyone else sees the list.
+ */
+@Composable
+fun PeopleScreen() {
+    val nav = LocalNav.current
+    val data = appData()
+    val device = deviceInfo()
+    val manage = allowed(Action.MANAGE_PEOPLE)
+    val shared = data.shared()
+    // This phone's person first, then by role; people who were removed come last.
+    val people = data.people.sortedWith(compareBy({ it.removed }, { it.id != device.personId }, { it.role.ordinal }, { it.name.lowercase() }, { it.id }))
+
+    Screen("People", tab = "home", subtitle = data.move.name.ifBlank { "Your move" }) {
+        Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            if (manage) {
+                ActionPill(Icons.Default.PersonAdd, "Add a person", "They join by scanning a code on this phone") { nav.open("people/add") }
+            }
+            people.forEach { p ->
+                PersonRow(
+                    p, isMe = p.id == device.personId, showRole = shared || p.removed,
+                    onClick = if (manage) ({ nav.open("person/${p.id}") }) else null,
+                )
+            }
+            if (!shared) {
+                EmptyState(
+                    Icons.Default.Groups, "Just you so far",
+                    text = if (manage) "Add the people who are helping. Each one gets a role and joins with a code." else null,
+                )
+            } else {
+                RoleLegend(myRole())
+            }
+            Lately(data)
+        }
+    }
+}
+
+@Composable
+private fun PersonRow(p: Person, isMe: Boolean, showRole: Boolean, onClick: (() -> Unit)?) {
+    GlassCard(Modifier.fillMaxWidth(), onClick = onClick, shape = RoundedCornerShape(26.dp), sheen = isMe) {
+        Row(Modifier.padding(start = 12.dp, top = 11.dp, bottom = 11.dp, end = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            PersonOrb(p, size = 48.dp, me = isMe)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(p.shownName(), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                PersonStatus(p, isMe)
+            }
+            if (showRole) RoleChip(p.role)
+            if (onClick != null) Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Night.TextDim, modifier = Modifier.padding(start = 4.dp))
+        }
+    }
+}
+
+/** Where someone stands, with a picture as well as a colour: this phone, joined, not yet, removed. */
+@Composable
+private fun PersonStatus(p: Person, isMe: Boolean) {
+    when {
+        p.removed -> IconFlag(Icons.Default.PersonOff, "Removed", error = true)
+        isMe -> QuietStatus(Icons.Default.PhoneAndroid, "This phone")
+        p.joinedAt != 0L -> QuietStatus(Icons.Default.CheckCircle, "Joined")
+        else -> IconFlag(Icons.Default.HourglassTop, "Not joined yet")
+    }
+}
+
+@Composable
+private fun QuietStatus(icon: ImageVector, text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, contentDescription = null, tint = Night.MintLight, modifier = Modifier.size(14.dp))
+        Spacer(Modifier.width(5.dp))
+        Text(text, style = MaterialTheme.typography.bodySmall, color = Night.TextDim, maxLines = 1)
+    }
+}
+
+/** One line on what each role can do, with the role of this phone's person marked. */
+@Composable
+private fun RoleLegend(mine: Role) {
+    Section("Who can do what") {
+        Role.entries.forEach { r ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                GlassOrb(size = 36.dp) { Icon(r.icon(), contentDescription = null, tint = Night.Mint, modifier = Modifier.size(18.dp)) }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(r.label, style = MaterialTheme.typography.titleSmall)
+                    Text(r.line(), style = MaterialTheme.typography.bodySmall, color = Night.TextDim)
+                }
+                if (r == mine) GlassChip("You", tone = GlassTone.Mint)
+            }
+        }
+    }
+}
+
+/** The last few things anyone did, and the way to the whole list. */
+@Composable
+private fun Lately(data: AppData) {
+    val nav = LocalNav.current
+    val latest = data.latestActivity(3)
+    if (latest.isEmpty()) return
+    Section("Lately", action = { TextButton(onClick = { nav.open("activity") }) { Text("All activity") } }) {
+        latest.forEach { a -> ActivityLine(a, data, time = agoText(a.at)) }
+    }
+}
+
+@Composable
+private fun ActivityLine(a: Activity, data: AppData, time: String, modifier: Modifier = Modifier) {
+    Row(modifier.fillMaxWidth().heightIn(min = 36.dp), verticalAlignment = Alignment.CenterVertically) {
+        PersonOrb(data.person(a.by), size = 26.dp, me = a.by == deviceInfo().personId)
+        Spacer(Modifier.width(10.dp))
+        Text(data.line(a), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.width(8.dp))
+        Text(time, style = MaterialTheme.typography.bodySmall, color = Night.TextDim, maxLines = 1)
+    }
+}
+
+// ---- adding someone ------------------------------------------------------------------------
+
+/**
+ * Add a person with nothing typed: their name can be spoken (or left as "Helper 2"),
+ * the role is one of three pictures, the letter for their box codes is picked for them.
+ * Adding leads straight to their invite.
+ */
+@Composable
+fun AddPersonScreen() {
+    val store = LocalStore.current
+    val nav = LocalNav.current
+    val context = LocalContext.current
+    val data = appData()
+    var name by rememberSaveable { mutableStateOf("") }
+    var role by rememberSaveable { mutableStateOf(Role.HELPER) }
+    var typing by rememberSaveable { mutableStateOf(false) }
+    var spoken by rememberSaveable { mutableIntStateOf(0) }
+
+    Screen("Add a person", subtitle = "People") {
+        val refusal = data.refusal(myPerson(), Action.MANAGE_PEOPLE)
+        if (refusal != null) {
+            EmptyState(Icons.Default.Lock, refusal)
+            return@Screen
+        }
+        // What the Store will call them if no name is given.
+        val standIn = role.label + " " + (data.people.count { it.role == role } + 1)
+        val letter = data.freeLetter()
+        ScrollColumn(Modifier.weight(1f)) {
+            GlassCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(26.dp), sheen = true) {
+                Row(Modifier.padding(start = 14.dp, top = 12.dp, bottom = 12.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    PersonOrb(Person(id = "", name = name.ifBlank { standIn }, letter = letter), size = 56.dp)
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(name.ifBlank { standIn }, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            if (name.isBlank()) "Say their name, or keep this one" else "Letter $letter on their box codes",
+                            style = MaterialTheme.typography.bodySmall, color = Night.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    SpeakButton("What is their name?", contentDescription = "Say the name") { said ->
+                        name = said.replaceFirstChar { it.uppercase() }
+                        spoken++
+                    }
+                    GlassOrb(Icons.Default.Edit, "Type the name") { typing = !typing }
+                }
+            }
+            if (typing) TextInput(name, { name = it }, "Name", key = "new-person-$spoken")
+
+            Text("What will they do?", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 6.dp))
+            IconChoice(ROLE_CHOICES, role, { role = it }, large = true, columns = 3)
+            Text(role.line(), style = MaterialTheme.typography.bodyMedium, color = Night.TextSoft)
+        }
+        BigAction(
+            Icons.Default.QrCode2, "Add and show invite",
+            onClick = {
+                store.addPerson(name, role).orSay(context)?.let { p ->
+                    nav.navigate("person/${p.id}?invite=true") { popUpTo("people") }
+                }
+            },
+            modifier = Modifier.padding(16.dp),
+        )
+    }
+}
+
+// ---- one person -----------------------------------------------------------------------------
+
+private class ShownInvite(val text: String, val until: String)
+
+/**
+ * One person, for an Organiser: their invite, their role, removing them and adding them
+ * back. [showInvite] makes an invite straight away, as after adding someone.
+ * Anyone else who ends up here sees who the person is and nothing to change.
+ */
+@Composable
+fun PersonScreen(id: String, showInvite: Boolean = false) {
+    val store = LocalStore.current
+    val context = LocalContext.current
+    val data = appData()
+    val device = deviceInfo()
+    val scope = rememberCoroutineScope()
+    val addressesNow = LocalSyncAddresses.current
+    val p = data.person(id)
+    if (p == null) {
+        Screen("Person", subtitle = "People") { EmptyState(Icons.Default.PersonOff, "This person is no longer here") }
+        return
+    }
+    val manage = allowed(Action.MANAGE_PEOPLE)
+    val isMe = p.id == device.personId
+    val name = p.shownName()
+
+    var host by remember { mutableStateOf<WifiSync.Host?>(null) }
+    var invite by remember { mutableStateOf<ShownInvite?>(null) }
+    var joined by remember { mutableStateOf(false) }
+    var problem by remember { mutableStateOf<String?>(null) }
+    var naming by rememberSaveable { mutableStateOf(false) }
+    DisposableEffect(Unit) { onDispose { host?.stop() } }
+
+    fun makeInvite() {
+        joined = false
+        problem = null
+        invite = null
+        val addresses = addressesNow()
+        if (addresses.isEmpty()) {
+            problem = "This phone is not on a Wi-Fi network or hotspot. Connect, then try again."
+            return
+        }
+        try {
+            // Nobody gets in through this screen except with the invite made here.
+            val h = host ?: WifiSync.host(store, letNewPhonesIn = false) { r ->
+                scope.launch {
+                    if (r.ok) store.setDevice { it.copy(lastSyncAt = System.currentTimeMillis()) }
+                    if (r.ok && r.joinedAs?.id == id) {
+                        joined = true
+                        invite = null
+                    } else if (!r.ok) problem = r.error
+                }
+            }.also { host = it }
+            when (val made = h.inviteFor(id, addresses)) {
+                is Outcome.Ok -> invite = ShownInvite(made.value.encode(), LocalTime.now().plusMinutes(WifiSync.INVITE_MINUTES.toLong()).format(CLOCK))
+                is Outcome.Refused -> problem = made.reason
+            }
+        } catch (e: Exception) {
+            problem = "Could not start: ${e.message}"
+        }
+    }
+
+    var invitedOnOpening by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(id) {
+        if (showInvite && !invitedOnOpening && manage && !p.removed) {
+            invitedOnOpening = true
+            makeInvite()
+        }
+    }
+
+    Screen(
+        name, subtitle = "People",
+        actions = { if (manage || isMe) TopAction(Icons.Default.Edit, "Edit name") { naming = !naming } },
+    ) {
+        ScrollColumn {
+            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                PersonOrb(p, size = 84.dp, me = isMe)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (data.shared() || p.removed) RoleChip(p.role)
+                    PersonStatus(p, isMe)
+                    if (p.letter.isNotBlank()) GlassChip("Box codes ${p.letter}1, ${p.letter}2…")
+                }
+            }
+            if (naming) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextInput(p.name, { v -> store.renamePerson(id, v).orSay(context) }, "Name", Modifier.weight(1f), key = id)
+                    Spacer(Modifier.width(8.dp))
+                    SpeakButton("What is their name?", contentDescription = "Say the name") { said ->
+                        store.renamePerson(id, said.replaceFirstChar { it.uppercase() }).orSay(context)
+                        naming = false
+                    }
+                }
+            }
+
+            if (joined) {
+                Section(tone = GlassTone.Mint) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Night.MintPale, modifier = Modifier.size(32.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text("$name's phone has joined", style = MaterialTheme.typography.titleMedium)
+                            Text("It is now $name, ${p.role.label}.", style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+            }
+            problem?.let { Section(tone = GlassTone.Red) { Text(it) } }
+            invite?.let { InviteCard(name, it) }
+
+            if (!manage) {
+                Text(p.role.line(), style = MaterialTheme.typography.bodyMedium, color = Night.TextSoft, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+            } else if (p.removed) {
+                Text(
+                    "$name's phone can no longer sync with this move. What they did stays.",
+                    style = MaterialTheme.typography.bodyMedium, color = Night.TextSoft, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(),
+                )
+                BigAction(Icons.Default.PersonAdd, "Add $name back", onClick = { store.restorePerson(id).orSay(context) })
+            } else {
+                val waitingToJoin = p.joinedAt == 0L && !joined
+                BigAction(
+                    Icons.Default.QrCode2,
+                    when {
+                        invite != null -> "Make a new invite"
+                        waitingToJoin -> "Show $name's invite"
+                        else -> "New phone for this person"
+                    },
+                    onClick = { makeInvite() }, primary = waitingToJoin && invite == null,
+                )
+                Section("Role") {
+                    IconChoice(ROLE_CHOICES, p.role, { r -> store.setRole(id, r).orSay(context) }, columns = 3)
+                    Text(p.role.line(), style = MaterialTheme.typography.bodySmall, color = Night.TextDim)
+                }
+                Fold("Remove from the move", Icons.Default.PersonRemove, summary = "Their phone can no longer sync", key = "remove-$id") {
+                    Text("What $name did stays, and you can add them back.", style = MaterialTheme.typography.bodyMedium)
+                    BigAction(
+                        Icons.Default.PersonRemove, "Remove $name",
+                        onClick = {
+                            if (store.removePerson(id).orSay(context) != null) invite = null
+                        },
+                        primary = false,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** The invite as a code to scan, saying plainly that it works once and for how long. */
+@Composable
+private fun InviteCard(name: String, invite: ShownInvite) {
+    val qr = remember(invite.text) { qrBitmap(invite.text, 640).asImageBitmap() }
+    Section {
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("$name's invite", style = MaterialTheme.typography.titleMedium)
+            Image(
+                qr, contentDescription = "Invite code for $name",
+                modifier = Modifier.size(232.dp).clip(RoundedCornerShape(20.dp)).background(Color.White).padding(10.dp)
+                    .semantics { this[InviteText] = invite.text },
+            )
+            GlassChip("Works once · for ${WifiSync.INVITE_MINUTES} minutes, until ${invite.until}", icon = Icons.Default.Timer, tone = GlassTone.Amber)
+            Text(
+                "On $name's phone: open HouseMove and tap \"Second phone for the same move?\"",
+                style = MaterialTheme.typography.bodyMedium, color = Night.TextSoft, textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+// ---- who did what ---------------------------------------------------------------------------
+
+private const val ACTIVITY_SHOWN = 100
+
+/** The shared log, newest first, a line each. Tapping a line opens what it was about. */
+@Composable
+fun ActivityScreen() {
+    val nav = LocalNav.current
+    val data = appData()
+    val manage = allowed(Action.MANAGE_PEOPLE)
+    val log = remember(data.activity) { data.latestActivity(ACTIVITY_SHOWN) }
+    Screen("Activity", subtitle = data.move.name.ifBlank { "Your move" }) {
+        if (log.isEmpty()) {
+            EmptyState(Icons.Default.History, "Nothing yet", text = "Sealing, loading, decisions and changes to people show up here.")
+            return@Screen
+        }
+        val zone = remember { ZoneId.systemDefault() }
+        val now = today()
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp)) {
+            var lastDay = Long.MIN_VALUE
+            log.forEach { a ->
+                val at = Instant.ofEpochMilli(a.at).atZone(zone)
+                val day = at.toLocalDate().toEpochDay()
+                if (day != lastDay) {
+                    lastDay = day
+                    item(key = "day-$day") {
+                        Text(
+                            when (day) {
+                                now -> "Today"
+                                now - 1 -> "Yesterday"
+                                else -> fmtDay(day)
+                            },
+                            style = MaterialTheme.typography.labelLarge, color = Night.MintPale, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
+                        )
+                    }
+                }
+                item(key = a.id) {
+                    val route = when {
+                        a.refId == null -> null
+                        data.item(a.refId) != null -> "item/${a.refId}"
+                        data.box(a.refId) != null -> "box/${a.refId}"
+                        data.proposal(a.refId) != null -> "approvals"
+                        manage && data.person(a.refId) != null -> "person/${a.refId}"
+                        else -> null
+                    }
+                    ActivityLine(
+                        a, data, time = at.toLocalTime().format(CLOCK),
+                        modifier = Modifier.clip(RoundedCornerShape(12.dp)).then(if (route != null) Modifier.clickable { nav.open(route) } else Modifier).padding(vertical = 4.dp),
+                    )
+                }
+            }
+        }
+    }
+}

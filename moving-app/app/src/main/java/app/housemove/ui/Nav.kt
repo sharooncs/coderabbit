@@ -8,9 +8,11 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import app.housemove.data.Home
 import app.housemove.data.Store
 import app.housemove.ui.screens.*
@@ -35,7 +37,18 @@ fun AppRoot(store: Store, startRoute: String? = null, onNav: (NavHostController)
                     composable("overview") { OverviewScreen() }
                     composable("more") { MoreScreen() }
                     composable("rooms") { RoomsScreen() }
-                    composable("sync") { SyncScreen() }
+                    // A sync code or invite scanned elsewhere in the app arrives as "sync?code=…" and is used at once.
+                    composable("sync?code={code}", arguments = listOf(navArgument("code") { type = NavType.StringType; nullable = true; defaultValue = null })) {
+                        SyncScreen(it.arguments?.getString("code"))
+                    }
+                    composable("people") { PeopleScreen() }
+                    composable("people/add") { AddPersonScreen() }
+                    composable(
+                        "person/{id}?invite={invite}",
+                        arguments = listOf(navArgument("id") { type = NavType.StringType }, navArgument("invite") { type = NavType.BoolType; defaultValue = false }),
+                    ) { PersonScreen(it.arguments?.getString("id") ?: "", it.arguments?.getBoolean("invite") == true) }
+                    composable("approvals") { ApprovalsScreen() }
+                    composable("activity") { ActivityScreen() }
                     composable("settings") { SettingsScreen() }
                     composable("search") { SearchScreen() }
                     composable("scan") { ScanScreen() }

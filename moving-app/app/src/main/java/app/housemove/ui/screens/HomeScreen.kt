@@ -4,14 +4,17 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ShortText
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Checklist
 import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.Inventory2
+import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material.icons.outlined.LocalShipping
 import androidx.compose.material.icons.outlined.MeetingRoom
 import androidx.compose.material.icons.outlined.PhotoCamera
@@ -40,6 +43,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.housemove.data.*
+import app.housemove.data.Role as MoveRole
 import app.housemove.ui.*
 
 private data class NextStep(val text: String, val button: String, val route: String, val icon: ImageVector)
@@ -84,10 +88,13 @@ private fun nextStep(data: AppData): NextStep {
 /** One of the three numbers under the top bar: what it is, and where tapping it goes. */
 private data class KeyNumber(val icon: ImageVector, val value: String, val label: String, val route: String)
 
-private fun keyNumbers(data: AppData): List<KeyNumber> {
+private fun keyNumbers(data: AppData, device: DeviceInfo): List<KeyNumber> {
     val move = data.move
     val p = data.progress()
     val out = ArrayList<KeyNumber>()
+    // Suggestions come before the third number: an Organiser's to approve, a Decider's own that still wait.
+    val toApprove = if (data.can(device, Action.APPROVE)) data.waitingCount() else 0
+    val ownWaiting = if (toApprove == 0 && !data.can(device, Action.APPROVE)) data.proposalCounts(device.personId)[ProposalState.WAITING] ?: 0 else 0
     val undecided = data.liveItems.count { it.disposition == Disposition.UNDECIDED }
     if (move.kind == MoveKind.INVENTORY) {
         out += KeyNumber(Icons.Default.ListAlt, "${data.liveItems.size}", "things listed", "items")
@@ -110,6 +117,8 @@ private fun keyNumbers(data: AppData): List<KeyNumber> {
     val moving = mv.any { it.stage != Stage.AT_ORIGIN }
     val overdue = data.liveTasks.count { !it.done && (data.dueDay(it) ?: Long.MAX_VALUE) < today() }
     out += when {
+        toApprove > 0 -> KeyNumber(Icons.Outlined.CheckCircle, "$toApprove", if (toApprove == 1) "approval" else "approvals", "approvals")
+        ownWaiting > 0 -> KeyNumber(Icons.Outlined.Lightbulb, "$ownWaiting", "waiting", "approvals")
         data.uses(Part.UNPACK) && mv.isNotEmpty() && p.delivered.done == p.delivered.total ->
             KeyNumber(Icons.Outlined.Unarchive, "${p.unpacked.done}/${p.unpacked.total}", "unpacked", "unpack")
         data.uses(Part.MOVE_DAY) && p.delivered.done > 0 ->
@@ -136,6 +145,7 @@ fun HomeScreen() {
     val data = appData()
     val device = deviceInfo()
 
+    // A Helper's phone shows only a Helper's jobs. (The switch follows the role; alone it is the old "helper mode".)
     if (device.helper && data.move.setupDone) {
         HelperHome()
         return
@@ -188,7 +198,7 @@ private fun HomeHero(data: AppData, device: DeviceInfo, packing: Boolean, modifi
         ) {
             // On a narrow screen, or with large text, the little orbs go so the words fit.
             val tight = LocalConfiguration.current.let { it.screenWidthDp / it.fontScale < 340f }
-            keyNumbers(data).forEach { k -> KeyNumberView(k, !tight, Modifier.weight(1f, fill = false)) { nav.open(k.route) } }
+            keyNumbers(data, device).forEach { k -> KeyNumberView(k, !tight, Modifier.weight(1f, fill = false)) { nav.open(k.route) } }
         }
 
         val oldRooms = data.roomsOf(Home.ORIGIN)
@@ -321,19 +331,94 @@ private fun HomeDetails(data: AppData, device: DeviceInfo, next: NextStep, inPag
     }
 }
 
+/** What the strip between the house and the dock says, or null when there is nothing to say. */
+internal class SuggestionStrip(val people: List<Person?>, val title: String, val sub: String, val button: String)
+
+private fun count(n: Int, one: String) = "$n $one" + if (n == 1) "" else "s"
+
 /**
- * SLOT for the "suggestions waiting" strip (design/look-d: "2 suggestions waiting · Review").
- *
- * It sits between the house and the dock and is deliberately empty for now. Fill it with
- * one glass pill ([GlassPill] with `sheen = true`, about 56dp tall) and keep the modifier,
- * which already carries the side padding. Draw nothing when there are no suggestions.
+ * For someone who may approve: what is waiting for them. For a Decider or a Helper: how
+ * their own suggestions and questions stand, while any wait or were answered in the last
+ * few days. Null on a move where nobody has suggested anything.
+ */
+internal fun suggestionStrip(data: AppData, device: DeviceInfo, now: Long = System.currentTimeMillis()): SuggestionStrip? {
+    if (data.can(device, Action.APPROVE)) {
+        val waiting = data.waitingProposals()
+        if (waiting.isEmpty()) return null
+        val questions = waiting.count { it.kind == ProposalKind.QUESTION }
+        val suggestions = waiting.size - questions
+        return SuggestionStrip(
+            people = waiting.map { it.by }.distinct().take(3).map { data.person(it) },
+            title = when {
+                questions == 0 -> count(suggestions, "suggestion") + " waiting"
+                suggestions == 0 -> count(questions, "question") + " waiting"
+                else -> "${waiting.size} waiting for you"
+            },
+            sub = waiting.take(3).joinToString(" · ") { data.describe(it) },
+            button = "Review",
+        )
+    }
+    val counts = data.proposalCounts(device.personId)
+    val waiting = counts[ProposalState.WAITING] ?: 0
+    val fresh = data.proposalsBy(device.personId).any { it.state != ProposalState.WAITING && now - it.decidedAt < 3 * 86_400_000L }
+    if (waiting == 0 && !fresh) return null
+    val approved = counts[ProposalState.APPROVED] ?: 0
+    val declined = counts[ProposalState.DECLINED] ?: 0
+    // A Helper asks; a Decider suggests.
+    val asks = data.roleOf(device) == MoveRole.HELPER
+    val answered = listOfNotNull(
+        if (approved > 0) "$approved " + (if (asks) "answered" else "approved") else null,
+        if (declined > 0) "$declined declined" else null,
+    ).joinToString(" · ")
+    return SuggestionStrip(
+        people = listOf(data.person(device.personId)),
+        title = when {
+            waiting == 0 -> if (asks) "Your questions were answered" else "Your suggestions were answered"
+            asks -> count(waiting, "question") + " waiting"
+            else -> "$waiting waiting for approval"
+        },
+        sub = answered.ifBlank { "An Organiser decides" },
+        button = "View",
+    )
+}
+
+/**
+ * The strip between the house and the dock (design/look-d: "2 suggestions waiting · Review"):
+ * who suggested, how many wait, what they are, and the way to Approvals. Draws nothing
+ * when there is nothing to say, so a move with one person never sees it.
  */
 @Composable
 internal fun SuggestionsSlot(modifier: Modifier = Modifier) {
-    Box(modifier)
+    val nav = LocalNav.current
+    val device = deviceInfo()
+    val strip = suggestionStrip(appData(), device)
+    if (strip == null) {
+        Box(modifier)
+        return
+    }
+    GlassPill(
+        modifier.heightIn(min = 58.dp), onClick = { nav.open("approvals") }, sheen = true,
+        contentPadding = PaddingValues(start = 8.dp, top = 7.dp, bottom = 7.dp, end = 8.dp),
+    ) {
+        // The people who suggested, overlapping like coins.
+        Box {
+            strip.people.forEachIndexed { i, p -> PersonOrb(p, Modifier.padding(start = 26.dp * i), size = 42.dp, me = p != null && p.id == device.personId) }
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(strip.title, style = MaterialTheme.typography.titleSmall, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (strip.sub.isNotBlank()) {
+                Text(strip.sub, style = MaterialTheme.typography.bodySmall, color = Night.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        Box(Modifier.glass(CircleShape, GlassTone.White, shadow = 0.dp).padding(horizontal = 16.dp, vertical = 9.dp)) {
+            Text(strip.button, style = MaterialTheme.typography.labelLarge, color = Night.OnWhite, maxLines = 1)
+        }
+    }
 }
 
-/** Home's own top bar: menu and search on the left, the app's mark, scan and this phone on the right. */
+/** Home's own top bar: menu and search on the left, the app's mark, scan and this phone's person on the right. */
 @Composable
 private fun HomeTopBar(device: DeviceInfo) {
     val nav = LocalNav.current
@@ -349,7 +434,7 @@ private fun HomeTopBar(device: DeviceInfo) {
         Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
             TopAction(Icons.Default.QrCodeScanner, "Scan a label") { nav.open("scan") }
             val initial = device.name.trim().firstOrNull()?.uppercaseChar()
-            GlassOrb(kind = OrbKind.Selected, onClick = { nav.open("settings") }, contentDescription = "Settings") {
+            GlassOrb(kind = OrbKind.Selected, onClick = { nav.open("people") }, contentDescription = "People") {
                 if (initial != null) Text(initial.toString(), fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
                 else Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(22.dp))
             }
@@ -407,9 +492,18 @@ private fun HelperHome() {
     val nav = LocalNav.current
     val store = LocalStore.current
     val data = appData()
+    val device = deviceInfo()
     val p = data.progress()
-    Screen(title = data.move.name.ifBlank { "HouseMove" }, back = false, tab = "home", actions = { TopActions() }, subtitle = "Helper") {
+    val mine = myPerson()
+    // On a shared move the phone is a Helper because of its person's role; alone it is the old "helper mode".
+    val shared = data.shared()
+    Screen(
+        title = data.move.name.ifBlank { "HouseMove" }, back = false, tab = "home", actions = { TopActions() },
+        subtitle = if (shared && mine != null && mine.name.isNotBlank()) "${mine.name} · Helper" else "Helper",
+    ) {
         ScrollColumn {
+            // How the questions this Helper asked stand, when there are any.
+            if (suggestionStrip(data, device) != null) SuggestionsSlot(Modifier.fillMaxWidth())
             data class Job(val icon: ImageVector, val title: String, val route: String, val status: String?, val part: Part?)
             val jobs = listOf(
                 Job(Icons.Default.Inventory2, "Pack a box", "pack", "${p.sealed.done} of ${p.sealed.total} sealed", Part.BOXES),
@@ -423,9 +517,25 @@ private fun HelperHome() {
                 Tile(job.icon, job.title, onClick = { nav.open(job.route) }, modifier = m.heightIn(min = 108.dp), status = job.status)
             }
             BigAction(Icons.Default.Sync, "Sync with the other phones", onClick = { nav.open("sync") }, primary = false)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Hint("Helper mode: only the essentials are shown.", Modifier.weight(1f))
-                TextButton(onClick = { store.setDevice { it.copy(helper = false) } }) { Text("Show everything") }
+            if (shared) {
+                // Who else is on the move, and what a Helper does. The role is an Organiser's to change.
+                GlassPill(
+                    Modifier.fillMaxWidth(), onClick = { nav.open("people") },
+                    contentPadding = PaddingValues(start = 8.dp, top = 8.dp, bottom = 8.dp, end = 14.dp),
+                ) {
+                    PersonOrb(mine, size = 40.dp, me = true)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("People", style = MaterialTheme.typography.titleSmall)
+                        Text(MoveRole.HELPER.line(), style = MaterialTheme.typography.bodySmall, color = Night.TextDim, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                    Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Night.TextDim)
+                }
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Hint("Helper mode: only the essentials are shown.", Modifier.weight(1f))
+                    TextButton(onClick = { store.setDevice { it.copy(helper = false) } }) { Text("Show everything") }
+                }
             }
         }
     }

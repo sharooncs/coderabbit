@@ -226,8 +226,7 @@ class FlowsTest {
     fun secondPhoneJoinsInsteadOfSettingUpAgain() {
         start(setUp = false)
         tap("Second phone for the same move?")
-        tap("Join a move from another phone")
-        assertEquals("sync", route())
+        see("Scan the invite") // the scan itself, over a real connection, is in PeopleFlowsTest
         // The first phone's data arrives (as a sync would deliver it).
         val first = Store(tmp.newFolder("first"))
         first.setMove { it.copy(name = "Family move", setupDone = true) }
@@ -235,7 +234,6 @@ class FlowsTest {
         first.createBox("L001", null)
         rule.runOnUiThread { store.mergeIn(first.data.value) }
         settle()
-        back()
         assertEquals("home", route())
         see("Family move")
         assertTrue(data.liveTasks.isEmpty()) // the checklist is not added a second time
@@ -276,7 +274,7 @@ class FlowsTest {
         go("scan")
         type("Or type the code on the label", "HMSYNC:192.168.1.9:4000:ABCD2345")
         tap("Open")
-        assertEquals("sync", route())
+        assertEquals("sync?code={code}", route()) // the sync screen, handed the code so it is not scanned twice
     }
 
     // ---- packing ------------------------------------------------------------

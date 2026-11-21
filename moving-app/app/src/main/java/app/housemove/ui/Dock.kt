@@ -25,15 +25,20 @@ import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.housemove.data.Action
 import app.housemove.data.AppData
 import app.housemove.data.Part
+import app.housemove.data.can
 import app.housemove.data.uses
+import app.housemove.data.waitingCount
 import kotlin.math.sqrt
 
 /*
@@ -43,6 +48,9 @@ import kotlin.math.sqrt
  *
  * On Home the dome is taller and carries one large glowing button in the middle for the
  * thing done most often (see DockAction).
+ *
+ * When suggestions are waiting for this phone's person to approve, the Home button
+ * carries their number on every screen but Home itself, which shows them in full.
  */
 
 /** The one large button in the middle of Home's dock. */
@@ -119,12 +127,16 @@ internal fun dockPlan(width: Dp, tabs: Int, tall: Boolean, labelHeight: Dp): Doc
 @Composable
 internal fun Dock(current: String, tabs: List<Tab>, plan: DockPlan, action: DockAction?, modifier: Modifier = Modifier) {
     val nav = LocalNav.current
+    // Suggestions waiting for this person to approve: counted on the Home button, where the strip to review them is.
+    val data = appData()
+    val waiting = if (data.can(deviceInfo(), Action.APPROVE)) data.waitingCount() else 0
     Box(
         modifier.fillMaxWidth().drawBehind { drawDome(plan, glowStrength = if (action != null) 0.55f else 0.40f) }.navigationBarsPadding().height(plan.height),
     ) {
         tabs.forEachIndexed { i, t ->
             if (i >= plan.tabX.size) return@forEachIndexed
             val selected = t.route == current
+            val badge = if (t.route == "home" && waiting > 0 && nav.currentDestination?.route != "home") "$waiting" else null
             Column(
                 Modifier.offset(x = plan.tabX[i], y = plan.tabY[i]).width(plan.column)
                     .selectable(
@@ -138,10 +150,11 @@ internal fun Dock(current: String, tabs: List<Tab>, plan: DockPlan, action: Dock
                             if (TABS.none { it.route == nav.currentDestination?.route }) nav.popBackStack()
                             if (nav.currentDestination?.route != t.route) nav.goTab(t.route)
                         },
-                    ),
+                    )
+                    .then(if (badge != null) Modifier.semantics { stateDescription = "$badge waiting for approval" } else Modifier),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                GlassOrb(t.icon, null, kind = if (selected) OrbKind.Selected else OrbKind.Plain, size = ORB)
+                GlassOrb(t.icon, null, kind = if (selected) OrbKind.Selected else OrbKind.Plain, size = ORB, badge = badge)
                 Spacer(Modifier.height(3.dp))
                 Text(
                     t.label,
