@@ -240,6 +240,7 @@ class FlowsTest {
         type("Contents", "Glasses, mugs")
         tap("Fragile"); tap("This way up")
         tap("First night")
+        tap("Box size") // rarely changed, so it is folded away
         tap("Small")
         tap("Bedroom") // send it to a different room than the default
         var b = data.box(a.id)!!
@@ -255,6 +256,7 @@ class FlowsTest {
         assertFalse(data.box(a.id)!!.sealed)
 
         // Relabel: a label that is already on another box is refused.
+        tap("Label")
         tap("Change label")
         type("Or type the code", "L002")
         tap("OK")
@@ -553,11 +555,11 @@ class FlowsTest {
     @Test
     fun timelineChecklistCanBeAddedAndTicked() {
         start("tasks")
-        tap("Add the self-move checklist")
+        tap("Add the checklist")
         assertTrue(data.liveTasks.size > 40)
         click(rule.onAllNodes(isToggleable()).onFirst())
         assertEquals(1, data.liveTasks.count { it.done })
-        dontSee("Add the self-move checklist") // cannot be added twice
+        dontSee("Add the checklist") // cannot be added twice
     }
 
     @Test
