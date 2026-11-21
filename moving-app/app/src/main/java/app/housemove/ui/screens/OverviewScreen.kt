@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -57,7 +58,11 @@ internal data class RoomPacking(val room: Room, val sealed: Int, val total: Int)
     }
 
     /** For a screen reader: the same facts as the tile, in a sentence. */
-    fun spoken(): String = room.name + ": " + (if (total == 0) "no boxes" else "$sealed of $total boxes sealed") + ", " + state.label
+    fun spoken(): String = when {
+        total == 0 && room.packed -> "${room.name}: marked packed, no boxes"
+        total == 0 -> "${room.name}: no boxes yet"
+        else -> "${room.name}: $sealed of $total boxes sealed, ${state.label}"
+    }
 
     /** How many piles of boxes the drawing shows for this room. */
     fun stacks(): Int = when {
@@ -131,7 +136,7 @@ fun OverviewScreen() {
                 if (shown != null) {
                     GlassTag(
                         shown.room.name, shown.leftText(),
-                        if (shown.room.packed) Icons.Default.Check else Icons.Default.Inventory2,
+                        if (shown.room.packed) Icons.Default.Check else Icons.Outlined.Inventory2,
                         Modifier.align(Alignment.TopEnd).padding(top = 14.dp).widthIn(max = 210.dp),
                         kind = when (shown.state) {
                             RoomState.PACKED -> OrbKind.Primary
@@ -211,7 +216,7 @@ fun OverviewScreen() {
                     contentPadding = PaddingValues(start = 10.dp, top = 10.dp, bottom = 10.dp, end = 14.dp),
                 ) {
                     Box(Modifier.size(46.dp).drawBehind { drawOrb(OrbKind.Primary, ring = false) }, contentAlignment = Alignment.Center) {
-                        Icon(Icons.Default.Inventory2, contentDescription = null, tint = Night.OnMint, modifier = Modifier.size(22.dp))
+                        Icon(Icons.Outlined.Inventory2, contentDescription = null, tint = Night.OnMint, modifier = Modifier.size(22.dp))
                     }
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {

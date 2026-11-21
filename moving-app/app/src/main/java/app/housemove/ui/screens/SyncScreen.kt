@@ -88,7 +88,7 @@ fun SyncScreen() {
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         ScrollColumn {
             message?.let { m ->
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer), modifier = Modifier.fillMaxWidth()) {
+                GlassCard(tone = GlassTone.Amber, modifier = Modifier.fillMaxWidth()) {
                     Text(m, Modifier.padding(16.dp))
                 }
             }

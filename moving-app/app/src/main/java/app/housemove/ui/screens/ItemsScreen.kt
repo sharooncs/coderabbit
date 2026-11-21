@@ -76,6 +76,7 @@ fun ItemsScreen() {
         actions = { TopActions() },
         fab = {
             ExtendedFloatingActionButton(
+                containerColor = Night.Mint, contentColor = Night.OnMint,
                 onClick = { addItem() },
                 icon = { Icon(Icons.Default.Add, contentDescription = null) },
                 text = { Text("Add item") },
@@ -103,7 +104,7 @@ fun ItemsScreen() {
             }
             stickyHeader(key = "filters") {
                 Row(
-                    Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background)
+                    Modifier.fillMaxWidth().groundBand()
                         .horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -225,9 +226,7 @@ private fun ItemCard(x: Item, data: AppData, modifier: Modifier = Modifier, onCl
     }
     Column(
         modifier
-            .clip(RoundedCornerShape(14.dp))
-            .background(scheme.surface)
-            .border(1.dp, scheme.outlineVariant, RoundedCornerShape(14.dp))
+            .glass(RoundedCornerShape(18.dp), shadow = 5.dp)
             .clickable(onClick = onClick)
             .padding(6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),

@@ -72,9 +72,7 @@ fun ItemScreen(id: String) {
     Screen(
         title = item.title(),
         actions = {
-            IconButton(onClick = { confirmDelete = true }) {
-                Icon(Icons.Default.Delete, contentDescription = "Delete item")
-            }
+            TopAction(Icons.Default.Delete, "Delete item") { confirmDelete = true }
         },
     ) {
         ScrollColumn {
@@ -201,7 +199,7 @@ fun ItemScreen(id: String) {
                     }
                 }
             } else if (offerDevice) {
-                Card(Modifier.fillMaxWidth()) {
+                GlassCard(Modifier.fillMaxWidth()) {
                     Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Pic.Device, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                         Spacer(Modifier.width(14.dp))

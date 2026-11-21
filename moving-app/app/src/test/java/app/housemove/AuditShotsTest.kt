@@ -4,11 +4,25 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.onRoot
 import androidx.navigation.NavHostController
 import app.housemove.data.*
+import app.housemove.ui.AppBackground
 import app.housemove.ui.AppRoot
+import app.housemove.ui.HouseMarker
+import app.housemove.ui.HouseMoveTheme
+import app.housemove.ui.HouseSpot
+import app.housemove.ui.IsoHouse
+import app.housemove.ui.IsoRoom
+import app.housemove.ui.IsoRooms
+import app.housemove.ui.RoomState
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Rule
 import org.junit.Test
@@ -153,6 +167,35 @@ class AuditShotsTest {
         rule.waitForIdle(); shot("home_inventory")
         rule.runOnUiThread { store.setMove { it.copy(kind = MoveKind.SELF, off = emptyList(), setupDone = false) }; nav!!.navigate("setup") }
         rule.waitForIdle(); shot("setup")
+    }
+
+    /**
+     * The two model drawings on their own: the house with 0 to 3 boxes, and the rooms
+     * for 1 room up to more than fit. Written to build/audit/drawings.png.
+     */
+    @Test
+    @Config(sdk = [34], qualifiers = "w960dp-h1260dp-mdpi")
+    fun drawings() {
+        val names = listOf("Kitchen", "Living room", "Main bedroom", "Study", "Bathroom", "Hall", "Loft", "Garage", "Bedroom 2", "Bedroom 3", "Utility", "Dining room", "Shed", "Porch", "Cellar")
+        fun rooms(n: Int) = (0 until n).map { IsoRoom("r$it", names[it], RoomState.entries[(it * 3 + n) % 4], stacks = (it + n) % 4) }
+        rule.setContent {
+            HouseMoveTheme {
+                AppBackground {
+                    Column(Modifier.padding(8.dp)) {
+                        Row {
+                            for (n in 0..3) {
+                                IsoHouse(Modifier.width(236.dp), boxes = n, markers = HouseSpot.entries.take(n * 2).map { HouseMarker(it, amber = it.ordinal % 2 == 1) })
+                            }
+                        }
+                        for (counts in listOf(listOf(0, 1, 2), listOf(3, 4, 5), listOf(6, 7, 9), listOf(10, 12, 15))) {
+                            Row { counts.forEach { n -> IsoRooms(rooms(n), Modifier.width(314.dp), selectedId = "r${n / 2}") } }
+                        }
+                    }
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onRoot().captureRoboImage("build/audit/drawings.png")
     }
 
     @Test

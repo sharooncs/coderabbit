@@ -65,6 +65,7 @@ import app.housemove.ui.TopActions
 import app.housemove.ui.appData
 import app.housemove.ui.icon
 import app.housemove.ui.open
+import app.housemove.ui.*
 
 /** After the move: what to open first, and which furniture still needs putting together. */
 @Composable
@@ -76,7 +77,7 @@ fun UnpackScreen() {
     // Someone who does not pack boxes with the app sees only the furniture.
     val showBoxes = data.uses(Part.BOXES) || data.liveBoxes.isNotEmpty()
     Screen("Unpack", actions = { TopActions() }) {
-        if (showBoxes) TabRow(selectedTabIndex = tab) {
+        if (showBoxes) GlassTabRow(tab) {
             MdIconTab(tab == 0, { tab = 0 }, "Boxes ($boxesWaiting)", Pic.Box)
             MdIconTab(tab == 1, { tab = 1 }, "Furniture ($itemsWaiting)", Pic.Item)
         }
@@ -270,7 +271,7 @@ private fun MdUnpackCard(
     detailIsWarning: Boolean = false,
     extra: (@Composable () -> Unit)? = null,
 ) {
-    Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
+    GlassCard(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
         Row(Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(12.dp)) {
             OwnerThumb(ownerId, Modifier.size(104.dp), isBox = isBox)
             Spacer(Modifier.width(12.dp))

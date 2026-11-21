@@ -50,6 +50,7 @@ import app.housemove.ui.TopActions
 import app.housemove.ui.appData
 import app.housemove.ui.deviceInfo
 import app.housemove.ui.open
+import app.housemove.ui.*
 
 /** The steps of the day, in order: everything in the Move day phase, then Unpack. */
 private fun mdSteps(data: AppData): List<JourneyStep> =
@@ -107,7 +108,7 @@ fun MoveDayScreen() {
                 )
 
                 // On a white card, so the ring round each picture shows its empty part too.
-                OutlinedCard(Modifier.fillMaxWidth()) {
+                GlassCard(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         steps.forEachIndexed { i, step ->
                             StepRow(

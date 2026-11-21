@@ -71,6 +71,7 @@ import app.housemove.ui.appData
 import app.housemove.ui.color
 import app.housemove.ui.onColor
 import app.housemove.ui.open
+import app.housemove.ui.*
 
 /** The thing that was just carried in, and what it was before, so the tap can be undone. */
 private data class MdArrival(val id: String, val isBox: Boolean, val prev: Stage, val already: Boolean)
@@ -206,8 +207,9 @@ fun UnloadScreen() {
 private fun MdArrivalPanel(m: Movable, already: Boolean, onDamage: () -> Unit, onUndo: () -> Unit) {
     val room = appData().room(m.destRoomId)
     val rc = room?.let { roomColor(it.color) }
-    val bg = rc?.color() ?: MaterialTheme.colorScheme.inverseSurface
-    val fg = rc?.onColor() ?: MaterialTheme.colorScheme.inverseOnSurface
+    // With no room there is no colour to show: a solid panel of the look instead of a white slab.
+    val bg = rc?.color() ?: Night.PanelHigh
+    val fg = rc?.onColor() ?: Night.Text
     val name = room?.name ?: "No room set"
     Column(
         Modifier.fillMaxWidth().background(bg).padding(16.dp),
@@ -293,6 +295,7 @@ private fun MdDamageDialog(m: Movable, onClose: () -> Unit) {
     val wasDamaged = (if (m.isBox) data.box(m.id)?.damaged else data.item(m.id)?.damaged) == true
     var note by remember(m.id) { mutableStateOf(saved) }
     AlertDialog(
+        modifier = Modifier.dialogRim(),
         onDismissRequest = onClose,
         title = { Text("Report damage") },
         text = {

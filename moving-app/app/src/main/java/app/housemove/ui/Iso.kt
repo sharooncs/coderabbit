@@ -117,7 +117,7 @@ private val WARM = Color(0xFFFFC864)
 
 /** A lit window: warm light spilling round it, then the pane and its frame. */
 private fun DrawScope.litWindow(p: Poly) {
-    haze(p, WARM, 0.50f)
+    haze(p, WARM, 0.62f, spread = 0.7f)
     fillDown(p, GLASS0, GLASS1)
     outline(p, FRAME, 1.5f)
 }
@@ -225,14 +225,14 @@ private fun DrawScope.bush(cx: Float, cy: Float, r: Float) {
 
 private fun DrawScope.drawHouse(boxes: Int, markers: List<HouseMarker>) {
     // Faint towers behind: the town the house stands in.
-    for ((p, a) in House.towers) fill(p, Color(0xFF96B4DC).copy(alpha = a * 0.8f))
+    for ((p, a) in House.towers) fill(p, Color(0xFF96B4DC).copy(alpha = a * 0.5f))
     var i = 0
     while (i < House.towerLights.size) {
-        seg(House.towerLights[i], House.towerLights[i + 1], House.towerLights[i + 2], House.towerLights[i + 3], Color(0xFFFFD78C).copy(alpha = 0.40f), 3f)
+        seg(House.towerLights[i], House.towerLights[i + 1], House.towerLights[i + 2], House.towerLights[i + 3], Color(0xFFFFD78C).copy(alpha = 0.26f), 3f)
         i += 4
     }
     // The plot: a mint glow under a dark slab.
-    glow(Night.GlowMint, Offset(-2.2f, 196f), 258f, 66f, 0.46f)
+    glow(Night.GlowMint, Offset(-2.2f, 192f), 262f, 74f, 0.56f)
     fillDown(House.slabL, SLAB_L0, SLAB_L1)
     fillDown(House.slabR, SLAB_R0, SLAB_R1)
     val g = House.ground
@@ -341,9 +341,9 @@ enum class RoomState(val label: String) {
     PACKED("packed"),
     /** Boxes started: amber floor, single boxes. */
     PACKING("being packed"),
-    /** Nothing sealed yet: slate floor, the furniture still in place. */
+    /** Boxes begun but none sealed yet: slate floor, with the boxes if any are to be shown, else the furniture. */
     NOT_STARTED("not started"),
-    /** No boxes belong to it: slate floor, empty. */
+    /** No boxes belong to it yet: darker slate floor, the furniture still in place. */
     NO_BOXES("no boxes"),
 }
 
@@ -437,7 +437,9 @@ private fun stacksOf(cell: RoomCell): List<Triple<Float, Float, Int>> {
         // A wide room: the arrangement of the design drawing.
         cell.w >= 2.6f -> listOf(Triple(0.40f, 0.43f, tall), Triple(0.675f, 0.60f, 1), Triple(0.28f, 0.80f, 1))
         // A narrow one: a single file down the middle.
-        else -> listOf(Triple(0.5f, 0.36f, tall), Triple(0.5f, 0.74f, 1))
+        cell.w >= 1.8f -> listOf(Triple(0.5f, 0.36f, tall), Triple(0.5f, 0.74f, 1))
+        // A very narrow one: one pile, so the colour of the floor still shows.
+        else -> listOf(Triple(0.5f, 0.42f, tall))
     }
     return spots.take(want).map { (fx, fy, h) ->
         val cx = (cell.x0 + fx * cell.w).coerceIn(cell.x0 + 0.52f, cell.x1 - 0.52f)
@@ -449,7 +451,7 @@ private fun stacksOf(cell: RoomCell): List<Triple<Float, Float, Int>> {
 /** The things in one room: its boxes, or its furniture if packing has not begun. Returns where a marker for it goes. */
 private fun DrawScope.roomContents(cell: RoomCell, tapes: MutableList<FloatArray>): Offset {
     val stacks = stacksOf(cell)
-    if (stacks.isEmpty() && cell.room.state == RoomState.NOT_STARTED) {
+    if (stacks.isEmpty() && (cell.room.state == RoomState.NOT_STARTED || cell.room.state == RoomState.NO_BOXES)) {
         // A bed with a blanket and a pillow: still lived in.
         val bw = minOf(1.9f, cell.w - 0.5f)
         val bd = minOf(1.6f, cell.d - 0.9f)

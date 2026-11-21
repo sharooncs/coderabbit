@@ -71,6 +71,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import app.housemove.ui.*
 
 /** Paperwork at the end: inventory, damage report and the last few jobs. */
 @Composable
@@ -153,7 +154,7 @@ fun ReportsScreen() {
             )
 
             // The last few jobs, on a white card like the Move day steps.
-            OutlinedCard(Modifier.fillMaxWidth()) {
+            GlassCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     if (data.uses(Part.TIMELINE)) StepRow(
                         Icons.Default.Checklist,
@@ -219,7 +220,7 @@ private fun MdReport(
     onShare: () -> Unit,
     picture: (@Composable () -> Unit)? = null,
 ) {
-    Card(Modifier.fillMaxWidth()) {
+    GlassCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (picture != null) picture() else Box(

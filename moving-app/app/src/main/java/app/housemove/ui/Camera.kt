@@ -101,6 +101,19 @@ fun importImage(context: Context, uri: Uri, dest: File): Boolean = try {
     false
 }
 
+/**
+ * A round button that sits on top of a photograph or the live camera. Glass would
+ * vanish against a bright picture, so this is a dark disc with a white picture and rim.
+ */
+@Composable
+fun OverlayIconButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, content: @Composable () -> Unit) {
+    FilledIconButton(
+        onClick = onClick, modifier = modifier.border(1.dp, Color.White.copy(alpha = 0.45f), CircleShape), enabled = enabled,
+        colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color(0xB8081220), contentColor = Color.White),
+        content = content,
+    )
+}
+
 // ---- permission ------------------------------------------------------------
 
 /** Shows [content] once the camera permission is granted; otherwise explains and asks. */
@@ -204,7 +217,7 @@ fun CameraDialog(
                         Modifier.fillMaxWidth().statusBarsPadding().padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        FilledTonalIconButton(onClick = onClose) { Icon(Icons.Default.Close, contentDescription = "Close camera") }
+                        OverlayIconButton(onClick = onClose) { Icon(Icons.Default.Close, contentDescription = "Close camera") }
                         Spacer(Modifier.width(12.dp))
                         Text(
                             hint + if (taken > 0) " · $taken taken" else "",
@@ -214,7 +227,7 @@ fun CameraDialog(
                                 .background(Color(0x99000000)).padding(horizontal = 10.dp, vertical = 6.dp),
                         )
                         Spacer(Modifier.width(12.dp))
-                        FilledTonalIconButton(onClick = {
+                        OverlayIconButton(onClick = {
                             torch = !torch
                             try {
                                 camera?.cameraControl?.enableTorch(torch)
@@ -354,7 +367,7 @@ fun QrScanner(onText: (String) -> Unit, modifier: Modifier = Modifier, formats: 
         }
         Box(modifier) {
             CameraPreview(listOf(analysis), Modifier.fillMaxSize()) { camera = it }
-            FilledTonalIconButton(
+            OverlayIconButton(
                 onClick = {
                     torch = !torch
                     try {
@@ -382,7 +395,7 @@ fun ScanDialog(
     typeLabel: String = "Or type the code",
 ) {
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxSize()) {
+        Surface(Modifier.fillMaxSize(), color = Night.Ground1, contentColor = Night.Text) {
             Column(Modifier.fillMaxSize().systemBarsPadding().imePadding()) {
                 Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onClose) { Icon(Icons.Default.Close, contentDescription = "Close") }
@@ -396,6 +409,7 @@ fun ScanDialog(
                 var typed by remember { mutableStateOf("") }
                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
+                        colors = glassFieldColors(),
                         value = typed,
                         onValueChange = { typed = it },
                         label = { Text(typeLabel) },
@@ -516,7 +530,7 @@ fun PhotoHero(
                         modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Color(0x99000000)).padding(horizontal = 8.dp, vertical = 4.dp),
                     )
                 }
-                FilledTonalIconButton(onClick = { gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
+                OverlayIconButton(onClick = { gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
                     Icon(Icons.Default.PhotoLibrary, contentDescription = "Add $label from gallery")
                 }
                 FilledIconButton(onClick = { camera = true }) {
@@ -588,9 +602,9 @@ fun PhotoViewer(photo: Photo, onClose: () -> Unit) {
                     modifier = Modifier.fillMaxSize(),
                 )
                 Row(Modifier.fillMaxWidth().statusBarsPadding().padding(12.dp)) {
-                    FilledTonalIconButton(onClick = onClose) { Icon(Icons.Default.Close, contentDescription = "Close photo") }
+                    OverlayIconButton(onClick = onClose) { Icon(Icons.Default.Close, contentDescription = "Close photo") }
                     Spacer(Modifier.weight(1f))
-                    FilledTonalIconButton(onClick = { confirm = true }) { Icon(Icons.Default.Delete, contentDescription = "Delete photo") }
+                    OverlayIconButton(onClick = { confirm = true }) { Icon(Icons.Default.Delete, contentDescription = "Delete photo") }
                 }
             }
         }

@@ -170,9 +170,9 @@ fun PackOrderScreen() {
         ) {
             if (rooms.isNotEmpty()) {
                 item(key = "progress") {
-                    Card(
+                    GlassCard(
                         Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                        tone = GlassTone.Mint,
                     ) {
                         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                             Ring(Ratio(rooms.count { it.packed }, rooms.size), size = 72.dp, stroke = 8.dp) {
@@ -239,7 +239,7 @@ fun PackOrderScreen() {
 @Composable
 private fun RoomPackRow(room: Room, to: Room?, sealed: Ratio, onPacked: (Boolean) -> Unit, onPack: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
-    Card(Modifier.fillMaxWidth()) {
+    GlassCard(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Row(
                 Modifier.weight(1f).clickable(enabled = !room.packed, onClick = onPack)

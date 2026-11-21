@@ -159,6 +159,7 @@ fun SearchScreen() {
     val hits = remember(query, data) { data.search(query) }
     Screen("Find anything") {
         OutlinedTextField(
+            colors = glassFieldColors(),
             value = query,
             onValueChange = { query = it },
             label = { Text("What are you looking for?") },
@@ -233,6 +234,7 @@ fun ScanScreen() {
         )
         Row(Modifier.padding(12.dp)) {
             OutlinedTextField(
+                colors = glassFieldColors(),
                 value = typed,
                 onValueChange = { typed = it },
                 label = { Text("Or type the code on the label") },
@@ -246,6 +248,7 @@ fun ScanScreen() {
 
     notRecorded?.let { code ->
         AlertDialog(
+            modifier = Modifier.dialogRim(),
             onDismissRequest = { notRecorded = null },
             title = { Text("Barcode $code is not recorded") },
             text = { Text("Nothing with this barcode has been scanned into a box yet. To record it, open the box and tap \"Scan books and products into this box\".") },
@@ -255,6 +258,7 @@ fun ScanScreen() {
 
     unknown?.let { code ->
         AlertDialog(
+            modifier = Modifier.dialogRim(),
             onDismissRequest = { unknown = null },
             title = { Text("Label $code is not in use") },
             text = { Text("Start a new box with this label? To put it on a piece of furniture instead, open the item and choose \"Scan a printed label\".") },

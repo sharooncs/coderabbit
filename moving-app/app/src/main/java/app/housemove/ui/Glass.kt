@@ -1,5 +1,6 @@
 package app.housemove.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -471,6 +472,22 @@ fun GlassTag(
             Text(value, color = Night.Text, style = MaterialTheme.typography.titleSmall, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
+}
+
+/**
+ * An almost solid strip of the ground, for a header that stays put while a list scrolls
+ * under it. Glass would let the list show through.
+ */
+fun Modifier.groundBand(): Modifier = background(Color(0xF20B1522))
+
+/**
+ * A solid bar fixed to the bottom of a screen, such as the seal bar of a box. It hides
+ * what scrolls up to it and has the bright top edge of a glass panel. Mint says "done".
+ */
+fun Modifier.bottomBar(tone: GlassTone = GlassTone.Plain): Modifier = drawBehind {
+    drawRect(if (tone == GlassTone.Mint) Night.PanelMint else Night.Panel)
+    drawRect(Brush.verticalGradient(0f to Color.White.copy(alpha = 0.10f), 1f to Color.White.copy(alpha = 0.02f)))
+    drawLine(Color.White.copy(alpha = 0.34f), Offset(0f, 0f), Offset(size.width, 0f), strokeWidth = 1.dp.toPx())
 }
 
 /** Dims a control that cannot be used right now. */

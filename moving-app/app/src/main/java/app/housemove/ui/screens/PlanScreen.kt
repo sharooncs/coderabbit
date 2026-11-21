@@ -67,7 +67,7 @@ fun PlanScreen() {
                     Text("Needs a room (${homeless.size})", style = MaterialTheme.typography.titleMedium)
                 }
                 items(homeless, key = { "h-" + it.id }) { x ->
-                    Card(Modifier.fillMaxWidth()) {
+                    GlassCard(Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Row(
                                 Modifier.fillMaxWidth().clickable { nav.open("item/${x.id}") },
@@ -147,7 +147,7 @@ fun PlanScreen() {
 
             if (data.uses(Part.LABELS)) {
                 item(key = "signs") {
-                    Card(Modifier.fillMaxWidth()) {
+                    GlassCard(Modifier.fillMaxWidth()) {
                         MenuRow(Icons.Default.Print, "Print door signs", sub = "One coloured sign per room.") { nav.open("labels") }
                     }
                 }
@@ -169,7 +169,7 @@ private fun RoomBlock(
 ) {
     val colour = roomColor(room.color)
     val door = room.doorWidthCm?.takeIf { it > 0 }
-    Card(Modifier.fillMaxWidth()) {
+    GlassCard(Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().background(colour.color()).padding(start = 16.dp, end = 6.dp).heightIn(min = 56.dp),
             verticalAlignment = Alignment.CenterVertically,

@@ -18,6 +18,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.Chair
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Inventory2
+import androidx.compose.material.icons.outlined.LocalShipping
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -53,10 +57,10 @@ fun deviceInfo(): DeviceInfo = LocalStore.current.device.collectAsState().value
 data class Tab(val route: String, val label: String, val icon: ImageVector)
 
 val TABS = listOf(
-    Tab("home", "Home", Icons.Default.Home),
-    Tab("items", "Items", Icons.Default.Chair),
-    Tab("boxes", "Boxes", Icons.Default.Inventory2),
-    Tab("moveday", "Move day", Icons.Default.LocalShipping),
+    Tab("home", "Home", Icons.Outlined.Home),
+    Tab("items", "Items", Icons.Outlined.Chair),
+    Tab("boxes", "Boxes", Icons.Outlined.Inventory2),
+    Tab("moveday", "Move day", Icons.Outlined.LocalShipping),
     Tab("more", "More", Icons.Default.Menu),
 )
 
@@ -172,6 +176,22 @@ fun ScrollColumn(modifier: Modifier = Modifier, content: @Composable ColumnScope
         modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         content = content,
+    )
+}
+
+/**
+ * Tabs across the top of a screen's content, on the open ground: no slab behind them,
+ * a mint line under the chosen one. Use in place of Material's TabRow.
+ */
+@Composable
+fun GlassTabRow(selected: Int, modifier: Modifier = Modifier, tabs: @Composable () -> Unit) {
+    TabRow(
+        selectedTabIndex = selected,
+        modifier = modifier,
+        containerColor = Color.Transparent,
+        contentColor = MaterialTheme.colorScheme.primary,
+        divider = { HorizontalDivider(color = Night.Hairline) },
+        tabs = tabs,
     )
 }
 
@@ -434,7 +454,7 @@ fun RoomColor.onColor() = if (darkText) Color.Black else Color.White
 @Composable
 fun RoomBadge(room: Room?, modifier: Modifier = Modifier) {
     val c = room?.takeIf { it.home == Home.DEST }?.let { roomColor(it.color) }
-    val bg = c?.color() ?: Color(0x1FFFFFFF)
+    val bg = c?.color() ?: Color(0xFF26364B)
     val fg = c?.onColor() ?: Night.TextDim
     val shape = RoundedCornerShape(8.dp)
     Text(

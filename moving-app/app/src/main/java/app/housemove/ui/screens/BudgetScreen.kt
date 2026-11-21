@@ -88,6 +88,7 @@ import app.housemove.ui.Screen
 import app.housemove.ui.SwitchRow
 import app.housemove.ui.TextInput
 import app.housemove.ui.appData
+import app.housemove.ui.*
 
 private fun mdMoney(currency: String, amount: Double): String = (currency.trim() + " " + fmtNum(amount)).trim()
 
@@ -123,7 +124,7 @@ fun BudgetScreen() {
     var editingId by rememberSaveable { mutableStateOf<String?>(null) }
 
     Screen("Supplies and costs") {
-        TabRow(selectedTabIndex = tab) {
+        GlassTabRow(tab) {
             MdIconTab(tab == 0, { tab = 0 }, "Supplies", Icons.Default.ShoppingCart)
             MdIconTab(tab == 1, { tab = 1 }, "Costs", Icons.Default.Payments)
         }
@@ -207,6 +208,7 @@ private fun MdSupplies(modifier: Modifier) {
         item(key = "add") {
             Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(
+                    colors = glassFieldColors(),
                     value = newName,
                     onValueChange = { newName = it },
                     label = { Text("Add something else") },
@@ -268,9 +270,9 @@ private fun MdCosts(modifier: Modifier, onAdd: () -> Unit, onEdit: (String) -> U
 
     LazyColumn(modifier.fillMaxWidth()) {
         item(key = "totals") {
-            Card(
+            GlassCard(
                 Modifier.fillMaxWidth().padding(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                tone = GlassTone.Mint,
             ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -356,6 +358,7 @@ private fun MdExpenseDialog(e: Expense, onClose: () -> Unit) {
     val vehicle = data.vehicle()
     var confirmDelete by remember { mutableStateOf(false) }
     AlertDialog(
+        modifier = Modifier.dialogRim(),
         onDismissRequest = onClose,
         title = { Text("Cost") },
         text = {

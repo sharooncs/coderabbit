@@ -39,6 +39,7 @@ import app.housemove.ui.Ring
 import app.housemove.ui.Screen
 import app.housemove.ui.appData
 import app.housemove.ui.open
+import app.housemove.ui.*
 
 /** Before the van or truck goes back: is everything that left the old home now in the new one? */
 @Composable
@@ -80,7 +81,7 @@ fun ReconcileScreen() {
                 }
             }
             if (all.isNotEmpty()) item(key = "counts") {
-                OutlinedCard(Modifier.fillMaxWidth().padding(16.dp)) {
+                GlassCard(Modifier.fillMaxWidth().padding(16.dp)) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Row(Modifier.fillMaxWidth()) {
                             MdRingStat(Ratio(left.size, all.size), "Left the old home", 76.dp, Modifier.weight(1f))

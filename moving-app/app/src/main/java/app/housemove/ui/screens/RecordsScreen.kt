@@ -58,6 +58,7 @@ import app.housemove.ui.Screen
 import app.housemove.ui.TextInput
 import app.housemove.ui.appData
 import app.housemove.ui.open
+import app.housemove.ui.*
 
 /** Change a reading using its latest saved copy, so quick edits never overwrite each other. */
 private fun mdEditReading(store: Store, id: String, f: (Reading) -> Reading) {
@@ -184,7 +185,7 @@ fun RecordsScreen(home: Home) {
 @Composable
 private fun MdRecordStrip(ownerId: String, name: String) {
     val done = appData().photosOf(ownerId, PhotoKind.ROOM).isNotEmpty()
-    Card(Modifier.fillMaxWidth()) {
+    GlassCard(Modifier.fillMaxWidth()) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.Top) {
             PhotoStrip(ownerId, PhotoKind.ROOM, Modifier.weight(1f), label = name)
             if (done) {

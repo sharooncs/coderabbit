@@ -50,6 +50,8 @@ object Night {
     /** Solid navy for things that must hide what is behind them (dialogs, menus, the dock). */
     val Panel = Color(0xFF14233A)
     val PanelHigh = Color(0xFF192B45)
+    /** The same, tinted mint: a solid bar that says "done". */
+    val PanelMint = Color(0xFF133B3D)
 
     // Text.
     val Text = Color(0xFFF2F6FA)
@@ -80,6 +82,8 @@ object Night {
     val Red = Color(0xFFFF9E94)
     val RedPale = Color(0xFFFFD6D0)
     val RedDeep = Color(0xFFE5645A)
+    /** A solid red that white text can sit on, for a banner that must be seen across a room. */
+    val RedSolid = Color(0xFFC93A30)
 
     // Glass: white tints over the ground. See Modifier.glass.
     // The mock-up starts at 22 %; without a blur behind it that costs too much contrast

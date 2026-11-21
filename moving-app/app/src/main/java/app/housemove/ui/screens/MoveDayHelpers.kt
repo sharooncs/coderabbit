@@ -53,14 +53,15 @@ import app.housemove.ui.appData
 import app.housemove.ui.icon
 import app.housemove.ui.openMovable
 import app.housemove.ui.stageText
+import app.housemove.ui.*
 
 // Shared by the move-day screens (load, unload, reconcile, sweep, unpack).
 
 /** Colour of a result banner: green = done, amber = nothing to do, red = problem. */
 internal enum class MdTone(val bg: Color, val fg: Color, val icon: ImageVector) {
-    GOOD(Color(0xFF2E7D32), Color.White, Icons.Default.CheckCircle),
-    WARN(Color(0xFFF9A825), Color.Black, Icons.Default.Info),
-    BAD(Color(0xFFC62828), Color.White, Icons.Default.ErrorOutline),
+    GOOD(Night.Mint, Night.OnMint, Icons.Default.CheckCircle),
+    WARN(Night.Amber, Night.OnAmber, Icons.Default.Info),
+    BAD(Night.RedSolid, Color.White, Icons.Default.ErrorOutline),
 }
 
 internal data class MdResult(val tone: MdTone, val title: String, val detail: String = "")

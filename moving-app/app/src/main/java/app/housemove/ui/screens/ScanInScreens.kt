@@ -83,7 +83,7 @@ fun ScanInDialog(box: Box, onClose: () -> Unit) {
     }
 
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxSize()) {
+        Surface(Modifier.fillMaxSize(), color = Night.Ground1, contentColor = Night.Text) {
             Column(Modifier.fillMaxSize().systemBarsPadding().imePadding()) {
                 Row(Modifier.padding(start = 8.dp, end = 12.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onClose) { Icon(Icons.Default.Close, contentDescription = "Close") }
@@ -96,10 +96,10 @@ fun ScanInDialog(box: Box, onClose: () -> Unit) {
                     modifier = Modifier.fillMaxWidth().weight(if (entries.isEmpty()) 3f else 1.3f),
                     formats = ScanFormats.PRODUCTS,
                 )
-                Surface(color = MaterialTheme.colorScheme.inverseSurface, modifier = Modifier.fillMaxWidth()) {
+                Surface(color = Night.PanelHigh, modifier = Modifier.fillMaxWidth()) {
                     Text(
                         status,
-                        color = MaterialTheme.colorScheme.inverseOnSurface,
+                        color = Night.Text,
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium,
                         maxLines = 2,
@@ -109,6 +109,7 @@ fun ScanInDialog(box: Box, onClose: () -> Unit) {
                 }
                 Row(Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
+                        colors = glassFieldColors(),
                         value = typed,
                         onValueChange = { typed = it },
                         label = { Text("Or type a barcode number or a name", maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -165,6 +166,7 @@ fun ScanInDialog(box: Box, onClose: () -> Unit) {
 
     if (askLookup) {
         AlertDialog(
+            modifier = Modifier.dialogRim(),
             onDismissRequest = { askLookup = false },
             title = { Text("Look up book titles online?") },
             text = {
@@ -194,6 +196,7 @@ private fun NameEntryRow(e: BoxEntry) {
     var name by remember(e.id) { mutableStateOf("") }
     Row(verticalAlignment = Alignment.CenterVertically) {
         OutlinedTextField(
+            colors = glassFieldColors(),
             value = name,
             onValueChange = { name = it },
             label = { Text("Name for barcode ${e.code}", maxLines = 1, overflow = TextOverflow.Ellipsis) },
