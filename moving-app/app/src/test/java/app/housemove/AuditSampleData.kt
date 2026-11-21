@@ -179,8 +179,33 @@ internal object AuditSampleData {
     /** Screens of single records of the large move, for the speed check. */
     val LARGE_EXAMPLES = listOf("item/item0", "box/box0")
 
-    /** How many records of each kind the large move holds. */
-    val LARGE = mapOf("rooms" to 40, "items" to 2000, "boxes" to 300, "entries" to 3000, "photos" to 1500, "tasks" to 200)
+    /** How many records of each kind the large move holds (people and proposals once [crowd] has run). */
+    val LARGE = mapOf("rooms" to 40, "items" to 2000, "boxes" to 300, "entries" to 3000, "photos" to 1500, "tasks" to 200, "people" to 12, "proposals" to 200)
+
+    /**
+     * People on the large move, and a busy inbox, so that Approvals, People and Activity are
+     * timed with something in them: three Deciders and two Helpers whose phones have joined,
+     * five people still to join and one removed; the Deciders suggest what happens to 160
+     * things, the Helpers ask about 40 more, and the Organiser ([host]) has already approved
+     * 40 and declined 30. [newFolder] gives an empty directory for each phone.
+     */
+    fun crowd(host: Store, newFolder: () -> File) {
+        val deciders = (1..3).map { joined(host, newFolder(), "Decider $it", Role.DECIDER) }
+        val helpers = (1..2).map { joined(host, newFolder(), "Helper $it", Role.HELPER) }
+        for (n in 3..7) host.addPerson("Helper $n", Role.HELPER)
+        host.addPerson("Gone", Role.HELPER).valueOrNull()?.let { host.removePerson(it.id) }
+        val items = host.data.value.liveItems.map { it.id }
+        val choices = listOf(Disposition.SELL, Disposition.DONATE, Disposition.BIN, Disposition.MOVE)
+        val made = ArrayList<String>()
+        for (i in 0 until 160) {
+            deciders[i % 3].suggestDecision(items[i], choices[i % 4], if (i % 4 == 0) 10.0 + i else null).valueOrNull()?.let { made += it.id }
+        }
+        for (i in 160 until 200) helpers[i % 2].ask(items[i], note = if (i % 3 == 0) "Is this coming with us?" else "")
+        for (phone in deciders + helpers) host.mergeIn(phone.data.value)
+        made.take(40).forEach { host.approve(it) }
+        made.drop(40).take(30).forEachIndexed { i, id -> host.decline(id, if (i % 2 == 0) "Not yet" else "") }
+        host.flush()
+    }
 
     private val THINGS = listOf(
         "lamp", "chair", "table", "bookcase", "mirror", "rug", "desk", "sofa", "wardrobe", "chest of drawers",

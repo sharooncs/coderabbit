@@ -171,7 +171,8 @@ fun HomeScreen() {
             val firstPage = if (roomy) minOf(maxHeight - 34.dp, 620.dp) else 0.dp
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                 HomeHero(data, device, packing, Modifier.fillMaxWidth().heightIn(min = firstPage))
-                HomeDetails(data, device, next, inPageAction = if (roomy) null else action, nextIsAction = packing && next.route == "pack")
+                // Without boxes the big button is the next step itself; with them, it is when the next step is packing.
+                HomeDetails(data, device, next, inPageAction = if (roomy) null else action, nextIsAction = !packing || next.route == "pack")
             }
         }
     }

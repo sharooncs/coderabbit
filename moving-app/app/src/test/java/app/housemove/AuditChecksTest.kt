@@ -424,6 +424,8 @@ class AuditChecksTest {
         val saved = File(dir, "data.json")
         saved.writeText(AuditSampleData.largeMoveJson())
         val big = Store(dir)
+        // People and a busy inbox on top, so the people screens are timed with something in them too.
+        AuditSampleData.crowd(big) { tmp.newFolder() }
         val timings = ArrayList<Timing>()
         val notes = ArrayList<String>()
 
