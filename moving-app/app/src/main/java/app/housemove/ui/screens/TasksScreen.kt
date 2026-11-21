@@ -2,10 +2,14 @@ package app.housemove.ui.screens
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -14,9 +18,20 @@ import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.housemove.data.*
 import app.housemove.ui.*
@@ -32,131 +47,142 @@ private fun offsetText(offset: Int): String {
     }
 }
 
+/** When a job is due, in a few words, or null when it has no date at all. */
+private fun timing(data: AppData, task: Task, now: Long): String? {
+    val due = data.dueDay(task)
+    val offset = task.offsetDays
+    return when {
+        due != null -> fmtDayShort(due) + " · " + relDay(due, now)
+        offset != null -> offsetText(offset)
+        else -> null
+    }
+}
+
+/** What a suggested change to a job would do, in a few words. */
+private fun changeText(data: AppData, now: Task, p: Task, me: Person?): String {
+    val parts = ArrayList<String>()
+    if (p.title != now.title) parts += "Rename to \"${p.title}\""
+    if (p.assignedTo != now.assignedTo) parts += if (p.assignedTo == null) "For nobody in particular" else "Give it to " + mdWho(data, p.assignedTo, me)
+    if (data.dueDay(p) != data.dueDay(now)) parts += data.dueDay(p)?.let { "Due " + fmtDayShort(it) } ?: "No date"
+    if (p.notes != now.notes) parts += if (p.notes.isBlank()) "Remove the note" else "Note: " + p.notes
+    return parts.joinToString(" · ")
+}
+
 private class TaskGroup(val key: String, val title: String, val icon: ImageVector, val tasks: List<Task>)
 
+/**
+ * The jobs of the move, by when they are due. Each person sees the jobs given to them
+ * first. An Organiser adds and changes jobs; a Decider's additions and changes are
+ * suggestions that wait on the job for an Organiser; a Helper ticks off their own.
+ */
 @Composable
 fun TasksScreen() {
     val store = LocalStore.current
     val nav = LocalNav.current
     val data = appData()
     val now = today()
+    val context = LocalContext.current
     val tasks = data.liveTasks
+    val me = store.me
+    val shared = mdShared(data)
+    val mayPlan = mdCan(Action.DECIDE)
+    val maySuggest = mdCan(Action.SUGGEST)
+    val maySetDate = mdCan(Action.MOVE_SETTINGS)
 
-    var editingId by remember { mutableStateOf<String?>(null) }
-    var draft by remember { mutableStateOf<Task?>(null) }
+    // The one job that is open for changes.
+    var openId by rememberSaveable { mutableStateOf<String?>(null) }
     // Groups that are folded away. Finished jobs start out of sight.
     var closed by rememberSaveable(
         stateSaver = listSaver<Set<String>, String>(save = { it.toList() }, restore = { it.toSet() }),
     ) { mutableStateOf(setOf("done")) }
 
+    // Suggestions still waiting: new jobs are listed on their own, changes on the job they are about.
+    val known = tasks.map { it.id }.toSet()
+    val waiting = data.waitingProposals().filter { it.kind == ProposalKind.TASK && it.task != null }
+    val suggested = waiting.filter { it.targetId !in known }
+    val changes = waiting.filter { it.targetId in known }.groupBy { it.targetId }
+
     val byDue = compareBy<Task>({ data.dueDay(it) ?: Long.MAX_VALUE }, { it.offsetDays ?: Int.MAX_VALUE }, { it.title })
     val open = tasks.filter { !it.done }.sortedWith(byDue)
     val done = tasks.filter { it.done }.sortedWith(byDue)
+    val mine = if (shared && me != null) open.filter { it.assignedTo == me.id } else emptyList()
+    val rest = if (mine.isEmpty()) open else open.filter { it.assignedTo != me?.id }
     val groups = listOf(
-        TaskGroup("overdue", "Overdue", Icons.Default.ErrorOutline, open.filter { (data.dueDay(it) ?: Long.MAX_VALUE) < now }),
-        TaskGroup("soon", "Next 7 days", Icons.Default.Today, open.filter { val d = data.dueDay(it); d != null && d >= now && d <= now + 7 }),
-        TaskGroup("later", "Later", Icons.Default.DateRange, open.filter { (data.dueDay(it) ?: Long.MIN_VALUE) > now + 7 }),
-        TaskGroup("undated", "No date yet", Icons.Default.EventBusy, open.filter { data.dueDay(it) == null }),
+        TaskGroup("mine", "Yours", Icons.Default.Person, mine),
+        TaskGroup("overdue", "Overdue", Icons.Default.ErrorOutline, rest.filter { (data.dueDay(it) ?: Long.MAX_VALUE) < now }),
+        TaskGroup("soon", "Next 7 days", Icons.Default.Today, rest.filter { val d = data.dueDay(it); d != null && d >= now && d <= now + 7 }),
+        TaskGroup("later", "Later", Icons.Default.DateRange, rest.filter { (data.dueDay(it) ?: Long.MIN_VALUE) > now + 7 }),
+        TaskGroup("undated", "No date yet", Icons.Default.EventBusy, rest.filter { data.dueDay(it) == null }),
         TaskGroup("done", "Done", Icons.Default.CheckCircle, done),
     )
 
-    Screen(
-        "Timeline",
-        fab = {
-            FloatingActionButton(containerColor = Night.Mint, contentColor = Night.OnMint, onClick = { draft = Task(id = newId(), title = "") }) {
-                Icon(Icons.Default.Add, contentDescription = "Add a task")
-            }
-        },
-    ) {
-        if (tasks.isEmpty()) {
-            ScrollColumn {
+    Screen("Timeline") {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp)) {
+            if (tasks.isEmpty()) item(key = "empty") {
                 val kind = data.move.kind
                 val ready = remember(kind) { seedTasks(kind).size }
-                EmptyState(
+                if (mayPlan) EmptyState(
                     Icons.Default.Checklist, "Nothing on the timeline yet",
-                    text = "Start with a ready-made list of $ready jobs, each dated from your move day.",
-                    action = "Add the checklist", onAction = { seedTasks(data.move.kind).forEach { store.put(it) } },
-                )
-                Hint("Add it on one phone only, then sync.", Modifier.fillMaxWidth().wrapContentWidth())
-                if (data.move.moveDay == null) MoveDateCard { nav.open("settings") }
-            }
-        } else {
-            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
-                item(key = "progress") {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        GlassCard(
-                            Modifier.fillMaxWidth(),
-                            tone = GlassTone.Mint,
-                        ) {
-                            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Ring(Ratio(done.size, tasks.size), size = 72.dp, stroke = 8.dp) {
-                                    Text(
-                                        "${done.size}", style = MaterialTheme.typography.headlineSmall,
-                                        fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary,
-                                    )
-                                }
-                                Spacer(Modifier.width(16.dp))
-                                Column(Modifier.weight(1f)) {
-                                    Text("of ${tasks.size} job${if (tasks.size == 1) "" else "s"} done", style = MaterialTheme.typography.titleMedium)
-                                    data.move.moveDay?.let { day ->
-                                        Text(
-                                            "Move day ${fmtDay(day)} · ${relDay(day, now)}",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                }
+                    text = "Start with a ready-made list of $ready jobs, each dated from your move day." +
+                        if (shared) " Add it on one phone only." else "",
+                    action = "Add the checklist",
+                    onAction = { if (mdMay(context, store, Action.DECIDE)) seedTasks(data.move.kind).forEach { store.put(it) } },
+                ) else EmptyState(Icons.Default.Checklist, "Nothing on the timeline yet", text = "Jobs appear here once an Organiser adds them.")
+            } else item(key = "progress") {
+                GlassCard(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), tone = GlassTone.Mint, sheen = true) {
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Ring(Ratio(done.size, tasks.size), size = 72.dp, stroke = 8.dp) {
+                            Text(
+                                "${done.size}", style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                        Spacer(Modifier.width(16.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("of ${tasks.size} job${if (tasks.size == 1) "" else "s"} done", style = MaterialTheme.typography.titleMedium)
+                            data.move.moveDay?.let { day ->
+                                Text(
+                                    "Move day ${fmtDay(day)} · ${relDay(day, now)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
                         }
-                        if (data.move.moveDay == null) MoveDateCard { nav.open("settings") }
                     }
                 }
-                groups.forEach { g ->
-                    if (g.tasks.isNotEmpty()) {
-                        val shown = g.key !in closed
-                        item(key = "head-${g.key}") {
-                            GroupHeader(g, shown) { closed = if (shown) closed + g.key else closed - g.key }
-                        }
-                        if (shown) {
-                            items(g.tasks, key = { it.id }) { t ->
-                                TaskRow(t, data.dueDay(t), now, onToggle = { store.put(t.copy(done = it)) }, onClick = { editingId = t.id })
-                            }
+            }
+            if (data.move.moveDay == null && maySetDate) item(key = "date") { MoveDateCard { nav.open("settings") } }
+            if (maySuggest) item(key = "add") { TaskAdder(mayPlan) }
+
+            if (suggested.isNotEmpty()) {
+                item(key = "head-suggested") { PlainHeader("Suggested jobs", suggested.size, Icons.Default.HourglassTop) }
+                items(suggested, key = { "p" + it.id }) { p -> SuggestedRow(p, timing(data, p.task!!, now)) }
+            }
+            groups.forEach { g ->
+                if (g.tasks.isNotEmpty()) {
+                    val shown = g.key !in closed
+                    item(key = "head-${g.key}") {
+                        GroupHeader(g, shown) { closed = if (shown) closed + g.key else closed - g.key }
+                    }
+                    if (shown) {
+                        items(g.tasks, key = { it.id }) { t ->
+                            TaskRow(
+                                t, timing(data, t, now), open = openId == t.id, changes = changes[t.id].orEmpty(),
+                                // In "Yours" every job is this person's own, so the name is left off.
+                                showWho = shared && g.key != "mine", mayPlan = mayPlan, maySuggest = maySuggest,
+                                onOpen = { openId = if (openId == t.id) null else t.id },
+                            )
                         }
                     }
                 }
             }
         }
     }
-
-    val editing = tasks.firstOrNull { it.id == editingId }
-    if (editing != null) {
-        TaskDialog(
-            initial = editing,
-            isNew = false,
-            moveDay = data.move.moveDay,
-            onSave = { e ->
-                val fresh = store.data.value.liveTasks.firstOrNull { it.id == e.id } ?: e
-                store.put(fresh.copy(title = e.title, category = e.category, dueDay = e.dueDay, notes = e.notes))
-            },
-            onDelete = { store.delete(editing) },
-            onDismiss = { editingId = null },
-        )
-    }
-    draft?.let { d ->
-        TaskDialog(
-            initial = d,
-            isNew = true,
-            moveDay = data.move.moveDay,
-            onSave = { store.put(it) },
-            onDelete = null,
-            onDismiss = { draft = null },
-        )
-    }
 }
 
 @Composable
 private fun MoveDateCard(onSet: () -> Unit) {
-    GlassCard(tone = GlassTone.Amber) {
+    GlassCard(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), tone = GlassTone.Amber) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Jobs get their dates from your move day.")
             Button(onClick = onSet) {
@@ -165,6 +191,62 @@ private fun MoveDateCard(onSet: () -> Unit) {
                 Text("Set the move date")
             }
         }
+    }
+}
+
+/**
+ * One line to add a job without typing: say it. The keyboard is one tap away for a phone
+ * with no speech. An Organiser's job is added at once; a Decider's waits for approval.
+ */
+@Composable
+private fun TaskAdder(mayPlan: Boolean) {
+    val store = LocalStore.current
+    val context = LocalContext.current
+    var typing by rememberSaveable { mutableStateOf(false) }
+    var text by rememberSaveable { mutableStateOf("") }
+    fun add(said: String) {
+        val title = said.trim().replaceFirstChar { it.uppercase() }
+        if (title.isEmpty()) return
+        val task = Task(id = newId(), title = title)
+        if (!mayPlan) mdTold(context, store.suggestTask(task))
+        else if (mdMay(context, store, Action.DECIDE)) store.put(task)
+    }
+    fun done() {
+        text = ""
+        typing = false
+    }
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        MdAdder(
+            if (mayPlan) "New job" else "Suggest a job", if (mayPlan) "Add a task" else "Suggest a task",
+            prompt = "What needs doing?", sayIt = "Say a new job", onType = { typing = !typing }, onSaid = { add(it) },
+        )
+        if (typing) {
+            OutlinedTextField(
+                value = text, onValueChange = { text = it }, label = { Text("What needs doing") }, singleLine = true,
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { add(text); done() }),
+                colors = glassFieldColors(), modifier = Modifier.fillMaxWidth(),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MdRowButton("Add", onClick = { add(text); done() }, modifier = Modifier.enabledLook(text.isNotBlank()), icon = Icons.Default.Check)
+                MdRowButton("Cancel", onClick = { done() }, forward = false)
+            }
+        }
+    }
+}
+
+/** A heading on the open ground that does not fold: its picture, its name and how many. */
+@Composable
+private fun PlainHeader(title: String, count: Int, icon: ImageVector) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(start = 22.dp, end = 20.dp, top = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = Night.AmberPale, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(10.dp))
+        Text(title, style = MaterialTheme.typography.titleSmall, color = Night.AmberPale, modifier = Modifier.semantics { heading() })
+        Spacer(Modifier.width(8.dp))
+        GlassChip(count.toString(), tone = GlassTone.Amber)
     }
 }
 
@@ -178,17 +260,15 @@ private fun GroupHeader(group: TaskGroup, open: Boolean, onToggle: () -> Unit) {
         else -> scheme.primary
     }
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(horizontal = 16.dp, vertical = 12.dp),
+        Modifier.fillMaxWidth().clickable(onClick = onToggle).heightIn(min = 48.dp).padding(start = 22.dp, end = 20.dp, top = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(group.icon, contentDescription = null, tint = color, modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(10.dp))
-        Text(
-            "${group.title} (${group.tasks.size})",
-            style = MaterialTheme.typography.titleSmall,
-            color = color,
-            modifier = Modifier.weight(1f),
-        )
+        Text(group.title, style = MaterialTheme.typography.titleSmall, color = color, modifier = Modifier.semantics { heading() })
+        Spacer(Modifier.width(8.dp))
+        GlassChip(group.tasks.size.toString(), tone = if (group.key == "overdue") GlassTone.Red else GlassTone.Plain)
+        Spacer(Modifier.weight(1f))
         Icon(
             if (open) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
             contentDescription = if (open) "Hide these jobs" else "Show these jobs",
@@ -197,95 +277,198 @@ private fun GroupHeader(group: TaskGroup, open: Boolean, onToggle: () -> Unit) {
     }
 }
 
+/** A job someone has suggested and that is not on the timeline yet, with the tag and, for an Organiser, the answer buttons. */
 @Composable
-private fun TaskRow(task: Task, due: Long?, now: Long, onToggle: (Boolean) -> Unit, onClick: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
+private fun SuggestedRow(p: Proposal, timing: String?) {
+    val data = appData()
+    val task = p.task ?: return
+    val forWhom = task.assignedTo?.let { "For " + mdWho(data, it, LocalStore.current.me) }
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).glass(RoundedCornerShape(22.dp), shadow = 4.dp).padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Checkbox(checked = task.done, onCheckedChange = onToggle)
-        Column(Modifier.weight(1f).padding(top = 8.dp, bottom = 8.dp, end = 16.dp)) {
-            Text(
-                task.title.ifBlank { "Untitled job" },
-                style = MaterialTheme.typography.bodyLarge,
-                textDecoration = if (task.done) TextDecoration.LineThrough else null,
-                color = if (task.done) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-            )
-            val offset = task.offsetDays
-            val timing = when {
-                due != null -> fmtDayShort(due) + " · " + relDay(due, now)
-                offset != null -> offsetText(offset)
-                else -> null
-            }
-            val sub = listOfNotNull(task.category.takeIf { it.isNotBlank() }, timing).joinToString(" · ")
-            if (sub.isNotBlank()) {
-                Text(sub, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+        Text(task.title.ifBlank { "Untitled job" }, style = MaterialTheme.typography.bodyLarge)
+        MdApproval(p, what = listOfNotNull(forWhom, timing).joinToString(" · "))
+    }
+}
+
+/** The tick of a job: a round mark, glowing mint with a tick once done. Only shown to someone who may tick it. */
+@Composable
+private fun Tick(done: Boolean, title: String, onChange: (Boolean) -> Unit) {
+    Box(
+        Modifier.size(52.dp).clip(CircleShape)
+            .toggleable(value = done, role = androidx.compose.ui.semantics.Role.Checkbox, onValueChange = onChange)
+            .semantics { contentDescription = title },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            Modifier.size(28.dp).drawBehind {
+                if (done) drawOrb(OrbKind.Primary, halo = false)
+                else {
+                    drawCircle(Color.White.copy(alpha = 0.08f))
+                    drawCircle(Color.White.copy(alpha = 0.7f), radius = size.minDimension / 2f - 1.dp.toPx(), style = Stroke(2.dp.toPx()))
+                }
+            },
+            contentAlignment = Alignment.Center,
+        ) {
+            if (done) Icon(Icons.Default.Check, contentDescription = null, tint = Night.OnMint, modifier = Modifier.size(18.dp))
         }
     }
 }
 
+/**
+ * One job as a glass row. Its tick is there for whoever may tick it. Tapping the row
+ * opens it for changes; suggestions waiting on it are shown on it either way.
+ */
 @Composable
-private fun TaskDialog(
-    initial: Task,
-    isNew: Boolean,
-    moveDay: Long?,
-    onSave: (Task) -> Unit,
-    onDelete: (() -> Unit)?,
-    onDismiss: () -> Unit,
+private fun TaskRow(
+    task: Task,
+    timing: String?,
+    open: Boolean,
+    changes: List<Proposal>,
+    showWho: Boolean,
+    mayPlan: Boolean,
+    maySuggest: Boolean,
+    onOpen: () -> Unit,
 ) {
-    var title by remember(initial.id) { mutableStateOf(initial.title) }
-    var category by remember(initial.id) { mutableStateOf(initial.category) }
-    var dueDay by remember(initial.id) { mutableStateOf(initial.dueDay) }
-    var notes by remember(initial.id) { mutableStateOf(initial.notes) }
-    var confirmDelete by remember { mutableStateOf(false) }
-
-    AlertDialog(
-        modifier = Modifier.dialogRim(),
-        onDismissRequest = onDismiss,
-        title = { Text(if (isNew) "New job" else "Edit job") },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                TextInput(title, onChange = { title = it }, label = "What needs doing", key = initial.id, singleLine = false)
-                TextInput(category, onChange = { category = it }, label = "Group (optional)", key = initial.id + ":cat", placeholder = "e.g. Admin, Pack, Settle")
-                DateButton(dueDay, onPick = { dueDay = it }, label = "Due date", modifier = Modifier.fillMaxWidth())
-                val offset = initial.offsetDays
-                if (dueDay == null && offset != null) {
-                    Hint("Follows your move day: " + offsetText(offset).lowercase() + (moveDay?.let { " (${fmtDayShort(it + offset)})" } ?: "") + ".")
+    val store = LocalStore.current
+    val context = LocalContext.current
+    val data = appData()
+    val me = store.me
+    val mayTick = data.mayTick(me, task)
+    val opens = maySuggest || task.notes.isNotBlank()
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 3.dp)
+            .glass(RoundedCornerShape(20.dp), if (open) GlassTone.Mint else GlassTone.Plain, shadow = 3.dp),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().then(if (opens) Modifier.clickable(onClickLabel = if (open) "Close" else "Open", onClick = onOpen) else Modifier)
+                .padding(end = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (mayTick) Tick(task.done, task.title.ifBlank { "Untitled job" }) { mdTold(context, store.tick(task.id, it)) }
+            else Box(Modifier.size(width = 44.dp, height = 52.dp), contentAlignment = Alignment.Center) {
+                // Not theirs to tick: a quiet mark that says whether it is done, and nothing to tap.
+                if (task.done) Icon(Icons.Default.Check, contentDescription = "Done", tint = Night.MintLight, modifier = Modifier.size(20.dp))
+                else Box(Modifier.size(8.dp).clip(CircleShape).drawBehind { drawCircle(Night.Slate) })
+            }
+            Column(Modifier.weight(1f).padding(vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    task.title.ifBlank { "Untitled job" },
+                    style = MaterialTheme.typography.bodyLarge,
+                    textDecoration = if (task.done) TextDecoration.LineThrough else null,
+                    color = if (task.done) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                )
+                val sub = listOfNotNull(task.category.takeIf { it.isNotBlank() }, timing).joinToString(" · ")
+                if (sub.isNotBlank()) {
+                    Text(sub, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                TextInput(notes, onChange = { notes = it }, label = "Notes", key = initial.id + ":notes", singleLine = false)
-                if (onDelete != null) {
-                    TextButton(
-                        onClick = { confirmDelete = true },
-                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                    ) {
-                        Icon(Icons.Default.Delete, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Delete this job")
-                    }
+                if (showWho && task.assignedTo != null) {
+                    GlassChip(mdWho(data, task.assignedTo, me).replaceFirstChar { it.uppercase() }, icon = Icons.Default.Person, tone = GlassTone.Mint)
                 }
             }
-        },
-        confirmButton = {
-            TextButton(
-                enabled = title.isNotBlank(),
-                onClick = {
-                    onSave(initial.copy(title = title.trim(), category = category.trim(), dueDay = dueDay, notes = notes.trim()))
-                    onDismiss()
-                },
-            ) { Text("Save") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
+            if (opens) Icon(
+                if (open) Icons.Default.ExpandLess else Icons.Default.ExpandMore, contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        changes.forEach { p ->
+            MdApproval(p, Modifier.padding(start = 14.dp, end = 14.dp, bottom = 12.dp), what = p.task?.let { changeText(data, task, it, me) })
+        }
+        if (open && opens) TaskDetail(task, mayPlan, maySuggest)
+    }
+}
 
-    if (confirmDelete && onDelete != null) {
+/**
+ * What can be changed about a job, all by tapping or speaking: who it is for, when it is
+ * due, a note. The title and the note can be typed behind "Edit". An Organiser's changes
+ * are saved as they are made; a Decider's are gathered and sent as one suggestion.
+ */
+@Composable
+private fun TaskDetail(task: Task, mayPlan: Boolean, maySuggest: Boolean) {
+    val store = LocalStore.current
+    val context = LocalContext.current
+    val shared = mdShared(appData())
+    var draft by remember(task.id, task.updatedAt) { mutableStateOf(task) }
+    var title by remember(task.id, task.updatedAt) { mutableStateOf(task.title) }
+    var notes by remember(task.id, task.updatedAt) { mutableStateOf(task.notes) }
+    var editing by rememberSaveable(task.id) { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
+
+    /** The job as it is saved right now, so quick changes never overwrite each other. */
+    fun fresh(): Task = store.data.value.task(task.id) ?: task
+
+    /** An Organiser's change, saved at once. The plain save cannot answer, so it is asked first and says why not. */
+    fun save(next: Task) {
+        if (mdMay(context, store, Action.DECIDE)) store.put(next)
+    }
+    val proposed = draft.copy(title = title.trim().ifBlank { task.title }, notes = notes.trim())
+    val changed = proposed.title != task.title || proposed.notes != task.notes ||
+        proposed.assignedTo != task.assignedTo || proposed.dueDay != task.dueDay
+
+    Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (notes.isNotBlank() && !editing) Text(notes, style = MaterialTheme.typography.bodyMedium, color = Night.TextSoft)
+        if (maySuggest) {
+            if (shared) {
+                Text("Who does it", style = MaterialTheme.typography.labelLarge, color = Night.TextDim)
+                MdPeople(draft.assignedTo, onPick = { id ->
+                    if (mayPlan) mdTold(context, store.assign(task.id, id)) else draft = draft.copy(assignedTo = id)
+                })
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                DateButton(
+                    draft.dueDay, label = "Due", modifier = Modifier.weight(1f),
+                    onPick = { day -> if (mayPlan) save(fresh().copy(dueDay = day)) else draft = draft.copy(dueDay = day) },
+                )
+                SpeakButton("A note for this job", contentDescription = "Say a note") { said ->
+                    val joined = if (notes.isBlank()) said else "$notes. $said"
+                    if (mayPlan) save(fresh().copy(notes = joined)) else notes = joined
+                }
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                GlassChip("Edit", icon = Icons.Default.Edit, selected = editing, onClick = { editing = !editing })
+                if (mayPlan) GlassChip("Delete this job", icon = Icons.Default.Delete, onClick = { confirmDelete = true })
+            }
+            if (editing) {
+                OutlinedTextField(
+                    value = title, onValueChange = { title = it }, label = { Text("What needs doing") },
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                    colors = glassFieldColors(), modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = notes, onValueChange = { notes = it }, label = { Text("Notes") }, minLines = 2,
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                    colors = glassFieldColors(), modifier = Modifier.fillMaxWidth(),
+                )
+                if (mayPlan) MdRowButton(
+                    "Save", icon = Icons.Default.Check,
+                    onClick = {
+                        save(fresh().copy(title = proposed.title, notes = proposed.notes))
+                        editing = false
+                    },
+                )
+            }
+            if (!mayPlan && changed) {
+                BigAction(
+                    Icons.Default.Send, "Suggest this change",
+                    onClick = {
+                        if (mdTold(context, store.suggestTask(proposed))) {
+                            draft = task
+                            title = task.title
+                            notes = task.notes
+                            editing = false
+                        }
+                    },
+                )
+            }
+        }
+    }
+
+    if (confirmDelete) {
         ConfirmDialog(
             title = "Delete this job?",
-            text = "\"${initial.title}\" will be removed from the timeline on every phone at the next sync.",
-            onConfirm = {
-                onDelete()
-                onDismiss()
-            },
+            text = "\"${task.title}\" will be removed from the timeline on every phone at the next sync.",
+            onConfirm = { save(fresh().copy(deleted = true)) },
             onDismiss = { confirmDelete = false },
         )
     }

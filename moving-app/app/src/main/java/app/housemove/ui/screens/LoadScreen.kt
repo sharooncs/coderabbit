@@ -2,12 +2,10 @@ package app.housemove.ui.screens
 
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -15,15 +13,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.LocalShipping
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,39 +27,32 @@ import androidx.compose.ui.unit.dp
 import app.housemove.data.Home
 import app.housemove.data.Movable
 import app.housemove.data.Part
-import app.housemove.data.Priority
 import app.housemove.data.Ratio
 import app.housemove.data.Room
 import app.housemove.data.Stage
 import app.housemove.data.Store
 import app.housemove.data.Trip
-import app.housemove.data.findByLabel
 import app.housemove.data.labelFromQr
 import app.housemove.data.movables
 import app.housemove.data.newId
 import app.housemove.data.uses
 import app.housemove.data.vehicle
-import app.housemove.ui.EmptyState
-import app.housemove.ui.Hint
-import app.housemove.ui.LocalNav
-import app.housemove.ui.LocalStore
-import app.housemove.ui.QrScanner
-import app.housemove.ui.Screen
-import app.housemove.ui.appData
-import app.housemove.ui.deviceInfo
-import app.housemove.ui.open
 import app.housemove.ui.*
 
-/** Put one thing on the current trip and describe what happened. */
-private fun mdLoadOne(store: Store, m: Movable): MdResult {
+/**
+ * Put one thing on the current trip and describe what happened. [inside] says that the
+ * label scanned was on something packed in [m] ("Lamp is inside L012"), so the banner
+ * explains why a container was loaded.
+ */
+private fun mdLoadOne(store: Store, m: Movable, inside: String? = null): MdResult {
     val tripId = mdEnsureTrip(store)
     mdSetStage(store, m, Stage.LOADED, tripId)
     val now = store.data.value
     val room = now.room(m.destRoomId)?.name ?: "no room yet"
     val open = m.isBox && now.box(m.id)?.sealed == false
     val trip = now.trip(tripId)?.name ?: ""
-    val detail = listOf("→ $room", trip, if (open) "this box is still open" else "").filter { it.isNotBlank() }
-    return MdResult(MdTone.GOOD, "Loaded: ${m.title}", detail.joinToString(" · "))
+    val detail = listOf("→ $room", trip, if (open) "still open" else "").filter { it.isNotBlank() }
+    return MdResult(MdTone.GOOD, if (inside != null) "$inside: loaded ${mdShort(m)}" else "Loaded: ${m.title}", detail.joinToString(" · "))
 }
 
 /** Load-out: scan or tick everything as it goes on the van or truck, trip by trip. */
@@ -85,7 +69,9 @@ fun LoadScreen() {
 
     val trips = data.liveTrips
     val trip = data.trip(device.currentTripId) ?: trips.firstOrNull()
+    // Each thing once: a container stands for everything packed inside it.
     val all = data.movables()
+    val carried = remember(data) { mdCarried(data) }
     val loadedCount = all.count { it.stage != Stage.AT_ORIGIN }
     val waiting = all.filter { it.stage == Stage.AT_ORIGIN }
     val forVan = waiting.filter { !it.travelsWithMe }
@@ -102,14 +88,15 @@ fun LoadScreen() {
     }
     val onTrip = all.filter { it.stage == Stage.LOADED && trip != null && it.tripId == trip.id }.sortedBy { it.title }
 
+    // Any code will do: the label of an item inside a container loads the container, and says so.
     val onScan: (String) -> Unit = { text ->
-        val code = labelFromQr(text)
-        val m = store.data.value.findByLabel(code)
+        val found = mdFind(store.data.value, text)
+        val m = found?.carrier
         result = when {
-            m == null -> MdResult(MdTone.BAD, "Unknown label $code", "Pack it as a box first, or check the code.")
-            m.stage == Stage.AT_ORIGIN -> mdLoadOne(store, m)
-            m.stage == Stage.LOADED -> MdResult(MdTone.WARN, "Already on the $vehicle", m.title)
-            else -> MdResult(MdTone.WARN, "Already delivered", m.title)
+            found == null || m == null -> MdResult(MdTone.BAD, "Unknown label " + labelFromQr(text), "Pack it as a box first, or check the code.")
+            m.stage == Stage.AT_ORIGIN -> mdLoadOne(store, m, found.inside)
+            m.stage == Stage.LOADED -> MdResult(MdTone.WARN, "Already on the $vehicle", found.inside ?: m.title)
+            else -> MdResult(MdTone.WARN, "Already delivered", found.inside ?: m.title)
         }
     }
 
@@ -132,71 +119,65 @@ fun LoadScreen() {
                 // Which trip things go on; a new one for each run of the vehicle.
                 Row(
                     Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     trips.forEach { t ->
-                        FilterChip(
-                            selected = t.id == trip?.id,
-                            onClick = { store.setDevice { it.copy(currentTripId = t.id) } },
-                            label = { Text(t.name) },
-                        )
+                        GlassChip(t.name, selected = t.id == trip?.id, onClick = { store.setDevice { it.copy(currentTripId = t.id) } })
                     }
-                    AssistChip(
+                    GlassChip(
+                        "Add trip", icon = Icons.Default.Add,
                         onClick = {
                             val n = trips.size + 1
                             val t = Trip(id = newId(), name = "Trip $n", sort = n)
                             store.put(t)
                             store.setDevice { it.copy(currentTripId = t.id) }
                         },
-                        label = { Text("Add trip") },
-                        leadingIcon = { Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp)) },
                     )
                 }
             }
-            MdScanAction(scanning, "Scan labels as they go on") { scanning = !scanning }
-            if (scanning) QrScanner(onText = onScan, modifier = Modifier.fillMaxWidth().height(mdScannerHeight()))
-            result?.let { MdBanner(it) }
+            MdScanAction(scanning, if (mdNarrow()) "Scan labels" else "Scan labels as they go on") { scanning = !scanning }
+            if (scanning) MdScanner(onScan)
+            result?.let { MdBanner(it, Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) }
 
             GlassTabRow(tab) {
                 Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("To load (${waiting.size})") })
                 Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("On ${trip?.name ?: "this trip"} (${onTrip.size})") })
             }
 
-            LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
+            LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(top = 4.dp, bottom = 16.dp)) {
                 if (tab == 0) {
                     if (waiting.isEmpty()) item(key = "empty") { EmptyState(Icons.Default.CheckCircle, "Everything is on the $vehicle") }
-                    if (forVan.any { it.priority == Priority.FIRST_NIGHT }) item(key = "hint") {
-                        Hint("First-night things go on last, so they come off first.", Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
-                    }
                     groups.forEach { (room, list) ->
                         item(key = "h" + (room?.id ?: "none")) {
                             MdGroupHeader(room?.name ?: "No room", list.size) {
-                                TextButton(onClick = {
-                                    mdSetStageAll(store, list, Stage.LOADED, mdEnsureTrip(store))
-                                    result = MdResult(MdTone.GOOD, "Loaded ${list.size} from ${room?.name ?: "no room"}")
-                                }) { Text("Load all") }
+                                MdRowButton(
+                                    "Load all",
+                                    onClick = {
+                                        mdSetStageAll(store, list, Stage.LOADED, mdEnsureTrip(store))
+                                        result = MdResult(MdTone.GOOD, "Loaded ${list.size} from ${room?.name ?: "no room"}")
+                                    },
+                                    forward = false,
+                                )
                             }
                         }
                         items(list, key = { "m" + it.id }) { m ->
-                            MdThingRow(m, open = m.id in openBoxes) {
-                                FilledTonalButton(onClick = { result = mdLoadOne(store, m) }, modifier = Modifier.heightIn(min = 48.dp)) {
-                                    Text("Load")
-                                }
+                            MdThingRow(m, open = m.id in openBoxes, carried = carried[m.id] ?: 0) {
+                                MdRowButton("Load", onClick = { result = mdLoadOne(store, m) })
                             }
                         }
                     }
                     if (withMe.isNotEmpty()) {
-                        item(key = "hwithme") { MdGroupHeader("Travels with me (not in the $vehicle)", withMe.size) }
+                        item(key = "hwithme") { MdGroupHeader("Travels with me, not in the $vehicle", withMe.size) }
                         items(withMe, key = { "w" + it.id }) { m ->
-                            MdThingRow(m, open = m.id in openBoxes) {
-                                FilledTonalButton(
+                            MdThingRow(m, open = m.id in openBoxes, carried = carried[m.id] ?: 0) {
+                                MdRowButton(
+                                    "With me",
                                     onClick = {
                                         mdSetStage(store, m, Stage.LOADED, null)
                                         result = MdResult(MdTone.GOOD, "With you: ${m.title}", "Not in the $vehicle")
                                     },
-                                    modifier = Modifier.heightIn(min = 48.dp),
-                                ) { Text("With me") }
+                                )
                             }
                         }
                     }
@@ -206,14 +187,15 @@ fun LoadScreen() {
                         else EmptyState(Icons.Default.LocalShipping, "Nothing is on ${trip.name} yet")
                     }
                     items(onTrip, key = { "t" + it.id }) { m ->
-                        MdThingRow(m, open = m.id in openBoxes) {
-                            OutlinedButton(
+                        MdThingRow(m, open = m.id in openBoxes, carried = carried[m.id] ?: 0) {
+                            MdRowButton(
+                                "Undo",
                                 onClick = {
                                     mdSetStage(store, m, Stage.AT_ORIGIN, null)
                                     result = MdResult(MdTone.WARN, "Taken off: ${m.title}")
                                 },
-                                modifier = Modifier.heightIn(min = 48.dp),
-                            ) { Text("Undo") }
+                                forward = false,
+                            )
                         }
                     }
                 }

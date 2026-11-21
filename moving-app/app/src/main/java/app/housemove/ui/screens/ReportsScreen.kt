@@ -1,6 +1,5 @@
 package app.housemove.ui.screens
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,12 +20,10 @@ import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Share as ShareIcon
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -43,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.housemove.data.Action
 import app.housemove.data.Part
 import app.housemove.data.PhotoKind
 import app.housemove.data.Ratio
@@ -53,7 +51,6 @@ import app.housemove.data.uses
 import app.housemove.pdf.Csv
 import app.housemove.pdf.Pdf
 import app.housemove.pdf.Share
-import app.housemove.ui.Hint
 import app.housemove.ui.LocalNav
 import app.housemove.ui.LocalStore
 import app.housemove.ui.PhotoThumb
@@ -92,6 +89,8 @@ fun ReportsScreen() {
     val tasksLeft = tasks.count { !it.done }
     val damagePhoto = damaged.firstNotNullOfOrNull { m -> data.photosOf(m.id, PhotoKind.DAMAGE).firstOrNull() }
     val device = deviceInfo()
+    // A Helper is not shown costs, and their phone is not sent them.
+    val seesCosts = mdCan(Action.SUGGEST)
 
     // Build the file off the main thread, then hand it to another app.
     fun produce(mime: String, open: Boolean, make: () -> File) {
@@ -121,7 +120,7 @@ fun ReportsScreen() {
                     .takeIf { boxes.isNotEmpty() || data.uses(Part.BOXES) },
                 MdStatOf("Damaged") { MdStatIcon(Pic.Damage, damaged.size.toString(), error = damaged.isNotEmpty()) },
                 MdStatOf("Total paid") { MdStatIcon(Icons.Default.Payments, (data.move.currency.trim() + " " + fmtNum(paid)).trim()) }
-                    .takeIf { paid != 0.0 || data.uses(Part.BUDGET) },
+                    .takeIf { seesCosts && (paid != 0.0 || data.uses(Part.BUDGET)) },
             )
             // Four in a row; two rows of two on a small phone, so no number is cut short.
             TileGrid(stats, columns = if (mdNarrow()) 2 else stats.size) { stat, m -> MdStat(stat.label, m, stat.picture) }
@@ -149,29 +148,28 @@ fun ReportsScreen() {
                 onShare = { produce("application/pdf", open = false) { Pdf.damageReport(context, store) } },
                 // Led by a real photo of the damage when there is one.
                 picture = if (damagePhoto == null) null else {
-                    { PhotoThumb(damagePhoto, Modifier.size(56.dp)) }
+                    { PhotoThumb(damagePhoto, Modifier.size(56.dp).clip(RoundedCornerShape(16.dp))) }
                 },
             )
 
-            // The last few jobs, on a white card like the Move day steps.
-            GlassCard(Modifier.fillMaxWidth()) {
+            // The last few jobs, on one glass panel like the Move day steps.
+            GlassCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(26.dp), sheen = true) {
                 Column(Modifier.padding(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     if (data.uses(Part.TIMELINE)) StepRow(
                         Icons.Default.Checklist,
                         if (tasksLeft == 0) "All tasks done" else mdCount(tasksLeft, "task") + " left",
                         onClick = { nav.open("tasks") },
                         ratio = Ratio(tasks.size - tasksLeft, tasks.size),
-                        status = "Address changes, deposit, final bills",
+                        status = "Address, deposit, final bills",
                     )
                     StepRow(
                         Icons.Default.Backup, "Back up the data", onClick = { nav.open("sync") },
-                        status = if (device.lastBackupAt == 0L) "One file with everything, photos included"
+                        status = if (device.lastBackupAt == 0L) "One file, photos included"
                         else "Last backup ${agoText(device.lastBackupAt)}",
                         done = device.lastBackupAt != 0L,
                     )
                 }
             }
-            Hint("Keep the inventory for your insurance. Pass the flattened boxes on.")
         }
     }
 }
@@ -220,11 +218,11 @@ private fun MdReport(
     onShare: () -> Unit,
     picture: (@Composable () -> Unit)? = null,
 ) {
-    GlassCard(Modifier.fillMaxWidth()) {
+    GlassCard(Modifier.fillMaxWidth(), sheen = true) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (picture != null) picture() else Box(
-                    Modifier.size(56.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.primaryContainer),
+                    Modifier.size(56.dp).glass(RoundedCornerShape(16.dp), shadow = 0.dp),
                     contentAlignment = Alignment.Center,
                 ) { Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(30.dp)) }
                 Spacer(Modifier.width(12.dp))

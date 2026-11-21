@@ -285,13 +285,13 @@ class DeviceTest {
     fun dialogsWithTextFieldsWorkAtPhoneWidth() {
         tap("More")
         tapInList("Timeline")
-        tapDesc("Add a task")
+        tapDesc("Add a task") // a job is normally spoken; tapping the line opens the keyboard's way, in the page
         type("What needs doing", "Return the ladder")
         // Tap into the field too, so it is focused with the keyboard up, as a person would.
         rule.onAllNodes(hasSetTextAction() and hasText("Return the ladder")).onFirst().performClick()
         rule.waitForIdle()
         shot("13-task-dialog")
-        tap("Save")
+        tap("Add")
         assertTrue(data.liveTasks.any { it.title == "Return the ladder" })
         tapDesc("Back")
 
@@ -305,11 +305,14 @@ class DeviceTest {
 
         tapInList("Supplies and costs")
         tap("Costs")
-        tap("Add a cost")
-        type("What was it for?", "Van hire")
+        tap("Add a cost") // opens in the page; a cost is normally tapped in, and the keyboard sits behind these two
+        tap("Other amount")
         type("Amount", "180")
-        tap("Done")
+        tap("Details")
+        type("Name", "Van hire")
+        tap("Add cost", sub = true)
         assertEquals(180.0, data.liveExpenses.single().amount, 0.001)
+        assertEquals("Van hire", data.liveExpenses.single().title)
     }
 
     // ---- every screen -----------------------------------------------------------
