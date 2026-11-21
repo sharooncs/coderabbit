@@ -381,7 +381,7 @@ fun BoxScreen(id: String) {
                         HorizontalDivider(color = Night.Hairline)
                         onTheMove()
                     }
-                    if (deleteRight(box) !is DeleteRight.Neither) HorizontalDivider(color = Night.Hairline)
+                    if (deleteOffered(box)) HorizontalDivider(color = Night.Hairline)
                     val kept = items.isNotEmpty() || children.isNotEmpty()
                     DeleteOrAsk(
                         box, "Delete this $word", "Delete ${box.nameAndCode()}?",

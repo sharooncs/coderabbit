@@ -9,6 +9,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
@@ -19,6 +20,9 @@ import app.housemove.ui.ISO_MAX_ROOMS
 import app.housemove.ui.IsoRoom
 import app.housemove.ui.RoomState
 import app.housemove.ui.layoutRooms
+import app.housemove.sync.WifiSync
+import app.housemove.ui.screens.syncReport
+import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -861,5 +865,32 @@ class FlowsTest {
         see("could not be read")
         tap("Dismiss")
         dontSee("could not be read")
+    }
+
+    @Test
+    fun syncSaysPlainlyWhenThereIsNoWifiAndWhenOnlyPhotosWereCutShort() {
+        // A phone with no Wi-Fi: the sync screen says so before any code is shown, in the sync's own words.
+        WifiSync.addresses = { emptyList() }
+        try {
+            start("sync")
+            see(WifiSync.NO_NETWORK)
+            rule.onRoot().captureRoboImage("build/audit/flows/sync-no-wifi.png")
+            // Back on a network, "Check again" takes the message away.
+            WifiSync.addresses = { listOf("192.168.1.10") }
+            tap("Check again")
+            dontSee(WifiSync.NO_NETWORK)
+        } finally {
+            WifiSync.addresses = { WifiSync.localAddresses() }
+        }
+        // Every message has a heading of its own; photos cut short still count as a sync.
+        val cut = syncReport(WifiSync.Result("Ben", "B", 3, 0, WifiSync.PHOTOS_CUT), store)
+        assertTrue(cut.ok)
+        assertEquals(WifiSync.PHOTOS_CUT, cut.text)
+        for (message in listOf(WifiSync.NO_NETWORK, WifiSync.UNREACHABLE, WifiSync.CONNECTION_LOST, WifiSync.CODE_NOT_ACCEPTED, WifiSync.WRONG_CODE, WifiSync.NOT_HOUSEMOVE, WifiSync.UNREADABLE)) {
+            val r = syncReport(WifiSync.Result("", "", 0, 0, message), store)
+            assertFalse(r.ok)
+            assertNotEquals("Could not sync", r.title)
+            assertEquals(message, r.text)
+        }
     }
 }

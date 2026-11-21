@@ -493,7 +493,7 @@ fun ItemScreen(id: String) {
                     onTheMove()
                 }
                 // Not undone, so it is the last thing in the last section: deleting it, or asking an Organiser to.
-                if (deleteRight(item) !is DeleteRight.Neither) HorizontalDivider(color = Night.Hairline)
+                if (deleteOffered(item)) HorizontalDivider(color = Night.Hairline)
                 DeleteOrAsk(
                     item, "Delete item", "Delete this item?",
                     "\"${item.title()}\" and your photos of it will be removed from every phone at the next sync.",

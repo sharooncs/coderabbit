@@ -314,6 +314,14 @@ internal fun deleteRight(x: Rec): DeleteRight {
     return if (mayAsk) DeleteRight.Ask(why) else DeleteRight.Neither(why)
 }
 
+/** Whether [DeleteOrAsk] shows anything for [x]: a delete button, or "Ask to delete" before this person has asked. */
+@Composable
+internal fun deleteOffered(x: Rec): Boolean = when (deleteRight(x)) {
+    DeleteRight.Delete -> true
+    is DeleteRight.Ask -> appData().deleteRequests(x.id).none { it.by == LocalStore.current.me?.id }
+    is DeleteRight.Neither -> false
+}
+
 /** Requests still waiting to delete [targetId]: asked for, or a suggested change that deletes it. */
 internal fun AppData.deleteRequests(targetId: String): List<Proposal> =
     liveProposals.filter { it.targetId == targetId && it.state == ProposalState.WAITING && it.asksToDelete }

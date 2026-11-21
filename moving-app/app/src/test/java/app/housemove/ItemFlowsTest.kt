@@ -599,12 +599,14 @@ class ItemFlowsTest {
         see("Room in the old home")
         cannotTap("Delete item")
         see("Only an Organiser can delete something someone else added.")
+        rule.onRoot().captureRoboImage("build/audit/flows/item-helper-ask-to-delete.png")
         tap("Ask to delete")
         val asked = hal.waiting().single()
         assertTrue(asked.deletes)
         see("You asked to delete it")
         cannotTap("Ask to delete") // asked once is enough
         // He thinks better of it: his own request can be taken back where it is shown.
+        rule.onRoot().captureRoboImage("build/audit/flows/item-helper-asked-to-delete.png")
         tap("Withdraw")
         assertTrue(hal.waiting().isEmpty())
         tap("Ask to delete")
