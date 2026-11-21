@@ -1,8 +1,15 @@
 # HouseMove
 
-An Android app for running a self-move systematically: catalogue, decide,
-pack, load, unload, unpack. It works fully offline. There is no account and no
+An Android app for running a house move systematically: catalogue, decide,
+pack, load, unload, unpack. It works offline. There is no account and no
 server; phones share data by syncing directly with each other.
+
+It is built for more than one way of moving. At setup you say what you are
+using it for (moving it yourself, movers doing it, putting things in storage,
+or just listing what you own), and that sets the wording, the checklist and
+which parts of the app appear. Any part can be switched off in Settings, and a
+helper's phone can be put in a mode that shows only packing, loading,
+unloading and search.
 
 ## Install
 
@@ -108,9 +115,20 @@ light, a physical printer's scaling, and two phones on one particular Wi-Fi
 network (some routers and guest networks stop devices talking to each other; a
 phone hotspot avoids that).
 
+## Design review
+
+`tools/audit.sh` renders every screen with realistic data and builds contact
+sheets (whole screen, first view on a phone, and with no data) in
+`app/build/audit/sheets/`. Screens are built from the kit in `ui/Visual.kt`;
+its header lists the components and the rules of thumb: one main action per
+screen, visible without scrolling; pictures and colour before words; at most
+one short hint per section; rarely used things in a closed section.
+
 ## Code map
 
 - `data/` – model, JSON store, merge, backup, move logic (fit check, volume, search)
 - `sync/` – phone-to-phone sync over a local socket
 - `pdf/` – QR label sheets, door signs, inventory and damage reports
-- `ui/` – Compose screens; `Camera.kt` holds photo capture and the QR scanner
+- `ui/` – Compose screens; `Visual.kt` is the visual kit, `Journey.kt` the phases
+  of a move shown on Home, `Camera.kt` photo capture and the scanners
+- `tools/` – `test.sh` (JVM tests with a short summary) and `audit.sh`
