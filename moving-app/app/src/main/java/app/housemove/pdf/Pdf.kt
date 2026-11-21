@@ -14,10 +14,6 @@ import android.widget.Toast
 import androidx.core.content.FileProvider
 import app.housemove.data.*
 import app.housemove.ui.loadScaledBitmap
-import com.google.zxing.BarcodeFormat
-import com.google.zxing.EncodeHintType
-import com.google.zxing.qrcode.QRCodeWriter
-import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import java.io.File
 
 /** Sheet layouts for QR labels. Sizes are in PDF points (1/72 inch). */
@@ -42,8 +38,7 @@ fun labelCode(n: Int): String = "L" + n.toString().padStart(3, '0')
 
 /** QR code as a bitmap with a quiet zone, black on white. */
 fun qrBitmap(text: String, sizePx: Int): Bitmap {
-    val hints = mapOf(EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.M, EncodeHintType.MARGIN to 1)
-    val matrix = QRCodeWriter().encode(text, BarcodeFormat.QR_CODE, sizePx, sizePx, hints)
+    val matrix = Qr.matrix(text, sizePx)
     val pixels = IntArray(sizePx * sizePx)
     for (y in 0 until sizePx) for (x in 0 until sizePx) {
         pixels[y * sizePx + x] = if (matrix.get(x, y)) Color.BLACK else Color.WHITE
@@ -78,34 +73,39 @@ object Pdf {
     fun labels(context: Context, codes: List<String>, sheet: LabelSheet, copies: Int = 1): File {
         val doc = PdfDocument()
         val all = codes.flatMap { c -> List(copies.coerceAtLeast(1)) { c } }
-        val codePaint = textPaint(30f, bold = true)
-        val small = textPaint(8f, color = Color.DKGRAY)
-        val line = Paint().apply { color = Color.LTGRAY; style = Paint.Style.STROKE; strokeWidth = 0.5f }
         all.chunked(sheet.perPage).forEachIndexed { pageIndex, chunk ->
             val page = doc.startPage(PdfDocument.PageInfo.Builder(sheet.pageW, sheet.pageH, pageIndex + 1).create())
-            val c = page.canvas
-            chunk.forEachIndexed { i, code ->
-                val col = i % sheet.cols
-                val row = i / sheet.cols
-                val x = sheet.left + col * (sheet.cellW + sheet.gapX)
-                val y = sheet.top + row * (sheet.cellH + sheet.gapY)
-                if (sheet.outline) c.drawRect(x, y, x + sheet.cellW, y + sheet.cellH, line)
-                val pad = 8f
-                val qrSize = sheet.cellH - 2 * pad
-                val qr = qrBitmap(QR_PREFIX + code, 240)
-                c.drawBitmap(qr, null, RectF(x + pad, y + pad, x + pad + qrSize, y + pad + qrSize), null)
-                val textX = x + pad + qrSize + 8f
-                val textW = sheet.cellW - qrSize - 3 * pad - 4f
-                codePaint.textSize = (sheet.cellH * 0.34f).coerceAtMost(44f)
-                fitText(codePaint, code, textW)
-                c.drawText(code, textX, y + sheet.cellH * 0.48f, codePaint)
-                c.drawText("Room:", textX, y + sheet.cellH * 0.70f, small)
-                c.drawLine(textX + 26f, y + sheet.cellH * 0.71f, x + sheet.cellW - pad, y + sheet.cellH * 0.71f, line)
-                c.drawText("HouseMove", textX, y + sheet.cellH - pad - 1f, small)
-            }
+            drawLabelPage(page.canvas, sheet, chunk)
             doc.finishPage(page)
         }
         return write(doc, outFile(context, "housemove-labels.pdf"))
+    }
+
+    /** Draw one page of labels. Coordinates are PDF points. */
+    fun drawLabelPage(c: Canvas, sheet: LabelSheet, codes: List<String>) {
+        val codePaint = textPaint(30f, bold = true)
+        val small = textPaint(8f, color = Color.DKGRAY)
+        val line = Paint().apply { color = Color.LTGRAY; style = Paint.Style.STROKE; strokeWidth = 0.5f }
+        codes.take(sheet.perPage).forEachIndexed { i, code ->
+            val col = i % sheet.cols
+            val row = i / sheet.cols
+            val x = sheet.left + col * (sheet.cellW + sheet.gapX)
+            val y = sheet.top + row * (sheet.cellH + sheet.gapY)
+            if (sheet.outline) c.drawRect(x, y, x + sheet.cellW, y + sheet.cellH, line)
+            val pad = 8f
+            val qrSize = sheet.cellH - 2 * pad
+            val qr = qrBitmap(QR_PREFIX + code, 240)
+            // No filtering: the squares of the code must stay sharp when scaled.
+            c.drawBitmap(qr, null, RectF(x + pad, y + pad, x + pad + qrSize, y + pad + qrSize), Paint().apply { isFilterBitmap = false })
+            val textX = x + pad + qrSize + 8f
+            val textW = sheet.cellW - qrSize - 3 * pad - 4f
+            codePaint.textSize = (sheet.cellH * 0.34f).coerceAtMost(44f)
+            fitText(codePaint, code, textW)
+            c.drawText(code, textX, y + sheet.cellH * 0.48f, codePaint)
+            c.drawText("Room:", textX, y + sheet.cellH * 0.70f, small)
+            c.drawLine(textX + 26f, y + sheet.cellH * 0.71f, x + sheet.cellW - pad, y + sheet.cellH * 0.71f, line)
+            c.drawText("HouseMove", textX, y + sheet.cellH - pad - 1f, small)
+        }
     }
 
     /** One landscape page per new-home room, in the room's colour, to tape on its door. */
@@ -115,22 +115,7 @@ object Pdf {
         val h = if (letter) 612 else 595
         data.roomsOf(Home.DEST).forEachIndexed { i, room ->
             val page = doc.startPage(PdfDocument.PageInfo.Builder(w, h, i + 1).create())
-            val c = page.canvas
-            val rc = roomColor(room.color)
-            val band = h * 0.68f
-            c.drawRect(0f, 0f, w.toFloat(), band, Paint().apply { color = rc.argb.toInt() })
-            val fg = if (rc.darkText) Color.BLACK else Color.WHITE
-            val name = textPaint(130f, bold = true, color = fg).apply { textAlign = Paint.Align.CENTER }
-            fitText(name, room.name, w - 80f, minSize = 30f)
-            c.drawText(room.name, w / 2f, band * 0.52f + name.textSize * 0.3f, name)
-            if (room.floor.isNotBlank()) {
-                val floor = textPaint(34f, color = fg).apply { textAlign = Paint.Align.CENTER }
-                c.drawText(room.floor, w / 2f, band - 36f, floor)
-            }
-            val code = textPaint(90f, bold = true).apply { textAlign = Paint.Align.CENTER }
-            c.drawText(room.code.ifBlank { suggestRoomCode(room.name) }, w / 2f, band + (h - band) * 0.62f, code)
-            val foot = textPaint(18f, color = Color.DKGRAY).apply { textAlign = Paint.Align.CENTER }
-            c.drawText("${rc.name} · ${data.move.destName}", w / 2f, h - 22f, foot)
+            drawDoorSign(page.canvas, w, h, room, data.move.destName)
             doc.finishPage(page)
         }
         if (data.roomsOf(Home.DEST).isEmpty()) {
@@ -139,6 +124,25 @@ object Pdf {
             doc.finishPage(page)
         }
         return write(doc, outFile(context, "housemove-door-signs.pdf"))
+    }
+
+    fun drawDoorSign(c: Canvas, w: Int, h: Int, room: Room, destName: String) {
+        val rc = roomColor(room.color)
+        val band = h * 0.68f
+        c.drawRect(0f, 0f, w.toFloat(), band, Paint().apply { color = rc.argb.toInt() })
+        val fg = if (rc.darkText) Color.BLACK else Color.WHITE
+        val name = textPaint(130f, bold = true, color = fg).apply { textAlign = Paint.Align.CENTER }
+        fitText(name, room.name, w - 80f, minSize = 30f)
+        c.drawText(room.name, w / 2f, band * 0.52f + name.textSize * 0.3f, name)
+        if (room.floor.isNotBlank()) {
+            val floor = textPaint(34f, color = fg).apply { textAlign = Paint.Align.CENTER }
+            fitText(floor, room.floor, w - 80f, minSize = 14f)
+            c.drawText(room.floor, w / 2f, band - 36f, floor)
+        }
+        val code = textPaint(90f, bold = true).apply { textAlign = Paint.Align.CENTER }
+        c.drawText(room.code.ifBlank { suggestRoomCode(room.name) }, w / 2f, band + (h - band) * 0.62f, code)
+        val foot = textPaint(18f, color = Color.DKGRAY).apply { textAlign = Paint.Align.CENTER }
+        c.drawText("${rc.name} · $destName", w / 2f, h - 22f, foot)
     }
 
     /** Flowing text pages with simple column support. */

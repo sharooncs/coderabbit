@@ -2,7 +2,9 @@ package app.housemove.ui
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -11,9 +13,10 @@ import app.housemove.data.Store
 import app.housemove.ui.screens.*
 
 @Composable
-fun AppRoot(store: Store, startRoute: String? = null) {
+fun AppRoot(store: Store, startRoute: String? = null, onNav: (NavHostController) -> Unit = {}) {
     HouseMoveTheme {
         val nav = rememberNavController()
+        LaunchedEffect(nav) { onNav(nav) }
         val start = remember { startRoute ?: if (store.data.value.move.setupDone) "home" else "setup" }
         CompositionLocalProvider(LocalStore provides store, LocalNav provides nav) {
             NavHost(nav, startDestination = start) {

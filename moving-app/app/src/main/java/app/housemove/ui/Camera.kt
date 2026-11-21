@@ -55,15 +55,9 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import app.housemove.data.Photo
 import app.housemove.data.PhotoKind
+import app.housemove.data.Qr
 import app.housemove.data.labelFromQr
 import coil.compose.AsyncImage
-import com.google.zxing.BarcodeFormat
-import com.google.zxing.BinaryBitmap
-import com.google.zxing.DecodeHintType
-import com.google.zxing.MultiFormatReader
-import com.google.zxing.NotFoundException
-import com.google.zxing.PlanarYUVLuminanceSource
-import com.google.zxing.common.HybridBinarizer
 import java.io.File
 import java.util.concurrent.Executors
 
@@ -273,9 +267,7 @@ fun CameraDialog(
 // ---- scanning --------------------------------------------------------------
 
 private class QrAnalyzer(private val onText: (String) -> Unit) : ImageAnalysis.Analyzer {
-    private val reader = MultiFormatReader().apply {
-        setHints(mapOf(DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE), DecodeHintType.TRY_HARDER to true))
-    }
+    private val decoder = Qr.Decoder()
 
     override fun analyze(image: ImageProxy) {
         try {
@@ -293,20 +285,9 @@ private class QrAnalyzer(private val onText: (String) -> Unit) : ImageAnalysis.A
                     buf.get(data, row * w, minOf(w, buf.remaining()))
                 }
             }
-            val source = PlanarYUVLuminanceSource(data, w, h, 0, 0, w, h, false)
-            val text = try {
-                reader.decodeWithState(BinaryBitmap(HybridBinarizer(source))).text
-            } catch (_: NotFoundException) {
-                try {
-                    reader.decodeWithState(BinaryBitmap(HybridBinarizer(source.invert()))).text
-                } catch (_: NotFoundException) {
-                    null
-                }
-            }
-            if (text != null) onText(text)
+            decoder.decode(data, w, h)?.let(onText)
         } catch (_: Exception) {
         } finally {
-            reader.reset()
             image.close()
         }
     }
