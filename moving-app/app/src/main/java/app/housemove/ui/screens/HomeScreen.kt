@@ -131,7 +131,7 @@ private fun keyNumbers(data: AppData, device: DeviceInfo): List<KeyNumber> {
             KeyNumber(Icons.Default.Download, "${p.delivered.done}/${p.delivered.total}", "delivered", "unload")
         data.uses(Part.MOVE_DAY) && moving ->
             KeyNumber(Icons.Outlined.LocalShipping, "${p.loaded.done}/${p.loaded.total}", "on the ${data.vehicle()}", "load")
-        data.uses(Part.TRIAGE) && undecided > 0 -> KeyNumber(Icons.Default.Rule, "$undecided", "to decide", "triage")
+        data.uses(Part.TRIAGE) && undecided > 0 && offeredTo("triage", data, device) -> KeyNumber(Icons.Default.Rule, "$undecided", "to decide", "triage")
         data.uses(Part.TIMELINE) && overdue > 0 -> KeyNumber(Icons.Outlined.Checklist, "$overdue", "overdue", "tasks")
         data.uses(Part.BOXES) && p.roomsPacked.total > 0 ->
             KeyNumber(Icons.Outlined.MeetingRoom, "${p.roomsPacked.done}/${p.roomsPacked.total}", "rooms packed", "overview")
@@ -171,7 +171,7 @@ fun HomeScreen() {
             val firstPage = if (roomy) minOf(maxHeight - 34.dp, 620.dp) else 0.dp
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                 HomeHero(data, device, packing, Modifier.fillMaxWidth().heightIn(min = firstPage))
-                HomeDetails(data, device, next, inPageAction = if (roomy) null else action, quietNext = packing && roomy && next.route == "pack")
+                HomeDetails(data, device, next, inPageAction = if (roomy) null else action, nextIsAction = packing && next.route == "pack")
             }
         }
     }
@@ -258,9 +258,14 @@ private fun HomeHero(data: AppData, device: DeviceInfo, packing: Boolean, modifi
     }
 }
 
-/** Below the fold: the next step, the journey, and what needs attention. */
+/**
+ * Below the fold: the next step, the journey, and what needs attention.
+ * [inPageAction] is the dock's big button, brought into the page on a short screen.
+ * [nextIsAction] says the next step is that same button ("Pack a box"): it is then shown
+ * once, not twice.
+ */
 @Composable
-private fun HomeDetails(data: AppData, device: DeviceInfo, next: NextStep, inPageAction: DockAction?, quietNext: Boolean) {
+private fun HomeDetails(data: AppData, device: DeviceInfo, next: NextStep, inPageAction: DockAction?, nextIsAction: Boolean) {
     val nav = LocalNav.current
     val move = data.move
     val now = currentPhase(data)
@@ -269,7 +274,7 @@ private fun HomeDetails(data: AppData, device: DeviceInfo, next: NextStep, inPag
     val shown = if (picked < 0) now else picked
 
     Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        if (inPageAction != null) BigAction(inPageAction.icon, inPageAction.label, inPageAction.onClick)
+        if (inPageAction != null && !nextIsAction) BigAction(inPageAction.icon, inPageAction.label, inPageAction.onClick)
 
         Section {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -281,8 +286,12 @@ private fun HomeDetails(data: AppData, device: DeviceInfo, next: NextStep, inPag
                 }
             }
             Text(next.text, style = MaterialTheme.typography.bodyLarge)
-            // When the dock's big button already says the same thing, this one steps back.
-            BigAction(next.icon, next.button, onClick = { nav.open(next.route) }, primary = !quietNext)
+            // When the next step is the dock's own big button, it is not offered a second time here
+            // (on a short screen, where the dock has no room for it, this is where it is).
+            when {
+                !nextIsAction -> BigAction(next.icon, next.button, onClick = { nav.open(next.route) })
+                inPageAction != null -> BigAction(inPageAction.icon, inPageAction.label, inPageAction.onClick)
+            }
         }
 
         // Where the move is, and what belongs to each phase.
@@ -299,11 +308,12 @@ private fun HomeDetails(data: AppData, device: DeviceInfo, next: NextStep, inPag
             }
         }
 
-        // Needs attention: the worst three, the rest on request. Overdue jobs are raised only with
-        // someone who may tick one of them off; for anyone else they are an Organiser's to see to.
+        // Needs attention: the worst three, the rest on request. Nobody is sent to a screen the
+        // Everything list does not offer them, and overdue jobs are raised only with someone who
+        // may tick one of them off; for anyone else they are an Organiser's to see to.
         val me = data.me(device)
         val jobsAreMine = data.liveTasks.any { !it.done && (data.dueDay(it) ?: Long.MAX_VALUE) < today() && data.mayTick(me, it) }
-        val issues = data.issues().filter { it.route != "tasks" || jobsAreMine }
+        val issues = data.issues().filter { offeredTo(it.route, data, device) && (it.route != "tasks" || jobsAreMine) }
         if (issues.isNotEmpty()) {
             var all by rememberSaveable { mutableStateOf(false) }
             Section("Needs attention") {
@@ -418,9 +428,12 @@ internal fun SuggestionsSlot(modifier: Modifier = Modifier) {
         modifier.heightIn(min = 58.dp), onClick = { nav.open("approvals") }, sheen = true,
         contentPadding = PaddingValues(start = 8.dp, top = 7.dp, bottom = 7.dp, end = 8.dp),
     ) {
-        // The people who suggested, overlapping like coins.
+        // The people who suggested, overlapping like coins. On a narrow screen or with large text, the
+        // first alone: the words need the width more.
         Box {
-            strip.people.forEachIndexed { i, p -> PersonOrb(p, Modifier.padding(start = 26.dp * i), size = 42.dp, me = p != null && p.id == device.personId) }
+            strip.people.take(if (tightScreen()) 1 else 3).forEachIndexed { i, p ->
+                PersonOrb(p, Modifier.padding(start = 26.dp * i), size = 42.dp, me = p != null && p.id == device.personId)
+            }
         }
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
@@ -481,7 +494,9 @@ private fun AppMark() {
 @Composable
 private fun KeyNumberView(k: KeyNumber, withOrb: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Row(
-        modifier.clip(RoundedCornerShape(24.dp)).clickable(role = Role.Button, onClick = onClick).heightIn(min = 48.dp).padding(horizontal = 4.dp),
+        // Gently rounded, with room at the ends: with large text the words reach the edges of the
+        // row, and a fully round end would cut the first and last letters off.
+        modifier.clip(RoundedCornerShape(14.dp)).clickable(role = Role.Button, onClick = onClick).heightIn(min = 48.dp).padding(horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (withOrb) {

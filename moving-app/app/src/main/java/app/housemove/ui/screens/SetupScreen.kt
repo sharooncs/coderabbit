@@ -13,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -153,6 +154,10 @@ fun SetupScreen() {
             when (at) {
                 0 -> {
                     if (report != null) SyncReportCard(report)
+                    // A tall phone opens on the lit house, as Home does, instead of on empty ground; a short one goes straight to the choice.
+                    else if (LocalConfiguration.current.let { it.screenHeightDp / it.fontScale >= 780f }) {
+                        IsoHouse(Modifier.widthIn(max = 300.dp).align(Alignment.CenterHorizontally), boxes = 1)
+                    }
                     KindPicker(large = true)
                     // Joining a move that exists is one tap from here: straight to the scanner.
                     ActionPill(
@@ -250,16 +255,35 @@ private fun finishSetup(store: Store): Outcome<MoveInfo> {
 
 /**
  * Add rooms by tapping the common ones or saying a name; typing one is behind "Other".
- * Used by the wizard and by the Rooms screen.
+ * Used by the wizard and by the Rooms screen. In the new home, the rooms of the old one
+ * can be added all at once, each linked to the room of the same name it takes things from.
  */
 @Composable
 internal fun RoomAdder(home: Home, modifier: Modifier = Modifier) {
     val store = LocalStore.current
-    val rooms = appData().roomsOf(home)
+    val data = appData()
+    val rooms = data.roomsOf(home)
     var typing by rememberSaveable(home) { mutableStateOf(false) }
     var custom by remember { mutableStateOf("") }
+    // The old home's rooms that the new home does not have yet, once each.
+    val notYet = if (home == Home.DEST) {
+        data.roomsOf(Home.ORIGIN).map { it.name.trim() }.filter { n -> n.isNotEmpty() && rooms.none { it.name.equals(n, ignoreCase = true) } }
+            .distinctBy { it.lowercase() }
+    } else emptyList()
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (notYet.size > 1) {
+                GlassChip(
+                    "Same as ${data.move.originName.lowercase()} (${notYet.size})", icon = Icons.Default.DoneAll, tone = GlassTone.Mint,
+                    onClick = {
+                        for (name in notYet) {
+                            val made = store.createRoom(Home.DEST, name)
+                            store.data.value.roomsOf(Home.ORIGIN).filter { it.mapsTo == null && it.name.trim().equals(name, ignoreCase = true) }
+                                .forEach { store.put(it.copy(mapsTo = made.id)) }
+                        }
+                    },
+                )
+            }
             COMMON_ROOMS.filter { name -> rooms.none { it.name.equals(name, ignoreCase = true) } }.forEach { name ->
                 GlassChip(name, icon = Icons.Default.Add, onClick = { store.createRoom(home, name) })
             }

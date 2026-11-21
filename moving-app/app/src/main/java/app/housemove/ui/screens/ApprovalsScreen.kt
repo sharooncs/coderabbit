@@ -146,6 +146,8 @@ private fun WaitingCard(
     val data = appData()
     val question = p.kind == ProposalKind.QUESTION
     val what = data.describe(p)
+    // On a narrow screen or with large text the question keeps the width, and "Not now" goes under the answers.
+    val tight = tightScreen()
     GlassCard(Modifier.fillMaxWidth(), tone = if (selected) GlassTone.Mint else GlassTone.Plain, shape = RoundedCornerShape(26.dp), sheen = true) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row {
@@ -163,7 +165,7 @@ private fun WaitingCard(
                         if (selected) Icons.Default.Check else Icons.Default.RadioButtonUnchecked, (if (selected) "Selected: " else "Select: ") + what,
                         kind = if (selected) OrbKind.Primary else OrbKind.Plain, size = 36.dp, onClick = onSelect,
                     )
-                } else if (question && !declining) {
+                } else if (question && !declining && !tight) {
                     GlassChip("Not now", onClick = { onDeclining(true) })
                 }
             }
@@ -171,13 +173,14 @@ private fun WaitingCard(
                 // An Organiser's answer is the decision.
                 // Five in a row where the words fit; on a narrow screen or with large text, three.
                 IconChoice(
-                    ANSWERS, selected = null, columns = if (tightScreen()) 3 else 5,
+                    ANSWERS, selected = null, columns = if (tight) 3 else 5,
                     onPick = { d -> if (store.answer(p.id, d).orSay(context) != null) toast(context, "Answered: ${d.label}") },
                 )
+                if (tight && !declining) GlassChip("Not now", onClick = { onDeclining(true) })
             } else if (!declining && !selected) {
                 // A card chosen to be approved with the others has no buttons of its own: the one at the top answers it.
                 // Side by side where both words fit whole; one above the other where they would not.
-                if (tightScreen()) {
+                if (tight) {
                     BigAction(Icons.Default.Check, "Approve", onClick = onApprove)
                     BigAction(Icons.Default.Close, "Decline", onClick = { onDeclining(true) }, primary = false)
                 } else Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {

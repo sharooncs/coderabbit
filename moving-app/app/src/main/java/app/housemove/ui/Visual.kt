@@ -136,11 +136,12 @@ fun Fold(
             Column(Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.titleMedium)
                 if (!expanded && !summary.isNullOrBlank()) {
+                    // Two lines, so what is set reads whole on a narrow phone and with large text too.
                     Text(
                         summary,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }

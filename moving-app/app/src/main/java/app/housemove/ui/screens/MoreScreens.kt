@@ -318,9 +318,10 @@ private fun SearchHit(hit: Hit, data: AppData, onClick: () -> Unit) {
             OwnerThumb(m.id, Modifier.size(60.dp), isBox = m.isBox)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(m.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                    if (dest != null) RoomBadge(dest)
+                // A box is named by what is in it, which is what was searched for: two lines, so it is read whole.
+                Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(m.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                    if (dest != null) RoomBadge(dest, Modifier.padding(top = 2.dp))
                 }
                 // Where it is at this moment is the answer most searches are after.
                 Row(verticalAlignment = Alignment.CenterVertically) {

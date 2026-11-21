@@ -146,10 +146,11 @@ fun OverviewScreen() {
                 }
             }
 
-            // Every room as a tile: its name, boxes sealed of boxes begun, and a bar.
-            val scrolls = rooms.size > 4
+            // Every room as a tile: its name, boxes sealed of boxes begun, and a bar. Four fit across;
+            // more, or four on a screen too narrow for "Main bedroom", scroll sideways instead of shrinking.
             BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 10.dp)) {
                 val tile = (maxWidth - 32.dp - 24.dp) / 4
+                val scrolls = rooms.size > 4 || tile < 80.dp
                 Row(
                     // All tiles as tall as the tallest: a long room name takes two lines, never "…".
                     (if (scrolls) Modifier.horizontalScroll(rememberScrollState()) else Modifier.fillMaxWidth()).height(IntrinsicSize.Min).padding(horizontal = 16.dp),

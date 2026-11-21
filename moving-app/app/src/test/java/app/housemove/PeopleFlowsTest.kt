@@ -791,6 +791,17 @@ class PeopleFlowsTest {
             assertEquals("home", route())
         }
 
+        // A real house has several rooms: the new home takes the same ones in one tap, each linked to its old room.
+        show(newStore())
+        flow("First run, four rooms in both homes", "Next, Next, four rooms, Next, Same as old home, Finish", most = 9) {
+            tap("Next"); tap("Next")
+            for (r in listOf("Kitchen", "Living room", "Main bedroom", "Bathroom")) tap(r)
+            tap("Next"); tap("Same as old home (4)"); tap("Finish")
+            assertEquals("home", route())
+            assertEquals(4, data.roomsOf(Home.DEST).size)
+            assertTrue(data.roomsOf(Home.ORIGIN).all { o -> data.room(o.mapsTo)?.name == o.name })
+        }
+
         // Add a person: from Home to their invite on the screen.
         val asha = organiser()
         show(asha)

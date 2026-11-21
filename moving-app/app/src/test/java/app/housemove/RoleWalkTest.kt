@@ -12,12 +12,14 @@ import androidx.navigation.NavHostController
 import app.housemove.data.Action
 import app.housemove.data.AppData
 import app.housemove.data.Disposition
+import app.housemove.data.dueDay
 import app.housemove.data.Home
 import app.housemove.data.Role
 import app.housemove.data.Store
 import app.housemove.data.mayCarryOut
 import app.housemove.data.mayTick
 import app.housemove.data.title
+import app.housemove.data.today
 import app.housemove.data.visibleTo
 import app.housemove.ui.AppRoot
 import app.housemove.ui.LocalSpeech
@@ -118,6 +120,14 @@ class RoleWalkTest {
     private val everywhere = Regex(".*")
     private val hubs = Regex("(home|more)(_nodate)?")
     private val anItem = Regex("item_(.+)")
+    private val overdueLine = Regex("\\d+ overdue tasks?")
+
+    /** The rule for one task, asked of the Store for every overdue one: may this phone's person tick any of them? */
+    @Suppress("UNUSED_PARAMETER")
+    private fun mayTickAnOverdueJob(s: Store, stop: Stop, c: Control?): Boolean {
+        val d = s.data.value
+        return d.liveTasks.any { !it.done && (d.dueDay(it) ?: Long.MAX_VALUE) < today() && d.mayTick(s.me, it) }
+    }
 
     private val GATES = listOf(
         // People.
@@ -158,6 +168,15 @@ class RoleWalkTest {
         Gate(
             "be offered the list of things to sell, donate or bin", hubs, { c, _ -> c.texts.firstOrNull() == "Sell, donate, bin" },
             can(Action.DECIDE, Action.SUGGEST, Action.CARRY_OUT),
+        ),
+        // Overdue jobs are flagged only to someone who may tick one of them off.
+        Gate(
+            "be told on Home that jobs are overdue (only someone who may tick one off is)", hubs,
+            { c, _ -> c.texts.any { overdueLine.matches(it) } }, ::mayTickAnOverdueJob,
+        ),
+        Gate(
+            "have the Timeline tile flagged for overdue jobs (only someone who may tick one off does)", hubs,
+            { c, _ -> c.texts.firstOrNull() == "Timeline" && c.described.contains("Needs attention") }, ::mayTickAnOverdueJob,
         ),
 
         // ---- the item, container and move-day screens: written up, not failed on ----

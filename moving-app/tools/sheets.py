@@ -28,11 +28,12 @@ ORDER = [
     "boxes", "box_box1", "box_box2", "box_box5", "pack", "labels", "lists", "packorder", "tasks",
     "moveday", "load", "unload", "reconcile", "sweep", "records_ORIGIN", "records_DEST", "unpack", "budget", "reports",
     "rooms", "more", "sync", "settings", "search", "search_results", "scan", "scan_typing",
-    "people", "people_add", "person", "person_priya", "person_alex", "approvals", "approvals_selected", "approvals_decline", "activity",
+    "people", "people_add", "person", "person_sam", "person_priya", "person_tom", "person_gran", "person_alex",
+    "approvals", "approvals_selected", "approvals_decline", "activity",
     "home_decider", "approvals_decider", "people_decider", "settings_decider", "sync_decider", "more_decider",
     "home_helper", "approvals_helper", "people_helper", "settings_helper", "sync_helper", "more_helper",
     "home_alone", "people_alone", "settings_alone",
-    "setup", "setup_2", "setup_3", "setup_joined", "home_movers", "home_inventory",
+    "setup", "setup_2", "setup_3", "setup_4", "setup_joined", "home_movers", "home_inventory",
     "home_nodate", "more_nodate", "settings_nodate",
 ]
 only = [n for n in (sys.argv[1].split(",") if len(sys.argv) > 1 and sys.argv[1] else []) if n]

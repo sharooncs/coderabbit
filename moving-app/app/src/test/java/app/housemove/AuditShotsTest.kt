@@ -220,6 +220,12 @@ class AuditShotsTest {
             rule.onAllNodes(hasText("Next") and hasClickAction()).onFirst().performClick()
             rule.waitForIdle(); shot("setup_$page")
         }
+        // The new home's rooms on a first phone whose old home has four: they come across in one tap.
+        val fresh = Store(tmp.newFolder("fresh"))
+        for (r in listOf("Kitchen", "Living room", "Main bedroom", "Bathroom")) fresh.createRoom(Home.ORIGIN, r)
+        use(fresh)
+        repeat(3) { rule.onAllNodes(hasText("Next") and hasClickAction()).onFirst().performClick(); rule.waitForIdle() }
+        shot("setup_4")
     }
 
     /**

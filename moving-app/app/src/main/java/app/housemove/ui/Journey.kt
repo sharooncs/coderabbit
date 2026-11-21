@@ -316,6 +316,16 @@ val JOURNEY: List<JourneyPhase> = listOf(
     ),
 )
 
+/**
+ * Is the screen at [route] offered to this phone's person? A screen that is a step of the
+ * journey is offered when one of its steps is ([JourneyStep.who]); any other screen always is.
+ * Home uses it so that nothing it points at leads somewhere the Everything list leaves out.
+ */
+fun offeredTo(route: String, data: AppData, device: DeviceInfo): Boolean {
+    val steps = JOURNEY.flatMap { it.steps }.filter { it.route == route }
+    return steps.isEmpty() || steps.any { it.who(data, device) }
+}
+
 /** The phases that have at least one step in this move, with their position in [JOURNEY]. */
 fun shownPhases(data: AppData): List<IndexedValue<JourneyPhase>> =
     JOURNEY.withIndex().filter { (_, phase) -> phase.steps.any { it.shownFor(data) } }
