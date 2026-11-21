@@ -404,6 +404,13 @@ class AuditShotsTest {
         shot("confirm")
         tap("Cancel")
 
+        // A new-home room: its door width by a tap, the rest folded away.
+        go("rooms")
+        tap("New home")
+        tap("Main bedroom")
+        shot("room")
+        tap("Done")
+
         go("boxes")
         tap("All rooms")
         shot("menu")

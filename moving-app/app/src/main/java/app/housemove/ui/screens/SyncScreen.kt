@@ -49,9 +49,14 @@ fun SyncScreen(code: String? = null) {
     var host by remember { mutableStateOf<WifiSync.Host?>(null) }
     var scanning by remember { mutableStateOf(false) }
     var working by remember { mutableStateOf(false) }
-    /** What a hosted sync or a backup led to; a scan's result is in [joiner]. */
+    /** What a hosted sync or a backup led to; a scan's result is in [joiner]. Only the latest of the two is shown. */
     var note by remember { mutableStateOf<SyncReport?>(null) }
     val busy = working || joiner.busy
+
+    fun say(report: SyncReport?) {
+        joiner.report = null
+        note = report
+    }
 
     DisposableEffect(Unit) { onDispose { host?.stop() } }
 
@@ -76,13 +81,13 @@ fun SyncScreen(code: String? = null) {
             }
             working = false
             if (error == null) store.setDevice { it.copy(lastBackupAt = System.currentTimeMillis()) }
-            note = if (error == null) SyncReport(true, "Backup saved", "") else SyncReport(false, "Backup failed", error)
+            say(if (error == null) SyncReport(true, "Backup saved", "") else SyncReport(false, "Backup failed", error))
         }
     }
     val openBackup = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) scope.launch {
             working = true
-            note = withContext(Dispatchers.IO) {
+            val report = withContext(Dispatchers.IO) {
                 try {
                     val r = context.contentResolver.openInputStream(uri)!!.use { Backup.import(store, it) }
                     SyncReport(true, "Backup merged in", "${r.photos} new photo(s) added.")
@@ -91,6 +96,7 @@ fun SyncScreen(code: String? = null) {
                     SyncReport(false, "Could not restore that file", e.message ?: "")
                 }
             }
+            say(report)
             working = false
         }
     }
@@ -137,14 +143,12 @@ fun SyncScreen(code: String? = null) {
                             host = WifiSync.host(store, letNewPhonesIn = store.isAlone()) { r ->
                                 scope.launch {
                                     if (r.ok) store.setDevice { it.copy(lastSyncAt = System.currentTimeMillis()) }
-                                    joiner.report = null
-                                    note = syncReport(r.copy(joinedAs = null), store)
+                                    say(syncReport(r.copy(joinedAs = null), store))
                                 }
                             }
-                            note = null
-                            joiner.report = null
+                            say(null)
                         } catch (e: Exception) {
-                            note = SyncReport(false, "Could not start", e.message ?: "")
+                            say(SyncReport(false, "Could not start", e.message ?: ""))
                         }
                     },
                 )
@@ -207,7 +211,7 @@ fun SyncScreen(code: String? = null) {
                                     }
                                 }
                                 working = false
-                                if (file != null) Share.send(context, file, "application/zip") else note = SyncReport(false, "Could not create the backup", "")
+                                if (file != null) Share.send(context, file, "application/zip") else say(SyncReport(false, "Could not create the backup", ""))
                             }
                         },
                         modifier = Modifier.weight(1f).heightIn(min = 52.dp),

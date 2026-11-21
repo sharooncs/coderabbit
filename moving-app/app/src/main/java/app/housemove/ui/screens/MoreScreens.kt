@@ -275,7 +275,7 @@ fun SearchScreen() {
                 value = query,
                 onValueChange = { query = it },
                 label = { Text("What are you looking for?") },
-                placeholder = { Text("kettle, passport, L042, bookcase…") },
+                placeholder = { Text("kettle, passport, L042…", maxLines = 1) },
                 singleLine = true,
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                 trailingIcon = {
@@ -288,7 +288,7 @@ fun SearchScreen() {
             SpeakButton("What are you looking for?", Modifier.padding(start = 8.dp), contentDescription = "Say what you are looking for") { query = it }
         }
         when {
-            query.isBlank() -> EmptyState(Icons.Default.Search, "Find a box or an item", text = "Type what is in it, its name, its label or its room.")
+            query.isBlank() -> EmptyState(Icons.Default.Search, "Find a box or an item", text = "Say or type what is in it, its name, its label or its room.")
             hits.isEmpty() -> EmptyState(Icons.Default.SearchOff, "Nothing matches \"$query\"", text = "Try one word. If another phone packed it, sync first.")
             else -> LazyColumn(Modifier.weight(1f)) {
                 items(hits, key = { it.movable.id }) { hit ->
