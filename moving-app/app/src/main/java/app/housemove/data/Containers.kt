@@ -58,14 +58,18 @@ fun AppData.looseItems(): List<Item> {
     return moving.filter { it.boxId == null || it.boxId !in ids }
 }
 
-/** Why [childId] cannot go inside [parentId], in words for the screen; null when it can. */
+/**
+ * Why [childId] cannot go inside [parentId], in words for the screen; null when it can.
+ * [childId] may be a container that is only now being created.
+ */
 fun AppData.whyNotNest(childId: String, parentId: String): String? {
-    val child = box(childId) ?: return "That container is no longer here."
     val parent = box(parentId) ?: return "That container is no longer here."
+    val outer = parentOf(parent)
     return when {
-        child.id == parent.id -> "A container cannot go inside itself."
-        parentOf(parent) != null -> "${parent.title()} is already inside ${parentOf(parent)!!.title()}. Containers only go one inside another."
-        liveBoxes.any { it.parentId == child.id && parentOf(it) != null } -> "${child.title()} has containers inside it, so it cannot go inside another."
+        childId == parent.id -> "A container cannot go inside itself."
+        outer != null -> "${parent.title()} is already inside ${outer.title()}. Containers only go one inside another."
+        liveBoxes.any { it.parentId == childId && parentOf(it) != null } ->
+            "${box(childId)?.title() ?: "That container"} has containers inside it, so it cannot go inside another."
         else -> null
     }
 }

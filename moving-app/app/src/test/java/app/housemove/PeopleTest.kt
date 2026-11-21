@@ -53,6 +53,21 @@ class PeopleTest {
         // Every refusal comes with words to show.
         for (a in organiserOnly) assertNotNull(d.refusal(Person(id = "h", role = Role.HELPER), a))
         assertNull(d.refusal(Person(id = "o", role = Role.ORGANISER), Action.ERASE))
+
+        // The phone's side of it: its person's role, or the least rights when its person is not in the move at all.
+        assertEquals(Role.ORGANISER, d.roleOf(DeviceInfo(personId = "o")))
+        assertTrue(d.can(DeviceInfo(personId = "o"), Action.DECIDE))
+        assertEquals(Role.HELPER, d.roleOf(DeviceInfo(personId = "gone")))
+        assertFalse(d.can(DeviceInfo(personId = "gone"), Action.DECIDE))
+        assertNotNull(d.refusal(null, Action.DECIDE))
+        // Someone removed can still use what is on their phone, and nothing more.
+        val removed = d.copy(people = d.people + Person(id = "x", role = Role.ORGANISER, removed = true))
+        assertFalse(removed.can(DeviceInfo(personId = "x"), Action.MANAGE_PEOPLE))
+        assertTrue(removed.can(DeviceInfo(personId = "x"), Action.WORK))
+        assertEquals("You have been removed from this move.", removed.refusal(removed.person("x"), Action.DECIDE))
+        // Data from before 2.0, looked at without a store: the old helper switch decides.
+        assertEquals(Role.ORGANISER, AppData().roleOf(DeviceInfo()))
+        assertEquals(Role.HELPER, AppData().roleOf(DeviceInfo(helper = true)))
     }
 
     // ---- coming from 1.3 ------------------------------------------------------

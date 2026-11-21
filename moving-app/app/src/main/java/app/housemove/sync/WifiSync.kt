@@ -162,6 +162,7 @@ object WifiSync {
         private val server: ServerSocket,
         val token: String,
         private val clock: () -> Long,
+        private val letNewPhonesIn: Boolean,
         private val onResult: (Result) -> Unit,
     ) {
         val port: Int get() = server.localPort
@@ -256,7 +257,8 @@ object WifiSync {
                         when (before.admission(store.device.value, theirPerson)) {
                             Admission.REMOVED -> refuse("REMOVED", "$peer has been removed from this move, so their phone was not synced.")
                             Admission.STRANGER -> refuse("STRANGER", UNKNOWN_PHONE)
-                            else -> Unit
+                            Admission.NEWCOMER -> if (!letNewPhonesIn) refuse("STRANGER", UNKNOWN_PHONE)
+                            Admission.MEMBER -> Unit
                         }
                     }
                     out.writeUTF("OK")
@@ -307,9 +309,15 @@ object WifiSync {
         }
     }
 
-    /** Start hosting. [clock] times the ten minutes of an invite; tests pass their own. */
-    fun host(store: Store, clock: () -> Long = System::currentTimeMillis, onResult: (Result) -> Unit): Host {
-        val h = Host(store, ServerSocket(0), newToken(), clock, onResult)
+    /**
+     * Start hosting. [clock] times the ten minutes of an invite; tests pass their own.
+     * With [letNewPhonesIn] false the plain code only works for phones whose people are already
+     * in the move, so the only way in is an invite made for a person. It is true by default, as
+     * before 2.0: a phone that is not in the move comes in as itself when this phone's person may
+     * add people.
+     */
+    fun host(store: Store, clock: () -> Long = System::currentTimeMillis, letNewPhonesIn: Boolean = true, onResult: (Result) -> Unit): Host {
+        val h = Host(store, ServerSocket(0), newToken(), clock, letNewPhonesIn, onResult)
         h.start()
         return h
     }
@@ -319,9 +327,10 @@ object WifiSync {
     /**
      * Connect to a hosting phone and sync both ways. Blocking; call off the main thread.
      * With an invite made for a person ([Invite.personId]) this phone becomes that person:
-     * see [Result.joinedAs].
+     * see [Result.joinedAs]. With [letNewPhonesIn] false it only syncs with a phone whose
+     * person is already in this phone's move.
      */
-    fun join(store: Store, invite: Invite, connectTimeoutMs: Int = 4000): Result {
+    fun join(store: Store, invite: Invite, connectTimeoutMs: Int = 4000, letNewPhonesIn: Boolean = true): Result {
         var lastError = "Could not reach the other phone. Are both on the same Wi-Fi?"
         for (host in invite.hosts) {
             val socket = Socket()
@@ -372,7 +381,8 @@ object WifiSync {
                         val verdict = when (before.admission(store.device.value, theirPerson)) {
                             Admission.REMOVED -> "REMOVED" to "${peer.ifBlank { "That phone's person" }} has been removed from this move, so this phone did not sync with theirs."
                             Admission.STRANGER -> "STRANGER" to UNKNOWN_PHONE
-                            else -> null
+                            Admission.NEWCOMER -> if (letNewPhonesIn) null else "STRANGER" to UNKNOWN_PHONE
+                            Admission.MEMBER -> null
                         }
                         if (verdict != null) {
                             out.writeUTF(verdict.first); out.flush()

@@ -32,9 +32,9 @@ class SyncPeopleTest {
 
     private val open = ArrayList<WifiSync.Host>()
 
-    private fun hosting(store: Store, clock: () -> Long = System::currentTimeMillis): Hosting {
+    private fun hosting(store: Store, letNewPhonesIn: Boolean = true, clock: () -> Long = System::currentTimeMillis): Hosting {
         val results = LinkedBlockingQueue<WifiSync.Result>()
-        val h = WifiSync.host(store, clock) { results.add(it) }
+        val h = WifiSync.host(store, clock, letNewPhonesIn) { results.add(it) }
         open += h
         return Hosting(h, results)
     }
@@ -239,7 +239,16 @@ class SyncPeopleTest {
         assertEquals(listOf("S1"), stranger.data.value.liveBoxes.map { it.label })
         assertEquals(1, stranger.data.value.people.size)
 
-        // An Organiser showing their code is the one who may add a phone: it comes in as it is, as before 2.0.
+        // An Organiser can keep the ordinary code for phones already in the move, so that the only way in is an invite.
+        val membersOnly = hosting(asha, letNewPhonesIn = false)
+        assertEquals(WifiSync.NOT_ADDED, WifiSync.join(stranger, membersOnly.host.invite(local)).error)
+        assertEquals(WifiSync.UNKNOWN_PHONE, membersOnly.result().error)
+        assertTrue(WifiSync.join(hal, membersOnly.host.invite(local)).ok)
+        assertTrue(membersOnly.result().ok)
+        assertEquals(WifiSync.UNKNOWN_PHONE, WifiSync.join(asha, hosting(stranger).host.invite(local), letNewPhonesIn = false).error)
+        assertEquals(2, asha.data.value.people.size)
+
+        // Otherwise an Organiser showing their code is the one who may add a phone: it comes in as it is, as before 2.0.
         val (a, s) = sync(asha, stranger)
         assertTrue(a.error, a.ok)
         assertTrue(s.error, s.ok)

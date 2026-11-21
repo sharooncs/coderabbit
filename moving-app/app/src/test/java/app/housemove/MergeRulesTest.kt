@@ -401,6 +401,36 @@ class MergeRulesTest {
     }
 
     @Test
+    fun someoneAddedByAnOrganiserWhoHadAlreadyBeenDemotedIsNotInTheMove() {
+        // Asha makes Omar a Decider. Before his phone hears of it, he adds someone and their phone joins from his.
+        assertTrue(asha.setRole(omar.me!!.id, Role.DECIDER).ok)
+        val late = omar.addPerson("Late", Role.ORGANISER).valueOrNull()!!
+        val phone = store()
+        assertTrue(phone.joinAs(late.id, omar.data.value).ok)
+        assertEquals(Role.ORGANISER, phone.myRole)
+        phone.decide(sofa, Disposition.BIN)
+
+        sync(asha, omar)
+        for (s in listOf(asha, omar)) {
+            assertNull(s.data.value.person(late.id))
+            assertEquals(listOf(asha.me!!.id), s.data.value.people.filter { it.role == Role.ORGANISER }.map { it.id })
+        }
+        // The new phone finds out at its first sync: it is nobody in this move, has the least rights, and its decision did not count.
+        sync(asha, phone)
+        assertNull(phone.me)
+        assertEquals(Role.HELPER, phone.myRole)
+        assertFalse(phone.can(Action.DECIDE))
+        assertNotNull(phone.decide(sofa, Disposition.BIN).reason)
+        assertEquals(Disposition.MOVE, asha.item(sofa).disposition)
+        assertEquals(Disposition.MOVE, phone.item(sofa).disposition)
+        // Added properly, by someone who may, it is in.
+        val real = asha.addPerson("Late", Role.HELPER).valueOrNull()!!
+        assertTrue(phone.joinAs(real.id, asha.data.value).ok)
+        assertEquals(real.id, phone.me!!.id)
+        assertEquals(Role.HELPER, phone.myRole)
+    }
+
+    @Test
     fun aSecondRunOfTheSameSyncChangesNothing() {
         dee.suggestDecision(sofa, Disposition.SELL)
         omar.decide(lamp, Disposition.STORE)

@@ -67,9 +67,12 @@ fun AppData.hasOrganiser(): Boolean = people.any { it.role == Role.ORGANISER && 
 /** The person this phone belongs to. */
 fun AppData.me(device: DeviceInfo): Person? = person(device.personId)
 
-/** This phone's role. A phone with no person yet falls back to its old helper switch. */
+/**
+ * This phone's role. Data with no people in it at all (from before 2.0) goes by the phone's old
+ * helper switch. A phone whose person is not among the people has the least rights.
+ */
 fun AppData.roleOf(device: DeviceInfo): Role {
-    val p = me(device) ?: return if (device.helper) Role.HELPER else Role.ORGANISER
+    val p = me(device) ?: return if (people.isEmpty() && !device.helper) Role.ORGANISER else Role.HELPER
     return if (p.removed) Role.HELPER else p.role
 }
 
