@@ -1,13 +1,9 @@
 package app.housemove.ui.screens
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -15,14 +11,31 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import app.housemove.data.*
 import app.housemove.ui.*
+import java.io.File
 
 /**
- * Rapid catalogue: stand in a room and keep taking photos.
- * Each photo becomes an item in that room, to be named now or later.
+ * Set in tests to stand in for the camera of the walk-through: it is handed the file a
+ * picture should be saved to and writes one. Null means: open the real camera.
+ */
+val LocalWalkCamera = staticCompositionLocalOf<((File) -> Unit)?> { null }
+
+/**
+ * One photo taken in the walk-through becomes one item of [roomId]. The photo is enough:
+ * the item gets a name such as "Kitchen item 3" and can be named properly later, or never.
+ */
+internal fun Store.addByPhoto(roomId: String?, photo: File): Item {
+    val created = createItem(data.value.defaultItemName(roomId), roomId)
+    addPhoto(created.id, PhotoKind.GENERAL, photo)
+    return created
+}
+
+/**
+ * Rapid catalogue: stand in a room and keep taking photos. Each photo becomes an item
+ * in that room, and that is all that is needed. Naming is one tap on a chip, or a word
+ * spoken, whenever there is time for it.
  */
 @Composable
 fun WalkScreen() {
@@ -30,6 +43,7 @@ fun WalkScreen() {
     val nav = LocalNav.current
     val data = appData()
     val device = deviceInfo()
+    val testCamera = LocalWalkCamera.current
 
     val rooms = data.roomsOf(Home.ORIGIN)
     val roomId = device.currentRoomId?.takeIf { id -> rooms.any { it.id == id } }
@@ -41,25 +55,27 @@ fun WalkScreen() {
         .filter { if (roomId == null) data.room(it.originRoomId) == null else it.originRoomId == roomId }
         .sortedByDescending { it.createdAt }
     val canShoot = roomId != null || rooms.isEmpty()
+    val unnamed = inRoom.count { it.hasPlaceholderName() }
 
     Screen("Walk-through") {
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
-            modifier = Modifier.fillMaxSize(),
+        LazyColumn(
+            Modifier.fillMaxSize(),
             contentPadding = PaddingValues(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            item(key = "room", span = { GridItemSpan(maxLineSpan) }) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Which room are you in?", style = MaterialTheme.typography.titleMedium)
-                    if (rooms.isEmpty()) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Hint("No rooms yet. Photos can be sorted into rooms later.", Modifier.weight(1f))
-                            OutlinedButton(onClick = { nav.open("rooms") }) { Text("Add rooms") }
-                        }
-                    } else {
-                        RoomTiles(
+            item(key = "room") {
+                if (rooms.isEmpty()) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Hint("No rooms yet. Photos can be sorted into rooms later.", Modifier.weight(1f))
+                        OutlinedButton(onClick = { nav.open("rooms") }) { Text("Add rooms") }
+                    }
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            if (canShoot) "Which room are you in?" else "Pick the room you are in",
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        RoomPicker(
                             Home.ORIGIN, roomId,
                             onPick = { picked -> store.setDevice { it.copy(currentRoomId = picked) } },
                             allowNone = false,
@@ -67,56 +83,47 @@ fun WalkScreen() {
                     }
                 }
             }
-            item(key = "shoot", span = { GridItemSpan(maxLineSpan) }) {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    BigAction(Pic.Camera, "Start shooting", onClick = { camera = true }, enabled = canShoot)
-                    Hint(
-                        if (canShoot) "One photo per big thing. Small things are recorded by box."
-                        else "Pick the room first, so the photos are filed under it."
-                    )
-                }
-            }
-            item(key = "count", span = { GridItemSpan(maxLineSpan) }) {
-                Text(
-                    if (room != null) "In ${room.name} (${inRoom.size})" else "Not in a room yet (${inRoom.size})",
-                    style = MaterialTheme.typography.titleMedium,
+            item(key = "shoot") {
+                BigAction(
+                    Pic.Camera, "Start shooting",
+                    onClick = {
+                        if (testCamera != null) {
+                            val file = store.newPhotoFile()
+                            testCamera(file)
+                            store.addByPhoto(roomId, file)
+                        } else camera = true
+                    },
+                    enabled = canShoot,
                 )
             }
             if (inRoom.isEmpty()) {
-                item(key = "none", span = { GridItemSpan(maxLineSpan) }) {
-                    EmptyState(Pic.Item, "Nothing here yet", text = "Each photo you take appears here, ready to be named.")
+                item(key = "none") {
+                    EmptyState(Pic.Item, "Nothing here yet", text = "One photo per big thing. That is all it takes.")
                 }
-            }
-            items(inRoom, key = { it.id }) { x ->
-                val scheme = MaterialTheme.colorScheme
-                Column(
-                    Modifier
-                        .glass(RoundedCornerShape(18.dp), shadow = 5.dp)
-                        .padding(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Box {
-                        OwnerThumb(
-                            x.id,
-                            Modifier.fillMaxWidth().aspectRatio(4f / 3f)
-                                .clickable(onClickLabel = "Open item details") { nav.open("item/${x.id}") },
-                        )
-                        OverlayIconButton(
-                            onClick = { nav.open("item/${x.id}") },
-                            modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(36.dp),
-                        ) { Icon(Icons.Default.ChevronRight, contentDescription = "Open item details") }
-                    }
-                    TextInput(
-                        value = x.name,
-                        onChange = { v -> store.data.value.item(x.id)?.let { store.put(it.copy(name = v)) } },
-                        label = "What is it?",
-                        key = x.id,
-                        mic = true,
+            } else {
+                item(key = "count") {
+                    GroupHeading(
+                        Pic.Room, if (room != null) "In ${room.name}" else "Not in a room yet",
+                        trailing = if (unnamed > 0) "${inRoom.size} · $unnamed to name" else "${inRoom.size}",
                     )
                 }
             }
-            if (inRoom.isNotEmpty() && data.uses(Part.TRIAGE)) {
-                item(key = "next", span = { GridItemSpan(maxLineSpan) }) {
+            items(inRoom, key = { it.id }) { x ->
+                Row(
+                    Modifier.fillMaxWidth().glass(RoundedCornerShape(22.dp), shadow = 6.dp).padding(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    ItemPhoto(
+                        x.id,
+                        Modifier.size(84.dp).clickable(onClickLabel = "Open item details") { nav.open("item/${x.id}") },
+                        RoundedCornerShape(16.dp),
+                    )
+                    ItemNamer(x, Modifier.weight(1f))
+                }
+            }
+            if (inRoom.isNotEmpty() && data.uses(Part.TRIAGE) && store.can(Action.SUGGEST)) {
+                item(key = "next") {
                     BigAction(Icons.Default.Rule, "Decide what to keep", onClick = { nav.open("triage") }, primary = false)
                 }
             }
@@ -127,10 +134,7 @@ fun WalkScreen() {
         CameraDialog(
             hint = (room?.name?.let { "$it: " } ?: "") + "one photo per big thing",
             newFile = { store.newPhotoFile() },
-            onPhoto = { file ->
-                val created = store.createItem("", roomId)
-                store.addPhoto(created.id, PhotoKind.GENERAL, file)
-            },
+            onPhoto = { file -> store.addByPhoto(roomId, file) },
             onClose = { camera = false },
         )
     }

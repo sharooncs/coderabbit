@@ -1,7 +1,5 @@
 package app.housemove.ui.screens
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -16,7 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextOverflow
@@ -25,6 +23,8 @@ import app.housemove.data.*
 import app.housemove.ui.*
 
 private const val NO_ROOM = "none"
+private const val LOOSE = "loose"
+private const val PACKED = "packed"
 
 private data class Shortcut(
     val icon: ImageVector,
@@ -46,18 +46,24 @@ fun ItemsScreen() {
     // Filters survive leaving and coming back to the tab. Null means "all".
     var decision by rememberSaveable { mutableStateOf<String?>(null) }
     var roomFilter by rememberSaveable { mutableStateOf<String?>(null) }
+    var packing by rememberSaveable { mutableStateOf<String?>(null) }
 
     val all = data.liveItems
     val originRooms = data.roomsOf(Home.ORIGIN)
     val anyWithoutRoom = all.any { data.room(it.originRoomId) == null }
+    val packedIds = all.filter { data.containerOf(it) != null }.map { it.id }.toSet()
+    // The loose / packed filter only appears once something has been put in a container.
+    val packedFilter = packing.takeIf { packedIds.isNotEmpty() }
     val shown = all.filter { i ->
         (decision == null || i.disposition.name == decision) &&
+            (packedFilter == null || (i.id in packedIds) == (packedFilter == PACKED)) &&
             when (roomFilter) {
                 null -> true
                 NO_ROOM -> data.room(i.originRoomId) == null
                 else -> i.originRoomId == roomFilter
             }
     }.sortedWith(compareBy({ data.room(it.originRoomId)?.sort ?: Int.MAX_VALUE }, { data.room(it.originRoomId)?.name ?: "~" }, { it.createdAt }))
+    val waiting = data.waitingProposals().groupBy { it.targetId }
 
     // On a small screen or with large text, tiles go fewer to a row so their words still fit.
     val config = LocalConfiguration.current
@@ -65,7 +71,7 @@ fun ItemsScreen() {
 
     fun addItem() {
         val room = roomFilter?.takeIf { it != NO_ROOM } ?: device.currentRoomId?.takeIf { data.room(it) != null }
-        val created = store.createItem("", room)
+        val created = store.createItem(data.defaultItemName(room), room)
         nav.open("item/${created.id}")
     }
 
@@ -94,10 +100,10 @@ fun ItemsScreen() {
         } else LazyColumn(
             Modifier.fillMaxSize(),
             contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item(key = "shortcuts") {
-                val tiles = shortcuts(data)
+                val tiles = shortcuts(data, store.can(Action.SUGGEST))
                 TileGrid(tiles, Modifier.padding(horizontal = 16.dp), columns = tiles.size.coerceAtMost(if (narrow) 2 else 3)) { s, m ->
                     Tile(s.icon, s.title, onClick = { nav.open(s.route) }, modifier = m, status = s.status, done = s.done, alert = s.alert)
                 }
@@ -105,8 +111,8 @@ fun ItemsScreen() {
             stickyHeader(key = "filters") {
                 Row(
                     Modifier.fillMaxWidth().groundBand()
-                        .horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        .horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (originRooms.isNotEmpty()) {
@@ -117,16 +123,25 @@ fun ItemsScreen() {
                             onPick = { roomFilter = it },
                         )
                     }
-                    FilterChip(selected = decision == null, onClick = { decision = null }, label = { Text("All ${all.size}") })
+                    GlassChip("All ${all.size}", selected = decision == null && packedFilter == null, onClick = { decision = null; packing = null })
+                    if (packedIds.isNotEmpty()) {
+                        GlassChip(
+                            "Loose ${all.size - packedIds.size}", icon = Pic.Item, selected = packedFilter == LOOSE,
+                            onClick = { packing = if (packedFilter == LOOSE) null else LOOSE },
+                        )
+                        GlassChip(
+                            "Packed ${packedIds.size}", icon = Pic.Box, selected = packedFilter == PACKED,
+                            onClick = { packing = if (packedFilter == PACKED) null else PACKED },
+                        )
+                    }
                     Disposition.entries.forEach { d ->
                         val n = all.count { it.disposition == d }
                         // Decisions nobody has made yet are left out, to keep the row short.
                         if (n > 0 || decision == d.name) {
-                            FilterChip(
-                                selected = decision == d.name,
+                            GlassChip(
+                                "${d.label} $n", icon = d.icon(), selected = decision == d.name,
+                                tone = if (d == Disposition.UNDECIDED) GlassTone.Amber else GlassTone.Plain,
                                 onClick = { decision = if (decision == d.name) null else d.name },
-                                label = { Text("${d.label} $n") },
-                                leadingIcon = { Icon(d.icon(), contentDescription = null, modifier = Modifier.size(18.dp)) },
                             )
                         }
                     }
@@ -136,16 +151,18 @@ fun ItemsScreen() {
                 item(key = "nomatch") {
                     EmptyState(
                         Icons.Default.SearchOff, "Nothing matches",
-                        action = "Show everything", onAction = { decision = null; roomFilter = null },
+                        action = "Show everything", onAction = { decision = null; roomFilter = null; packing = null },
                     )
                 }
             }
             items(shown.chunked(2), key = { it.first().id }) { pair ->
                 Row(
                     Modifier.padding(horizontal = 16.dp).height(IntrinsicSize.Min),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    pair.forEach { x -> ItemCard(x, data, Modifier.weight(1f).fillMaxHeight()) { nav.open("item/${x.id}") } }
+                    pair.forEach { x ->
+                        ItemCard(x, data, waiting[x.id].orEmpty(), Modifier.weight(1f).fillMaxHeight()) { nav.open("item/${x.id}") }
+                    }
                     if (pair.size == 1) Spacer(Modifier.weight(1f))
                 }
             }
@@ -153,18 +170,21 @@ fun ItemsScreen() {
     }
 }
 
-/** The other ways into the catalogue, each with how far along it is. Parts that are switched off are left out. */
-private fun shortcuts(data: AppData): List<Shortcut> {
+/**
+ * The other ways into the catalogue, each with how far along it is. Parts that are switched
+ * off are left out, and so are deciding and planning for someone who may do neither.
+ */
+private fun shortcuts(data: AppData, maySuggest: Boolean): List<Shortcut> {
     val out = ArrayList<Shortcut>()
     out += Shortcut(Pic.Camera, "Walk-through", "walk", status = "Add by photo")
-    if (data.uses(Part.TRIAGE)) {
+    if (data.uses(Part.TRIAGE) && maySuggest) {
         val undecided = data.liveItems.count { it.disposition == Disposition.UNDECIDED }
         out += Shortcut(
             Icons.Default.Rule, "Triage", "triage",
             status = if (undecided > 0) "$undecided to decide" else "All decided", done = undecided == 0,
         )
     }
-    if (data.uses(Part.PLAN)) {
+    if (data.uses(Part.PLAN) && maySuggest) {
         val moving = data.movingItems()
         val noRoom = moving.count { data.room(it.destRoomId) == null }
         val wontFit = moving.count { data.fitOf(it) == Fit.NO && !it.needsDisassembly }
@@ -193,12 +213,9 @@ private fun RoomFilterChip(rooms: List<Room>, withNoRoom: Boolean, selected: Str
         else -> rooms.firstOrNull { it.id == selected }?.name ?: "All rooms"
     }
     Box {
-        FilterChip(
-            selected = selected != null,
-            onClick = { open = true },
-            label = { Text(label, maxLines = 1) },
-            leadingIcon = { Icon(Pic.Room, contentDescription = null, modifier = Modifier.size(18.dp)) },
-            trailingIcon = { Icon(Icons.Default.ArrowDropDown, contentDescription = "Choose a room", modifier = Modifier.size(18.dp)) },
+        GlassChip(
+            label, selected = selected != null, onClick = { open = true },
+            leading = { Icon(if (selected != null) Icons.Default.Check else Pic.Room, contentDescription = "Choose a room", modifier = Modifier.size(16.dp)) },
         )
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             DropdownMenuItem(text = { Text("All rooms") }, onClick = { onPick(null); open = false })
@@ -210,47 +227,36 @@ private fun RoomFilterChip(rooms: List<Room>, withNoRoom: Boolean, selected: Str
     }
 }
 
-/** One item as a picture: photo, name, the decision, where it is going, and anything to watch out for. */
+/**
+ * One item as a picture: its photo with how it stands marked on it, its name, where it is
+ * going and anything to watch out for. Something packed carries its container's code;
+ * something with a suggestion waiting carries the amber callout.
+ */
 @Composable
-private fun ItemCard(x: Item, data: AppData, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    val scheme = MaterialTheme.colorScheme
+private fun ItemCard(x: Item, data: AppData, waiting: List<Proposal>, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val moving = x.disposition == Disposition.MOVE
     val fit = if (moving && data.uses(Part.PLAN)) data.fitOf(x) else Fit.UNKNOWN
-    val state = when (x.disposition) {
-        Disposition.MOVE -> if (x.stage == Stage.AT_ORIGIN) "Move" else "Move · " + stageText(x.stage, isBox = false, data.vehicle())
-        Disposition.SELL -> if (x.gone) "Sold" else if (x.listed) "Sell · listed" else "Sell · not listed"
-        Disposition.DONATE -> if (x.gone) "Donate · gone" else "Donate"
-        Disposition.BIN -> if (x.gone) "Bin · gone" else "Bin"
-        Disposition.STORE -> "Store"
-        Disposition.UNDECIDED -> "Not decided"
-    }
+    val (state, tone) = data.itemState(x)
+    val container = data.containerOf(x)
     Column(
         modifier
-            .glass(RoundedCornerShape(18.dp), shadow = 5.dp)
+            .glass(RoundedCornerShape(22.dp), shadow = 6.dp)
             .clickable(onClick = onClick)
             .padding(6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        val photo = data.photosOf(x.id).firstOrNull()
-        val frame = Modifier.fillMaxWidth().aspectRatio(4f / 3f)
-        if (photo != null) PhotoThumb(photo, frame) else {
-            Box(frame.clip(RoundedCornerShape(8.dp)).background(scheme.surfaceVariant), contentAlignment = Alignment.Center) {
-                Icon(Pic.Item, contentDescription = "No photo yet", tint = scheme.outline, modifier = Modifier.size(44.dp))
-            }
+        Box {
+            // Something that has gone fades back, so what is still here stands out.
+            ItemPhoto(x.id, Modifier.fillMaxWidth().aspectRatio(4f / 3f).alpha(if (x.gone) 0.5f else 1f), RoundedCornerShape(17.dp), iconSize = 40.dp)
+            PhotoMark(
+                if (tone == GlassTone.Mint) Icons.Default.CheckCircle else x.disposition.icon(), state,
+                Modifier.align(Alignment.TopStart).padding(6.dp), tint = tone.onPhoto(),
+            )
+            if (container != null) PhotoMark(Pic.Box, container.label, Modifier.align(Alignment.BottomEnd).padding(6.dp))
         }
-        Column(Modifier.padding(start = 4.dp, end = 4.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(Modifier.padding(start = 4.dp, end = 4.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Text(x.title(), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (x.disposition == Disposition.UNDECIDED) {
-                IconFlag(x.disposition.icon(), state)
-            } else {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(x.disposition.icon(), contentDescription = null, tint = scheme.primary, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text(state, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            }
-            val flags = moving || x.fragile || x.damaged
-            if (flags) {
+            if (moving || x.fragile || x.damaged) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (moving) RoomBadge(data.room(x.destRoomId))
                     when {
@@ -262,6 +268,7 @@ private fun ItemCard(x: Item, data: AppData, modifier: Modifier = Modifier, onCl
                     if (x.damaged) IconFlag(Pic.Damage, "Damaged", error = true)
                 }
             }
+            waiting.firstOrNull()?.let { WaitingTag(it, data, Modifier.fillMaxWidth(), compact = true) }
         }
     }
 }

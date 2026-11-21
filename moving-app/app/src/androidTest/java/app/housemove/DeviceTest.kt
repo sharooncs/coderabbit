@@ -374,7 +374,8 @@ class DeviceTest {
 
         tap("Items")
         tap("Oak wardrobe")
-        tap("It has a make, model and serial number")
+        tap("It has a serial number")
+        tapDesc("Edit make, model and serial number") // typing them is behind the pencil
         type("Make", "Acme")
         type("Serial number", "SN-TEST-1")
         assertEquals("SN-TEST-1", data.item("item1")!!.serial)
