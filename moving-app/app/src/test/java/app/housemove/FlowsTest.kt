@@ -680,7 +680,7 @@ class FlowsTest {
         tap("Add a cost")
         tap("Other amount")
         type("Amount", "180.50")
-        tap("Name and date")
+        tap("Details")
         type("Name", "Van hire")
         tap("Add cost", sub = true)
         val e = data.liveExpenses.single()

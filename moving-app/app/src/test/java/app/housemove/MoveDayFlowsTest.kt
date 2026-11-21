@@ -350,10 +350,12 @@ class MoveDayFlowsTest {
         assertEquals(today(), first.day)
         see("Fuel") // named by what it is
 
-        // The same again is two taps. This one is a quote.
+        // The same again is two taps. This one is a quote, which is said under Details.
         tap("Add a cost")
         see("Add cost · £ 59")
+        tap("Details")
         tap("Not paid yet")
+        tap("Details") // folded away again, taking its name field with it
         tap("Add cost · £ 59")
         assertEquals(2, data.liveExpenses.size)
         assertEquals(1, data.liveExpenses.count { it.planned })

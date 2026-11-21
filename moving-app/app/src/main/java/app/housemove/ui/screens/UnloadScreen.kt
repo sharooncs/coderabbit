@@ -129,7 +129,7 @@ fun UnloadScreen() {
                     trips.forEach { t -> GlassChip(t.name, selected = filter == t.id, onClick = { tripFilter = t.id }) }
                 }
             }
-            MdScanAction(scanning, "Scan labels at the door") { scanning = !scanning }
+            MdScanAction(scanning, if (mdNarrow()) "Scan labels" else "Scan labels at the door") { scanning = !scanning }
             if (scanning) MdScanner(onScan)
 
             // Bring the result back into view if the list was scrolled down.

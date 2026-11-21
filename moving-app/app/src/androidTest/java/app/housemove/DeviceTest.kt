@@ -305,7 +305,7 @@ class DeviceTest {
         tap("Add a cost") // opens in the page; a cost is normally tapped in, and the keyboard sits behind these two
         tap("Other amount")
         type("Amount", "180")
-        tap("Name and date")
+        tap("Details")
         type("Name", "Van hire")
         tap("Add cost", sub = true)
         assertEquals(180.0, data.liveExpenses.single().amount, 0.001)

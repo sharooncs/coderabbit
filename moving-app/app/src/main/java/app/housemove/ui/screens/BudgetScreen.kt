@@ -26,11 +26,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Keyboard
@@ -44,6 +42,7 @@ import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Warehouse
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -557,20 +556,24 @@ private fun MdCostEditor(existing: Expense?, onClose: () -> Unit) {
             amount = it
             touched = true
         }
-        if (mayPay) {
-            MdReceipts(id, saved = existing != null)
-            val unpaid = if (existing != null) existing.planned else planned
-            fun setUnpaid(p: Boolean) {
-                if (existing != null) mdTold(context, store.markPaid(id, paid = !p)) else planned = p
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        val unpaid = if (existing != null) existing.planned else planned
+        if (mayPay) MdReceipts(id, saved = existing != null)
+        else if (existing == null) Hint("An Organiser approves it. Then you can mark it paid and add the receipt.")
+        // What is rarely changed: a quote that is not paid yet, a name, another day.
+        Fold(
+            "Details", Icons.Default.Tune,
+            summary = listOfNotNull(
+                (if (unpaid) "Not paid yet" else "Paid").takeIf { mayPay }, title.ifBlank { "No name" }, fmtDayShort(day),
+            ).joinToString(" · "),
+            key = "costmore:$id",
+        ) {
+            if (mayPay) Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                fun setUnpaid(p: Boolean) {
+                    if (existing != null) mdTold(context, store.markPaid(id, paid = !p)) else planned = p
+                }
                 GlassChip("Paid", selected = !unpaid, onClick = { setUnpaid(false) })
                 GlassChip("Not paid yet", selected = unpaid, onClick = { setUnpaid(true) })
             }
-        } else if (existing == null) {
-            Hint("An Organiser approves it. Then you can mark it paid and add the receipt.")
-        }
-        Fold("Name and date", Icons.Default.Edit, summary = listOf(title.ifBlank { "No name" }, fmtDayShort(day)).joinToString(" · "), key = "costmore:$id") {
             TextInput(title, { title = it }, "Name", key = id)
             DateButton(day, { d -> if (d != null) day = d }, "Date", allowClear = false)
         }

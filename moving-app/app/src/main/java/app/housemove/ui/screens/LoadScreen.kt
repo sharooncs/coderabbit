@@ -136,7 +136,7 @@ fun LoadScreen() {
                     )
                 }
             }
-            MdScanAction(scanning, "Scan labels as they go on") { scanning = !scanning }
+            MdScanAction(scanning, if (mdNarrow()) "Scan labels" else "Scan labels as they go on") { scanning = !scanning }
             if (scanning) MdScanner(onScan)
             result?.let { MdBanner(it, Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) }
 

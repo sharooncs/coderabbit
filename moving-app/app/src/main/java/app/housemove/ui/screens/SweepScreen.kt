@@ -1,6 +1,5 @@
 package app.housemove.ui.screens
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -32,7 +31,6 @@ import app.housemove.data.Stage
 import app.housemove.data.movables
 import app.housemove.ui.EmptyState
 import app.housemove.ui.Fold
-import app.housemove.ui.Hint
 import app.housemove.ui.LocalNav
 import app.housemove.ui.LocalStore
 import app.housemove.ui.Pic

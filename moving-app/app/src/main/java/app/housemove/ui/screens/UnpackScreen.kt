@@ -23,7 +23,6 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -294,15 +293,7 @@ private fun MdUnpackCard(
                     RoomBadge(room)
                     flags.forEach { (picture, label) -> IconFlag(picture, label) }
                 }
-                Button(
-                    onClick = onAction,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                ) {
-                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(action, style = MaterialTheme.typography.titleMedium, maxLines = 1, softWrap = false)
-                }
+                MdRowButton(action, onClick = onAction, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), icon = Icons.Default.Check)
             }
         }
         if (inside.isNotEmpty()) {
