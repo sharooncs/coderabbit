@@ -57,7 +57,7 @@ val LocalNav = staticCompositionLocalOf<NavHostController> { error("Nav not prov
 
 /** The current dataset; recomposes when anything changes. Items carry their hidden details where this phone holds them ([filledIn]). */
 @Composable
-fun appData(): AppData = LocalStore.current.data.collectAsState().value.let { d -> androidx.compose.runtime.remember(d) { d.filledIn() } }
+fun appData(): AppData = LocalStore.current.data.collectAsState().value.filledIn()
 
 @Composable
 fun deviceInfo(): DeviceInfo = LocalStore.current.device.collectAsState().value
