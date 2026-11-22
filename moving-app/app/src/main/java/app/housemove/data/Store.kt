@@ -2032,7 +2032,7 @@ class Store internal constructor(
      * made a Helper loses what they no longer see. A sync with another Helper changes nothing. Returns whether
      * anything was let go.
      */
-    fun fullSyncDone(peerPersonId: String?): Boolean {
+    fun fullSyncDone(peerPersonId: String?, sent: AppData? = null): Boolean {
         val dropped: List<Photo>
         synchronized(lock) {
             val d = _data.value
@@ -2041,7 +2041,9 @@ class Store internal constructor(
             val peer = d.person(peerPersonId)?.takeIf { !it.removed } ?: return false
             if (peer.role != Role.ORGANISER && peer.role != Role.DECIDER) return false
             if (!d.holdsHidden(dev.personId)) return false
-            val next = d.withoutHiddenFor(dev.personId)
+            // With [sent], the data that went to that phone: only what it was sent goes (see keepingUnsent).
+            val next = d.withoutHiddenFor(dev.personId).let { if (sent == null) it else it.keepingUnsent(d, sent, dev.personId) }
+            if (next == d) return false
             val kept = next.photos.map { it.file }.toSet()
             dropped = d.photos.filter { it.kind in HIDDEN_FROM_HELPERS && it.file !in kept }
             _data.value = next

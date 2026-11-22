@@ -58,6 +58,30 @@ fun AppData.withoutHiddenFor(me: String): AppData = copy(
     collect = collect.filter { it.to == me && item(it.id)?.handoverTo == me },
 )
 
+/**
+ * [withoutHiddenFor] after a full sync in which this phone sent [sent]: what it let go is only what the other phone
+ * was sent as it is now. Anything made or changed here after that went across (in the middle of the sync), and the
+ * receipt and serial-label photos this phone's person took themselves, stay: the next sync with an Organiser or a
+ * Decider passes them on. [held] is the data before letting go.
+ */
+internal fun AppData.keepingUnsent(held: AppData, sent: AppData, me: String): AppData {
+    fun <T : Rec> back(now: List<T>, was: List<T>, theirs: List<T>, hiddenKind: (T) -> Boolean, mine: (T) -> Boolean = { false }): List<T> {
+        val sentAt = HashMap<String, Long>(theirs.size * 2)
+        for (r in theirs) sentAt[r.id] = r.updatedAt
+        val kept = now.mapTo(HashSet()) { it.id }
+        val extra = was.filter { r -> hiddenKind(r) && r.id !in kept && (mine(r) || (sentAt[r.id] ?: Long.MIN_VALUE) < r.updatedAt) }
+        return if (extra.isEmpty()) now else now + extra
+    }
+    return copy(
+        expenses = back(expenses, held.expenses, sent.expenses, { true }),
+        photos = back(photos, held.photos, sent.photos, { it.kind in HIDDEN_FROM_HELPERS }, { it.by == me && me.isNotEmpty() }),
+        proposals = back(proposals, held.proposals, sent.proposals, { it.kind == ProposalKind.COST }),
+        hidden = back(hidden, held.hidden, sent.hidden, { true }),
+        refused = back(refused, held.refused, sent.refused, { true }),
+        collect = back(collect, held.collect, sent.collect, { true }),
+    )
+}
+
 /** Does this phone hold anything a Helper is not sent? */
 fun AppData.holdsHidden(me: String): Boolean =
     expenses.isNotEmpty() || hidden.isNotEmpty() || refused.isNotEmpty() || photos.any { it.kind in HIDDEN_FROM_HELPERS } ||
