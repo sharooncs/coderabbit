@@ -847,12 +847,16 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
         val sent = distrustUnstamped(remote)
         val target = sent.person(personId) ?: return Outcome.Refused("That person is not in the move.")
         // A phone joining as a Helper takes in nothing a Helper is not sent, whatever the other phone sent it.
-        val incoming = if (sent.hasOrganiser() && target.role == Role.HELPER) sent.sentTo(Role.HELPER, personId) else sent
+        val asHelper = sent.hasOrganiser() && target.role == Role.HELPER
+        val incoming = if (asHelper) sent.sentTo(Role.HELPER, personId) else sent
         if (target.removed) return Outcome.Refused("${target.name.ifBlank { "That person" }} has been removed from the move.")
         val dev = _device.value
         val seen = maxStamp(incoming)
         lastStamp.updateAndGet { maxOf(it, seen) }
-        val merged = merge(distrustUnstamped(offerFor(personId)), incoming)
+        var merged = merge(distrustUnstamped(offerFor(personId)), incoming)
+        // What this phone brings of its own goes to the inviting phone in the same exchange, before this; a Helper's
+        // phone then keeps none of the hidden records (its photos stay until their files have gone across too).
+        if (asHelper) merged = merged.copy(hidden = emptyList(), refused = emptyList(), collect = merged.collect.filter { it.to == personId })
         val t = now()
         _data.value = merged.copy(people = merged.people.map { if (it.id == personId) it.copy(joinedAt = t, updatedAt = t) else it })
         scheduleSave()
