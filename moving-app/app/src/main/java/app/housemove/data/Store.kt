@@ -1657,6 +1657,19 @@ class Store internal constructor(
         Outcome.Ok(saved)
     }
 
+    /**
+     * Let in a phone of this move whose person nobody added (one that restored a backup of it while
+     * on its own, say), when this phone's person may add people and shows the plain code with new
+     * phones let in: as a Helper, in this person's name, since what it says of itself counts for
+     * nothing (see [Roles]).
+     */
+    internal fun letIn(peer: Person): Outcome<Person> = act(Action.MANAGE_PEOPLE) {
+        val base = d.person(peer.id) ?: peer
+        val saved = savePerson(base.copy(role = Role.HELPER, grants = base.grants + grantOf(Role.HELPER, false, t, actor.signature)))
+        events.say("let ${peer.name.ifBlank { "a phone" }} in as a Helper", peer.id)
+        Outcome.Ok(saved)
+    }
+
     /** Note that a retired phone's last work has been taken in: it is refused from now on. */
     internal fun markCollected(phoneId: String) = synchronized(lock) {
         val d = _data.value

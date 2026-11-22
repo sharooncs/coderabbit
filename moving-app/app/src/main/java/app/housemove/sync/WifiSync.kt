@@ -67,7 +67,7 @@ import kotlin.concurrent.thread
  * joiner: MAGIC, token, name, letter, schema (int), own Person as JSON, hello as JSON (see Hello)
  * host:   [WAIT] OK | ONEWAY | NO | VERSION (+ schema) | REMOVED | STRANGER | EXPIRED | WRONGMOVE | RETIRED | UNDONE | UNCONFIRMED,
  *         then if OK or ONEWAY: name, letter, own Person as JSON, hello as JSON
- * joiner: GO | TAKE | REMOVED | STRANGER | WRONGMOVE | NOTORGANISER
+ * joiner: GO | TAKE | REMOVED | STRANGER | WRONGMOVE
  * joiner: data      host: merged data      (each leaves out what the other's role is not sent)
  * joiner: file names   host: file names   joiner: files   host: files
  * ```
@@ -105,9 +105,6 @@ object WifiSync {
 
     /** The two phones hold different moves. Nothing was exchanged. */
     const val WRONG_MOVE = "That phone is on a different move, so nothing was exchanged. Open the same move on both phones, then sync again."
-
-    /** A phone joining a move it already holds may do so only through a phone it knows as one of that move's Organisers. */
-    const val NOT_THROUGH_ORGANISER = "This phone is already in that move. Sync with an Organiser of it, or ask one to show you the invite."
 
     /** The hosting phone's person said the phone that came was not the right one, or did not answer in time. */
     const val UNDONE = "The other phone said this is not the right phone, so nothing was exchanged. The invite can still be used: ask them to show it again."
@@ -615,7 +612,11 @@ object WifiSync {
                                 refuse("REMOVED", "$peer has been removed from this move, so their phone was not synced.")
                             }
                             Admission.STRANGER -> refuse("STRANGER", UNKNOWN_PHONE)
-                            Admission.NEWCOMER -> if (!letNewPhonesIn) refuse("STRANGER", UNKNOWN_PHONE)
+                            Admission.NEWCOMER -> {
+                                if (!letNewPhonesIn) refuse("STRANGER", UNKNOWN_PHONE)
+                                // Let in as it is: what it says of itself counts for nothing in 2.1, so this phone's person adds it, as a Helper.
+                                if (theirPerson != null && before.roleOfPeer(theirPerson) == null) store.letIn(theirPerson)
+                            }
                             Admission.MEMBER -> Unit
                         }
                     }
@@ -631,7 +632,6 @@ object WifiSync {
                         "REMOVED" -> throw Stop(REMOVED_SELF)
                         "STRANGER" -> throw Stop(NOT_ADDED)
                         "WRONGMOVE" -> throw Stop(WRONG_MOVE)
-                        "NOTORGANISER" -> throw Stop("That phone is already in this move, and only syncs with an Organiser of it.")
                         else -> throw Stop(UNREADABLE)
                     }
 
@@ -870,7 +870,8 @@ object WifiSync {
                         }
                         retiredHost = before.phoneEntry(hostHello.phoneId)?.second?.let { it.isRetired && !it.collected } == true
                         if (before.phoneEntry(hostHello.phoneId)?.second?.let { it.isRetired && it.collected } == true) return refuse("REMOVED", RETIRED_GONE)
-                        val verdict = when (before.admission(store.device.value, theirPerson)) {
+                        val admission = before.admission(store.device.value, theirPerson)
+                        val verdict = when (admission) {
                             Admission.REMOVED -> "REMOVED" to "${peer.ifBlank { "That phone's person" }} has been removed from this move, so this phone did not sync with theirs."
                             Admission.STRANGER -> "STRANGER" to UNKNOWN_PHONE
                             Admission.NEWCOMER -> if (letNewPhonesIn) null else "STRANGER" to UNKNOWN_PHONE
@@ -880,6 +881,8 @@ object WifiSync {
                             if (verdict.first == "REMOVED") store.hearAbout(theirPerson)
                             return refuse(verdict.first, verdict.second)
                         }
+                        // Let in as it is, as the host does: in this phone's person's name, as a Helper.
+                        if (admission == Admission.NEWCOMER && !retiredHost && theirPerson != null && before.roleOfPeer(theirPerson) == null) store.letIn(theirPerson)
                     } else {
                         if (claimed == null) return refuse("STRANGER", CODE_NOT_ACCEPTED)
                         // A phone already in a move, or already holding the one it is joining, joins only through a phone it

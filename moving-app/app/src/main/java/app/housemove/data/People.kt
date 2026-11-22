@@ -229,7 +229,10 @@ internal fun mergePeople(a: List<Person>, b: List<Person>): List<Person> {
     return keepRetirementsToTheRule(settlePeople(merged))
 }
 
-/** Both copies of a person's list of phones. [a]'s details win for a phone in both. */
+/**
+ * Both copies of a person's list of phones. For a phone in both, the details are chosen the same
+ * way whichever copy is whose, so every phone ends up with the same list.
+ */
 internal fun mergePhones(a: List<PhoneEntry>, b: List<PhoneEntry>): List<PhoneEntry> {
     if (b.isEmpty() || a == b) return a
     if (a.isEmpty()) return b
@@ -237,7 +240,8 @@ internal fun mergePhones(a: List<PhoneEntry>, b: List<PhoneEntry>): List<PhoneEn
     for (x in a) out[x.id] = x
     for (y in b) out.merge(y.id, y) { x, z ->
         val retired = listOf(x.retired, z.retired).filter { it.by.isNotEmpty() }.minWithOrNull(compareBy({ it.at }, { it.by })) ?: Stamp()
-        x.copy(retired = retired, collected = x.collected || z.collected)
+        val details = if (x.copy(retired = Stamp(), collected = false).toString() >= z.copy(retired = Stamp(), collected = false).toString()) x else z
+        details.copy(retired = retired, collected = x.collected || z.collected)
     }
     return out.values.sortedWith(compareBy({ it.addedAt }, { it.id }))
 }
