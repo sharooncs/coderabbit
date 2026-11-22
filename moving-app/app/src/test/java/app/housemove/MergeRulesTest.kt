@@ -544,6 +544,27 @@ class MergeRulesTest {
     }
 
     /**
+     * The lamp was deleted on one phone at the same moment as a note was written on it on another. A deletion that stands
+     * beats the change. One that does not stand is undone, and the lamp comes back the same however often it is merged.
+     */
+    @Test
+    fun aDeletionAtTheSameMomentAsAChangeWinsWhenItStandsAndMergingAgainChangesNothingWhenItDoesNot() {
+        val hal = Person("hal", "Hal", grants = listOf(Grant(Role.HELPER, at = 2, by = "asha")))
+        val lamp = Item(id = "lamp", name = "Lamp", createdBy = "asha", updatedAt = 50)
+        val noted = AppData(people = listOf(founder, hal), items = listOf(lamp.copy(notes = "The shade is loose")))
+        fun deletedBy(who: String) = AppData(people = listOf(founder, hal), items = listOf(lamp.copy(deleted = true, deletedBy = Stamp(who, 50, deletedSum()))))
+        // Asha may delete it.
+        assertTrue(merge(deletedBy("asha"), noted).items.single().deleted)
+        assertTrue(merge(noted, deletedBy("asha")).items.single().deleted)
+        // Hal may not: someone else added it.
+        val once = merge(deletedBy("hal"), noted)
+        assertFalse(once.items.single().deleted)
+        assertEquals(once, merge(once, noted))
+        assertEquals(once, merge(once, deletedBy("hal")))
+        assertEquals(once.items, merge(noted, deletedBy("hal")).items)
+    }
+
+    /**
      * Rex was let in and then removed, and his phone, not knowing, loaded a box. The lamp was put in that box on another
      * phone. Things in a container take its place and its stamp, so the lamp now carries Rex's move too: the merge that
      * put it there turns that away for the lamp as well as for the box, as any later merge would, and merging the same

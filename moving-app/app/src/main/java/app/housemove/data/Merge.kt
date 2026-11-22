@@ -16,22 +16,41 @@ fun <T : Rec> mergeList(a: List<T>, b: List<T>): List<T> {
 }
 
 /**
- * The newer copy. Two copies of the same time (two phones changed the record at the same moment) are told apart first by
- * what the newer copy decides ([ownPart]), never by what the merge then settles by itself: the merged copy has those
- * parts from wherever they stand, so it would compare differently with the same copy at the next merge, and merging
- * the same data again (an update file opened twice) would choose the other copy and change the record.
+ * The newer copy. Of two copies of the same time (two phones changed the record at the same moment) a deletion wins;
+ * otherwise they are told apart by what the newer copy decides ([ownPart]), never by what the merge then settles by
+ * itself: the merged copy has those parts from wherever they stand, so it would compare differently with the same copy
+ * at the next merge, and merging the same data again (an update file opened twice) would choose the other copy.
+ *
+ * A deletion of an item, container, room or photo may not stand, and is then undone ([keepDeletionsToTheRule]). So the
+ * deletion that wins comes with the rest of the record from the copy that would have won without it: undone, it is the
+ * same as at every other merge of the same copies.
  */
 private fun <T : Rec> newer(x: T, y: T): T {
     if (x.updatedAt != y.updatedAt) return if (x.updatedAt > y.updatedAt) x else y
     if (x == y) return x
     val ox = ownPart(x)
     val oy = ownPart(y)
+    if (x.deleted != y.deleted) {
+        val dead = if (x.deleted) x else y
+        val live = if (x.deleted) y else x
+        val liveWins = if (x.deleted) oy > ox else ox > oy
+        return if (liveWins) withDeletionOf(live, dead) ?: dead else dead
+    }
     return when {
         ox != oy -> if (ox > oy) x else y
-        x.deleted != y.deleted -> if (x.deleted) x else y
         else -> if (x.toString() >= y.toString()) x else y
     }
 }
+
+/** [live] deleted as [dead] is, for an item, container, room or photo; null for another record. */
+@Suppress("UNCHECKED_CAST")
+private fun <T : Rec> withDeletionOf(live: T, dead: T): T? = when (live) {
+    is Item -> live.copy(deleted = true, deletedBy = (dead as Item).deletedBy)
+    is Box -> live.copy(deleted = true, deletedBy = (dead as Box).deletedBy)
+    is Room -> live.copy(deleted = true, deletedBy = (dead as Room).deletedBy)
+    is Photo -> live.copy(deleted = true, deletedBy = (dead as Photo).deletedBy)
+    else -> null
+} as T?
 
 /**
  * What the newer copy of a record decides at a merge, as text: the record without what the merge settles by itself,
