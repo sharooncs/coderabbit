@@ -169,14 +169,15 @@ class SafetyNetsTest {
         val backedUp = asha.device.value.lastBackupAt
         assertFalse(DailyBackup.nudges(asha, day, backedUp + 2 * 86_400_000L, hasPlace = true).backup)
         assertTrue(DailyBackup.nudges(asha, day + 8, backedUp + week + 86_400_000L, hasPlace = true).backup)
-        // A few days before move day.
+        // A few days before move day, on a move others are in; a move of one person hears nothing of roles.
         asha.setMove { it.copy(moveDay = day + 4) }
+        assertFalse(DailyBackup.nudges(asha, day, backedUp, true).secondOrganiser)
+        val dee = invited(asha, "Dee", Role.DECIDER)
         assertTrue(DailyBackup.nudges(asha, day, backedUp, true).secondOrganiser)
         assertFalse(DailyBackup.nudges(asha, day - 10, backedUp, true).secondOrganiser)
         asha.declineSecondOrganiser()
         assertFalse(DailyBackup.nudges(asha, day, backedUp, true).secondOrganiser)
         // Nothing for a Decider.
-        val dee = invited(asha, "Dee", Role.DECIDER)
         assertFalse(DailyBackup.nudges(dee, day, backedUp, true).any)
     }
 

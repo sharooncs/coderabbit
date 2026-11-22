@@ -252,6 +252,8 @@ class ApartFlowsTest {
         val ashaPhone = phone("Asha's phone", "Asha")
         val asha = move(ashaPhone, "Maple Road", "Asha")
         asha.setMove { it.copy(moveDay = today() + 3) }
+        // Asked on a move others are in.
+        joined(phone("Dee's phone", "Dee"), asha, "Dee", Role.DECIDER)
         show(ashaPhone)
         waitFor("Keep a small backup each day")
         see("Add a second Organiser?")

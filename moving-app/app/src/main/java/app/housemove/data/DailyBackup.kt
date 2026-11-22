@@ -141,7 +141,9 @@ object DailyBackup {
         val days = if (last <= 0) null else (now - last) / 86_400_000L
         val backup = days == null || days > NUDGE_DAYS
         val toGo = d.move.moveDay?.let { it - today }
-        val second = d.move.kind != MoveKind.INVENTORY && toGo != null && toGo in 0..SECOND_ORGANISER_DAYS.toLong() && !dev.secondOrganiserDeclined
+        // Asked on a move others are in: a move of one person hears nothing of roles until a second person is added.
+        val shared = d.people.count { !it.removed } > 1
+        val second = shared && d.move.kind != MoveKind.INVENTORY && toGo != null && toGo in 0..SECOND_ORGANISER_DAYS.toLong() && !dev.secondOrganiserDeclined
         return Nudges(backup, days, hasPlace, second)
     }
 }
