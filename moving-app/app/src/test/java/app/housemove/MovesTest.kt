@@ -355,6 +355,60 @@ class MovesTest {
     }
 
     /**
+     * Found by the simulation with phones working while they sync, on a phone that erased the move it had tried out alone:
+     * the erased move wrote X1 again (a code it had written before the erase, still on boxes and in backups), printed from
+     * the label numbers of its other move, kept the card it had (the list opened it by an ID it no longer had), and took in
+     * a backup of another move, even of one in another card, which put a person in it that no restart kept.
+     */
+    @Test
+    fun anErasedMoveGoesOnWithItsCodesHasItsCardAtOnceAndTakesNoOtherMovesBackup() {
+        val d = device("Hana's phone")
+        val m = moves(d)
+        val maple = m.create("Maple Road", yourName = "Hana")
+        val own = m.create("Trying it out")
+        val written = listOf(own.nextHandCode(), own.nextHandCode())
+        written.forEach { own.createBox(it, null) }
+        val zipOwn = java.io.ByteArrayOutputStream().also { Backup.export(own, it) }.toByteArray()
+        val zipMaple = java.io.ByteArrayOutputStream().also { Backup.export(maple, it) }.toByteArray()
+        val was = own.moveId
+
+        assertTrue(own.erase().ok)
+        assertNotEquals(was, own.moveId)
+        // Its card is the erased move's at once: it opens by its new ID, and nothing goes by the old one.
+        val card = m.cards.value.single { !it.matches(maple.moveId) }
+        assertEquals(own.moveId, card.moveId)
+        assertEquals("", card.name)
+        assertSame(own, m.open(own.moveId))
+        assertNull(m.store(was))
+        // It goes on counting, and prints from numbers it prints from in no other move.
+        val next = own.nextHandCode()
+        assertFalse("$next after $written", next in written)
+        assertFalse("${maple.labelRange()} ${own.labelRange()}", maple.labelRange().overlaps(own.labelRange()))
+
+        // Neither backup goes into it: not the move it was, nor Maple Road, which has a card of its own.
+        val before = own.data.value
+        for (zip in listOf(zipOwn, zipMaple)) {
+            val e = assertThrows(IllegalArgumentException::class.java) { Backup.import(own, java.io.ByteArrayInputStream(zip)) }
+            assertTrue(e.message, e.message!!.contains("another move"))
+        }
+        assertEquals(before, own.data.value)
+        // Through the list of moves, Maple Road's goes into its own card and the move it was into a new one.
+        assertTrue(m.restore({ java.io.ByteArrayInputStream(zipMaple) }).ok)
+        assertTrue(m.restore({ java.io.ByteArrayInputStream(zipOwn) }).ok)
+        assertEquals(3, m.cards.value.size)
+
+        // What each move holds is what it loads from disk.
+        val held = m.cards.value.associate { c -> m.store(c.moveId)!!.let { s -> c.moveId to (s.data.value to s.device.value) } }
+        m.cards.value.forEach { m.store(it.moveId)!!.close() }
+        val again = moves(d)
+        for ((id, h) in held) {
+            val s = again.store(id)!!
+            assertEquals(h.first, s.data.value)
+            assertEquals(h.second, s.device.value)
+        }
+    }
+
+    /**
      * Also found by the simulation: in a move with no Organiser (a phone on its own in helper mode) a person seemed to be
      * added and was gone once the move was read back; and a refused carry-out was worded from the decision, which two
      * phones may hold differently.

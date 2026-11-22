@@ -952,12 +952,14 @@ class Store internal constructor(
 
     /**
      * The next letter from this phone's own block (see [nextInBlock]), never one it has handed out
-     * before, nor one in [avoid]. Noted as handed out.
+     * before, nor one it has written codes with itself (its person may have taken another letter since,
+     * but those codes are still on things), nor one in [avoid]. Noted as handed out.
      */
     private fun allotLetter(d: AppData, avoid: Set<String> = emptySet()): String {
         val c = codes
         val own = _device.value.letter
-        val letter = d.nextInBlock(own, c.founder, c.lettersGiven.toSet() + avoid) ?: d.freeLetter(avoid = c.lettersGiven.toSet() + avoid)
+        val taken = c.lettersGiven.toSet() + c.lettersUsed + avoid
+        val letter = d.nextInBlock(own, c.founder, taken) ?: d.freeLetter(avoid = taken)
         saveCodes(c.copy(lettersGiven = c.lettersGiven + letter))
         return letter
     }
@@ -1028,6 +1030,10 @@ class Store internal constructor(
         // This phone writes with its person's letter: one it uses in another of its moves would give the same codes in both.
         if (p.id == actor.id && lettersElsewhere().any { it.equals(l, ignoreCase = true) }) {
             return@act Outcome.Refused("This phone uses the letter $l in another of its moves. Choose another, so its codes are never the same in two moves.")
+        }
+        // The codes this phone wrote with a letter are still on things after its person has taken another: nobody else gets it.
+        if (p.id != actor.id && codes.lettersUsed.any { it.equals(l, ignoreCase = true) }) {
+            return@act Outcome.Refused("This phone has written codes with the letter $l. Choose another, so no code is on two things.")
         }
         Outcome.Ok(savePerson(p.copy(letter = l)))
     }
@@ -1540,27 +1546,23 @@ class Store internal constructor(
      * comes onto a new phone, or how two phones that cannot reach each other are combined. A phone
      * that shares its move with others only takes in a backup of that same move, so that two moves
      * are never mixed and passed on to everyone in this one. A move in a phone's list of moves
-     * ([listed]) takes in only a backup of itself, unless nothing has been put in it yet: a backup of
-     * another move goes into a card of its own ([Moves.restore]), so the phone never holds a move
-     * twice nor loses the one it restored into.
+     * ([listed]) takes in only a backup of itself, unless it is the card [Moves.restore] made for
+     * this backup ([newCard]): a backup of another move goes into a card of its own, so the phone
+     * never holds a move twice nor loses the one it restored into. A move with nothing in it is no
+     * such card: an erased one is a move of its own, and the move of the backup may be in another card.
      */
-    fun whyNotRestore(backup: AppData, identity: MoveIdentity? = null): String? {
+    fun whyNotRestore(backup: AppData, identity: MoveIdentity? = null, newCard: Boolean = false): String? {
         val d = _data.value
         d.refusal(me, Action.RESTORE_BACKUP)?.let { return it }
         val same = isSameMove(backup, identity)
         val name = backup.move.name.trim().let { if (it.isEmpty()) "" else " (“$it”)" }
-        if (listed && !same && !untouched()) {
+        if (listed && !same && !newCard) {
             return "That backup is of another move$name, so it was not mixed into this one. Restore it from Your moves " +
                 "(Lost your phone? Restore a backup), where it gets a card of its own."
         }
         if (!d.sharedHere() || same) return null
         return "That backup is of a different move$name. This phone shares its move with others, so the two are not mixed. " +
             "Restore it on a phone that is not in a move yet, or erase this phone first."
-    }
-
-    /** Nothing has been put in this move but the phone's own person, not even a name: a card made for a move that is to come in whole. */
-    private fun untouched(): Boolean = _data.value.let { d ->
-        d.move.name.isBlank() && !d.move.setupDone && d.copy(people = emptyList(), activity = emptyList(), move = MoveInfo()).bare()
     }
 
     /**
@@ -1674,18 +1676,37 @@ class Store internal constructor(
         return if (kept.size == people.size) this else copy(people = kept)
     }
 
-    /** Erase everything on this phone, photos included, and start again. Organisers only. */
-    fun erase(): Outcome<Unit> = synchronized(lock) {
-        actor(_data.value).refusal(Action.ERASE)?.let { return Outcome.Refused(it) }
-        photoDir.listFiles()?.forEach { it.delete() }
-        replaceAll(AppData())
-        setDevice { it.copy(nextSeq = 1, currentRoomId = null, currentTripId = null, lastSyncAt = 0, lastBackupAt = 0, sharedUpTo = 0, sharedAllUpTo = 0) }
-        // What is left is a new move of this phone's own.
-        saveIdentity(MoveIdentity(id = _data.value.derivedMoveId()))
-        saveCodes(Codes(letter = codes.letter, founder = true, labelsFrom = FOUNDER_LABELS.first, labelsTo = FOUNDER_LABELS.last))
-        ensureMyPhone()
-        Outcome.Ok(Unit)
+    /**
+     * Erase everything on this phone, photos included, and start again. Organisers only. What is left is a new move of
+     * this phone's own, with an ID of its own; the [Moves] it is in is told ([onErased]), so its card says so at once.
+     */
+    fun erase(): Outcome<Unit> {
+        synchronized(lock) {
+            actor(_data.value).refusal(Action.ERASE)?.let { return Outcome.Refused(it) }
+            photoDir.listFiles()?.forEach { it.delete() }
+            // The codes the phone wrote before are still on boxes, in backups of the move as it was and on other phones: it
+            // writes the new move's with a letter it has not used, and its counter goes on.
+            val was = codes
+            val letter = AppData().freeLetter(avoid = lettersElsewhere() + was.lettersUsed + was.lettersGiven + _device.value.letter.uppercase())
+            writeDevice(_device.value.copy(letter = letter))
+            replaceAll(AppData())
+            setDevice { it.copy(currentRoomId = null, currentTripId = null, lastSyncAt = 0, lastBackupAt = 0, sharedUpTo = 0, sharedAllUpTo = 0) }
+            saveIdentity(MoveIdentity(id = _data.value.derivedMoveId()))
+            // This phone founds the new move. Nothing it printed or handed out is given out again (see [Codes]): it keeps the
+            // letters it gave, and a founder's block of label numbers it already had, or one it prints from in none of its
+            // other moves.
+            val c = codes
+            val block = if (c.founder && c.labelsFrom != 0) c.labelsFrom..c.labelsTo else founderBlock(labelsElsewhere())
+            saveCodes(c.copy(founder = true, labelsFrom = block.first, labelsTo = block.last, nextLabel = if (block.first == c.labelsFrom) c.nextLabel else 0))
+            ensureMyPhone()
+        }
+        onErased?.invoke(this)
+        return Outcome.Ok(Unit)
     }
+
+    /** Called once this move has been erased ([erase]): the [Moves] it is in brings its card up to date. */
+    @Volatile
+    internal var onErased: ((Store) -> Unit)? = null
 
     // ---- phones, letters and labels -------------------------------------------------
 

@@ -87,9 +87,20 @@ class SimulationTest {
      */
     @Test
     fun phonesThatKeepWorkingWhileTheySyncStillEndUpAgreeing() {
-        val first = env("HM_SIM_FIRST")?.toLong() ?: 1L
-        val count = env("HM_SIM_LOOSE")?.toInt() ?: 2
-        val outcomes = (first until first + count).map { runSeed(it, "loose$it", loose = true) }
+        // HM_SIM_LOOSE_SEEDS names the seeds instead ("161,161,181"): a failure seen once is looked for again by repeating its seed.
+        val listed = env("HM_SIM_LOOSE_SEEDS")?.split(',')?.mapNotNull { it.trim().toLongOrNull() }
+        val first = listed?.firstOrNull() ?: env("HM_SIM_FIRST")?.toLong() ?: 1L
+        val seeds = listed ?: (first until first + (env("HM_SIM_LOOSE")?.toInt() ?: 2)).toList()
+        val count = seeds.size
+        // HM_SIM_LOOSE_JOBS runs that many of these seeds at once (one at a time unless asked), to run many in less time.
+        val jobs = env("HM_SIM_LOOSE_JOBS")?.toInt() ?: 1
+        val pool = Executors.newFixedThreadPool(jobs)
+        val outcomes = try {
+            seeds.mapIndexed { n, seed -> pool.submit(Callable { runSeed(seed, "loose$seed-$n", loose = true) }) }.map { it.get() }
+        } finally {
+            pool.shutdownNow()
+        }
+        env("HM_SIM_TRACE")?.let { File("$it.loose").writeText(outcomes.filter { it.failures.isNotEmpty() }.joinToString("\n\n") { o -> "SEED ${o.seed}\n" + o.failures.joinToString("") { "BROKEN ${it.invariant}: ${it.message}\n" } + o.whole.joinToString("\n") }) }
         val failed = outcomes.filter { it.failures.isNotEmpty() }
         val text = StringBuilder()
         for (o in failed.take(4)) {
@@ -104,7 +115,7 @@ class SimulationTest {
             File("build/audit").mkdirs()
             File("build/audit/simulation-loose.md").writeText(
                 "\n## Phones that keep working while they sync\n\n" +
-                    "$count more seeds (from $first) were run with every phone doing things on its own thread while its syncs were under way: " +
+                    "$count more seeds (${if (listed != null) "seeds " + listed.distinct().joinToString() else "from $first"}) were run with every phone doing things on its own thread while its syncs were under way: " +
                     "${all.actions} actions, ${all.syncs} syncs (${all.syncsOk} completed). The checks made at the end are the same; " +
                     "the check of each single merge is left out, since what went into it is not known exactly. " +
                     (if (failed.isEmpty()) "All invariants held." else "FAILED on seeds ${failed.joinToString { it.seed.toString() }}.") +

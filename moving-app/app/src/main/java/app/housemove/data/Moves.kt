@@ -207,7 +207,12 @@ class Moves(
                 photos = File(photosDir, folder),
                 listed = true,
                 labelsElsewhere = { labelsOutside(folder) },
-            ).also { s -> s.onSynced = { synced(it) } }
+            ).also { s ->
+                s.onSynced = { synced(it) }
+                // An erased move is a new one, with an ID of its own: its card follows at once, so it is never opened, scanned or
+                // joined by the ID it had.
+                s.onErased = { refresh() }
+            }
         }
     }
 
@@ -460,7 +465,7 @@ class Moves(
         val folder = newFolder()
         val s = storeIn(folder)
         return try {
-            val result = read().use { Backup.import(s, it, replace = true) }
+            val result = read().use { Backup.import(s, it, replace = true, newCard = true) }
             s.flush()
             addCard(folder, s)
             refresh()
