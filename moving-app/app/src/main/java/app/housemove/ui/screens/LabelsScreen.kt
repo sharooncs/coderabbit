@@ -15,6 +15,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.housemove.data.*
+import app.housemove.pdf.HelperCard
 import app.housemove.pdf.LabelSheet
 import app.housemove.pdf.Pdf
 import app.housemove.pdf.Share
@@ -43,6 +44,13 @@ fun interface TagPrinter {
 }
 
 val LocalTagPrinter = staticCompositionLocalOf { TagPrinter { context, codes, sheet -> Pdf.hangTags(context, codes, sheet) } }
+
+/** Makes the Helper card. The app draws a PDF; tests put their own in its place, as for [TagPrinter]. */
+fun interface CardPrinter {
+    fun make(context: Context, data: AppData, paper: HelperCard.Paper): File
+}
+
+val LocalCardPrinter = staticCompositionLocalOf { CardPrinter { context, data, paper -> HelperCard.make(context, data, paper) } }
 
 /**
  * The number the next printed code gets: one after the last made, and after any printed-style
@@ -94,6 +102,7 @@ fun LabelsScreen() {
     val data = appData()
     val scope = rememberCoroutineScope()
     val tagPrinter = LocalTagPrinter.current
+    val cardPrinter = LocalCardPrinter.current
 
     var letter by rememberSaveable { mutableStateOf(Locale.getDefault().country in LETTER_COUNTRIES) }
     var plain by rememberSaveable { mutableStateOf(false) }
@@ -297,6 +306,25 @@ fun LabelsScreen() {
                         onShare = { produce("signs", share = true) { Pdf.doorSigns(context, data, letter) } },
                     )
                 }
+            }
+
+            // ---- the Helper card: half a page that works without the app ----
+            Section {
+                val paper = if (letter) HelperCard.Paper.LETTER else HelperCard.Paper.A4
+                Printout(
+                    Icons.Default.Badge,
+                    title = "Helper card",
+                    sub = "Half a page for each Helper: five steps, the door colours, and what to write on a box with no label. Two to a page.",
+                )
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    GlassChip("Write ${HelperCard.exampleCode(data)} on two sides", icon = Icons.Default.Edit)
+                }
+                PrintButtons(
+                    enabled = busy == null,
+                    busy = busy == "card",
+                    onPrint = { produce("card", share = false) { cardPrinter.make(context, data, paper) } },
+                    onShare = { produce("card", share = true) { cardPrinter.make(context, data, paper) } },
+                )
             }
 
             Fold("How it works", Icons.Default.HelpOutline, summary = "Stickers, hang tags and door signs") {
