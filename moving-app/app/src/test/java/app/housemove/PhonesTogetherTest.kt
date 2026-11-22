@@ -883,7 +883,7 @@ class PhonesTogetherTest {
                 assertNotNull(d.box(box.id))
                 assertEquals("Bike", d.item(bike.id)!!.name)
                 assertEquals(Disposition.UNDECIDED, d.item(bike.id)!!.disposition)
-                assertNull(d.item(bike.id)!!.price)
+                assertNull(how, d.priceOf(bike.id)) // since 2.1 on the hidden record, not the item
                 assertFalse(d.item(bike.id)!!.listed)
             }
             // The Organiser's phone gained no cost from her, and hers, a Helper's phone now, holds none.

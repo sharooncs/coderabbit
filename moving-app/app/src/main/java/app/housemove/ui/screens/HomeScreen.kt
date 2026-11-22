@@ -522,45 +522,38 @@ internal fun SuggestionsSlot(modifier: Modifier = Modifier) {
     }
 }
 
-/** Home's own top bar: search on the left, the app's mark, scan and this phone's person on the right. */
+/**
+ * Home's own top bar: search on the left; the move's name in the middle, with this phone's role
+ * and a dot when another move needs its person (tapping it opens Your moves); scan and this
+ * phone's person on the right. The banner after joining a move sits under it.
+ */
 @Composable
 private fun HomeTopBar(device: DeviceInfo) {
     val nav = LocalNav.current
-    Row(
-        Modifier.fillMaxWidth().statusBarsPadding().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 2.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    val data = appData()
+    // A kind of move one person runs alone (a list of things, storage) shows no people until someone else is added.
+    val onePersonKind = !data.shared() && (data.move.kind == MoveKind.INVENTORY || data.move.kind == MoveKind.STORAGE)
+    Column(Modifier.fillMaxWidth().statusBarsPadding()) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             TopAction(Icons.Default.Search, "Find anything") { nav.open("search") }
-        }
-        AppMark()
-        Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+            Box(Modifier.weight(1f).padding(horizontal = 8.dp), contentAlignment = Alignment.Center) { MoveSwitch() }
             TopAction(Icons.Default.QrCodeScanner, "Scan a label") { nav.open("scan") }
+            Spacer(Modifier.width(8.dp))
             val initial = device.name.trim().firstOrNull()?.uppercaseChar()
             // Sized to the orb, which does not grow with the phone's text size.
             val letter = with(LocalDensity.current) { 19.dp.toSp() }
-            GlassOrb(kind = OrbKind.Selected, onClick = { nav.open("people") }, contentDescription = "People") {
+            GlassOrb(
+                kind = OrbKind.Selected, onClick = { nav.open(if (onePersonKind) "settings" else "people") },
+                contentDescription = if (onePersonKind) "You and this phone" else "People",
+            ) {
                 if (initial != null) Text(initial.toString(), fontSize = letter, lineHeight = letter * 1.25f, fontWeight = FontWeight.SemiBold)
                 else Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(22.dp))
             }
         }
-    }
-}
-
-/** The app's mark: a small house drawn in glowing mint line. */
-@Composable
-private fun AppMark() {
-    Canvas(Modifier.size(32.dp).semantics { contentDescription = "HouseMove" }) {
-        val u = size.width / 24f
-        val house = Path().apply {
-            moveTo(3.5f * u, 11f * u); lineTo(12f * u, 4f * u); lineTo(20.5f * u, 11f * u); lineTo(20.5f * u, 20f * u); lineTo(3.5f * u, 20f * u); close()
-            moveTo(9.5f * u, 13.5f * u); lineTo(14.5f * u, 13.5f * u); lineTo(14.5f * u, 18.5f * u); lineTo(9.5f * u, 18.5f * u); close()
-        }
-        drawCircle(
-            androidx.compose.ui.graphics.Brush.radialGradient(listOf(Night.Mint.copy(alpha = 0.38f), Night.Mint.copy(alpha = 0f)), center = Offset(size.width / 2, size.height / 2), radius = size.width * 0.8f),
-            size.width * 0.8f,
-        )
-        drawPath(house, Night.MintLight, style = Stroke(2f * u, cap = StrokeCap.Round, join = StrokeJoin.Round))
+        HomeBannerSlot()
     }
 }
 

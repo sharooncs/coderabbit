@@ -15,6 +15,7 @@ import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -39,6 +40,9 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import org.robolectric.shadows.ShadowToast
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
 
 /**
  * People, joining, approvals and what each role is shown, driven through the real
@@ -191,6 +195,18 @@ class PeopleFlowsTest {
 
     private fun toast(): String? = ShadowToast.getTextOfLatestToast()
 
+    /**
+     * [phone] joins with [invite] on a thread of its own, as a phone across the room would; this
+     * phone's person sees "Joined: …" and taps Right, as an Organiser or Decider's invite asks.
+     */
+    private fun joinRight(phone: Store, invite: WifiSync.Invite): WifiSync.Result {
+        val q = LinkedBlockingQueue<WifiSync.Result>()
+        thread(isDaemon = true) { q.add(WifiSync.join(phone, invite)) }
+        waitFor("Joined: ")
+        tap("Right")
+        return q.poll(20, TimeUnit.SECONDS) ?: throw AssertionError("the joining phone never finished")
+    }
+
     // ---- people ---------------------------------------------------------------------
 
     @Test
@@ -202,25 +218,21 @@ class PeopleFlowsTest {
         see("Just you so far")
         dontSee("Organiser") // one person: nothing about roles
 
+        // Who's helping: a name said, a role tapped.
         tap("Add a person")
-        assertEquals("people/add", route())
+        assertEquals("helping", route())
         noTextFields()
-        see("Helper 1") // the name they get if none is given
+        see("Add a second Organiser") // suggested first
         said = "sam"
-        tapDesc("Say the name")
+        tapDesc("Say a name")
         see("Sam")
-        see("A Helper can") // Helper is chosen to start with
         tap("Decider")
-        see("A Decider can")
-        see("for an Organiser to approve")
         noTextFields()
-        tap("Add and show invite")
 
         val sam = data.people.single { it.name == "Sam" }
         assertEquals(Role.DECIDER, sam.role)
         assertEquals("B", sam.letter) // picked for them
         assertEquals(0L, sam.joinedAt)
-        assertEquals("person/{id}?invite={invite}", route())
         see("Sam's invite")
         see("Works once")
         see("10 minutes")
@@ -228,9 +240,9 @@ class PeopleFlowsTest {
         assertEquals(sam.id, invite.personId)
         assertEquals(Role.DECIDER, invite.role)
 
-        // Sam's phone scans it and becomes Sam.
+        // Sam's phone scans it; this phone says which phone came, and nothing is sent before Right.
         val phone = newStore()
-        val r = WifiSync.join(phone, invite)
+        val r = joinRight(phone, invite)
         assertTrue(r.error, r.ok)
         assertEquals(sam.id, phone.me!!.id)
         assertEquals(Role.DECIDER, phone.myRole)
@@ -292,13 +304,21 @@ class PeopleFlowsTest {
         assertFalse(data.person(hal.id)!!.removed)
         tap("Show Hal's invite")
         val phone = newStore()
-        assertTrue(WifiSync.join(phone, codeOnScreen()).ok)
+        assertTrue(joinRight(phone, codeOnScreen()).ok)
         waitFor("Hal's phone has joined")
-        // A replacement phone for the same person gets a fresh invite.
-        tap("New phone for this person")
+        // A replacement phone for the same person gets a fresh invite; the first phone is not retired by it.
+        tap("New phone for Hal")
         val second = newStore()
-        assertTrue(WifiSync.join(second, codeOnScreen()).ok)
+        assertTrue(joinRight(second, codeOnScreen()).ok)
         assertEquals(hal.id, second.me!!.id)
+        assertEquals(2, data.person(hal.id)!!.phones.size)
+        assertTrue(data.person(hal.id)!!.phones.none { it.isRetired })
+        // The lost one is retired here, after asking.
+        tap("Retire")
+        see("If it turns up, its work comes in once")
+        click(rule.onAllNodes(hasText("Retire") and hasClickAction()).onLast()) // the dialog's own button
+        assertEquals(1, data.person(hal.id)!!.phones.count { it.isRetired })
+        see("Retired")
 
         // The last Organiser cannot be made anything else: the Store's reason is shown.
         back()
@@ -319,29 +339,37 @@ class PeopleFlowsTest {
 
         show(newStore())
         assertEquals("setup", route())
-        tap("Second phone for the same move?") // straight to the scanner
+        tap("Join theirs instead") // straight to the scanner
         scan(invite.encode())
-        waitFor("You are Sam, Helper")
+        // Nothing is sent before Yes.
+        see("Join Maple Road as Sam, Helper?")
+        assertEquals(0L, asha.data.value.person(sam.id)!!.joinedAt)
+        tap("Yes")
+        // Home, with a banner that says who the phone is now: no welcome screen to get past.
+        waitFor("You are Sam, Helper, in Maple Road")
         see("Photographs, packs")
+        assertEquals("home", route())
         assertEquals(sam.id, store.me!!.id)
         assertEquals(Role.HELPER, store.myRole)
         rule.waitUntil(5_000) { asha.data.value.person(sam.id)!!.joinedAt > 0 } // the other phone knows too
-        tap("Start")
-        assertEquals("home", route())
         see("Maple Road")
-        see("Sam · Helper")
+        // The move's name at the top says the role.
+        rule.onAllNodes(hasContentDescription("Your moves") and hasText("Maple Road") and hasText("Helper")).assertCountEquals(1)
         dontSee("Show everything") // the role is an Organiser's to change, not a switch on this phone
 
-        // The same invite again: it has been used.
+        // The same invite again, from the sync screen: it asks first, then says it has been used.
         go("sync")
         see("This phone is Sam")
         tap("Scan sync code")
         scan(invite.encode())
+        see("Join Maple Road as Sam, Helper?")
+        tap("Yes")
         waitFor("This invite no longer works")
         see("has been used or has run out")
 
         // A plain sync between phones on the move works as it always did.
         asha.createBox("L001", null)
+        go("sync")
         tap("Scan sync code")
         scan(host.invite(local).encode())
         waitFor("Synced with Asha")
@@ -362,17 +390,19 @@ class PeopleFlowsTest {
         joined(asha, "Dee", Role.DECIDER)
         val host = hosting(asha) // as the sync screen does once the move has more than one person
         show(newStore())
-        tap("Second phone for the same move?")
+        tap("Join theirs instead")
         scan(host.invite(local).encode())
+        see("Sync with Maple Road?")
+        tap("Yes")
         // Since 2.1 what stops it first is that its move is another one: nothing is exchanged.
         waitFor("A different move")
         see("That phone is on a different move")
-        assertEquals("setup", route())
+        assertEquals("join", route())
         assertFalse(data.move.setupDone)
         assertTrue(data.people.none { it.name == "Asha" })
 
         // Something that is not a code at all.
-        tap("Second phone for the same move?")
+        tap("Scan again")
         scan("L001")
         assertEquals("That is not an invite. On the other phone open People and show your invite.", toast())
     }
@@ -565,7 +595,7 @@ class PeopleFlowsTest {
 
         // The Helper: the simple Home, their questions, the list of people.
         show(hal)
-        see("Hal · Helper")
+        rule.onAllNodes(hasContentDescription("Your moves") and hasText("Helper")).assertCountEquals(1) // the role, by the move's name
         see("Sync with the other phones")
         dontSee("Show everything")
         see("1 question waiting")
@@ -695,6 +725,12 @@ class PeopleFlowsTest {
         go("people")
         shot("people")
         tap("Add a person")
+        assertEquals("helping", route())
+        shot("helping")
+        tap("Helper")
+        see("Works once")
+        shot("helping-invite")
+        go("people/add")
         shot("people-add")
         tap("Add and show invite")
         see("Works once")
@@ -735,8 +771,13 @@ class PeopleFlowsTest {
         tap("Kitchen")
         noTextFields()
         tap("Finish")
+        // Saved; Who's helping? needs no keyboard either, and can wait.
+        assertEquals("helping", route())
+        noTextFields()
+        tap("Do this later")
         assertEquals("home", route())
         assertTrue(data.move.setupDone)
+        assertEquals("Our move", data.move.name) // filled in, so the move is never nameless
         assertEquals("Old home", data.move.originName) // the defaults stand until someone edits them
 
         go("settings")
@@ -782,26 +823,31 @@ class PeopleFlowsTest {
 
         // First run: what it is for, the move, one room in each home.
         show(newStore())
-        flow("First run, to Home", "Next, Next, a room, Next, a room, Finish", most = 6) {
-            tap("Next"); tap("Next"); tap("Kitchen"); tap("Next"); tap("Kitchen"); tap("Finish")
+        flow("First run, to Home", "Next, Next, a room, Next, a room, Finish, Do this later", most = 7) {
+            tap("Next"); tap("Next"); tap("Kitchen"); tap("Next"); tap("Kitchen"); tap("Finish"); tap("Do this later")
             assertEquals("home", route())
         }
         show(newStore())
-        flow("First run, saying your name on the way", "as above, and the microphone on the second page", most = 7) {
+        flow("First run, saying your name on the way", "as above, and the microphone on the second page", most = 8) {
             tap("Next")
             said = "asha"
             tapDesc("Say your name")
-            tap("Next"); tap("Kitchen"); tap("Next"); tap("Kitchen"); tap("Finish")
+            tap("Next"); tap("Kitchen"); tap("Next"); tap("Kitchen"); tap("Finish"); tap("Do this later")
             assertEquals("Asha", store.device.value.name)
+            assertEquals("home", route())
+        }
+        show(newStore())
+        flow("First run with no rooms yet", "Next, Next, Skip, Skip, Do this later", most = 5) {
+            tap("Next"); tap("Next"); tap("Skip"); tap("Skip"); tap("Do this later")
             assertEquals("home", route())
         }
 
         // A real house has several rooms: the new home takes the same ones in one tap, each linked to its old room.
         show(newStore())
-        flow("First run, four rooms in both homes", "Next, Next, four rooms, Next, Same as old home, Finish", most = 9) {
+        flow("First run, four rooms in both homes", "Next, Next, four rooms, Next, Same as old home, Finish, Do this later", most = 10) {
             tap("Next"); tap("Next")
             for (r in listOf("Kitchen", "Living room", "Main bedroom", "Bathroom")) tap(r)
-            tap("Next"); tap("Same as old home (4)"); tap("Finish")
+            tap("Next"); tap("Same as old home (4)"); tap("Finish"); tap("Do this later")
             assertEquals("home", route())
             assertEquals(4, data.roomsOf(Home.DEST).size)
             assertTrue(data.roomsOf(Home.ORIGIN).all { o -> data.room(o.mapsTo)?.name == o.name })
@@ -810,17 +856,14 @@ class PeopleFlowsTest {
         // Add a person: from Home to their invite on the screen.
         val asha = organiser()
         show(asha)
-        flow("Add a person, to their invite", "People, Add a person, Add and show invite (a Helper called \"Helper 1\")", most = 3) {
-            tapDesc("People"); tap("Add a person"); tap("Add and show invite")
+        flow("Add a person, to their invite", "People, Add a person, Helper (a Helper called \"Helper 1\")", most = 3) {
+            tapDesc("People"); tap("Add a person"); tap("Helper")
             see("Works once")
         }
-        back()
-        flow("Add a person with a spoken name and another role", "from People: Add a person, microphone, Decider, Add and show invite", most = 4) {
-            tap("Add a person")
+        flow("Add the next person with a spoken name and another role", "on Who's helping: microphone, Decider", most = 2) {
             said = "dee"
-            tapDesc("Say the name")
+            tapDesc("Say a name")
             tap("Decider")
-            tap("Add and show invite")
             see("Dee's invite")
         }
         val dee = data.people.single { it.name == "Dee" }
@@ -828,11 +871,11 @@ class PeopleFlowsTest {
         // Join: a new phone, from its first screen to Home.
         val invite = hosting(asha).inviteFor(dee.id, local).valueOrNull()!!
         show(newStore())
-        flow("Join with an invite, to Home", "Second phone for the same move?, point the camera, Start", most = 2) {
-            tap("Second phone for the same move?")
+        flow("Join with an invite, to Home", "Join theirs instead, point the camera, Yes", most = 2) {
+            tap("Join theirs instead")
             scan(invite.encode())
+            tap("Yes")
             waitFor("You are Dee, Decider")
-            tap("Start")
             assertEquals("home", route())
         }
         val deePhone = store

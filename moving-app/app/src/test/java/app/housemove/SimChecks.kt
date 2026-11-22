@@ -235,7 +235,7 @@ private fun when_(r: Any): Long = if (r is MoveInfo) r.updatedAt else (r as Rec)
 private val HIDDEN_KINDS = setOf(PhotoKind.RECEIPT, PhotoKind.SERIAL)
 
 /** Is this a record a Helper's phone is not sent? */
-private fun hidden(r: Any): Boolean = r is Expense || (r is Photo && r.kind in HIDDEN_KINDS) || (r is Proposal && r.kind == ProposalKind.COST) ||
+internal fun hidden(r: Any): Boolean = r is Expense || (r is Photo && r.kind in HIDDEN_KINDS) || (r is Proposal && r.kind == ProposalKind.COST) ||
     r is Hidden || r is Collect || r is RefusedChange
 
 /**
@@ -474,7 +474,13 @@ internal class SimChecks(private val sim: Simulation) {
                 if (unsigned(e.paidBy)) broke(RULES, "whether cost ${e.id.take(8)} is paid carries nobody's name, though the move had an Organiser then", e.id)
             }
             for (p in d.photos) if (!j.receipt(p)) broke(RULES, "receipt ${p.id.take(8)} was attached by ${p.by.take(8)}, who could not pay that cost", p.id, p.ownerId)
+            // Since 2.1 an item's details, asking price and sale amount have stamps of their own, as does what is to be collected.
+            for (h in d.hidden) for ((part, s) in listOf("details" to h.detailsBy, "asking price" to h.priceBy, "sale amount" to h.saleBy)) {
+                if (unsigned(s)) broke(RULES, "the $part of item ${h.id.take(8)} carry nobody's name, though the move had an Organiser then: ${short(h)}", h.id)
+            }
+            for (x in d.collect) if (unsigned(x.by)) broke(RULES, "what is to be collected for item ${x.id.take(8)} carries nobody's name, though the move had an Organiser then", x.id)
         }
+        for (x in d.damage) if (unsigned(x.clearedBy)) broke(RULES, "damage report ${x.id.take(8)} carries nobody's name, though the move had an Organiser then", x.id, x.thingId)
         // Deletions: by an Organiser, or by whoever added the thing while nobody else had a hand in it.
         for (x in listOf<List<Owned>>(d.items, d.boxes, d.rooms, d.photos).flatten()) {
             if (!j.gone(x)) broke(RULES, "${x.javaClass.simpleName.lowercase()} ${x.id.take(8)} (added by ${x.createdBy.take(8)}) was deleted by ${who(x.deletedBy)}, with others' hands on it: ${j.others(x).map { it.take(8) }}", x.id, x.deletedBy.by)
