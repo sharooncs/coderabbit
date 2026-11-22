@@ -460,7 +460,10 @@ class DeviceTest {
         see("Seal box") // still on the same box after being rebuilt
 
         rule.activityRule.scenario.moveToState(Lifecycle.State.CREATED) // app sent to the background
-        val saved = File(context.filesDir, "data.json").readText()
+        // 2.1 keeps each move in its own folder under moves/ (see Moves); this is the one open now.
+        val moves = (context as App).moves
+        val folder = moves.cards.value.single { it.matches(store.moveId) }.folder
+        val saved = File(File(context.filesDir, "moves"), folder + "/data.json").readText()
         assertTrue(saved.contains("Changed on the device"))
         assertEquals("Changed on the device", AppJson.decodeFromString<AppData>(saved).box("box1")!!.contents)
         rule.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
@@ -536,6 +539,10 @@ class DeviceTest {
         val b = tempStore()
         a.setDevice { it.copy(name = "Asha", letter = "A") }
         b.setDevice { it.copy(name = "Ben", letter = "B") }
+        // In 2.1 a plain sync code never joins two moves, so Ben's phone joins Asha's move first, as a Decider.
+        val ben = a.addPerson("Ben", Role.DECIDER).valueOrNull()!!
+        assertTrue(b.joinAs(ben.id, a.data.value, a.identity.value).ok)
+        a.mergeIn(b.data.value)
         val boxA = a.createBox("L001", null)
         val photoA = a.newPhotoFile().also { jpeg(it, Color.BLUE) }
         a.addPhoto(boxA.id, PhotoKind.CONTENTS, photoA)
