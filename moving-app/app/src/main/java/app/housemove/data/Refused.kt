@@ -13,15 +13,20 @@ package app.housemove.data
  * part set in nobody's name, says nothing about who tried it.
  */
 
-/** Gathers the refused changes found during one merge. */
-internal class Refusals(private val roles: Roles) {
+/**
+ * Gathers the refused changes found during one merge. A record holds only what is the same on every phone that turns
+ * the change away: what was refused, and who tried it when. The role they had then is worked out when it is shown
+ * ([describe]): a phone that has not yet heard of a removal would otherwise record another role than one that has, and
+ * the record, made with the same id everywhere, would never settle.
+ */
+internal class Refusals(@Suppress("UNUSED_PARAMETER") roles: Roles) {
     private val found = LinkedHashMap<String, RefusedChange>()
 
     fun add(what: String, targetId: String, s: Stamp, tried: String) {
         if (s.by.isEmpty()) return
         val id = "refused/" + seal(what, targetId, s.by, s.at)
         if (id in found) return
-        found[id] = RefusedChange(id, s.by, s.at, what, targetId, tried, roles.at(s.by, s.at), updatedAt = s.at)
+        found[id] = RefusedChange(id, s.by, s.at, what, targetId, tried, updatedAt = s.at)
     }
 
     fun isEmpty() = found.isEmpty()
@@ -44,10 +49,12 @@ fun AppData.describe(r: RefusedChange): String {
     // A thing marked gone is called sold, donated or binned by what is decided for it now (see [outcomeVerb]).
     val tried = (if (r.tried == GONE) item(r.targetId)?.let { goneVerb(it.disposition) } ?: GONE else r.tried).replace("{}", name)
     val now = person(r.by)
+    // Their role when they tried it, as this phone knows the move's people now.
+    val role = roles().at(r.by, r.at)
     val why = when {
-        r.role == null -> if (now == null) "$who is not in the move" else "$who was not in the move then"
-        now != null && !now.removed && now.role == r.role -> "$who is ${if (r.role == Role.ORGANISER) "an" else "a"} ${r.role.label}"
-        else -> "$who was ${if (r.role == Role.ORGANISER) "an" else "a"} ${r.role.label} then"
+        role == null -> if (now == null) "$who is not in the move" else "$who was not in the move then"
+        now != null && !now.removed && now.role == role -> "$who is ${if (role == Role.ORGANISER) "an" else "a"} ${role.label}"
+        else -> "$who was ${if (role == Role.ORGANISER) "an" else "a"} ${role.label} then"
     }
     return "$who's phone tried to $tried; $why."
 }
