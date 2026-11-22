@@ -2055,10 +2055,7 @@ class Store internal constructor(
     fun whyNoBackup(): String? = _data.value.whyNoBackup(_device.value)
 }
 
-<<<<<<< HEAD
-=======
 
->>>>>>> worktree-agent-a77a9f1dabd7b6cf2
 /** What a phone holds that no other phone has (see [Store.unshared]). [things] names some of what changed. */
 data class Unshared(val changes: Int, val photos: Int, val things: List<String>) {
     val nothing: Boolean get() = changes == 0 && photos == 0
@@ -2070,9 +2067,6 @@ internal fun DeviceInfo.forAnotherMove(personId: String) = copy(
     lastSyncAt = 0, lastBackupAt = 0, sharedUpTo = 0, sharedAllUpTo = 0,
 )
 
-<<<<<<< HEAD
-=======
 
->>>>>>> worktree-agent-a77a9f1dabd7b6cf2
 /** Why a Helper cannot change an item's details, in words for the screen. */
 const val HELPERS_DETAILS = "Helpers cannot change the make, model, serial number or value. Take a photo of the serial label, or ask a question about it."
