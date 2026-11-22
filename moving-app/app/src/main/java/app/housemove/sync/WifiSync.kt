@@ -18,7 +18,7 @@ import app.housemove.data.isSafeFileName
 import app.housemove.data.phoneEntry
 import app.housemove.data.refusal
 import app.housemove.data.roleOfPeer
-import app.housemove.data.visibleTo
+import app.housemove.data.sentTo
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.Serializable
@@ -658,7 +658,7 @@ object WifiSync {
                     if (go == "TAKE") {
                         // This phone has been retired: the other phone takes in its work, and sends nothing back.
                         val role = before.roleOfPeer(theirPerson) ?: Role.HELPER
-                        writeData(out, store.data.value.visibleTo(role))
+                        writeData(out, store.data.value.sentTo(role, theirPerson?.id))
                         val theirFiles = readNames(din)
                         listsDone = true
                         val sent = sendFiles(out, store, wanted(store, theirFiles, role))
@@ -674,7 +674,7 @@ object WifiSync {
                     val them = merged.person(peerId)?.takeIf { !it.removed }
                     // Someone this move has no role for is sent no more than a Helper would be.
                     val role = them?.role ?: Role.HELPER
-                    writeData(out, merged.visibleTo(role))
+                    writeData(out, merged.sentTo(role, peerId))
 
                     // Photos: the client sends first, then we send. Its list of files is sent once it has merged, so
                     // from here on both phones have each other's data and only photos can still go missing.
@@ -689,6 +689,9 @@ object WifiSync {
                         if (helperUntil != null) store.data.value.person(joining)?.let { p -> _helpers.value = _helpers.value.filter { it.id != p.id } + p }
                     }
                     store.noteShared(upTo, everything = role != Role.HELPER)
+                    // Data and photos have gone both ways: a Helper's phone that synced with an Organiser or a Decider lets go here
+                    // of what Helpers are not sent.
+                    store.fullSyncDone(peerId)
                     store.flush()
                     onResult(Result(peer, letter, sent, received, peerPersonId = peerId, joinedAs = if (joining != null) store.data.value.person(peerId) else null, peerDevice = device))
                 }
@@ -857,10 +860,12 @@ object WifiSync {
                     if (answer == "ONEWAY") {
                         // This phone has been retired: its last work goes to the other phone, and nothing comes back.
                         out.writeUTF("GO")
-                        writeData(out, store.data.value.visibleTo(Role.ORGANISER))
+                        // As much as that phone's person may see, as this phone knows them.
+                        val toRole = store.data.value.roleOfPeer(theirPerson) ?: Role.HELPER
+                        writeData(out, store.data.value.sentTo(toRole, theirPerson?.id))
                         val theirFiles = readNames(din)
                         listsDone = true
-                        val sent = sendFiles(out, store, wanted(store, theirFiles, Role.ORGANISER))
+                        val sent = sendFiles(out, store, wanted(store, theirFiles, toRole))
                         din.readUTF()
                         return Result(peer, letter, sent, 0, RETIRED_PHONE, peerPersonId = peerId, oneWay = true, peerDevice = device)
                     }
@@ -923,7 +928,7 @@ object WifiSync {
                     val role = (if (claim != null) theirPerson?.role else before.roleOfPeer(theirPerson)) ?: Role.HELPER
                     // A phone joining its first move leaves behind the person it started as and what that person decided alone.
                     val mine = if (claimed != null) store.offerFor(claimed) else store.data.value
-                    writeData(out, mine.visibleTo(role))
+                    writeData(out, mine.sentTo(role, theirPerson?.id))
                     val merged = readData(din)
                     if (claimed != null) {
                         when (val o = store.joinAs(claimed, merged, hostMove.takeIf { it.id.isNotEmpty() })) {
@@ -943,6 +948,7 @@ object WifiSync {
                     val sent = sendFiles(out, store, wanted(store, theirFiles, role))
                     val received = receiveFiles(din, store)
                     store.noteShared(upTo, everything = role != Role.HELPER)
+                    store.fullSyncDone(theirPerson?.id)
                     store.flush()
                     return Result(peer, letter, sent, received, peerPersonId = peerId, joinedAs = joined, peerDevice = device)
                 }

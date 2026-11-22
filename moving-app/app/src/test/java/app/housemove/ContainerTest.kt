@@ -231,7 +231,8 @@ class ContainerTest {
     @Test
     fun phonesThatPackDifferentlyAtTheSameTimeStillAgree() {
         val a = store()
-        val b = store()
+        // A phone of the same move (since 2.1 the person a phone made itself counts in another move only once someone let it in).
+        val b = store().also { s -> assertTrue(s.joinAs(a.addPerson("Ben", Role.ORGANISER).valueOrNull()!!.id, a.data.value).ok) }
         val suitcase = a.createBox("B1", null, ContainerKind.SUITCASE)
         val bag = a.createBox("B2", null, ContainerKind.BAG)
         val camera = a.createItem("Camera", null)

@@ -285,7 +285,8 @@ class PhonesTogetherTest {
             assertEquals(Role.HELPER, d.person(omar.id)!!.role)
             // What he decided while he was an Organiser stands; what he decided afterwards does not.
             assertEquals(Disposition.SELL, d.item(sofa)!!.disposition)
-            assertEquals(70.0, d.priceOf(sofa)!!, 0.0)
+            // The price is a Helper's no longer: since 2.1 his phone lets it go once it has synced with an Organiser's.
+            if (s === asha) assertEquals(70.0, d.priceOf(sofa)!!, 0.0) else assertNull(d.priceOf(sofa))
             assertEquals(Disposition.UNDECIDED, d.item(lamp)!!.disposition)
             assertNull(d.task("late-task"))
             assertNull(d.expenses.firstOrNull { it.id == "late" })
@@ -298,12 +299,13 @@ class PhonesTogetherTest {
         // His phone now knows, and says no.
         assertEquals(Role.HELPER, omar.myRole)
         assertNotNull(omar.decide(lamp, Disposition.BIN).reason)
-        // From here on it is sent no costs: the one he made stays on his phone as it was, and changes to it pass him by.
+        // From here on it is sent no costs, and since 2.1 his phone let go of the one he made once Asha's had it; changes to it
+        // pass him by.
         asha.put(asha.data.value.expense("early")!!.copy(amount = 250.0))
         asha.put(Expense(id = "fuel", title = "Fuel", amount = 60.0))
         synced(asha, omar)
         synced(omar, asha)
-        assertEquals(200.0, omar.data.value.expense("early")!!.amount, 0.0)
+        assertNull(omar.data.value.expense("early"))
         assertNull(omar.data.value.expense("fuel"))
         assertEquals(250.0, asha.data.value.expense("early")!!.amount, 0.0)
     }

@@ -45,8 +45,17 @@ object Backup {
     /** What a backup says about itself, read without restoring it ([peek]). */
     data class Peek(val moveId: String, val aliases: List<String>, val moveName: String, val by: String, val data: AppData)
 
-    /** Write the whole move on this phone, photos included, to [out]. Throws an IOException with words for the screen when it cannot. */
+    /**
+     * Write the whole move on this phone, photos included, to [out]. Throws an IOException with words for the screen
+     * when it cannot, or when this phone may not ([Store.whyNoBackup]): Helpers cannot make backups.
+     */
     fun export(store: Store, out: OutputStream) {
+        store.whyNoBackup()?.let { throw IOException(it) }
+        write(store, out)
+    }
+
+    /** [export] without asking whether the phone may: a backup as a Helper's phone made it on 2.0, for tests of restoring one. */
+    internal fun write(store: Store, out: OutputStream) {
         try {
             store.flush()
             val data = store.data.value

@@ -100,7 +100,8 @@ class MoveIdTest {
         assertEquals(SCHEMA, d.version)
         assertEquals(setOf("asha", "omar", "ben"), d.people.map { it.id }.toSet())
         assertEquals(Disposition.SELL, d.item("sofa")!!.disposition)
-        assertEquals(80.0, d.priceOf("sofa")!!, 0.0)
+        // The asking price is kept in the item's hidden record since 2.1.
+        assertEquals(80.0, d.filledIn().item("sofa")!!.price!!, 0.0)
         assertNotNull(d.findByLabel("L001"))
         assertEquals("Maple Road", d.move.name)
         assertEquals(77L, s.device.value.lastSyncAt)
@@ -108,6 +109,43 @@ class MoveIdTest {
         // The phone is now on Asha's list of phones, using her letter.
         assertEquals(listOf(s.phone.id), s.me!!.phones.map { it.id })
         assertEquals("", s.me!!.phones.single().letter)
+    }
+
+    @Test
+    fun aDecidedAndSoldItemFrom20StaysSoFromDiskFromABackupAndThroughASync() {
+        // As 2.0 saved it: the asking price sealed into the decision's check value, the sale amount into the outcome's.
+        val sofa = Item(id = "sofa", name = "Sofa", disposition = Disposition.SELL, price = 80.0, listed = true, gone = true, soldFor = 75.0, serial = "SN-1", updatedAt = 40)
+            .let { it.copy(decisionBy = Stamp("asha", 30, it.decisionSum20()), outcomeBy = Stamp("asha", 35, it.outcomeSum20())) }
+        val asha = Person(id = "asha", name = "Asha", role = Role.ORGANISER, letter = "A", joinedAt = 10, grants = listOf(Grant(Role.ORGANISER, false, 10, "")), updatedAt = 10)
+        val omar = Person(id = "omar", name = "Omar", role = Role.ORGANISER, letter = "B", joinedAt = 20, grants = listOf(Grant(Role.ORGANISER, false, 20, "asha")), updatedAt = 20)
+        val json = AppJson.encodeToString(AppData.serializer(), AppData(version = 4, move = MoveInfo(name = "Maple Road", setupDone = true), people = listOf(asha, omar), items = listOf(sofa)))
+        fun assertStillSold(d: AppData, how: String) {
+            val i = d.filledIn().item("sofa")!!
+            assertEquals(how, Disposition.SELL, i.disposition)
+            assertEquals(how, 80.0, i.price!!, 0.0)
+            assertTrue(how, i.gone && i.listed)
+            assertEquals(how, 75.0, i.soldFor!!, 0.0)
+            assertEquals(how, "SN-1", i.serial)
+        }
+        // From disk, on two phones of the move, which then sync: nothing resets.
+        val a = Store(saved20(json, """{"name":"Asha","letter":"A","personId":"asha"}""")) { now++ }
+        val o = Store(saved20(json, """{"name":"Omar","letter":"B","personId":"omar"}""")) { now++ }
+        assertStillSold(a.data.value, "loaded")
+        assertTrue(sync(a, o).second.ok)
+        for (s in listOf(a, o)) assertStillSold(s.data.value, "synced")
+        // From a 2.0 phone's folder, moved into the first card of the list of moves.
+        val root = tmp.newFolder("moves20")
+        File(root, "files").mkdirs()
+        File(root, "files/data.json").writeText(json)
+        File(root, "files/device.json").writeText("""{"name":"Asha","letter":"A","personId":"asha"}""")
+        assertStillSold(Moves(File(root, "files"), File(root, "nb")) { now++ }.current.value!!.data.value, "moved into its folder")
+        // From a backup 2.0 made.
+        val zip = ByteArrayOutputStream().also { out ->
+            java.util.zip.ZipOutputStream(out).use { z -> z.putNextEntry(java.util.zip.ZipEntry("data.json")); z.write(json.toByteArray()); z.closeEntry() }
+        }.toByteArray()
+        val fresh = Store(tmp.newFolder("restore20")) { now++ }
+        Backup.import(fresh, ByteArrayInputStream(zip), replace = true)
+        assertStillSold(fresh.data.value, "restored")
     }
 
     // ---- open grants --------------------------------------------------------------------------

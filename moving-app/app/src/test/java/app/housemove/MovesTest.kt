@@ -148,7 +148,7 @@ class MovesTest {
         val data = s.data.value
         assertEquals("Oak Lane", data.move.name)
         assertEquals(Disposition.SELL, data.item("tv")!!.disposition)
-        assertEquals(90.0, data.priceOf("tv")!!, 0.0)
+        assertEquals(90.0, data.filledIn().item("tv")!!.price!!, 0.0) // kept in its hidden record since 2.1
         assertTrue(data.task("k1")!!.done)
         assertEquals(SCHEMA, data.version)
         assertEquals(Role.ORGANISER, s.myRole)
