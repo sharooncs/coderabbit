@@ -52,31 +52,39 @@ internal fun RoleBanner(data: AppData, device: DeviceInfo, modifier: Modifier = 
     val raw by store.data.collectAsState()
     val waiting = raw.awaitsHidden(device)
     if (news == null && !waiting) return
-    GlassCard(modifier.fillMaxWidth(), tone = GlassTone.Mint, shape = RoundedCornerShape(24.dp), sheen = true) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    // Kept short, so the house keeps the first screen: the words, and the one thing to tap beside them
+    // (under them on a narrow screen or with large text).
+    val stacked = tightScreen()
+    GlassCard(modifier.fillMaxWidth(), tone = GlassTone.Mint, shape = RoundedCornerShape(22.dp), sheen = true) {
+        Column(Modifier.padding(start = 12.dp, end = 10.dp, top = 8.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             if (news != null) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    GlassOrb(news.role.icon(), null, kind = OrbKind.Primary, size = 40.dp)
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(news.title, style = MaterialTheme.typography.titleMedium)
-                        Text(news.role.line(), style = MaterialTheme.typography.bodyMedium, color = Night.TextSoft)
+                FlowRow(
+                    Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                    verticalArrangement = Arrangement.spacedBy(4.dp), itemVerticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row((if (stacked) Modifier.fillMaxWidth() else Modifier.weight(1f)), verticalAlignment = Alignment.CenterVertically) {
+                        GlassOrb(news.role.icon(), null, kind = OrbKind.Primary, size = 34.dp)
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(news.title, style = MaterialTheme.typography.titleSmall)
+                            Text(news.role.line(), style = MaterialTheme.typography.bodySmall, color = Night.TextSoft)
+                        }
                     }
+                    RowButton("Got it", onClick = { seen.mark(news.at) }, forward = false, icon = Icons.Default.Check)
                 }
             }
             if (waiting) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Sync, contentDescription = null, tint = Night.MintLight, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        "Costs and decisions arrive at your next sync with an Organiser or Decider.",
-                        style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f),
-                    )
+                FlowRow(
+                    Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                    verticalArrangement = Arrangement.spacedBy(4.dp), itemVerticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row((if (stacked) Modifier.fillMaxWidth() else Modifier.weight(1f)), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Sync, contentDescription = null, tint = Night.MintLight, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(10.dp))
+                        Text("Costs and decisions arrive at your next sync with an Organiser or Decider.", style = MaterialTheme.typography.bodySmall)
+                    }
+                    RowButton("Sync", onClick = { nav.open("sync") }, icon = Icons.Default.Sync, look = RowButtonLook.Primary)
                 }
-            }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (waiting) RowButton("Sync", onClick = { nav.open("sync") }, icon = Icons.Default.Sync, look = RowButtonLook.Primary)
-                if (news != null) RowButton("Got it", onClick = { seen.mark(news.at) }, forward = false, icon = Icons.Default.Check)
             }
         }
     }

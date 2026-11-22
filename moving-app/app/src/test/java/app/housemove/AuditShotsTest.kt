@@ -74,7 +74,8 @@ class AuditShotsTest {
     @get:Rule
     val rule = createComposeRule()
 
-    private fun phones() = AuditSampleData.phones { tmp.newFolder() }
+    /** The sample move with what 2.1 adds (hidden details, a hand-over, storage, damage reports, a refused change). */
+    private fun phones() = Sample21.enrich(AuditSampleData.phones { tmp.newFolder() })
 
     private fun seeded(): Store = phones().organiser
 
@@ -175,9 +176,9 @@ class AuditShotsTest {
         for ((who, store) in listOf("decider" to phones.decider, "helper" to phones.helper)) {
             use(store)
             shot("home_$who")
-            for (route in listOf("approvals", "people", "settings", "sync", "more")) {
+            for (route in listOf("approvals", "people", "settings", "sync", "more", "item/sofa", "item/fridge", "disposal")) {
                 go(route)
-                shot(route + "_" + who)
+                shot(route.replace('/', '_') + "_" + who)
             }
         }
 

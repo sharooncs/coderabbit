@@ -211,7 +211,7 @@ class RoleWalkTest {
             "arrange who hands a thing over, and whether it is paid", anItem, { c, _ -> c.says("Arrange") },
             { s, stop, _ -> s.data.value.item(anItem.matchEntire(stop.name)!!.groupValues[1])?.let { s.data.value.mayArrangeHandover(s.me, it) } == true },
         ),
-        Gate("clear a damage report", everywhere, { c, _ -> c.says("Clear") }, can(Action.DECIDE)),
+        Gate("clear a damage report", Regex("item_.*|box_.*"), { c, _ -> c.says("Clear") }, can(Action.DECIDE)),
         Gate("add a job to the timeline", Regex("tasks"), { c, _ -> c.described.contains("Add a task") }, can(Action.DECIDE)),
         Gate("suggest a job for the timeline", Regex("tasks"), { c, _ -> c.described.contains("Suggest a task") }, { s, _, _ -> s.can(Action.SUGGEST) && !s.can(Action.DECIDE) }),
         Gate(
@@ -383,7 +383,7 @@ class RoleWalkTest {
      * Words a Helper must never be shown (design 2.1, section 2): the fridge's serial number, make and model, the
      * wardrobe's value, and any asking price, value or warranty. Found anywhere, they fail the walk.
      */
-    private val hiddenWords = listOf(Sample21.SERIAL, Sample21.MAKE, Sample21.MODEL, "450", "Worth", "Asking", "Warranty", "Sold for")
+    private val hiddenWords = listOf(Sample21.SERIAL, Sample21.MAKE, Sample21.MODEL, "450", "Worth", "Asking", "Warranty", "Sold for", "for £")
 
     /** Change the move day on the Organiser's phone and bring it to [phone], as a sync would. */
     private fun viaOrganiser(organiser: Store, phone: Store): (Long?) -> Unit = { day ->

@@ -51,7 +51,7 @@ internal object Sample21 {
         for (phone in listOf(p.decider, tom)) sync(sam, phone)
 
         // Tom reports damage to a box that has come in.
-        check(tom.reportDamage("box4", "Corner crushed").ok)
+        check(tom.reportDamage("box5", "Corner crushed").ok)
 
         // A copy of the app on Tom's phone that marks the sofa sold, which a Helper may not do.
         val at = System.currentTimeMillis() + 60_000

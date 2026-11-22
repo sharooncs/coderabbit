@@ -171,12 +171,21 @@ fun UnloadScreen() {
                             if (storedCount > 0) "$storedCount in storage" else null,
                         ).joinToString(" · ").ifBlank { null },
                     ) {
-                        if (trips.size > 1) Row(
+                        if (trips.size > 1 || storedCount > 0) Row(
                             Modifier.horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
-                            GlassChip("All trips", selected = filter == null, onClick = { tripFilter = null })
-                            trips.forEach { t -> GlassChip(t.name, icon = t.chipIcon(), selected = filter == t.id, onClick = { tripFilter = t.id }) }
+                            if (trips.size > 1) {
+                                GlassChip("All trips", selected = filter == null, onClick = { tripFilter = null })
+                                trips.forEach { t -> GlassChip(t.name, icon = t.chipIcon(), selected = filter == t.id, onClick = { tripFilter = t.id }) }
+                            }
+                            // What is at the storage unit comes to the new home on a trip of its own, loaded first.
+                            if (storedCount > 0 && data.move.kind != MoveKind.STORAGE) {
+                                GlassChip(
+                                    BRING_BACK_TRIP_NAME, icon = Icons.Default.Undo,
+                                    onClick = { mdStorageTrip(store, fromStorage = true); nav.open("load") },
+                                )
+                            }
                         }
                     }
                 }
