@@ -256,7 +256,7 @@ internal class SimChecks(private val sim: Simulation) {
         const val PHOTOS = "Photo files arrived whole on every phone that should have them"
         const val DISK = "The data on disk loads again into the same state"
         const val TWICE = "A label used on two things is flagged on every phone"
-        val ALL = listOf(Simulation.RUN, SAME, LOST, MERGE, RULES, HELPERS, COUNTED, NESTING, LETTERS, CODES, TWICE, PHOTOS, DISK, Simulation.OUTSIDERS)
+        val ALL = listOf(Simulation.RUN, SAME, LOST, MERGE, RULES, HELPERS, COUNTED, NESTING, LETTERS, CODES, TWICE, PHOTOS, DISK, Simulation.OUTSIDERS, SimUpdates.UPDATES)
     }
 
     private fun broke(invariant: String, message: String, vararg ids: String?) = sim.broke(invariant, message, ids.toList())

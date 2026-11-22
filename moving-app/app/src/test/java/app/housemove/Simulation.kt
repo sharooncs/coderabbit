@@ -417,6 +417,8 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
         round++
         time += 20 + rnd.nextInt(if (rnd.nextInt(6) == 0) 40_000 else 2_500)
         if (rnd.nextInt(10) == 0) outsiderTriesOn(phones[rnd.nextInt(phones.size)])
+        // Phones that cannot meet: one sends an update file through a messaging app, another opens it (SimUpdates).
+        if (rnd.nextInt(4) == 0) SimUpdates.pass(this, phones[rnd.nextInt(phones.size)], phones[rnd.nextInt(phones.size)], rnd)
         val free = phones.shuffled(rnd).toMutableList()
         val jobs = ArrayList<Future<*>>()
         repeat(listOf(0, 1, 1, 1, 2, 2, 3)[rnd.nextInt(7)]) {
