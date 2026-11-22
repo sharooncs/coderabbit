@@ -145,7 +145,7 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
         var m = d.move.updatedAt
         for (list in listOf<List<Rec>>(
             d.rooms, d.items, d.boxes, d.photos, d.tasks, d.expenses, d.supplies, d.trips, d.readings, d.entries,
-            d.people, d.proposals, d.activity,
+            d.people, d.proposals, d.activity, d.hidden, d.collect, d.damage, d.lines, d.refused,
         )) {
             for (r in list) if (r.updatedAt > m) m = r.updatedAt
         }
@@ -914,19 +914,27 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
         d = d.copy(proposals = d.proposals.map { if (it.id == x.id) x else it })
     }
 
-    /** Set an item's decision in this person's name, even when it is the same as before: that is what an approval is. */
+    /**
+     * Set an item's decision in this person's name, even when it is the same as before: that is what an approval is.
+     * The asking price is on the item's hidden record, with a stamp of its own.
+     */
     private fun Draft.decideItem(item: Item, disposition: Disposition, price: Double?): Item {
         val was = item.stamped()
-        val next = was.copy(disposition = disposition, price = price, updatedAt = t, hands = actor.handsAfter(was.hands, true))
+        val next = was.copy(disposition = disposition, updatedAt = t, hands = actor.handsAfter(was.hands, true))
             .let { it.copy(decisionBy = actor.stamp(t, it.decisionSum())) }
         replace(next)
+        changeHidden(item.id) { it.copy(price = price) }
         return next
     }
 
-    /** Decide what happens to an item, and the asking price if it is to be sold. Organisers only; others use [suggestDecision]. */
-    fun decide(itemId: String, disposition: Disposition, price: Double? = _data.value.item(itemId)?.price): Outcome<Item> = act(Action.DECIDE) {
+    /**
+     * Decide what happens to an item, and the asking price if it is to be sold (on its hidden record).
+     * Organisers only; others use [suggestDecision].
+     */
+    fun decide(itemId: String, disposition: Disposition, price: Double? = _data.value.priceOf(itemId)): Outcome<Item> = act(Action.DECIDE) {
         val item = d.item(itemId) ?: return@act Outcome.Refused("That item is no longer here.")
-        saveItems(listOf(item.copy(disposition = disposition, price = price)))
+        saveItems(listOf(item.copy(disposition = disposition)))
+        changeHidden(itemId) { it.copy(price = price) }
         Outcome.Ok(d.item(itemId) ?: item)
     }
 
@@ -947,7 +955,9 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
         if (!d.mayCarryOut(actor.me, item)) {
             return@act Outcome.Refused(actor.refusal(Action.CARRY_OUT) ?: "An Organiser has to approve your suggestion for this first.")
         }
-        saveItems(listOf(item.copy(listed = listed ?: item.listed, gone = gone ?: item.gone, soldFor = soldFor ?: item.soldFor)))
+        saveItems(listOf(item.copy(listed = listed ?: item.listed, gone = gone ?: item.gone)))
+        // What it sold for is on its hidden record, with a stamp of its own.
+        if (soldFor != null) changeHidden(itemId) { it.copy(soldFor = soldFor) }
         Outcome.Ok(d.item(itemId) ?: item)
     }
 
@@ -1012,14 +1022,14 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
         act(Action.SUGGEST) {
             d.item(itemId) ?: return@act Outcome.Refused("That item is no longer here.")
             val p = Proposal(id = "", kind = ProposalKind.ITEM_DECISION, targetId = itemId, disposition = disposition, price = price, note = note.trim(), answers = answers)
-            propose(p, "suggested: " + d.describe(p))
+            propose(p, "suggested: " + d.describe(p, amounts = false))
         }
 
     /** Suggest the new-home room an item should go to. */
     fun suggestRoom(itemId: String, roomId: String?, note: String = ""): Outcome<Proposal> = act(Action.SUGGEST) {
         d.item(itemId) ?: return@act Outcome.Refused("That item is no longer here.")
         val p = Proposal(id = "", kind = ProposalKind.ITEM_ROOM, targetId = itemId, roomId = roomId, note = note.trim())
-        propose(p, "suggested: " + d.describe(p))
+        propose(p, "suggested: " + d.describe(p, amounts = false))
     }
 
     /**
@@ -1062,7 +1072,7 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
             ProposalKind.ITEM_DECISION -> {
                 val item = d.item(p.targetId) ?: return@act Outcome.Refused("The item it was about is no longer here.")
                 val before = item.disposition
-                val next = decideItem(item, p.disposition ?: item.disposition, p.price ?: item.price)
+                val next = decideItem(item, p.disposition ?: item.disposition, p.price ?: d.priceOf(item.id))
                 if (next.disposition != before) events.add(decisionVerb(next.disposition), next.title(), next.id)
             }
             ProposalKind.ITEM_ROOM -> {
@@ -1100,7 +1110,7 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
         }
         val done = p.copy(state = ProposalState.APPROVED, reason = "", updatedAt = t).let { it.copy(decided = actor.stamp(t, it.stateSum())) }
         replace(done)
-        events.say(if (p.kind == ProposalKind.COST) "approved a suggested cost" else "approved: " + d.describe(p), p.id)
+        events.say(if (p.kind == ProposalKind.COST) "approved a suggested cost" else "approved: " + d.describe(p, amounts = false), p.id)
         Outcome.Ok(done)
     }.also { if (it.ok) forgetDeletedPhotos() }
 
@@ -1181,7 +1191,7 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
         if (p.state != ProposalState.WAITING) return@act Outcome.Refused("That suggestion is no longer waiting.")
         val done = p.copy(state = ProposalState.DECLINED, reason = reason.trim(), updatedAt = t).let { it.copy(decided = actor.stamp(t, it.stateSum())) }
         replace(done)
-        events.say(if (p.kind == ProposalKind.COST) "declined a suggested cost" else "declined: " + d.describe(p), p.id)
+        events.say(if (p.kind == ProposalKind.COST) "declined a suggested cost" else "declined: " + d.describe(p, amounts = false), p.id)
         Outcome.Ok(done)
     }
 
@@ -1200,7 +1210,7 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
         act(Action.DECIDE) {
             val item = d.item(q.targetId) ?: return@act Outcome.Refused("The item it was about is no longer here.")
             val before = item.disposition
-            val next = decideItem(item, disposition, price ?: item.price)
+            val next = decideItem(item, disposition, price ?: d.priceOf(item.id))
             if (next.disposition != before) events.add(decisionVerb(next.disposition), next.title(), next.id)
             val done = q.copy(state = ProposalState.APPROVED, reason = note.trim(), updatedAt = t).let { it.copy(decided = actor.stamp(t, it.stateSum())) }
             replace(done)
@@ -1229,7 +1239,7 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
             val dev = _device.value
             var merged = merge(distrustUnstamped(was), distrustUnstamped(remote))
             fun AppData.helperHere() = hasOrganiser() && roleOf(dev) == Role.HELPER
-            if (was.helperHere() && merged.helperHere()) merged = merged.withHelpersShareOf(was)
+            if (was.helperHere() && merged.helperHere()) merged = merged.withHelpersShareOf(was).withHelpersHiddenOf(was, dev.personId)
             _data.value = merged
             // What arrived can show that this phone's person was never rightly in the move (whoever added them had
             // already lost the right to). The phone is not left as nobody: it goes on as a Helper nobody has added yet.
@@ -1313,7 +1323,11 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
                     next = next.copy(
                         expenses = cur.expenses,
                         photos = next.photos.filter { it.kind !in HIDDEN_FROM_HELPERS } + cur.photos.filter { it.kind in HIDDEN_FROM_HELPERS },
-                        proposals = next.proposals.filter { it.kind != ProposalKind.COST } + cur.proposals.filter { it.kind == ProposalKind.COST },
+                        proposals = next.proposals.filter { it.kind != ProposalKind.COST && !it.priced() } +
+                            cur.proposals.filter { it.kind == ProposalKind.COST || it.priced() },
+                        hidden = cur.hidden,
+                        refused = cur.refused,
+                        collect = cur.collect,
                     )
                 }
             }
@@ -1329,4 +1343,218 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
         setDevice { it.copy(nextSeq = 1, currentRoomId = null, currentTripId = null, lastSyncAt = 0, lastBackupAt = 0) }
         Outcome.Ok(Unit)
     }
+
+    // ==== 2.1: records, merges and privacy =========================================================
+    //
+    // What Helpers are not sent (Hidden.kt), handing sold and donated things over, where things are and the
+    // storage unit (Where.kt), damage reports and contents lines (Records.kt), and changes refused at a merge
+    // (Refused.kt). Everything here goes through the same rules and log as the rest of the Store.
+
+    /**
+     * Change an item's value, make, model, serial number or dates (its [Hidden] record). An Organiser or a
+     * Decider may; a Helper's serial number comes in as a photo of the label or a question instead. The price
+     * and the sale are left alone: they are set with [decide] and [carryOut].
+     */
+    fun setDetails(itemId: String, f: (Hidden) -> Hidden): Outcome<Hidden> = act(null) {
+        d.item(itemId) ?: return@act Outcome.Refused("That item is no longer here.")
+        val me = actor.me
+        if (!actor.open) {
+            if (me == null || me.removed) return@act Outcome.Refused(actor.refusal(Action.DECIDE) ?: "You have been removed from this move.")
+            if (me.role == Role.HELPER) return@act Outcome.Refused(HELPERS_DETAILS)
+        }
+        val before = d.hiddenOf(itemId)
+        val saved = changeHidden(itemId) { h -> f(h).copy(price = h.price, soldFor = h.soldFor) }
+        if (saved != before && saved.updatedAt == t) touch(itemId)
+        Outcome.Ok(saved)
+    }
+
+    /**
+     * Arrange the hand-over of an item decided to be sold or donated: who hands it over ([to], or nobody in
+     * particular with null), whether the buyer has paid already, and for a sale not yet paid what is to be
+     * collected (by default what it sold for, else the asking price). Only [to] among the Helpers is sent the
+     * amount. The same people as [carryOut]: an Organiser, or a Decider whose suggestion was approved.
+     */
+    fun arrangeHandover(
+        itemId: String,
+        to: String? = _data.value.item(itemId)?.handoverTo,
+        paid: Boolean = _data.value.item(itemId)?.paid ?: false,
+        amount: Double? = null,
+    ): Outcome<Item> = act(null) {
+        val item = d.item(itemId) ?: return@act Outcome.Refused("That item is no longer here.")
+        if (!item.forHandover()) return@act Outcome.Refused("Only something to be sold or donated is handed over.")
+        if (!d.mayArrangeHandover(actor.me, item)) {
+            return@act Outcome.Refused(actor.refusal(Action.CARRY_OUT) ?: "An Organiser has to approve your suggestion for this first.")
+        }
+        if (to != null && d.person(to)?.removed != false) return@act Outcome.Refused("That person is not in the move.")
+        saveItems(listOf(item.copy(handoverTo = to, paid = paid)))
+        val h = d.hiddenOf(itemId)
+        val kept = d.index.collect[itemId]?.takeIf { it.to == to.orEmpty() }?.amount
+        setCollect(itemId, to, if (paid || item.disposition != Disposition.SELL) null else amount ?: kept ?: h?.soldFor ?: h?.price)
+        Outcome.Ok(d.item(itemId) ?: item)
+    }
+
+    /** Mark a sale paid or not paid, keeping who hands it over. The same people as [arrangeHandover]. */
+    fun setPaid(itemId: String, paid: Boolean = true): Outcome<Item> = arrangeHandover(itemId, paid = paid)
+
+    /**
+     * Mark an item handed over to the buyer or the charity (or not, with [done] false). Anyone in the move may,
+     * Helpers included, once it is decided it is to be sold or donated.
+     */
+    fun handOver(itemId: String, done: Boolean = true): Outcome<Item> = act(Action.WORK) {
+        val item = d.item(itemId) ?: return@act Outcome.Refused("That item is no longer here.")
+        if (!d.mayHandOver(actor.me, item)) return@act Outcome.Refused("Only something decided to be sold or donated is handed over.")
+        saveItems(listOf(item.copy(handedOver = done)))
+        Outcome.Ok(d.item(itemId) ?: item)
+    }
+
+    /**
+     * Add a trip: from the old home to the new one (the usual), to the storage unit, or from the storage unit to
+     * the new home ("Bring back from storage"). Part of the work: anyone may.
+     */
+    fun addTrip(from: Place = Place.OLD_HOME, to: Place = Place.NEW_HOME, name: String = ""): Outcome<Trip> = act(Action.WORK) {
+        val ok = (from == Place.OLD_HOME && (to == Place.NEW_HOME || to == Place.STORAGE)) || (from == Place.STORAGE && to == Place.NEW_HOME)
+        if (!ok) return@act Outcome.Refused("A trip goes from the old home to the new one or to the storage unit, or from the storage unit to the new home.")
+        val trips = d.liveTrips
+        val shown = name.trim().ifBlank {
+            when {
+                to == Place.STORAGE -> STORAGE_TRIP_NAME
+                from == Place.STORAGE -> BRING_BACK_TRIP_NAME
+                else -> "Trip " + (trips.count { it.from == Place.OLD_HOME && it.to == Place.NEW_HOME } + 1)
+            }
+        }
+        val trip = Trip(id = newId(), name = shown, sort = (trips.maxOfOrNull { it.sort } ?: 0) + 1, from = from, to = to, updatedAt = t)
+        d = d.copy(trips = d.trips + trip)
+        Outcome.Ok(trip)
+    }
+
+    private fun Draft.thingsFor(ids: Collection<String>): List<Movable> =
+        ids.mapNotNull { id -> d.box(id)?.toMovable() ?: d.item(id)?.toMovable() }.map { d.carrierOf(it) }.distinctBy { it.id }
+
+    private fun Draft.moveThings(things: List<Movable>, stage: (Movable) -> Stage, tripId: (Movable) -> String?) {
+        saveBoxes(things.filter { it.isBox }.mapNotNull { m -> d.box(m.id)?.copy(stage = stage(m), tripId = tripId(m)) })
+        saveItems(things.filter { !it.isBox }.mapNotNull { m -> d.item(m.id)?.copy(stage = stage(m), tripId = tripId(m)) })
+    }
+
+    /**
+     * Load things onto [tripId] (or take them along by hand with null). Each must be where the trip starts
+     * ([whyNotLoad]): nothing is loaded when one is not. Something inside a container moves the container.
+     */
+    fun loadOnto(tripId: String?, ids: Collection<String>): Outcome<Int> = act(Action.WORK) {
+        val trip = if (tripId == null) null else d.trip(tripId) ?: return@act Outcome.Refused("That trip is no longer here.")
+        val things = thingsFor(ids)
+        things.firstNotNullOfOrNull { d.whyNotLoad(it, trip) }?.let { return@act Outcome.Refused(it) }
+        moveThings(things, { Stage.LOADED }, { tripId })
+        Outcome.Ok(things.size)
+    }
+
+    /** Unload things that are on their way: at the new home, or in storage when their trip went to the storage unit. */
+    fun unload(ids: Collection<String>): Outcome<Int> = act(Action.WORK) {
+        val things = thingsFor(ids).filter { it.stage == Stage.LOADED }
+        moveThings(things, { d.arrivalStage(it.tripId) }, { it.tripId })
+        Outcome.Ok(things.size)
+    }
+
+    /**
+     * Undo the last step for these things: unpacked goes back to delivered, delivered or in storage back onto its
+     * trip, and loaded back to where its trip started (the old home, or the storage unit for a trip back from it).
+     * It wins over what other phones had as long as it is the latest move made.
+     */
+    fun putBack(ids: Collection<String>): Outcome<Int> = act(Action.WORK) {
+        val things = thingsFor(ids).filter { it.stage != Stage.AT_ORIGIN }
+        moveThings(things, { m ->
+            when (m.stage) {
+                Stage.DONE -> Stage.DELIVERED
+                Stage.DELIVERED, Stage.STORED -> Stage.LOADED
+                Stage.LOADED -> d.departureStage(m.tripId)
+                Stage.AT_ORIGIN -> Stage.AT_ORIGIN
+            }
+        }, { it.tripId })
+        Outcome.Ok(things.size)
+    }
+
+    /** Report damage to a box or item. Anyone may; each report is its own, and stays until an Organiser clears it. */
+    fun reportDamage(thingId: String, note: String = ""): Outcome<Damage> = act(Action.WORK) {
+        val name = d.item(thingId)?.title() ?: d.box(thingId)?.logName() ?: return@act Outcome.Refused("That is no longer here.")
+        val x = addDamage(thingId, note)
+        touch(thingId)
+        events.add("reported damage to", name, thingId)
+        Outcome.Ok(x)
+    }
+
+    /** Clear a damage report (or reopen it with [cleared] false). Organisers only. Other reports on the same thing stay. */
+    fun clearDamage(damageId: String, cleared: Boolean = true): Outcome<Damage> = act(null) {
+        if (!actor.isOrganiser) return@act Outcome.Refused("Only an Organiser can clear a damage report.")
+        val x = d.damage.firstOrNull { it.id == damageId && !it.deleted } ?: return@act Outcome.Refused("That report is no longer here.")
+        if (x.cleared == cleared) return@act Outcome.Ok(x)
+        val saved = setCleared(setOf(damageId), cleared).first()
+        events.say((if (cleared) "cleared a damage report on " else "reopened a damage report on ") + d.nameOf(x.thingId), x.thingId)
+        Outcome.Ok(saved)
+    }
+
+    /** Change what a damage report says. Part of the work: anyone may. */
+    fun setDamageNote(damageId: String, note: String): Outcome<Damage> = act(Action.WORK) {
+        val x = d.damage.firstOrNull { it.id == damageId && !it.deleted } ?: return@act Outcome.Refused("That report is no longer here.")
+        Outcome.Ok(setDamageNote(damageId, note) ?: x)
+    }
+
+    /** Make a box's contents the lines of [text] ([contentsLines]): lines no longer in it are removed, new ones added. */
+    fun setContents(boxId: String, text: String): Outcome<Box> = act(Action.WORK) {
+        val box = d.box(boxId) ?: return@act Outcome.Refused("That container is no longer here.")
+        saveBoxes(listOf(box.copy(contents = contentsLines(text).joinToString(", "))))
+        Outcome.Ok(d.box(boxId) ?: box)
+    }
+
+    /** Add lines to what is in a box. A line it already has is not added again. */
+    fun addLines(boxId: String, vararg lines: String): Outcome<Box> = synchronized(lock) {
+        val have = _data.value.linesOf(boxId).map { it.text }
+        setContents(boxId, (have + lines).joinToString("\n"))
+    }
+
+    /** Remove one line from what is in a box. It stays removed on every phone. */
+    fun removeLine(boxId: String, line: String): Outcome<Box> = synchronized(lock) {
+        val have = _data.value.linesOf(boxId).map { it.text }.filter { !it.equals(line.trim(), ignoreCase = true) }
+        setContents(boxId, have.joinToString("\n"))
+    }
+
+    /** Dismiss a refused change from the Organisers' list. Organisers only. */
+    fun dismissRefused(id: String): Outcome<RefusedChange> = act(null) {
+        if (!actor.isOrganiser) return@act Outcome.Refused("Only an Organiser can dismiss this.")
+        val r = d.refused.firstOrNull { it.id == id && !it.deleted } ?: return@act Outcome.Refused("That is no longer here.")
+        val saved = r.copy(deleted = true, updatedAt = t)
+        d = d.copy(refused = d.refused.map { if (it.id == id) saved else it })
+        Outcome.Ok(saved)
+    }
+
+    /**
+     * The sync calls this when a full sync with [peerPersonId]'s phone has finished: the data both ways, then the
+     * photos. When this phone's person is a Helper and the peer's an Organiser or a Decider, that phone now holds
+     * everything this one did, so what Helpers are not sent is let go here ([withoutHiddenFor]), with the files of
+     * receipt and serial-label photos. This is how a Helper's phone sheds what 2.0 sent it, and how a person
+     * made a Helper loses what they no longer see. A sync with another Helper changes nothing. Returns whether
+     * anything was let go.
+     */
+    fun fullSyncDone(peerPersonId: String?): Boolean {
+        val dropped: List<Photo>
+        synchronized(lock) {
+            val d = _data.value
+            val dev = _device.value
+            if (!d.hasOrganiser() || d.roleOf(dev) != Role.HELPER) return false
+            val peer = d.person(peerPersonId)?.takeIf { !it.removed } ?: return false
+            if (peer.role != Role.ORGANISER && peer.role != Role.DECIDER) return false
+            if (!d.holdsHidden(dev.personId)) return false
+            val next = d.withoutHiddenFor(dev.personId)
+            val kept = next.photos.map { it.file }.toSet()
+            dropped = d.photos.filter { it.kind in HIDDEN_FROM_HELPERS && it.file !in kept }
+            _data.value = next
+        }
+        scheduleSave()
+        dropped.forEach { File(photoDir, it.file).delete() }
+        return true
+    }
+
+    /** Why this phone may not make a backup, or null when it may. Helpers cannot ([whyNoBackup]). */
+    fun whyNoBackup(): String? = _data.value.whyNoBackup(_device.value)
 }
+
+/** Why a Helper cannot change an item's details, in words for the screen. */
+const val HELPERS_DETAILS = "Helpers cannot change the make, model, serial number or value. Take a photo of the serial label, or ask a question about it."

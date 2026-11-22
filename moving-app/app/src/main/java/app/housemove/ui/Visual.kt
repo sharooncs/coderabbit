@@ -81,6 +81,7 @@ fun Priority.icon(): ImageVector = when (this) {
 fun Stage.icon(): ImageVector = when (this) {
     Stage.AT_ORIGIN -> Icons.Default.Home
     Stage.LOADED -> Icons.Default.LocalShipping
+    Stage.STORED -> Icons.Default.Warehouse
     Stage.DELIVERED -> Icons.Default.Place
     Stage.DONE -> Icons.Default.CheckCircle
 }

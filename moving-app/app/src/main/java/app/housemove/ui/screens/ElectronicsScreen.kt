@@ -74,7 +74,7 @@ fun ElectronicsScreen() {
             onCode = { text ->
                 val serial = text.trim()
                 if (serial.isNotEmpty()) {
-                    store.data.value.item(id)?.let { store.put(it.copy(serial = serial)) }
+                    store.setDetails(id) { it.copy(serial = serial) }
                     toast(context, "Serial number: $serial. Check it against the label.")
                     scanning = null
                 }
