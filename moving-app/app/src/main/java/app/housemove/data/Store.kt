@@ -57,6 +57,12 @@ data class DeviceInfo(
     val sharedUpTo: Long = 0,
     /** The same, for what Helpers are not sent: up to here it is on an Organiser's or Decider's phone too. */
     val sharedAllUpTo: Long = 0,
+    /** When another phone of the move last refused this one because its person has been removed; 0 when none has. */
+    val removedSeenAt: Long = 0,
+    /** The day (an epoch day) the daily small backup of this move was last written from this phone; 0 when never. */
+    val dailyBackupDay: Long = 0,
+    /** This phone's person said "Not now" to adding a second Organiser before move day. */
+    val secondOrganiserDeclined: Boolean = false,
 )
 
 /** What happened when something was scanned into a box. */
@@ -461,8 +467,11 @@ class Store internal constructor(
             if (c.founder && block.first == 1) c = c.copy(nextLabel = d.labelsUsed(ownLabels(1, block.last)) + 1)
         }
         saveCodes(c)
+        // This phone's public key for update files goes on its entry, so that every phone of the move can send it one.
+        val keys = phone.keys
         val next = (mine ?: PhoneEntry(id = phone.id, addedAt = now())).let {
-            it.copy(name = phone.deviceName.ifBlank { it.name }, letter = letter, labelsFrom = c.labelsFrom, labelsTo = c.labelsTo)
+            val key = if (it.key != keys.publicText && keys.madeAt >= it.keyAt) it.copy(key = keys.publicText, keyAt = keys.madeAt) else it
+            key.copy(name = phone.deviceName.ifBlank { it.name }, letter = letter, labelsFrom = c.labelsFrom, labelsTo = c.labelsTo)
         }
         if (next != mine) {
             val t = now()
@@ -1702,7 +1711,7 @@ class Store internal constructor(
      * this phone's own blocks. A person's first phone uses the letter they were given, unless that
      * phone uses it in another move ([avoid]); another phone of theirs gets a letter of its own.
      */
-    internal fun admitPhone(personId: String, phoneId: String, deviceName: String, avoid: Set<String>): Outcome<Person> = synchronized(lock) {
+    internal fun admitPhone(personId: String, phoneId: String, deviceName: String, avoid: Set<String>, key: String = "", keyAt: Long = 0): Outcome<Person> = synchronized(lock) {
         val d = _data.value
         val p = d.person(personId)?.takeIf { !it.removed } ?: return Outcome.Refused("That person is not in the move.")
         if (phoneId.isEmpty() || p.phones.any { it.id == phoneId }) return Outcome.Ok(p)
@@ -1714,7 +1723,12 @@ class Store internal constructor(
         } else letter = allotLetter(d, avoid)
         val block = givenBlock(codes.labelsFrom, codes.labelsTo, codes.blocksGiven)
         if (block != null) saveCodes(codes.copy(blocksGiven = codes.blocksGiven + 1))
-        val entry = PhoneEntry(id = phoneId, name = deviceName.trim(), letter = letter, labelsFrom = block?.first ?: 0, labelsTo = block?.last ?: 0, addedAt = t)
+        // Its public key for update files, as it said it: the admitting phone can send it an update at once.
+        val ok = key.isNotEmpty() && PhoneKeys.publicFrom(key) != null
+        val entry = PhoneEntry(
+            id = phoneId, name = deviceName.trim(), letter = letter, labelsFrom = block?.first ?: 0, labelsTo = block?.last ?: 0, addedAt = t,
+            key = if (ok) key else "", keyAt = if (ok) keyAt else 0,
+        )
         person = person.copy(phones = person.phones + entry, updatedAt = t)
         _data.value = d.copy(people = d.people.map { if (it.id == p.id) person else it })
         scheduleSave()
@@ -1726,7 +1740,9 @@ class Store internal constructor(
      * that phone remembers ([PhoneSettings.name]), made unique in the move ("Sam 2"). A phone of
      * someone removed, or a retired one, is refused; one already in the move comes in as who it is.
      */
-    internal fun admitHelper(name: String, phoneId: String, deviceName: String, avoid: Set<String>, id: String = newId()): Outcome<Person> = synchronized(lock) {
+    internal fun admitHelper(
+        name: String, phoneId: String, deviceName: String, avoid: Set<String>, id: String = newId(), key: String = "", keyAt: Long = 0,
+    ): Outcome<Person> = synchronized(lock) {
         whyNotAdmitHelper(phoneId)?.let { return Outcome.Refused(it) }
         _data.value.phoneEntry(phoneId)?.let { return Outcome.Ok(it.first) }
         val added = act(Action.MANAGE_PEOPLE) {
@@ -1740,7 +1756,7 @@ class Store internal constructor(
             Outcome.Ok(p)
         }
         val p = added.valueOrNull() ?: return added
-        return admitPhone(p.id, phoneId, deviceName, avoid)
+        return admitPhone(p.id, phoneId, deviceName, avoid, key, keyAt)
     }
 
     /** Why a phone may not join with a Helper code shown here: this phone's person may not add people, or that phone is retired or its person removed. */
@@ -1776,11 +1792,11 @@ class Store internal constructor(
      * the photos among them. A phone that synced only with Helpers counts what Helpers are not sent
      * as not shared ([DeviceInfo.sharedAllUpTo]).
      */
-    fun unshared(): Unshared {
+    fun unshared(): Unshared = _device.value.let { unsharedSince(it.sharedUpTo, maxOf(it.sharedAllUpTo, 0)) }
+
+    /** What has changed here since [upTo], and for what Helpers are not sent, since [upToAll] (see [unshared]). */
+    private fun unsharedSince(upTo: Long, upToAll: Long): Unshared {
         val d = _data.value
-        val dev = _device.value
-        val upTo = dev.sharedUpTo
-        val upToAll = maxOf(dev.sharedAllUpTo, 0)
         var changes = 0
         val things = ArrayList<String>()
         fun count(list: List<Rec>, hidden: (Rec) -> Boolean = { false }, name: (Rec) -> String? = { null }) {
@@ -1799,6 +1815,11 @@ class Store internal constructor(
         count(d.readings)
         count(d.entries)
         count(d.proposals, hidden = { (it as Proposal).kind == ProposalKind.COST })
+        // Since 2.1 damage reports and contents lines are records of their own, and the hidden details too.
+        count(d.damage)
+        count(d.lines)
+        count(d.hidden, hidden = { true })
+        count(d.collect, hidden = { true })
         if (d.move.updatedAt > upTo) changes++
         var photos = 0
         for (p in d.photos) {
@@ -1815,7 +1836,11 @@ class Store internal constructor(
     /** A sync has finished: everything up to [upTo] is on another phone too, all of it when that phone's person is no Helper ([everything]). */
     internal fun noteShared(upTo: Long, everything: Boolean) = synchronized(lock) {
         val dev = _device.value
-        val next = dev.copy(sharedUpTo = maxOf(dev.sharedUpTo, upTo), sharedAllUpTo = if (everything) maxOf(dev.sharedAllUpTo, upTo) else dev.sharedAllUpTo)
+        val next = dev.copy(
+            sharedUpTo = maxOf(dev.sharedUpTo, upTo), sharedAllUpTo = if (everything) maxOf(dev.sharedAllUpTo, upTo) else dev.sharedAllUpTo,
+            // A phone that has just synced with one of the move's phones is in the move.
+            removedSeenAt = 0,
+        )
         if (next != dev) writeDevice(next)
     }
 
@@ -2055,7 +2080,155 @@ class Store internal constructor(
 
     /** Why this phone may not make a backup, or null when it may. Helpers cannot ([whyNoBackup]). */
     fun whyNoBackup(): String? = _data.value.whyNoBackup(_device.value)
+
+    // ==== 2.1: working apart and safety nets ======================================================
+    //
+    // Update files (Update.kt), small copies of photos, being taken out of a move, Helpers' copies that
+    // expire, "Done, thanks", marking the move done, and the daily small backup (DailyBackup.kt).
+
+    /** Called once a sync of this move has finished: the [Moves] it is in does its daily backup and tidying then. */
+    @Volatile
+    internal var onSynced: ((Store) -> Unit)? = null
+
+    /** A sync of this move has finished, both ways (WifiSync calls this last). */
+    internal fun syncFinished() {
+        try {
+            onSynced?.invoke(this)
+        } catch (_: Exception) {
+        }
+    }
+
+    private val smallFile = File(dir, "small-photos.json")
+
+    /** Photo files this phone holds only as a small copy, from an update file or a small backup. */
+    @Volatile
+    private var small: Set<String> = try {
+        if (smallFile.isFile) AppJson.decodeFromString<List<String>>(smallFile.readText()).toSet() else emptySet()
+    } catch (_: Exception) {
+        emptySet()
+    }
+
+    /**
+     * Is the file of this photo only a small copy (from an update file or a small backup)? A sync then neither offers
+     * it as the photo nor passes it on, so the full one comes from a phone that has it, and replaces it.
+     */
+    fun isSmallCopy(file: String): Boolean = file in small
+
+    /** Note photo files as small copies ([small] true) or as the full photo. */
+    internal fun noteSmallCopies(files: Collection<String>, small: Boolean) = synchronized(lock) {
+        val next = if (small) this.small + files else this.small - files.toSet()
+        if (next == this.small) return@synchronized
+        this.small = next
+        try {
+            writeWhole(smallFile, AppJson.encodeToString(next.sorted()))
+        } catch (_: Exception) {
+        }
+    }
+
+    /**
+     * Has this phone been taken out of the move: refused by another phone of it because its person has been
+     * removed, or its own data says so? Its card then says so, and offers to send what it has not synced to an
+     * Organiser as an update before it goes.
+     */
+    fun removedFromMove(): Boolean {
+        val d = _data.value
+        val me = d.person(_device.value.personId)
+        return (d.hasOrganiser() && me?.removed == true) || _device.value.removedSeenAt > 0
+    }
+
+    /** Another phone of the move refused this one: its person has been removed ([removedFromMove]). */
+    internal fun noteRemoved() = synchronized(lock) {
+        val dev = _device.value
+        if (dev.removedSeenAt == 0L) writeDevice(dev.copy(removedSeenAt = maxOf(clock(), 1)))
+    }
+
+    /**
+     * What this phone holds that no Organiser's or Decider's phone has yet: everything changed here, or come in
+     * from others, since its last full sync with one of them. A sync among Helpers does not count.
+     */
+    fun unsharedWithDeciders(): Unshared = unsharedSince(_device.value.sharedAllUpTo, _device.value.sharedAllUpTo)
+
+    /**
+     * Why this phone should let go of its copy of the move now, or null while it keeps it. Only a Helper's phone
+     * does, and only once an Organiser's or a Decider's phone has all of its work ([unsharedWithDeciders]): when an
+     * Organiser has thanked them ("Done, thanks", [thank]), or [HELPER_COPY_DAYS] days after the move was marked
+     * done ([markDone]). [today] is an epoch day.
+     */
+    fun whyLetGo(today: Long): LetGo? {
+        val d = _data.value
+        val dev = _device.value
+        if (!d.hasOrganiser() || removedFromMove()) return null
+        val me = d.person(dev.personId) ?: return null
+        if (me.removed || d.roleOf(dev) != Role.HELPER) return null
+        if (!unsharedWithDeciders().nothing) return null
+        if (d.roles().thankedAt(me.id) != null) return LetGo.THANKED
+        val done = d.move.doneDay ?: return null
+        return if (today >= done + HELPER_COPY_DAYS) LetGo.EXPIRED else null
+    }
+
+    /**
+     * "Done, thanks Sam": an Organiser thanks a Helper for their part. Their phone lets go of its copy at the end of
+     * its next full sync with an Organiser's or a Decider's phone, once that phone has all of their work; an
+     * Organiser's phone that has just had that sync removes them ([thankedSynced]).
+     */
+    fun thank(personId: String): Outcome<Person> = act(Action.MANAGE_PEOPLE) {
+        val p = d.person(personId)?.takeIf { !it.removed } ?: return@act Outcome.Refused("That person is not in the move.")
+        if (p.role != Role.HELPER) return@act Outcome.Refused("Only a Helper is thanked this way. Change their role or remove them instead.")
+        if (d.roles().thankedAt(p.id) != null) return@act Outcome.Ok(p)
+        val saved = savePerson(p.copy(grants = p.grants + grantOf(p.role, false, t, actor.signature).copy(thanks = true)))
+        events.say("said thank you to ${p.name.ifBlank { "a Helper" }}: done", p.id)
+        Outcome.Ok(saved)
+    }
+
+    /**
+     * A full sync with [peerPersonId]'s phone has just finished. When they were thanked ([thank]) and this phone's
+     * person may remove people, this phone now holds all of that phone's work, so they are removed: their phone
+     * lets go of its copy at the end of the same sync, or, if it was busy meanwhile, is told at its next one.
+     */
+    internal fun thankedSynced(peerPersonId: String?): Boolean {
+        val d = _data.value
+        val peer = d.person(peerPersonId)?.takeIf { !it.removed } ?: return false
+        if (d.roles().thankedAt(peer.id) == null || !d.can(_device.value, Action.MANAGE_PEOPLE)) return false
+        return removePerson(peer.id).ok
+    }
+
+    /** The daily small backup of this move was written today ([day], an epoch day). It counts as this phone's last backup. */
+    internal fun noteDailyBackup(day: Long) = synchronized(lock) {
+        val dev = _device.value
+        writeDevice(dev.copy(dailyBackupDay = maxOf(dev.dailyBackupDay, day), lastBackupAt = maxOf(dev.lastBackupAt, clock())))
+    }
+
+    /** This phone's person said "Not now" to adding a second Organiser before move day: it is not asked again in this move. */
+    fun declineSecondOrganiser() = synchronized(lock) {
+        writeDevice(_device.value.copy(secondOrganiserDeclined = true))
+    }
+
+    /** Mark the move done ([done] true, on [day]) or not done after all. Organisers only. */
+    fun markDone(done: Boolean = true, day: Long = java.time.LocalDate.now().toEpochDay()): Outcome<MoveInfo> =
+        changeMove { it.copy(doneDay = if (done) it.doneDay ?: day else null) }
+
+    /**
+     * The phones an update file from this phone is sent to: every phone of the move's Organisers and Deciders that
+     * this phone knows the key of, except itself and retired ones. With [organisersOnly], only Organisers' phones
+     * (a phone taken out of the move sends its last work to an Organiser).
+     */
+    fun updateRecipients(organisersOnly: Boolean = removedFromMove()): List<Pair<Person, PhoneEntry>> {
+        val d = _data.value
+        val out = ArrayList<Pair<Person, PhoneEntry>>()
+        for (p in d.people) {
+            if (p.removed) continue
+            if (p.role != Role.ORGANISER && (organisersOnly || p.role != Role.DECIDER)) continue
+            for (ph in p.phones) if (ph.id != phone.id && !ph.isRetired && ph.key.isNotEmpty()) out += p to ph
+        }
+        return out
+    }
 }
+
+/** Why a Helper's phone lets go of its copy of a move (see [Store.whyLetGo]). */
+enum class LetGo { THANKED, EXPIRED }
+
+/** How many days after the move is marked done a Helper's phone lets go of its copy. */
+const val HELPER_COPY_DAYS = 3
 
 
 /** What a phone holds that no other phone has (see [Store.unshared]). [things] names some of what changed. */
@@ -2066,7 +2239,7 @@ data class Unshared(val changes: Int, val photos: Int, val things: List<String>)
 /** The settings for one move as a phone starts out in another one. */
 internal fun DeviceInfo.forAnotherMove(personId: String) = copy(
     personId = personId, letter = "", nextSeq = 1, currentRoomId = null, currentTripId = null,
-    lastSyncAt = 0, lastBackupAt = 0, sharedUpTo = 0, sharedAllUpTo = 0,
+    lastSyncAt = 0, lastBackupAt = 0, sharedUpTo = 0, sharedAllUpTo = 0, removedSeenAt = 0, dailyBackupDay = 0, secondOrganiserDeclined = false,
 )
 
 

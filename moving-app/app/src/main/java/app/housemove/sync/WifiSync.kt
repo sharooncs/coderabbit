@@ -206,6 +206,9 @@ object WifiSync {
         val person: Person? = null,
         /** From the host: the person the joining phone joins as. */
         val youAre: String = "",
+        /** The phone's public key for update files ([PhoneKeys.publicText]) and when it was made: the admitting phone puts it on its entry. */
+        val key: String = "",
+        val keyAt: Long = 0,
     )
 
     /**
@@ -332,7 +335,7 @@ object WifiSync {
             moveId = moveId ?: id.id, aliases = if (moveId == null) id.aliases else emptyList(), derived = moveId == null && id.derived,
             ids = if (moveId == null && id.derived) sameMoveIds(d) else emptyList(), moveName = d.move.name,
             elsewhere = store.lettersElsewhereNow().toList(), name = store.phone.settings.value.name.ifBlank { store.device.value.name },
-            youAre = youAre,
+            youAre = youAre, key = store.phone.keys.publicText, keyAt = store.phone.keys.madeAt,
         )
     }
 
@@ -583,7 +586,9 @@ object WifiSync {
                         // A phone already in the move comes in as who it is; any other as a new Helper, made once it says GO.
                         val known = before.phoneEntry(hello.phoneId)?.first
                         val id = known?.id ?: store.newPersonId()
-                        if (known == null) onGo = { store.admitHelper(hello.name.ifBlank { peer }, hello.phoneId, hello.deviceName, hello.elsewhere.toSet(), id) }
+                        if (known == null) onGo = {
+                            store.admitHelper(hello.name.ifBlank { peer }, hello.phoneId, hello.deviceName, hello.elsewhere.toSet(), id, hello.key, hello.keyAt)
+                        }
                         joining = id
                         peerId = id
                     } else if (invited != null) {
@@ -606,7 +611,7 @@ object WifiSync {
                                 null -> refuse("UNCONFIRMED", NOT_CONFIRMED)
                             }
                         }
-                        onGo = { store.admitPhone(invited.personId, hello.phoneId, hello.deviceName, hello.elsewhere.toSet()) }
+                        onGo = { store.admitPhone(invited.personId, hello.phoneId, hello.deviceName, hello.elsewhere.toSet(), hello.key, hello.keyAt) }
                         joining = invited.personId
                         peerId = invited.personId
                     } else {
@@ -636,7 +641,11 @@ object WifiSync {
                     when (go) {
                         "GO" -> onGo()
                         "TAKE" -> Unit
-                        "REMOVED" -> throw Stop(REMOVED_SELF)
+                        "REMOVED" -> {
+                            // The other phone knows this one's person has been removed: its card says so from now on.
+                            store.noteRemoved()
+                            throw Stop(REMOVED_SELF)
+                        }
                         "STRANGER" -> throw Stop(NOT_ADDED)
                         "WRONGMOVE" -> throw Stop(WRONG_MOVE)
                         else -> throw Stop(UNREADABLE)
@@ -693,8 +702,12 @@ object WifiSync {
                     // Data and photos have gone both ways: a Helper's phone that synced with an Organiser or a Decider lets go here
                     // of what Helpers are not sent.
                     store.fullSyncDone(peerId, given)
+                    // A Helper an Organiser has thanked ("Done, thanks") has handed everything in: they are removed now.
+                    store.thankedSynced(peerId)
                     store.flush()
-                    onResult(Result(peer, letter, sent, received, peerPersonId = peerId, joinedAs = if (joining != null) store.data.value.person(peerId) else null, peerDevice = device))
+                    val done = Result(peer, letter, sent, received, peerPersonId = peerId, joinedAs = if (joining != null) store.data.value.person(peerId) else null, peerDevice = device)
+                    store.syncFinished()
+                    onResult(done)
                 }
             } catch (e: Older) {
                 onResult(Result(peer, letter, 0, 0, VERSION_MISMATCH, peerPersonId = peerId, shareApp = e.schema < SCHEMA, peerSchema = e.schema, peerDevice = device))
@@ -835,7 +848,11 @@ object WifiSync {
                             }
                             return Result("", "", 0, 0, VERSION_MISMATCH, shareApp = theirs < SCHEMA, peerSchema = maxOf(theirs, 0))
                         }
-                        "REMOVED" -> return Result("", "", 0, 0, REMOVED_SELF)
+                        "REMOVED" -> {
+                            // Only a phone of the move says so ([holdsCard] or a plain sync): a phone joining afresh has no card to mark.
+                            if (claim == null || holdsCard) store.noteRemoved()
+                            return Result("", "", 0, 0, REMOVED_SELF)
+                        }
                         "STRANGER" -> return Result("", "", 0, 0, NOT_ADDED)
                         "EXPIRED" -> return Result("", "", 0, 0, INVITE_EXPIRED)
                         "WRONGMOVE" -> return Result("", "", 0, 0, WRONG_MOVE)
@@ -951,7 +968,9 @@ object WifiSync {
                     val received = receiveFiles(din, store)
                     store.noteShared(upTo, everything = role != Role.HELPER)
                     store.fullSyncDone(theirPerson?.id, given)
+                    store.thankedSynced(theirPerson?.id)
                     store.flush()
+                    store.syncFinished()
                     return Result(peer, letter, sent, received, peerPersonId = peerId, joinedAs = joined, peerDevice = device)
                 }
             } catch (e: Exception) {
@@ -1003,11 +1022,13 @@ object WifiSync {
     /**
      * Photo files this phone actually has for records that are still alive, as far as a phone
      * whose person has [peerRole] is concerned: a Helper's phone is not sent receipts or serial labels.
+     * A small copy (from an update file or a small backup) is neither offered nor passed on, so the
+     * full photo comes from a phone that has it and takes its place.
      */
     private fun haveFiles(store: Store, peerRole: Role): List<String> =
         store.data.value.livePhotos
             .filter { peerRole != Role.HELPER || it.kind !in HIDDEN_FROM_HELPERS }
-            .map { it.file }.filter { File(store.photoDir, it).isFile }
+            .map { it.file }.filter { File(store.photoDir, it).isFile && !store.isSmallCopy(it) }
 
     /** Files we hold that the other side lacks. */
     private fun wanted(store: Store, theirs: Set<String>, peerRole: Role): List<String> =
@@ -1070,7 +1091,18 @@ object WifiSync {
                 sink?.close()
             }
             if (tmp != null && target != null) {
-                if (target.exists()) tmp.delete() else tmp.renameTo(target)
+                when {
+                    !target.exists() -> tmp.renameTo(target)
+                    // The full photo, in place of the small copy this phone had.
+                    store.isSmallCopy(name) -> {
+                        if (!tmp.renameTo(target)) {
+                            target.delete()
+                            tmp.renameTo(target)
+                        }
+                        store.noteSmallCopies(listOf(name), small = false)
+                    }
+                    else -> tmp.delete()
+                }
                 count++
             }
         }

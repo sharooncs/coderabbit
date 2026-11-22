@@ -38,12 +38,14 @@ object Backup {
         val moveId: String = "",
         val aliases: List<String> = emptyList(),
         val derived: Boolean = false,
+        /** The daily small backup ([DailyBackup]): no ordinary photos, and small copies of the receipts and serial labels. */
+        val small: Boolean = false,
     ) {
         val identity: MoveIdentity? get() = if (moveId.isEmpty()) null else MoveIdentity(moveId, aliases, derived)
     }
 
     /** What a backup says about itself, read without restoring it ([peek]). */
-    data class Peek(val moveId: String, val aliases: List<String>, val moveName: String, val by: String, val data: AppData)
+    data class Peek(val moveId: String, val aliases: List<String>, val moveName: String, val by: String, val data: AppData, val at: Long = 0, val small: Boolean = false)
 
     /**
      * Write the whole move on this phone, photos included, to [out]. Throws an IOException with words for the screen
@@ -54,16 +56,40 @@ object Backup {
         write(store, out)
     }
 
-    /** [export] without asking whether the phone may: a backup as a Helper's phone made it on 2.0, for tests of restoring one. */
-    internal fun write(store: Store, out: OutputStream) {
+    /**
+     * [export] without asking whether the phone may: a backup as a Helper's phone made it on 2.0, for tests of restoring one.
+     * With [small], the daily small backup ([DailyBackup]): the whole data, but of the photos only the receipts and serial
+     * labels, as small copies ([Shrink]).
+     */
+    internal fun write(store: Store, out: OutputStream, small: Boolean = false) {
         try {
             store.flush()
             val data = store.data.value
             val id = store.identity.value
             val about = About(
                 by = store.device.value.personId, helpersShare = data.hasOrganiser() && data.roleOf(store.device.value) == Role.HELPER,
-                at = System.currentTimeMillis(), moveId = id.id, aliases = id.aliases, derived = id.derived,
+                at = System.currentTimeMillis(), moveId = id.id, aliases = id.aliases, derived = id.derived, small = small,
             )
+            if (small) {
+                ZipOutputStream(out.buffered()).use { zip ->
+                    zip.putNextEntry(ZipEntry(DATA_ENTRY))
+                    zip.write(AppJson.encodeToString(data).toByteArray())
+                    zip.closeEntry()
+                    zip.putNextEntry(ZipEntry(ABOUT_ENTRY))
+                    zip.write(AppJson.encodeToString(about).toByteArray())
+                    zip.closeEntry()
+                    for (p in data.livePhotos) {
+                        if (p.kind !in HIDDEN_FROM_HELPERS) continue
+                        val f = File(store.photoDir, p.file)
+                        if (!f.isFile) continue
+                        val bytes = Shrink.copyOf(f) ?: continue
+                        zip.putNextEntry(ZipEntry(PHOTO_PREFIX + p.file))
+                        zip.write(bytes)
+                        zip.closeEntry()
+                    }
+                }
+                return
+            }
             ZipOutputStream(out.buffered()).use { zip ->
                 zip.putNextEntry(ZipEntry(DATA_ENTRY))
                 zip.write(AppJson.encodeToString(data).toByteArray())
@@ -147,10 +173,16 @@ object Backup {
             // The files of photos the move now has on record are kept; any other file in the zip is not.
             val wanted = store.data.value.photos.filter { !it.deleted }.map { it.file }.toSet()
             var photos = 0
+            val kept = ArrayList<String>()
             for (tmp in staged) {
                 val target = File(store.photoDir, tmp.name.removeSuffix(".import"))
-                if (target.name in wanted && !target.exists() && tmp.renameTo(target)) photos++
+                if (target.name in wanted && !target.exists() && tmp.renameTo(target)) {
+                    photos++
+                    kept += target.name
+                }
             }
+            // From the daily small backup they are small copies, which the next sync replaces with the full photos.
+            if (about.small) store.noteSmallCopies(kept, small = true)
             store.flush()
             return Result(d.items.size + d.boxes.size + d.rooms.size + d.tasks.size, photos)
         } finally {
@@ -190,7 +222,7 @@ fun Backup.peek(input: InputStream): Backup.Peek {
         throw IllegalArgumentException(Backup.NOT_A_BACKUP, e)
     } ?: throw IllegalArgumentException(Backup.NOT_A_BACKUP)
     if (d.version > SCHEMA) throw IllegalArgumentException(Backup.TOO_NEW)
-    return Backup.Peek(about.moveId, about.aliases, d.move.name, about.by, d)
+    return Backup.Peek(about.moveId, about.aliases, d.move.name, about.by, d, about.at, about.small)
 }
 
 fun isSafeFileName(name: String): Boolean =

@@ -7,6 +7,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import java.io.File
 import java.io.InputStream
+import java.time.LocalDate
 
 /** One move on the phone, as the list of moves shows it. */
 @Serializable
@@ -24,6 +25,8 @@ data class MoveCard(
     val archived: Boolean = false,
     /** Other IDs the move is known by (see [MoveIdentity.aliases]). */
     val aliases: List<String> = emptyList(),
+    /** This phone has been taken out of the move ([Store.removedFromMove]): the card says so, and offers to send its last work. */
+    val removed: Boolean = false,
 ) {
     fun matches(id: String): Boolean = id.isNotEmpty() && (id == moveId || id in aliases)
     val tags: Set<String> get() = (listOf(moveId) + aliases).map { moveTag(it) }.toSet()
@@ -88,7 +91,7 @@ class Moves(
     init {
         filesDir.mkdirs()
         noBackupDir.mkdirs()
-        phone = Phone(Phone.idIn(File(noBackupDir, "phone-id")), deviceName, File(filesDir, "phone.json"))
+        phone = Phone(Phone.idIn(File(noBackupDir, "phone-id")), deviceName, File(filesDir, "phone.json"), File(noBackupDir, "phone-key.json"))
         upgradeFrom20()
         val reg = readRegistry()
         var cards = reg.cards.filter { File(movesDir, it.folder).isDirectory }
@@ -142,7 +145,7 @@ class Moves(
         val next = _cards.value.map { c ->
             val s = open[c.folder] ?: return@map c
             val id = s.identity.value
-            c.copy(moveId = id.id, aliases = id.aliases, name = s.data.value.move.name, role = s.myRole)
+            c.copy(moveId = id.id, aliases = id.aliases, name = s.data.value.move.name, role = s.myRole, removed = s.removedFromMove())
         }
         if (next != _cards.value) {
             _cards.value = sorted(next)
@@ -186,7 +189,7 @@ class Moves(
                 codesDir = File(codesRoot, folder).apply { mkdirs() },
                 lettersElsewhere = { lettersOutside(folder) },
                 photos = File(photosDir, folder),
-            )
+            ).also { s -> s.onSynced = { synced(it) } }
         }
     }
 
@@ -449,6 +452,93 @@ class Moves(
             Outcome.Refused(if (e is IllegalArgumentException) e.message ?: Backup.NOT_A_BACKUP else Backup.NOT_A_BACKUP)
         }
     }
+
+    // ---- working apart and safety nets --------------------------------------------------
+
+    /**
+     * Open an update file ([Update]) into the move it is for, which need not be the one in use: the move is
+     * looked for by its ID before anything else. [read] opens the file; it is read twice. With
+     * [takeInRemoved], an Organiser takes in the work of someone removed from the move ([Update.open]).
+     */
+    fun openUpdate(read: () -> InputStream, takeInRemoved: Boolean = false): Update.Opened {
+        val peek = try {
+            read().use { Update.peek(it) }
+        } catch (e: IllegalArgumentException) {
+            return Update.Opened(false, e.message ?: Update.NOT_AN_UPDATE)
+        } catch (_: Exception) {
+            return Update.Opened(false, Update.NOT_AN_UPDATE)
+        }
+        val held = card(peek.moveId) ?: peek.aliases.firstNotNullOfOrNull { card(it) } ?: return Update.Opened(false, Update.NOT_ON_PHONE)
+        val s = storeIn(held.folder)
+        return try {
+            read().use { Update.open(s, it, takeInRemoved) }
+        } catch (_: Exception) {
+            Update.Opened(false, Update.NOT_AN_UPDATE)
+        }.also { refresh() }
+    }
+
+    /** Where the daily small backup goes ([DailyBackup]): the folder this phone's person picked once, or null while there is none. The app sets this. */
+    @Volatile
+    var backupPlace: () -> BackupPlace? = { null }
+
+    private val _farewells = MutableStateFlow<List<String>>(emptyList())
+
+    /** What to tell the person about moves this phone let go of by itself ([tidy]), until the screen has said it ([farewellsSaid]). */
+    val farewells: StateFlow<List<String>> = _farewells
+
+    fun farewellsSaid() {
+        _farewells.value = emptyList()
+    }
+
+    /**
+     * Let go of the copies of moves this phone no longer needs: a Helper's, once an Organiser's or a Decider's phone
+     * has all their work, when they have been thanked or a few days after the move was marked done
+     * ([Store.whyLetGo]). Only moves already open are looked at. Returns what to tell the person, also kept in
+     * [farewells].
+     */
+    fun tidy(today: Long = LocalDate.now().toEpochDay()): List<String> {
+        val gone = ArrayList<String>()
+        for ((folder, s) in synchronized(lock) { open.toMap() }) {
+            val why = s.whyLetGo(today) ?: continue
+            val c = _cards.value.firstOrNull { it.folder == folder } ?: continue
+            val name = s.data.value.move.name.ifBlank { "The move" }
+            drop(c.moveId)
+            gone += when (why) {
+                LetGo.THANKED -> "$name is done on this phone: an Organiser has all your work, so it was taken off this phone. Thank you for helping."
+                LetGo.EXPIRED -> "$name was marked done, and an Organiser or Decider has all your work, so it was taken off this phone."
+            }
+        }
+        if (gone.isNotEmpty()) _farewells.value = _farewells.value + gone
+        return gone
+    }
+
+    /**
+     * Write today's small backup of each open move that needs one ([DailyBackup.due]: a move with a single
+     * Organiser, on that Organiser's phone, not yet today) to [backupPlace]. Returns how many were written.
+     */
+    fun dailyBackups(today: Long = LocalDate.now().toEpochDay()): Int {
+        val place = try {
+            backupPlace()
+        } catch (_: Exception) {
+            null
+        } ?: return 0
+        var n = 0
+        for (s in synchronized(lock) { open.values.toList() }) if (DailyBackup.due(s, today) && DailyBackup.run(s, place, today)) n++
+        return n
+    }
+
+    /** When the app opens and when it goes to the background: the daily backup, and letting go of what is no longer needed. */
+    fun checkIn(today: Long = LocalDate.now().toEpochDay()) {
+        try {
+            dailyBackups(today)
+        } catch (_: Exception) {
+        }
+        tidy(today)
+        refresh()
+    }
+
+    /** After a sync of [s] has finished, the same as [checkIn]. */
+    private fun synced(@Suppress("UNUSED_PARAMETER") s: Store) = checkIn()
 
     // ---- the move from 2.0 ------------------------------------------------------------
 
