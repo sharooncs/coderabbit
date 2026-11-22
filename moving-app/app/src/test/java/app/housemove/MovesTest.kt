@@ -2,6 +2,7 @@ package app.housemove
 
 import app.housemove.data.*
 import app.housemove.sync.WifiSync
+import app.housemove.ui.screens.roleNews
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Rule
@@ -327,5 +328,53 @@ class MovesTest {
         assertNotEquals(code, s.nextHandCode())
         assertFalse(File(s.photoDir, f.name).exists())
         assertEquals(2, s.me!!.phones.size)
+    }
+
+    // ---- the banner about one's own role -------------------------------------------------
+
+    /**
+     * "You joined as a Decider" is put away per move and per person, in that move's settings for the phone: it does not
+     * come back when the app starts again, it is not put away in the phone's other move, and a later change of role is
+     * news again.
+     */
+    @Test
+    fun theRoleBannerIsPutAwayPerMoveAndPerPersonAndStaysAway() {
+        val asha = moves(device("Asha's phone")).create("Maple Road", yourName = "Asha")
+        val omar = moves(device("Omar's phone")).create("Elm Street", yourName = "Omar")
+        val pd = device("Priya's phone")
+        val priya = moves(pd)
+        assertTrue(joinThrough(priya, asha, "Priya", Role.DECIDER).ok)
+        assertTrue(joinThrough(priya, omar, "Priya", Role.HELPER).ok)
+        val maple = priya.store(asha.moveId)!!
+        val elm = priya.store(omar.moveId)!!
+        fun news(s: Store) = s.data.value.roleNews(s.device.value)?.title
+        assertEquals("You joined as a Decider", news(maple))
+        assertEquals("You joined as a Helper", news(elm))
+
+        // Got it, in Maple Road: gone there, still there in Elm Street.
+        maple.roleNewsRead(maple.data.value.roleNews(maple.device.value)!!.at)
+        assertNull(news(maple))
+        assertEquals("You joined as a Helper", news(elm))
+
+        // The app starts again: the same.
+        priya.flush()
+        val again = moves(pd)
+        val maple2 = again.store(asha.moveId)!!
+        val elm2 = again.store(omar.moveId)!!
+        assertNull(news(maple2))
+        assertEquals("You joined as a Helper", news(elm2))
+        assertEquals(mapOf(maple2.device.value.personId to maple2.device.value.roleReadAt), maple2.device.value.rolesRead)
+
+        // Made a Helper later: that is news again.
+        assertTrue(asha.setRole(maple2.me!!.id, Role.HELPER).ok)
+        sync(asha, maple2)
+        assertEquals("You are now a Helper", news(maple2))
+
+        // Another person on the same phone in the same move has read nothing yet.
+        val sam = asha.addPerson("Sam", Role.DECIDER).valueOrNull()!!
+        sync(asha, maple2)
+        assertTrue(maple2.becomePerson(sam.id).ok)
+        assertEquals(0L, maple2.device.value.roleReadAt)
+        assertEquals("You joined as a Decider", news(maple2))
     }
 }

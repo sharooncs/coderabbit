@@ -57,7 +57,16 @@ data class DeviceInfo(
     val sharedUpTo: Long = 0,
     /** The same, for what Helpers are not sent: up to here it is on an Organiser's or Decider's phone too. */
     val sharedAllUpTo: Long = 0,
-)
+    /**
+     * Home's banner about the role of this phone's person ("You joined as a Decider", "You are now a Decider"),
+     * read: by person, the time of the grant they last put away. Kept with this move's settings for this phone,
+     * so it neither comes back when the app starts again nor counts for another person the phone becomes.
+     */
+    val rolesRead: Map<String, Long> = emptyMap(),
+) {
+    /** Up to which grant the person this phone is now has read the role banner (see [Store.roleNewsRead]). */
+    val roleReadAt: Long get() = rolesRead[personId] ?: 0L
+}
 
 /** What happened when something was scanned into a box. */
 sealed class ScanIn {
@@ -381,6 +390,17 @@ class Store internal constructor(
         }
         writeDevice(asked)
         mirrorMe()
+    }
+
+    /**
+     * This phone's person has read Home's banner about their role up to the grant made at [at]: with
+     * "Got it", or by closing the banner that said who the phone is after it joined. Kept per person in
+     * this move's settings for this phone ([DeviceInfo.rolesRead]); never moved back.
+     */
+    fun roleNewsRead(at: Long) = synchronized(lock) {
+        val dev = _device.value
+        if (dev.personId.isEmpty() || at <= dev.roleReadAt) return@synchronized
+        writeDevice(dev.copy(rolesRead = dev.rolesRead + (dev.personId to at)))
     }
 
     // ---- who this phone is --------------------------------------------------
@@ -2066,7 +2086,7 @@ data class Unshared(val changes: Int, val photos: Int, val things: List<String>)
 /** The settings for one move as a phone starts out in another one. */
 internal fun DeviceInfo.forAnotherMove(personId: String) = copy(
     personId = personId, letter = "", nextSeq = 1, currentRoomId = null, currentTripId = null,
-    lastSyncAt = 0, lastBackupAt = 0, sharedUpTo = 0, sharedAllUpTo = 0,
+    lastSyncAt = 0, lastBackupAt = 0, sharedUpTo = 0, sharedAllUpTo = 0, rolesRead = emptyMap(),
 )
 
 

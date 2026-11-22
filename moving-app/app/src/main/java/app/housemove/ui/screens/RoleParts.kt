@@ -1,12 +1,5 @@
 package app.housemove.ui.screens
 
-import android.content.Context
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.LocalContext
 import app.housemove.data.*
 import app.housemove.ui.shared
 import app.housemove.ui.withArticle
@@ -14,42 +7,22 @@ import app.housemove.ui.withArticle
 /*
  * What Home says about this phone's own role (design 2.1, section 2): a banner when the role
  * changes ("You are now a Decider"), and for someone just promoted, that costs and decisions
- * arrive at the next sync with an Organiser or a Decider, until this phone holds them.
+ * arrive at the next sync with an Organiser or a Decider, until this phone holds them. Which
+ * role news has been read is kept per person in the move's settings for this phone
+ * ([DeviceInfo.rolesRead], [Store.roleNewsRead]).
  */
-
-private const val ROLE_PREFS = "housemove-roles"
-
-/**
- * Which role change this phone's person has read about, as the time of the grant they last
- * tapped "Got it" on, per person. Kept on the phone only: it is about what this person has seen.
- */
-internal class SeenRoles(private val context: Context, private val personId: String) {
-    private val prefs get() = context.getSharedPreferences(ROLE_PREFS, Context.MODE_PRIVATE)
-    var seenAt by mutableLongStateOf(if (personId.isEmpty()) 0L else prefs.getLong(personId, 0L))
-        private set
-
-    fun mark(at: Long) {
-        seenAt = maxOf(seenAt, at)
-        if (personId.isNotEmpty()) prefs.edit().putLong(personId, seenAt).apply()
-    }
-}
-
-@Composable
-internal fun rememberSeenRoles(personId: String): SeenRoles {
-    val context = LocalContext.current.applicationContext
-    return remember(context, personId) { SeenRoles(context, personId) }
-}
 
 /** What the role banner says: [title] in large type, [joined] when this is the first role the person was given. */
 internal class RoleNews(val role: Role, val title: String, val at: Long, val joined: Boolean)
 
 /**
  * The latest role this phone's person was given by someone else, when they have not read about it yet
- * ([seenAt]); null otherwise, and always on a move with one person or for someone removed (People says that).
+ * ([seenAt], normally [DeviceInfo.roleReadAt]); null otherwise, and always on a move with one person or for
+ * someone removed (People says that).
  * The first role someone is given is how they joined: "You joined as a Decider". A later one is a change:
  * "You are now a Decider".
  */
-internal fun AppData.roleNews(device: DeviceInfo, seenAt: Long): RoleNews? {
+internal fun AppData.roleNews(device: DeviceInfo, seenAt: Long = device.roleReadAt): RoleNews? {
     if (!shared()) return null
     val me = me(device) ?: return null
     if (me.removed) return null
