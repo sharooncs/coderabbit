@@ -43,12 +43,19 @@ fun WelcomeScreen() {
     val moves = LocalMoves.current
     val nav = LocalNav.current
     val roomy = LocalConfiguration.current.let { it.screenHeightDp / it.fontScale >= 700f }
-    Screen("HouseMove", back = false) {
+    // No top bar: the app's mark and name lead, over the lit house.
+    Frame(tab = null, topBar = { Spacer(Modifier.statusBarsPadding().height(12.dp)) }) {
         Column(
             Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterVertically),
         ) {
-            if (roomy) IsoHouse(Modifier.widthIn(max = 320.dp).fillMaxWidth().align(Alignment.CenterHorizontally), boxes = 2)
+            Row(Modifier.semantics(mergeDescendants = true) { heading() }, verticalAlignment = Alignment.CenterVertically) {
+                AppMark(Modifier.size(40.dp), description = null)
+                Spacer(Modifier.width(10.dp))
+                Text("HouseMove", style = MaterialTheme.typography.headlineMedium)
+            }
+            if (roomy) IsoHouse(Modifier.widthIn(max = 320.dp).fillMaxWidth(), boxes = 2)
             Text(
                 "Plan, pack and move together, phone to phone.", style = MaterialTheme.typography.titleMedium,
                 color = Night.TextSoft, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(),

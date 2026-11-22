@@ -204,8 +204,9 @@ private fun TopBar(title: String, subtitle: String?, back: Boolean, actions: @Co
 /**
  * The move's name at the top of Home: the move in use, this phone's role in it (once there is
  * more than one person to tell apart) and a dot when another move on the phone needs its
- * person. Tapping it opens Your moves. The role sits under the name, so the name keeps the
- * width; on a wide screen the app's mark leads.
+ * person (on the pill's edge, so it takes no width). Tapping it opens Your moves. The role sits
+ * under the name, so the name keeps the width; on a wide screen the app's mark leads, and on a
+ * narrow one the arrow gives its room to the name.
  */
 @Composable
 fun MoveSwitch(modifier: Modifier = Modifier) {
@@ -215,21 +216,25 @@ fun MoveSwitch(modifier: Modifier = Modifier) {
     val others = otherMovesNeedingYou()
     val name = data.move.name.ifBlank { "Your move" }
     val role = if (data.shared()) data.roleOf(device) else null
-    val wide = LocalConfiguration.current.let { it.screenWidthDp / it.fontScale >= 480f }
-    GlassPill(
-        modifier, onClick = { nav.open("moves") }, sheen = true,
-        contentPadding = PaddingValues(start = if (wide) 8.dp else 14.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
-    ) {
-        if (wide) {
-            AppMark(Modifier.size(28.dp), description = null)
-            Spacer(Modifier.width(6.dp))
+    val width = LocalConfiguration.current.let { it.screenWidthDp / it.fontScale }
+    val wide = width >= 480f
+    val narrow = width < 380f
+    Box(modifier) {
+        GlassPill(
+            Modifier.semantics { contentDescription = "Your moves" }, onClick = { nav.open("moves") }, sheen = true,
+            contentPadding = PaddingValues(start = if (wide) 8.dp else 14.dp, end = if (narrow) 14.dp else 8.dp, top = 4.dp, bottom = 4.dp),
+        ) {
+            if (wide) {
+                AppMark(Modifier.size(28.dp), description = null)
+                Spacer(Modifier.width(6.dp))
+            }
+            Column(Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(name, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                if (role != null) RoleTag(role)
+            }
+            if (!narrow) Icon(Icons.Default.ExpandMore, contentDescription = null, tint = Night.TextDim, modifier = Modifier.padding(start = 2.dp).size(22.dp))
         }
-        Column(Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(name, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            if (role != null) RoleTag(role)
-        }
-        if (others.isNotEmpty()) NeedsYouDot(Modifier.padding(start = 8.dp))
-        Icon(Icons.Default.ExpandMore, contentDescription = "Your moves", tint = Night.TextDim, modifier = Modifier.padding(start = 2.dp).size(22.dp))
+        if (others.isNotEmpty()) NeedsYouDot(Modifier.align(Alignment.TopEnd).padding(top = 2.dp, end = 4.dp))
     }
 }
 
