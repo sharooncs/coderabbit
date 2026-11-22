@@ -43,7 +43,7 @@ import java.time.format.DateTimeFormatter
 /** Roles in the order they are offered: the one most people get first. */
 private val ROLE_CHOICES = listOf(Role.HELPER, Role.DECIDER, Role.ORGANISER).map { Choice(it, it.label, it.icon()) }
 
-private val CLOCK: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
+internal val CLOCK: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
 /**
  * A wide glass pill for the way on from a screen: a glowing ball with a picture, two
@@ -309,7 +309,7 @@ private fun Ability(icon: ImageVector, text: String, can: Boolean, amber: Boolea
 
 // ---- one person -----------------------------------------------------------------------------
 
-private class ShownInvite(val text: String, val until: String)
+internal class ShownInvite(val text: String, val until: String)
 
 /**
  * One person, for an Organiser: their invite, their role, removing them and adding them
@@ -461,9 +461,9 @@ fun PersonScreen(id: String, showInvite: Boolean = false) {
 
 /** The invite as a code to scan, saying plainly that it works once and for how long. */
 @Composable
-private fun InviteCard(name: String, isMe: Boolean, invite: ShownInvite) {
+internal fun InviteCard(name: String, isMe: Boolean, invite: ShownInvite, inner: Boolean = false) {
     val qr = remember(invite.text) { qrBitmap(invite.text, 640).asImageBitmap() }
-    Section {
+    val body: @Composable () -> Unit = {
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(if (isMe) "Invite for your new phone" else "$name's invite", style = MaterialTheme.typography.titleMedium)
             Image(
@@ -477,11 +477,12 @@ private fun InviteCard(name: String, isMe: Boolean, invite: ShownInvite) {
                 GlassChip("For ${WifiSync.INVITE_MINUTES} minutes, until ${invite.until}", icon = Icons.Default.Timer, tone = GlassTone.Amber)
             }
             Text(
-                "On " + (if (isMe) "the new phone" else "$name's phone") + ": open HouseMove and tap \"Second phone for the same move?\"",
+                "On " + (if (isMe) "the new phone" else "$name's phone") + ": open HouseMove, tap Join a move and point it here.",
                 style = MaterialTheme.typography.bodyMedium, color = Night.TextSoft, textAlign = TextAlign.Center,
             )
         }
     }
+    if (inner) body() else Section { body() }
 }
 
 // ---- who did what ---------------------------------------------------------------------------

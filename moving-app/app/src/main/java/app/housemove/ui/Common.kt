@@ -6,6 +6,7 @@ import android.speech.RecognizerIntent
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -30,7 +31,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalConfiguration
@@ -38,7 +45,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -100,7 +109,7 @@ fun Screen(
     subtitle: String? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Frame(tab = tab, topBar = { TopBar(title, subtitle, back, actions) }, fab = fab, content = content)
+    Frame(tab = tab, topBar = { TopBar(title, subtitle, back, actions, home = tab == "home" && !back) }, fab = fab, content = content)
 }
 
 /**
@@ -138,34 +147,156 @@ fun Frame(
     }
 }
 
+/**
+ * The top bar of a screen. On a Home that uses it ([home]: a Helper's), the title is the move's
+ * name and opens Your moves, with a dot when another move on the phone needs its person, and
+ * the banner after joining sits under it.
+ */
 @Composable
-private fun TopBar(title: String, subtitle: String?, back: Boolean, actions: @Composable RowScope.() -> Unit) {
+private fun TopBar(title: String, subtitle: String?, back: Boolean, actions: @Composable RowScope.() -> Unit, home: Boolean = false) {
     val nav = LocalNav.current
-    Row(
-        Modifier.fillMaxWidth().statusBarsPadding().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 6.dp).heightIn(min = 52.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (back) {
-            GlassOrb(Icons.Default.ChevronLeft, "Back", onClick = { nav.popBackStack() })
-            Spacer(Modifier.width(12.dp))
-        }
-        // With a line above it and a button either side, the title is centred, as in the design.
-        val centred = back && subtitle != null
-        Column(
-            Modifier.weight(1f).semantics(mergeDescendants = true) { heading() },
-            horizontalAlignment = if (centred) Alignment.CenterHorizontally else Alignment.Start,
+    Column(Modifier.fillMaxWidth().statusBarsPadding()) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 6.dp).heightIn(min = 52.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (subtitle != null) {
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Night.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (back) {
+                GlassOrb(Icons.Default.ChevronLeft, "Back", onClick = { nav.popBackStack() })
+                Spacer(Modifier.width(12.dp))
             }
-            Text(
-                title,
-                style = if (back) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall,
-                maxLines = 1, overflow = TextOverflow.Ellipsis,
-            )
+            // With a line above it and a button either side, the title is centred, as in the design.
+            val centred = back && subtitle != null
+            val others = if (home) otherMovesNeedingYou() else emptyList()
+            Row(
+                Modifier.weight(1f).then(
+                    if (home) Modifier.clip(RoundedCornerShape(16.dp)).clickable(onClickLabel = "Your moves", role = androidx.compose.ui.semantics.Role.Button) { nav.open("moves") }
+                    else Modifier,
+                ),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(
+                    Modifier.weight(1f, fill = !home).semantics(mergeDescendants = true) { heading() },
+                    horizontalAlignment = if (centred) Alignment.CenterHorizontally else Alignment.Start,
+                ) {
+                    if (subtitle != null) {
+                        Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Night.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    Text(
+                        title,
+                        style = if (back) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (home) {
+                    if (others.isNotEmpty()) NeedsYouDot(Modifier.padding(start = 8.dp))
+                    Icon(Icons.Default.ExpandMore, contentDescription = "Your moves", tint = Night.TextDim, modifier = Modifier.padding(start = 4.dp))
+                }
+            }
+            Spacer(Modifier.width(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically, content = actions)
         }
-        Spacer(Modifier.width(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically, content = actions)
+        if (home) HomeBannerSlot()
+    }
+}
+
+// ---- the move's name, and the moves on the phone ---------------------------------------------
+
+/**
+ * The move's name at the top of Home: the move in use, this phone's role in it (once there is
+ * more than one person to tell apart) and a dot when another move on the phone needs its
+ * person. Tapping it opens Your moves. On a narrow screen or with large text the role goes
+ * under the name, so neither is cut short.
+ */
+@Composable
+fun MoveSwitch(modifier: Modifier = Modifier) {
+    val nav = LocalNav.current
+    val data = appData()
+    val device = deviceInfo()
+    val others = otherMovesNeedingYou()
+    val name = data.move.name.ifBlank { "Your move" }
+    val role = if (data.shared()) data.roleOf(device) else null
+    val tight = LocalConfiguration.current.let { it.screenWidthDp / it.fontScale < 400f }
+    GlassPill(
+        modifier, onClick = { nav.open("moves") }, sheen = true,
+        contentPadding = PaddingValues(start = if (tight) 14.dp else 8.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+    ) {
+        if (!tight) {
+            AppMark(Modifier.size(28.dp), description = null)
+            Spacer(Modifier.width(6.dp))
+        }
+        Column(Modifier.weight(1f, fill = false)) {
+            Text(name, style = MaterialTheme.typography.titleSmall, maxLines = if (tight) 2 else 1, overflow = TextOverflow.Ellipsis)
+            if (tight && role != null) Text(role.label, style = MaterialTheme.typography.labelMedium, color = Night.MintPale, maxLines = 1)
+        }
+        if (!tight && role != null) {
+            Spacer(Modifier.width(8.dp))
+            RoleTag(role)
+        }
+        if (others.isNotEmpty()) NeedsYouDot(Modifier.padding(start = 8.dp))
+        Icon(Icons.Default.ExpandMore, contentDescription = "Your moves", tint = Night.TextDim, modifier = Modifier.padding(start = 2.dp).size(22.dp))
+    }
+}
+
+/** A role in a word, on a small mint pill: lighter than a [RoleChip], for inside another pill. */
+@Composable
+private fun RoleTag(role: Role) {
+    Text(
+        role.label, style = MaterialTheme.typography.labelMedium, color = Night.MintPale, maxLines = 1,
+        modifier = Modifier.clip(CircleShape).background(Night.Mint.copy(alpha = 0.16f)).border(1.dp, Night.Mint.copy(alpha = 0.35f), CircleShape)
+            .padding(horizontal = 8.dp, vertical = 2.dp),
+    )
+}
+
+/** The amber dot that says another move on this phone needs its person. It says so to a screen reader too. */
+@Composable
+fun NeedsYouDot(modifier: Modifier = Modifier) {
+    Box(
+        modifier.size(10.dp).clip(CircleShape).background(Night.Amber).border(1.dp, Color.White.copy(alpha = 0.6f), CircleShape)
+            .semantics { contentDescription = "Another move needs you" },
+    )
+}
+
+/**
+ * The banner on Home after this phone joined or restored a move: who it is now and what that
+ * role does. It stays until dismissed, and shows only on that move's Home.
+ */
+@Composable
+fun HomeBannerSlot() {
+    val state = LocalAppState.current ?: return
+    val b = state.banner ?: return
+    val store = LocalStore.current
+    if (b.moveId.isNotEmpty() && b.moveId != store.moveId) return
+    val data = appData()
+    GlassCard(
+        Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 6.dp).semantics { liveRegion = LiveRegionMode.Polite },
+        tone = GlassTone.Mint, shape = RoundedCornerShape(22.dp),
+    ) {
+        Row(Modifier.padding(start = 12.dp, top = 10.dp, bottom = 10.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            PersonOrb(data.person(b.personId), size = 40.dp, me = true)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(b.title, style = MaterialTheme.typography.titleSmall)
+                if (b.text.isNotBlank()) Text(b.text, style = MaterialTheme.typography.bodySmall, color = Night.TextSoft)
+            }
+            GlassOrb(Icons.Default.Close, "Dismiss", size = 36.dp, onClick = { state.banner = null })
+        }
+    }
+}
+
+/** The app's mark: a small house drawn in glowing mint line. */
+@Composable
+fun AppMark(modifier: Modifier = Modifier.size(32.dp), description: String? = "HouseMove") {
+    Canvas(if (description == null) modifier else modifier.semantics { contentDescription = description }) {
+        val u = size.width / 24f
+        val house = Path().apply {
+            moveTo(3.5f * u, 11f * u); lineTo(12f * u, 4f * u); lineTo(20.5f * u, 11f * u); lineTo(20.5f * u, 20f * u); lineTo(3.5f * u, 20f * u); close()
+            moveTo(9.5f * u, 13.5f * u); lineTo(14.5f * u, 13.5f * u); lineTo(14.5f * u, 18.5f * u); lineTo(9.5f * u, 18.5f * u); close()
+        }
+        drawCircle(
+            Brush.radialGradient(listOf(Night.Mint.copy(alpha = 0.38f), Night.Mint.copy(alpha = 0f)), center = Offset(size.width / 2, size.height / 2), radius = size.width * 0.8f),
+            size.width * 0.8f,
+        )
+        drawPath(house, Night.MintLight, style = Stroke(2f * u, cap = StrokeCap.Round, join = StrokeJoin.Round))
     }
 }
 
