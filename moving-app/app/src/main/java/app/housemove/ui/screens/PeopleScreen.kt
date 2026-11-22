@@ -451,6 +451,8 @@ fun PersonScreen(id: String, showInvite: Boolean = false) {
                     Text(p.role.line(), style = MaterialTheme.typography.bodySmall, color = Night.TextDim)
                 }
                 if (p.phones.isNotEmpty() && (data.shared() || p.phones.size > 1)) PhonesOf(p)
+                // A Helper who has finished: "Done, thanks Sam".
+                if (data.shared() && !isMe && p.role == app.housemove.data.Role.HELPER) ThanksHelper(p)
                 // Nobody removes themselves by a slip of the finger: that is for another Organiser to do.
                 if (data.shared() && !isMe) Fold("Remove from the move", Icons.Default.PersonRemove, summary = "Their phone can no longer sync", key = "remove-$id") {
                     Text("What $name did stays, and you can add them back.", style = MaterialTheme.typography.bodyMedium)

@@ -34,8 +34,8 @@ object Update {
     /** The ending of an update file's name. */
     const val EXTENSION = "housemove"
 
-    /** The type an update file is shared as: any app takes it, and it opens in this one. */
-    const val MIME = "application/octet-stream"
+    /** The type an update file is shared as: messaging apps send it as a document, and Android offers this app to open it. */
+    const val MIME = "application/vnd.housemove.update"
 
     internal const val FORMAT = 1
     private val MAGIC = "HMUPDATE".toByteArray()
@@ -100,6 +100,8 @@ object Update {
         val changes: Int = 0,
         val photos: Int = 0,
         val fromRemoved: String? = null,
+        /** This phone's person may take in the work of [fromRemoved] alone (an Organiser). */
+        val mayTakeIn: Boolean = false,
     )
 
     private val b64e = Base64.getEncoder()
@@ -295,9 +297,8 @@ object Update {
                 Admission.REMOVED -> {
                     // What their phone knows about their own removal is kept and passed on, as at a sync.
                     store.hearAbout(theirs)
-                    if (!takeInRemoved || store.data.value.refusal(store.me, Action.RESTORE_BACKUP) != null) {
-                        return Opened(false, fromRemoved(name), name, fromRemoved = theirs?.id)
-                    }
+                    val may = store.data.value.refusal(store.me, Action.RESTORE_BACKUP) == null
+                    if (!takeInRemoved || !may) return Opened(false, fromRemoved(name), name, fromRemoved = theirs?.id, mayTakeIn = may)
                     workAlone = true
                 }
                 Admission.NEWCOMER, Admission.STRANGER -> return Opened(false, STRANGER, name)

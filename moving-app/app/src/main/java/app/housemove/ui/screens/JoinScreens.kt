@@ -363,14 +363,13 @@ fun LostPhoneScreen(inMove: Boolean) {
     val showing = remember { booleanArrayOf(true) }
     DisposableEffect(Unit) { onDispose { showing[0] = false } }
 
-    val open = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
+    // A backup file chosen on its own, or the daily backup from the folder it is saved to: [read] opens it (twice).
+    fun restore(read: () -> java.io.InputStream) {
         working = true
         problem = null
         state.scope.launch(Dispatchers.Main) {
             val outcome = withContext(Dispatchers.IO) {
-                fun read() = context.contentResolver.openInputStream(uri) ?: throw IllegalArgumentException(Backup.NOT_A_BACKUP)
-                if (moves != null) moves.restore({ read() })
+                if (moves != null) moves.restore(read)
                 else try {
                     Outcome.Ok(read().use { Backup.import(single!!, it) })
                 } catch (e: Exception) {
@@ -394,6 +393,10 @@ fun LostPhoneScreen(inMove: Boolean) {
             }
         }
     }
+    val open = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        restore { context.contentResolver.openInputStream(uri) ?: throw IllegalArgumentException(Backup.NOT_A_BACKUP) }
+    }
 
     Screen("Lost your phone?") {
         if (working) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -402,11 +405,13 @@ fun LostPhoneScreen(inMove: Boolean) {
                 GlassOrb(Icons.Default.Restore, null, size = 88.dp)
             }
             Text(
-                "Bring your move back from a backup file: one you saved or shared from HouseMove.",
+                "Bring your move back from its daily backup, or from a backup file you saved or shared from HouseMove.",
                 style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(),
             )
+            // The folder the daily small backup went to (ApartParts): its newest backup of each move.
+            DailyBackupChooser(working, onRestore = { read -> restore(read) })
             BigAction(
-                Icons.Default.FolderOpen, "Choose a backup file", enabled = !working,
+                Icons.Default.FolderOpen, "Choose a backup file", enabled = !working, primary = false,
                 onClick = { open.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) },
             )
             problem?.let { SyncReportCard(SyncReport(false, "Could not restore that file", it)) }
