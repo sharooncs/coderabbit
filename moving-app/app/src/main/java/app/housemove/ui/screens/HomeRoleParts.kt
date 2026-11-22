@@ -182,7 +182,7 @@ internal fun DeciderSections(data: AppData, device: DeviceInfo) {
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 undecided.take(6).forEach { i ->
                     Column(
-                        Modifier.width(84.dp).clip(RoundedCornerShape(14.dp)).clickable { nav.open("item/${i.id}") },
+                        Modifier.width(84.dp).clickable(onClickLabel = "Open ${i.title()}") { nav.open("item/${i.id}") },
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         ItemPhoto(i.id, Modifier.size(84.dp))

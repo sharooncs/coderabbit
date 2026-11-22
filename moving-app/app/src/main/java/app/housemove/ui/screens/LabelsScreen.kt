@@ -311,10 +311,13 @@ fun LabelsScreen() {
             // ---- the Helper card: half a page that works without the app ----
             Section {
                 val paper = if (letter) HelperCard.Paper.LETTER else HelperCard.Paper.A4
+                // On a move with people on it this is the card for its Helpers; alone, for whoever comes to help carry.
+                val withPeople = data.shared()
                 Printout(
                     Icons.Default.Badge,
-                    title = "Helper card",
-                    sub = "Half a page for each Helper: five steps, the door colours, and what to write on a box with no label. Two to a page.",
+                    title = if (withPeople) "Helper card" else "Card for helpers",
+                    sub = (if (withPeople) "Half a page for each Helper" else "Half a page for whoever helps on the day") +
+                        ": five steps, the door colours, and what to write on a box with no label. Two to a page.",
                 )
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     GlassChip("Write ${HelperCard.exampleCode(data)} on two sides", icon = Icons.Default.Edit)
