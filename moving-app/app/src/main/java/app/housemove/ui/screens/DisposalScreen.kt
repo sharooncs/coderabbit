@@ -192,7 +192,7 @@ private fun DisposalRow(
                     }
                     if (selling) {
                         val text = if (x.gone) (if (narrow) "" else "Sold for ") + (x.soldFor?.let { money(currency, it) } ?: "?")
-                        else x.price?.let { (if (narrow) "" else "Asking ") + money(currency, it) } ?: if (mayPrice) "Set a price" else "No price yet"
+                        else x.price?.let { (if (narrow) "" else "Asking ") + money(currency, it) } ?: if (mayPrice) (if (narrow) "Price" else "Set a price") else "No price yet"
                         val icon = if (x.gone) Icons.Default.Payments else Icons.Default.Sell
                         if (mayPrice) GlassChip(text, icon = icon, selected = pricing, onClick = { pricing = !pricing })
                         else GlassChip(text, Modifier.padding(top = 6.dp), icon = icon, tone = if (x.gone) GlassTone.Mint else GlassTone.Plain)
