@@ -63,6 +63,16 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
         var labelsSeen = 0
         var backup: ByteArray? = null
 
+        /**
+         * This phone let go of [key], and another phone holds its copy from [upTo]: the versions this phone held up to
+         * then are that phone's to keep from here on, not this one's (see [Simulation.handedOver]).
+         */
+        fun gaveAway(key: String, upTo: Long) = synchronized(lock) {
+            val mine = held[key] ?: return@synchronized
+            mine.removeIf { it <= upTo }
+            if (mine.isEmpty()) held.remove(key)
+        }
+
         /** An edit opened on a screen earlier and not saved yet. */
         var pending: (() -> String)? = null
         private var said = 0
@@ -175,6 +185,29 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
                 val known = versions.getOrPut(MOVE) { ArrayList() }
                 if (!onlyNewStamps || known.none { (it as MoveInfo).updatedAt == after.move.updatedAt }) known += after.move
             }
+        }
+    }
+
+    /**
+     * A Helper's phone lets go of what Helpers are not sent once a full sync has given it all to an Organiser's or a
+     * Decider's phone ([Store.fullSyncDone]). Of those records, what [p] held at [before] and no longer holds after a
+     * sync with [peer] is from then on [peer]'s to keep, as far as [peer]'s phone holds it: the versions [p] held up to
+     * the one [peer] holds count as [peer]'s, not [p]'s, when the end is checked. So when [peer] leaves the move without
+     * passing them on, they go with it, as everything else that only its phone held does. Anything [p] let go that
+     * [peer] does not hold stays [p]'s, and the end of the run checks it as before: kept, or rightly left out.
+     */
+    private fun handedOver(p: Phone, before: AppData, peer: Phone) {
+        val after = p.data
+        if (!after.hasOrganiser() || after.roleOf(p.store.device.value) != Role.HELPER) return
+        val to = after.person(peer.personId)?.takeIf { !it.removed }?.role
+        if (to != Role.ORGANISER && to != Role.DECIDER) return
+        val still = HashSet<String>()
+        for ((k, _) in after.records()) still += k
+        var theirs: Map<String, Long>? = null
+        for ((k, r) in before.records()) {
+            if (!hidden(r) || k in still) continue
+            val now = theirs ?: HashMap<String, Long>().also { m -> for ((key, x) in peer.data.records()) m[key] = x.updatedAt }.also { theirs = it }
+            p.gaveAway(k, now[k] ?: continue)
         }
     }
 
@@ -368,6 +401,7 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
         wrote(beforeJoin, p.data, onlyNewStamps = true)
         wrote(beforeHost, by.data, onlyNewStamps = true)
         p.hold(); by.hold()
+        handedOver(p, beforeJoin, by)
         p.say("!joined as ${p.name} (${p.role.label}, letter ${p.store.device.value.letter}) from ${by.tag}'s invite")
         if (p.store.myRole != p.role) broke(RUN, "${p.tag} joined as ${p.store.myRole}, not ${p.role}")
         // Someone who photographed the invite tries it after it has been used.
@@ -498,6 +532,8 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
         wrote(x.hostAtStart!!, h.data, onlyNewStamps = true)
         wrote(x.joinerAtStart!!, j.data, onlyNewStamps = true)
         h.hold(); j.hold()
+        handedOver(h, x.hostAtStart!!, j)
+        handedOver(j, x.joinerAtStart!!, h)
         val how = when {
             ok -> "ok, ${r.photosSent} photos out, ${r.photosReceived} in"
             wire.cutAt > 0 -> "cut off in phase ${wire.cutAt}: ${r.error ?: "the joiner noticed nothing"} / ${hosted.firstOrNull()?.error ?: "the host noticed nothing"}"
