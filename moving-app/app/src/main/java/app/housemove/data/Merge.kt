@@ -150,10 +150,13 @@ private val CLASS = mapOf(
 )
 
 /**
- * Suggestions. One made by someone who could not make it is left out. Its
- * state is taken from the copy an Organiser set; an approval or decline beats
- * a state that merely followed from other changes, and a state nobody had the
- * right to set falls back to waiting.
+ * Suggestions. One made by someone who could not make it is left out of every
+ * list: it is kept deleted, in nobody's name, not dropped. Whether they could
+ * can look otherwise once the phone hears more (that whoever changed their role
+ * had already lost the right to), and the suggestion then stands again, worked
+ * out afresh at every merge. Its state is taken from the copy an Organiser set;
+ * an approval or decline beats a state that merely followed from other changes,
+ * and a state nobody had the right to set falls back to waiting.
  */
 private fun mergeProposals(a: List<Proposal>, b: List<Proposal>, roles: Roles, refusals: Refusals): List<Proposal> {
     fun good(p: Proposal?): Boolean {
@@ -168,7 +171,8 @@ private fun mergeProposals(a: List<Proposal>, b: List<Proposal>, roles: Roles, r
     fun withdrawnRightly(p: Proposal?): Boolean = p != null && p.deleted && p.withdrawn.by.isNotEmpty() && p.withdrawn.by == p.by && p.withdrawn.sum == p.withdrawnSum()
     return mergeEach(a, b) { x, y, newer ->
         val role = roles.at(newer.by, newer.createdAt)
-        if (role == null || (role == Role.HELPER && newer.kind != ProposalKind.QUESTION)) {
+        val rightful = role != null && (role != Role.HELPER || newer.kind == ProposalKind.QUESTION)
+        if (!rightful) {
             val tried = when (newer.kind) {
                 ProposalKind.COST -> "suggest a cost"
                 ProposalKind.TASK -> "suggest a task"
@@ -177,7 +181,6 @@ private fun mergeProposals(a: List<Proposal>, b: List<Proposal>, roles: Roles, r
             }
             // About the thing it names, so the Organisers see which; a cost is never named.
             refusals.add("suggestion", if (newer.kind == ProposalKind.COST) "" else newer.targetId, Stamp(newer.by, newer.createdAt), tried)
-            return@mergeEach null
         }
         val gx = good(x)
         val gy = good(y)
@@ -197,11 +200,11 @@ private fun mergeProposals(a: List<Proposal>, b: List<Proposal>, roles: Roles, r
             gy -> y!!
             else -> newer.copy(state = ProposalState.WAITING, reason = "").let { it.copy(decided = Stamp(sum = it.stateSum())) }
         }
-        // A suggestion is only ever deleted by its author withdrawing it while it waited. An approval or a
-        // decline made meanwhile on another phone stands instead, whichever came later: it may already have
-        // changed what the suggestion was about.
+        // A suggestion is only ever deleted by its author withdrawing it while it waited, or here, while its author
+        // could not make it as far as this merge knows. An approval or a decline made meanwhile on another phone stands
+        // instead of a withdrawal, whichever came later: it may already have changed what the suggestion was about.
         val withdrawal = if (withdrawnRightly(x)) x else if (withdrawnRightly(y)) y else null
-        val gone = withdrawal != null && CLASS.getValue(from.state) < 2
+        val gone = !rightful || (withdrawal != null && CLASS.getValue(from.state) < 2)
         val withdrawn = withdrawal?.withdrawn ?: from.withdrawn
         if (from.updatedAt == newer.updatedAt && from.deleted == gone && from.withdrawn == withdrawn) from
         else from.copy(updatedAt = newer.updatedAt, deleted = gone, withdrawn = withdrawn)

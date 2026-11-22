@@ -440,6 +440,31 @@ class MergeRulesTest {
         assertNull(phone.data.value.person(standIn)) // the stand-in is not left behind
     }
 
+    /**
+     * Asha removes Omar. His phone, not knowing, makes Dee a Helper, and Dee's phone hears of that before it hears that Omar
+     * had no right to by then. Her suggestion made meanwhile is out of every list while her phone takes her for a Helper,
+     * but it is not lost: once her phone hears the rest, the demotion never counted, and the suggestion stands everywhere.
+     */
+    @Test
+    fun aSuggestionIsNotLostWhenARoleChangeBySomeoneAlreadyRemovedArrivesFirst() {
+        val deeId = dee.me!!.id
+        assertTrue(asha.removePerson(omar.me!!.id).ok)
+        assertTrue(omar.setRole(deeId, Role.HELPER).ok)
+        val s = dee.suggestDecision(sofa, Disposition.SELL).valueOrNull()!!
+        // Dee's phone hears of the demotion only: from Omar's phone, which does not know he was removed.
+        sync(omar, dee)
+        assertEquals(Role.HELPER, dee.myRole)
+        assertNull(dee.data.value.proposal(s.id))
+        assertNull(omar.data.value.proposal(s.id))
+        // Then the rest, from Asha's phone.
+        sync(asha, dee)
+        for (phone in listOf(asha, dee)) {
+            assertEquals(Role.DECIDER, phone.data.value.person(deeId)!!.role)
+            assertEquals(ProposalState.WAITING, phone.data.value.proposal(s.id)?.state)
+        }
+        assertTrue(asha.data.value.waitingProposals().any { it.id == s.id })
+    }
+
     @Test
     fun aSecondRunOfTheSameSyncChangesNothing() {
         dee.suggestDecision(sofa, Disposition.SELL)
