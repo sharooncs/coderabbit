@@ -440,6 +440,31 @@ class MergeRulesTest {
         assertNull(phone.data.value.person(standIn)) // the stand-in is not left behind
     }
 
+    /**
+     * Asha removes Omar. His phone, not knowing, makes Dee a Helper, and Dee's phone hears of that before it hears that Omar
+     * had no right to by then. Her suggestion made meanwhile is out of every list while her phone takes her for a Helper,
+     * but it is not lost: once her phone hears the rest, the demotion never counted, and the suggestion stands everywhere.
+     */
+    @Test
+    fun aSuggestionIsNotLostWhenARoleChangeBySomeoneAlreadyRemovedArrivesFirst() {
+        val deeId = dee.me!!.id
+        assertTrue(asha.removePerson(omar.me!!.id).ok)
+        assertTrue(omar.setRole(deeId, Role.HELPER).ok)
+        val s = dee.suggestDecision(sofa, Disposition.SELL).valueOrNull()!!
+        // Dee's phone hears of the demotion only: from Omar's phone, which does not know he was removed.
+        sync(omar, dee)
+        assertEquals(Role.HELPER, dee.myRole)
+        assertNull(dee.data.value.proposal(s.id))
+        assertNull(omar.data.value.proposal(s.id))
+        // Then the rest, from Asha's phone.
+        sync(asha, dee)
+        for (phone in listOf(asha, dee)) {
+            assertEquals(Role.DECIDER, phone.data.value.person(deeId)!!.role)
+            assertEquals(ProposalState.WAITING, phone.data.value.proposal(s.id)?.state)
+        }
+        assertTrue(asha.data.value.waitingProposals().any { it.id == s.id })
+    }
+
     @Test
     fun aSecondRunOfTheSameSyncChangesNothing() {
         dee.suggestDecision(sofa, Disposition.SELL)
@@ -492,5 +517,69 @@ class MergeRulesTest {
             val views = phones.map { view(it) }
             for (v in views) assertEquals("seed $seed", views[0], v)
         }
+    }
+
+    // ---- merging the same again (an update file opened twice) -------------------------------------
+
+    private val founder = Person("asha", "Asha", grants = listOf(Grant(Role.ORGANISER, at = 1)))
+
+    /**
+     * Two phones each changed the lamp at the same moment: on one it was loaded earlier, on the other someone wrote a
+     * note and it was put back later. Which copy is the newer for the rest of the record must not hang on where it is,
+     * which the merge takes from the newer stamp whichever copy that is: merging the result with the same copy again
+     * would then choose the other one.
+     */
+    @Test
+    fun mergingTheSameCopyAgainChangesNothingWhenTwoCopiesHaveTheSameTime() {
+        val lamp = Item(id = "lamp", name = "Lamp", updatedAt = 50)
+        val loaded = lamp.copy(stage = Stage.LOADED).let { it.copy(whereBy = Stamp("asha", 40, it.whereSum())) }
+        val noted = lamp.copy(notes = "The shade is loose").let { it.copy(whereBy = Stamp("asha", 45, it.whereSum())) }
+        val a = AppData(people = listOf(founder), items = listOf(loaded))
+        val b = AppData(people = listOf(founder), items = listOf(noted))
+        val once = merge(a, b)
+        assertEquals(Stage.AT_ORIGIN, once.items.single().stage) // put back later
+        assertEquals(once, merge(once, b))
+        assertEquals(once, merge(once, a))
+        assertEquals(once.items, merge(b, a).items)
+    }
+
+    /**
+     * The lamp was deleted on one phone at the same moment as a note was written on it on another. A deletion that stands
+     * beats the change. One that does not stand is undone, and the lamp comes back the same however often it is merged.
+     */
+    @Test
+    fun aDeletionAtTheSameMomentAsAChangeWinsWhenItStandsAndMergingAgainChangesNothingWhenItDoesNot() {
+        val hal = Person("hal", "Hal", grants = listOf(Grant(Role.HELPER, at = 2, by = "asha")))
+        val lamp = Item(id = "lamp", name = "Lamp", createdBy = "asha", updatedAt = 50)
+        val noted = AppData(people = listOf(founder, hal), items = listOf(lamp.copy(notes = "The shade is loose")))
+        fun deletedBy(who: String) = AppData(people = listOf(founder, hal), items = listOf(lamp.copy(deleted = true, deletedBy = Stamp(who, 50, deletedSum()))))
+        // Asha may delete it.
+        assertTrue(merge(deletedBy("asha"), noted).items.single().deleted)
+        assertTrue(merge(noted, deletedBy("asha")).items.single().deleted)
+        // Hal may not: someone else added it.
+        val once = merge(deletedBy("hal"), noted)
+        assertFalse(once.items.single().deleted)
+        assertEquals(once, merge(once, noted))
+        assertEquals(once, merge(once, deletedBy("hal")))
+        assertEquals(once.items, merge(noted, deletedBy("hal")).items)
+    }
+
+    /**
+     * Rex was let in and then removed, and his phone, not knowing, loaded a box. The lamp was put in that box on another
+     * phone. Things in a container take its place and its stamp, so the lamp now carries Rex's move too: the merge that
+     * put it there turns that away for the lamp as well as for the box, as any later merge would, and merging the same
+     * again changes nothing, not even the list of refused changes.
+     */
+    @Test
+    fun mergingTheSameCopyAgainNotesNoRefusedChangeItHadNotNotedTheFirstTime() {
+        val rex = Person("rex", "Rex", grants = listOf(Grant(Role.HELPER, at = 2, by = "asha"), Grant(Role.HELPER, removed = true, at = 3, by = "asha")))
+        val box = Box(id = "box", label = "L001", stage = Stage.LOADED, updatedAt = 20).let { it.copy(whereBy = Stamp("rex", 20, it.whereSum())) }
+        val a = AppData(people = listOf(founder, rex), items = listOf(Item(id = "lamp", name = "Lamp", boxId = "box", updatedAt = 30)))
+        val b = AppData(people = listOf(founder, rex), items = listOf(Item(id = "lamp", name = "Lamp", updatedAt = 10)), boxes = listOf(box))
+        val once = merge(a, b)
+        assertEquals(Stage.LOADED, once.item("lamp")!!.stage)
+        assertEquals(setOf("box", "lamp"), once.refused.map { it.targetId }.toSet())
+        assertEquals(once, merge(once, b))
+        assertEquals(once, merge(once, a))
     }
 }

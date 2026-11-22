@@ -148,9 +148,15 @@ internal class Judge(val d: AppData) {
         }
     }
 
-    /** A suggestion that is deleted was withdrawn by whoever made it, and was not approved or declined. */
+    /**
+     * A suggestion that is deleted was withdrawn by whoever made it, and was not approved or declined; or it was made by
+     * someone who could not make it, which is kept deleted rather than dropped ([leftOut]).
+     */
     fun withdrawal(p: Proposal): Boolean =
-        !p.deleted || (p.withdrawn.by == p.by && p.by.isNotEmpty() && p.state != ProposalState.APPROVED && p.state != ProposalState.DECLINED)
+        !p.deleted || !author(p) || (p.withdrawn.by == p.by && p.by.isNotEmpty() && p.state != ProposalState.APPROVED && p.state != ProposalState.DECLINED)
+
+    /** A suggestion made by someone who could not make it is in no list: it is kept, deleted, so that news that they could can bring it back. */
+    fun leftOut(p: Proposal): Boolean = author(p) || p.deleted
 }
 
 // ---- the parts of a record --------------------------------------------------------------
@@ -446,11 +452,13 @@ internal class SimChecks(private val sim: Simulation) {
             val overwritten = (type == "task" || type == "expense") && written.any { w -> when_(w) > newest && !(if (w is Task) judge.plan(w) else judge.cost(w as Expense)) }
             // The other way: whoever made it had been removed or demoted and then let back in or promoted again before making it, and the
             // news of the first reached a phone before the news of the second. That phone, seeing no right, dropped it; so then did the
-            // author's own phone on hearing the same half of the story. Also counted and reported.
+            // author's own phone on hearing the same half of the story. Also counted and reported. Not so for a suggestion: one whose
+            // author seems to have had no right is kept, out of every list, and stands again once the rest of the news arrives, so
+            // a suggestion is never lost to the order in which news of roles arrives (nor to a role change by someone who had already
+            // lost the right to make it, which never counts).
             val lateGoodNews = when (val w = last.firstOrNull()) {
                 is Task -> judge.regained(w.planBy.by, w.planBy.at)
                 is Expense -> judge.regained(w.costBy.by, w.costBy.at)
-                is Proposal -> judge.regained(w.by, w.createdAt)
                 else -> false
             }
             val rec = end[k]
@@ -468,8 +476,8 @@ internal class SimChecks(private val sim: Simulation) {
                     mayBeGone -> Unit
                     overwritten -> note("costs or tasks lost behind a later change by someone who, it turned out, had been removed or demoted by then", "$k: ${short(last.firstOrNull())}", id)
                     lateGoodNews -> note(
-                        "suggestions, costs or tasks lost because the news that their author was back in the move (or an Organiser again) reached the phones after the news that they were not",
-                        "$k: ${short(last.firstOrNull())}", id, (last.firstOrNull() as? Proposal)?.by,
+                        "costs or tasks lost because the news that their author was back in the move (or an Organiser again) reached the phones after the news that they were not",
+                        "$k: ${short(last.firstOrNull())}", id,
                     )
                     else -> broke(LOST, "$k was written (last at $newest) and is not in the move at the end: ${short(last.firstOrNull() ?: written.lastOrNull())}", id)
                 }
@@ -482,7 +490,7 @@ internal class SimChecks(private val sim: Simulation) {
                 continue
             }
             if (stamp < newest && lateGoodNews && (type == "task" || type == "expense")) {
-                note("suggestions, costs or tasks lost because the news that their author was back in the move (or an Organiser again) reached the phones after the news that they were not")
+                note("costs or tasks lost because the news that their author was back in the move (or an Organiser again) reached the phones after the news that they were not")
                 continue
             }
             if (stamp < newest) {
@@ -564,7 +572,7 @@ internal class SimChecks(private val sim: Simulation) {
         if (unsigned(d.move.changedBy)) broke(RULES, "the move settings carry nobody's name, though the move had an Organiser then: ${short(d.move)}")
         for (p in d.proposals) {
             if (!costsToo && p.kind == ProposalKind.COST) continue
-            if (!j.author(p)) broke(RULES, "suggestion ${p.id.take(8)} (${p.kind}) was made by ${p.by.take(8)} (${j.book.at(p.by, p.createdAt)?.label ?: "not in the move"} at the time)", p.id, p.by)
+            if (!j.leftOut(p)) broke(RULES, "suggestion ${p.id.take(8)} (${p.kind}) stands, made by ${p.by.take(8)} (${j.book.at(p.by, p.createdAt)?.label ?: "not in the move"} at the time)", p.id, p.by)
             if (!j.state(p)) broke(RULES, "suggestion ${p.id.take(8)} was made ${p.state} by ${who(p.decided)}", p.id, p.decided.by)
             if (p.state in listOf(ProposalState.APPROVED, ProposalState.DECLINED) && p.decided.by.isEmpty() && j.book.anyOrganiser(p.decided.at)) {
                 broke(RULES, "suggestion ${p.id.take(8)} is ${p.state} with nobody's name on it", p.id)
@@ -871,6 +879,7 @@ internal class SimChecks(private val sim: Simulation) {
             }
             if (r is Proposal) {
                 if (!j.withdrawal(r)) bad("deleted a suggestion that was not withdrawn by its author, or was approved or declined, at", k)
+                if (!j.leftOut(r)) bad("kept in the lists a suggestion its author could not make,", k)
                 val withdrawn = listOfNotNull(a as Proposal?, b as Proposal?).any { it.deleted && it.withdrawn.by == it.by && it.by.isNotEmpty() }
                 if (withdrawn && !r.deleted && r.state != ProposalState.APPROVED && r.state != ProposalState.DECLINED) bad("lost the withdrawal of", k)
             }
