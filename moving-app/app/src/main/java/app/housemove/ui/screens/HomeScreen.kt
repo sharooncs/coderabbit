@@ -202,8 +202,8 @@ private fun RoleDetails(data: AppData, device: DeviceInfo, inPageAction: DockAct
     Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (inPageAction != null) BigAction(inPageAction.icon, inPageAction.label, inPageAction.onClick)
         sections()
+        SyncRow(device)
         if (data.shared()) {
-            SyncRow(device)
             // Who else is on the move, and what this role does. The role is an Organiser's to change.
             PersonPill(data.me(device), "People", data.roleOf(device).line(), role = null, onClick = { nav.open("people") })
         } else if (device.helper) {

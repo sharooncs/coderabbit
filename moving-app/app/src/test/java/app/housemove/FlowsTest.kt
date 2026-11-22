@@ -11,6 +11,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import androidx.navigation.NavHostController
@@ -325,6 +326,9 @@ class FlowsTest {
         assertEquals("Glasses, Mugs", data.box(a.id)!!.contents)
         tapDesc("Edit what's inside") // typing is still there for whatever the chips do not cover
         type("What's inside", "Glasses, mugs")
+        // What was typed is saved when the field is left, not on every keystroke.
+        rule.onAllNodes(hasSetTextAction() and hasText("What's inside")).onFirst().performImeAction()
+        settle()
         tap("Fragile"); tap("This way up")
         tap("Packing details") // when to unpack it and its size are rarely changed, so they are folded away
         tap("First night")
@@ -397,7 +401,8 @@ class FlowsTest {
         assertNull(it().label)
 
         tap("More") // before it leaves the old home, where it is and any damage wait in the last section
-        tap("Damaged in the move")
+        tap("Report damage") // a report of its own: the photo first, the words optional
+        tap("Save")
         assertTrue(it().damaged)
         see("On the move") // once damaged, they have a section of their own
 
@@ -843,7 +848,8 @@ class FlowsTest {
         store.createBox("L001", oldKitchen.id)
         rule.runOnUiThread { store.setDevice { it.copy(helper = true) } }
         settle()
-        see("Load the van"); see("Unload"); see("Find anything"); see("Sync with the other phones")
+        // What is next for the things, from where they are: here, a box still open.
+        see("Next for the things"); see("Pack and seal"); see("Sync with the other phones")
         dontSee("Needs attention"); dontSee("Walk-through")
         tap("Pack a box")
         assertEquals("pack", route())

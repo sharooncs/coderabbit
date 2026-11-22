@@ -16,6 +16,7 @@ import app.housemove.data.dueDay
 import app.housemove.data.Home
 import app.housemove.data.Role
 import app.housemove.data.Store
+import app.housemove.data.mayArrangeHandover
 import app.housemove.data.mayCarryOut
 import app.housemove.data.mayTick
 import app.housemove.data.title
@@ -174,6 +175,8 @@ class RoleWalkTest {
             "be told on Home that jobs are overdue (only someone who may tick one off is)", hubs,
             { c, _ -> c.texts.any { overdueLine.matches(it) } }, ::mayTickAnOverdueJob,
         ),
+        // Changes refused at a sync are an Organiser's to see and dismiss.
+        Gate("dismiss a change refused at a sync", hubs, { c, _ -> c.says("Dismiss") }, can(Action.APPROVE)),
         Gate(
             "have the Timeline tile flagged for overdue jobs (only someone who may tick one off does)", hubs,
             { c, _ -> c.texts.firstOrNull() == "Timeline" && c.described.contains("Needs attention") }, ::mayTickAnOverdueJob,
@@ -204,6 +207,11 @@ class RoleWalkTest {
             },
         ),
         Gate("see costs", Regex("budget"), { c, _ -> c.kind == "Tab" && c.says("Costs") }, can(Action.DECIDE, Action.SUGGEST)),
+        Gate(
+            "arrange who hands a thing over, and whether it is paid", anItem, { c, _ -> c.says("Arrange") },
+            { s, stop, _ -> s.data.value.item(anItem.matchEntire(stop.name)!!.groupValues[1])?.let { s.data.value.mayArrangeHandover(s.me, it) } == true },
+        ),
+        Gate("clear a damage report", everywhere, { c, _ -> c.says("Clear") }, can(Action.DECIDE)),
         Gate("add a job to the timeline", Regex("tasks"), { c, _ -> c.described.contains("Add a task") }, can(Action.DECIDE)),
         Gate("suggest a job for the timeline", Regex("tasks"), { c, _ -> c.described.contains("Suggest a task") }, { s, _, _ -> s.can(Action.SUGGEST) && !s.can(Action.DECIDE) }),
         Gate(
@@ -368,7 +376,14 @@ class RoleWalkTest {
         assertTrue("Shown although the rules do not allow it:\n" + mine.joinToString("\n") { "${it.stop}: ${it.what}: ${it.control}" }, mine.isEmpty())
     }
 
-    private fun phones() = AuditSampleData.phones { tmp.newFolder() }
+    /** The sample move with what 2.1 adds: hidden details, a hand-over, the storage unit, damage reports, a refused change. */
+    private fun phones() = Sample21.enrich(AuditSampleData.phones { tmp.newFolder() })
+
+    /**
+     * Words a Helper must never be shown (design 2.1, section 2): the fridge's serial number, make and model, the
+     * wardrobe's value, and any asking price, value or warranty. Found anywhere, they fail the walk.
+     */
+    private val hiddenWords = listOf(Sample21.SERIAL, Sample21.MAKE, Sample21.MODEL, "450", "Worth", "Asking", "Warranty", "Sold for")
 
     /** Change the move day on the Organiser's phone and bring it to [phone], as a sync would. */
     private fun viaOrganiser(organiser: Store, phone: Store): (Long?) -> Unit = { day ->
@@ -397,7 +412,11 @@ class RoleWalkTest {
     @Test
     fun helper() {
         val p = phones()
-        failOnCore(walk("helper", p.helper, viaOrganiser(p.organiser, p.helper)))
+        val findings = walk("helper", p.helper, viaOrganiser(p.organiser, p.helper)) { stop, texts ->
+            texts.filter { t -> hiddenWords.any { t.contains(it) } }.distinct()
+                .map { Finding(stop.name, "shows a Helper a value, price or serial number", it, core = true) }
+        }
+        failOnCore(findings)
     }
 
     /** A move with one person: nothing is refused, and nothing about roles is on the screens. */

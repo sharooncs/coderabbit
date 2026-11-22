@@ -694,4 +694,130 @@ class MoveDayFlowsTest {
         assertEquals("Helpers cannot suggest this. You can ask for a decision instead.", ShadowToast.getTextOfLatestToast())
         assertTrue(asha.addPerson("Kit", Role.HELPER).okOrSay(RuntimeEnvironment.getApplication()))
     }
+
+    // ---- 2.1: the storage unit, and damage as reports of their own -----------------------------
+
+    @Test
+    fun aTripToTheStorageUnitAndBringingItBackLeavesItInStorageNotDelivered() {
+        val asha = organiser()
+        packed(asha)
+        assertTrue(asha.decide(sofa.id, Disposition.STORE).ok)
+        pickUp(asha, "moveday")
+        see("Storage unit") // the move now has one: something is decided Store
+        see("1 decided Store, still at the old home")
+        tap("Trip to storage")
+        assertEquals("load", nav!!.currentBackStackEntry?.destination?.route)
+        see("This trip goes to the storage unit")
+        see("Decided: Store")
+        noKeyboardNeeded()
+        // The sofa, decided Store, is first on the list of a trip to the storage unit.
+        tap("Load")
+        val trip = data.trip(data.item(sofa.id)!!.tripId)!!
+        assertEquals(Place.STORAGE, trip.to)
+        assertEquals(Stage.LOADED, stageOf(sofa.id))
+        shot("load-to-storage")
+
+        // Unloaded there, it is in storage, not delivered.
+        go("unload")
+        tap("In storage")
+        assertEquals(Stage.STORED, stageOf(sofa.id))
+        see("In storage. Leave it in the")
+        see("Storage unit")
+        see("1 in storage")
+        shot("unload-storage")
+        // Undo puts it back on the trip, one step.
+        tap("Undo")
+        assertEquals(Stage.LOADED, stageOf(sofa.id))
+        tap("In storage")
+        assertEquals(Stage.STORED, stageOf(sofa.id))
+
+        // Shown as in storage everywhere, never as delivered.
+        go("reconcile")
+        see("In storage, not delivered")
+        see("At the storage unit")
+        go("items")
+        see("In storage")
+        go("unpack")
+        see("1 thing in storage")
+        see("Not delivered yet")
+        go("overview")
+        see("1 thing in storage")
+        assertEquals(0, data.progress().delivered.done)
+        assertEquals(1, data.progress().stored.done)
+        shot("unpack-storage")
+
+        // Bring back from storage: a trip from the storage unit to the new home.
+        go("moveday")
+        see("1 thing in storage")
+        tap("Bring back from storage")
+        see("This trip goes from storage to")
+        see("0 of 1 back from storage")
+        tap("Load")
+        val back = data.trip(data.item(sofa.id)!!.tripId)!!
+        assertEquals(Place.STORAGE, back.from)
+        assertEquals(BRING_BACK_TRIP_NAME, back.name)
+        assertEquals(Stage.LOADED, stageOf(sofa.id))
+        see("1 of 1 back from storage")
+        // Taken off again, it goes back into storage, not to the old home.
+        tap("On Bring back from storage", sub = true)
+        tap("Undo")
+        assertEquals(Stage.STORED, stageOf(sofa.id))
+        tap("To load", sub = true)
+        tap("Load")
+        go("unload")
+        tap("Here")
+        assertEquals(Stage.DELIVERED, stageOf(sofa.id))
+        go("unpack")
+        dontSee("in storage")
+    }
+
+    @Test
+    fun damageReportedOnTwoPhonesIsTwoReportsClearedOneByOne() {
+        val asha = organiser()
+        val hal = joined(asha, "Hal", Role.HELPER)
+        val box = asha.createBox("L001", oldKitchen.id)
+        asha.updateBoxes(listOf(box.id)) { it.copy(sealed = true, stage = Stage.DELIVERED) }
+        sync(asha, hal)
+
+        // Hal reports it on his phone: the photo first, then a word tapped.
+        pickUp(hal, "box/${box.id}")
+        tap("On the move")
+        tap("Report damage")
+        see("Photograph it")
+        photo(hal, box.id, PhotoKind.DAMAGE) // what the camera gives back
+        settle()
+        dontSee("Photograph it")
+        tap("Dented")
+        tap("Save")
+        noKeyboardNeeded()
+        shot("damage-helper")
+        // Meanwhile Asha reports it on hers, with a word said.
+        rule.runOnUiThread { assertTrue(asha.reportDamage(box.id, "Wet").ok) }
+        sync(asha, hal)
+        assertEquals(2, asha.data.value.damageOf(box.id).size)
+        assertEquals(2, hal.data.value.damageOf(box.id).size)
+        see("2 damage reports")
+        see("Dented")
+        see("Wet")
+        // Only an Organiser clears one.
+        rule.onAllNodes(hasText("Clear") and hasClickAction()).assertCountEquals(0)
+
+        pickUp(asha, "box/${box.id}") // damaged, its "On the move" section is open already
+        see("2 damage reports")
+        see("Reported by Hal")
+        tap("Clear")
+        assertEquals(1, data.damageOf(box.id).size)
+        assertTrue(data.box(box.id)!!.damaged) // the other report is still open
+        see("1 damage report")
+        see("1 cleared")
+        shot("damage-organiser")
+        sync(asha, hal)
+        assertEquals(1, hal.data.value.damageOf(box.id).size)
+        tap("Clear")
+        assertTrue(data.damageOf(box.id).isEmpty())
+        assertFalse(data.box(box.id)!!.damaged)
+        sync(asha, hal)
+        assertFalse(hal.data.value.box(box.id)!!.damaged)
+        assertEquals(2, hal.data.value.damageOf(box.id, open = false).size) // kept, cleared
+    }
 }

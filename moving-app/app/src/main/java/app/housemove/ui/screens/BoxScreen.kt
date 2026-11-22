@@ -681,14 +681,14 @@ private fun ContentsField(boxId: String, current: String, key: String) {
     val base = remember(key) { mutableStateOf(storedLines(current)) }
     fun commit() {
         val typed = storedLines(latest)
-        val typedKeys = typed.map { it.lowercase() }.toSet()
-        val baseKeys = base.value.map { it.lowercase() }.toSet()
-        val removed = base.value.filter { it.lowercase() !in typedKeys }.map { it.lowercase() }.toSet()
-        val added = typed.filter { it.lowercase() !in baseKeys }
+        if (typed == base.value) return
+        val typedByKey = typed.associateBy { it.lowercase() }
+        val removed = base.value.map { it.lowercase() }.filter { it !in typedByKey }.toSet()
         base.value = typed
-        if (removed.isEmpty() && added.isEmpty()) return
-        val now = store.data.value.linesOf(boxId).map { it.text }.filter { it.lowercase() !in removed }
-        store.setContents(boxId, (now + added).joinToString("\n"))
+        // The lines as they are now, less those taken out, with the words as typed; then the new ones.
+        val kept = store.data.value.linesOf(boxId).map { it.text }.filter { it.lowercase() !in removed }.map { typedByKey[it.lowercase()] ?: it }
+        val keys = kept.map { it.lowercase() }.toSet()
+        store.setContents(boxId, (kept + typed.filter { it.lowercase() !in keys }).joinToString("\n"))
     }
     DisposableEffect(key) { onDispose { commit() } }
     OutlinedTextField(
