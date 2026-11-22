@@ -16,6 +16,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
-        (application as App).store.flush()
+        (application as App).moves.flush()
     }
 }

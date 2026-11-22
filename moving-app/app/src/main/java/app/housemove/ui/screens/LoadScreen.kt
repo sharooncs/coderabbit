@@ -35,7 +35,7 @@ import app.housemove.data.Room
 import app.housemove.data.Stage
 import app.housemove.data.Store
 import app.housemove.data.Trip
-import app.housemove.data.labelFromQr
+import app.housemove.data.labelCodeOf
 import app.housemove.data.movables
 import app.housemove.data.newId
 import app.housemove.data.uses
@@ -100,7 +100,7 @@ fun LoadScreen() {
         val found = mdFind(store.data.value, text)
         val m = found?.carrier
         result = when {
-            found == null || m == null -> MdResult(MdTone.BAD, "Unknown label " + labelFromQr(text), "Pack it as a box first, or check the code.")
+            found == null || m == null -> MdResult(MdTone.BAD, "Unknown label " + labelCodeOf(text), "Pack it as a box first, or check the code.")
             m.stage == Stage.AT_ORIGIN -> mdLoadOne(store, m, found.inside)
             m.stage == Stage.LOADED -> MdResult(MdTone.WARN, "Already on the $vehicle", found.inside ?: m.title)
             else -> MdResult(MdTone.WARN, "Already delivered", found.inside ?: m.title)

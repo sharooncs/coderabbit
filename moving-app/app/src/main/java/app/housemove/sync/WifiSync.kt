@@ -5,6 +5,7 @@ import app.housemove.data.Admission
 import app.housemove.data.AppData
 import app.housemove.data.AppJson
 import app.housemove.data.HIDDEN_FROM_HELPERS
+import app.housemove.data.MoveIdentity
 import app.housemove.data.Outcome
 import app.housemove.data.Person
 import app.housemove.data.Role
@@ -12,10 +13,15 @@ import app.housemove.data.SCHEMA
 import app.housemove.data.SYNC_PREFIX
 import app.housemove.data.Store
 import app.housemove.data.admission
+import app.housemove.data.isRetired
 import app.housemove.data.isSafeFileName
+import app.housemove.data.phoneEntry
 import app.housemove.data.refusal
 import app.housemove.data.roleOfPeer
 import app.housemove.data.visibleTo
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import java.io.DataInputStream
 import java.io.DataOutputStream
@@ -31,6 +37,8 @@ import java.net.SocketException
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.security.SecureRandom
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
 /**
@@ -46,19 +54,26 @@ import kotlin.concurrent.thread
  * told "NO" and the connection is closed, and anything that does not begin the way a HouseMove
  * phone does is not answered at all. Every message either phone shows is in words.
  *
- * Who may sync: phones whose people are both in the move just sync. A phone
- * that is not in the move yet joins with an invite an Organiser made for one
- * person ([Host.inviteFor]); the plain code only lets it in when the other
- * phone's person may add people. Someone who has been removed is refused.
+ * Who may sync: phones of the same move (the same move ID, see [MoveIdentity]) whose people are
+ * both in it just sync. A phone that is not in the move yet joins with an invite an Organiser made
+ * for one person ([Host.inviteFor]) or with a Helper code ([Host.helperCode]); the plain code only
+ * lets it in when the other phone's person may add people. Someone who has been removed is
+ * refused; a retired phone is listened to once, one way ([ONE_WAY]). For an Organiser's or a
+ * Decider's invite the hosting phone asks its own person to confirm the phone that came ("Joined:
+ * Priya, on Priya's phone", [Host.waiting]) before anything of the move is sent.
  *
  * The exchange, after the joiner connects (strings as writeUTF):
  * ```
- * joiner: MAGIC, token, name, letter, schema (int), own Person as JSON, person id claimed by the invite or ""
- * host:   OK | NO | VERSION | REMOVED | STRANGER | EXPIRED, then if OK: name, letter, own Person as JSON
- * joiner: GO | REMOVED | STRANGER
+ * joiner: MAGIC, token, name, letter, schema (int), own Person as JSON, hello as JSON (see Hello)
+ * host:   [WAIT] OK | ONEWAY | NO | VERSION (+ schema) | REMOVED | STRANGER | EXPIRED | WRONGMOVE | RETIRED | UNDONE,
+ *         then if OK or ONEWAY: name, letter, own Person as JSON, hello as JSON
+ * joiner: GO | TAKE | REMOVED | STRANGER | WRONGMOVE | NOTORGANISER
  * joiner: data      host: merged data      (each leaves out what the other's role is not sent)
  * joiner: file names   host: file names   joiner: files   host: files
  * ```
+ * The hello's first six lines are 2.0's, so a phone on 2.0 reads all of it and answers VERSION,
+ * as it does for any phone on another data layout; 2.0's last line, the person an invite is for,
+ * is where 2.1 puts the rest of what it says first: the phone ID, the move and so on.
  * A phone that is refused because its person has been removed is still listened to on one
  * point: what its own person record says (see `Store.hearAbout`). A hello in the words of
  * version 1.3 is answered VERSION, or AGAIN when it comes from a phone on this version,
@@ -88,12 +103,39 @@ object WifiSync {
     const val UNREACHABLE = "Could not reach the other phone. Are both on the same Wi-Fi?"
     const val NO_NETWORK = "This phone is not on a Wi-Fi network or hotspot. Connect it to the same one as the other phone, then try again."
 
+    /** The two phones hold different moves. Nothing was exchanged. */
+    const val WRONG_MOVE = "That phone is on a different move, so nothing was exchanged. Open the same move on both phones, then sync again."
+
+    /** A phone joining a move it already holds may do so only through a phone it knows as one of that move's Organisers. */
+    const val NOT_THROUGH_ORGANISER = "This phone is already in that move. Sync with an Organiser of it, or ask one to show you the invite."
+
+    /** The hosting phone's person said the phone that came was not the right one, or did not answer in time. */
+    const val UNDONE = "The other phone said this is not the right phone, so nothing was exchanged. The invite can still be used: ask them to show it again."
+    const val NOT_CONFIRMED = "Nobody confirmed this phone on the other phone in time, so nothing was exchanged. The invite can still be used."
+
+    /** Said on a retired phone. */
+    const val RETIRED_PHONE = Store.RETIRED_PHONE
+
+    /** Said on the other phone when a retired phone came. */
+    const val RETIRED_HERE = "That phone has been retired from this move. Its last work was taken in, and nothing was sent back to it."
+    const val RETIRED_GONE = "That phone has been retired from this move and its work was already taken in, so it was not synced."
+
     /** How long an invite made for one person can be used. */
     const val INVITE_MINUTES = 10
+
+    /** How long a Helper code can be used, by as many phones as come. */
+    const val HELPER_CODE_MINUTES = 10
+
+    /** What an invite says instead of a person, when it is a Helper code: each phone gives the name it goes by. */
+    const val HELPER_CODE = "*"
 
     /** How long a phone waits for the other to say anything before it gives up. Tests shorten it. */
     @Volatile
     internal var timeoutMs = 30_000
+
+    /** How long the hosting phone's person has to say whether a phone that joined is the right one. Tests shorten it. */
+    @Volatile
+    internal var confirmMs = 90_000
 
     /** This phone's addresses on the local network. Tests stand in a phone with no Wi-Fi. */
     @Volatile
@@ -103,6 +145,9 @@ object WifiSync {
     private const val MAX_PEERS = 8
     private const val MAX_JSON = 64 * 1024 * 1024
     private const val MAX_PHOTO = 40L * 1024 * 1024
+
+    /** At most this many ids go with a hello for 2.0's same-move check. */
+    private const val MAX_IDS = 1500
 
     // What the wire helpers throw is never shown: whatWentWrong turns every error into one of the messages above.
 
@@ -116,14 +161,46 @@ object WifiSync {
         val peerPersonId: String = "",
         /** Set when this sync was an invite: the person the joining phone now is. */
         val joinedAs: Person? = null,
+        /** The other phone has an older HouseMove: offer "Share the app" so it can get this one. */
+        val shareApp: Boolean = false,
+        /** The other phone's data-format version, when the versions differ and it said. */
+        val peerSchema: Int = 0,
+        /** A retired phone's last work was taken in, one way (on either phone). */
+        val oneWay: Boolean = false,
+        /** The other phone's name in its own settings. */
+        val peerDevice: String = "",
     ) {
         val ok get() = error == null
     }
 
+    /** What 2.1 says first, besides 2.0's hello. */
+    @Serializable
+    internal data class Hello(
+        /** The person an invite is for, as 2.0 said it, or [HELPER_CODE]. Blank for a plain sync. */
+        val claim: String = "",
+        val phoneId: String = "",
+        val deviceName: String = "",
+        /** The move: its ID and the others it is known by. For an invite, the joiner says the one the invite names. */
+        val moveId: String = "",
+        val aliases: List<String> = emptyList(),
+        /** The ID was worked out from a move from before 2.1 ([MoveIdentity.derived]): [ids] is sent for 2.0's same-move check. */
+        val derived: Boolean = false,
+        val ids: List<String> = emptyList(),
+        val moveName: String = "",
+        /** Letters the phone uses in its other moves. */
+        val elsewhere: List<String> = emptyList(),
+        /** The name the phone's owner goes by: given with a Helper code. */
+        val name: String = "",
+        /** From the host: the person the joining phone joins as. */
+        val youAre: String = "",
+    )
+
     /**
      * What the QR code holds. A plain invite is `HMSYNC:hosts:port:token`. One made for a
      * person adds `:personId:ROLE:name` (the name URL-encoded), so the joining phone can say
-     * "Join as Sam, Helper" before it connects.
+     * "Join as Sam, Helper" before it connects; 2.1 adds `:moveId:moveName` to both (a plain one
+     * with the three person parts empty), so it can say "Join Maple Road as Sam, Helper?". A
+     * Helper code has [HELPER_CODE] for the person.
      */
     data class Invite(
         val hosts: List<String>,
@@ -132,29 +209,63 @@ object WifiSync {
         val personId: String? = null,
         val personName: String = "",
         val role: Role? = null,
+        val moveId: String = "",
+        val moveName: String = "",
     ) {
-        fun encode() = SYNC_PREFIX + hosts.joinToString(",") + ":" + port + ":" + token +
-            if (personId == null) "" else ":" + personId + ":" + (role?.name ?: "") + ":" + URLEncoder.encode(personName, "UTF-8")
+        /** Anyone may join with it as a Helper, giving the name their phone knows them by. */
+        val helperCode: Boolean get() = personId == HELPER_CODE
+
+        fun encode(): String {
+            val base = SYNC_PREFIX + hosts.joinToString(",") + ":" + port + ":" + token
+            val person = if (personId == null) null else personId + ":" + (role?.name ?: "") + ":" + URLEncoder.encode(personName, "UTF-8")
+            if (moveId.isEmpty()) return base + if (person == null) "" else ":$person"
+            return base + ":" + (person ?: "::") + ":" + moveId + ":" + URLEncoder.encode(moveName, "UTF-8")
+        }
+
+        /** What the joining phone asks before anything is sent. */
+        fun question(): String {
+            val move = moveName.trim().ifBlank { "this move" }
+            return when {
+                helperCode -> "Join $move as a Helper?"
+                personId != null -> "Join $move as ${personName.ifBlank { "this person" }}${role?.let { ", " + it.label } ?: ""}?"
+                else -> "Sync with $move?"
+            }
+        }
 
         companion object {
             fun parse(text: String): Invite? {
                 val t = text.trim()
                 if (!t.startsWith(SYNC_PREFIX)) return null
                 val parts = t.removePrefix(SYNC_PREFIX).split(":")
-                if (parts.size != 3 && parts.size != 6) return null
+                if (parts.size != 3 && parts.size != 6 && parts.size != 8) return null
                 val port = parts[1].toIntOrNull() ?: return null
                 val hosts = parts[0].split(",").filter { it.isNotBlank() }
                 if (hosts.isEmpty() || parts[2].isBlank()) return null
                 if (parts.size == 3) return Invite(hosts, port, parts[2])
-                if (parts[3].isBlank()) return null
-                val name = try {
-                    URLDecoder.decode(parts[5], "UTF-8")
+                fun decoded(s: String): String? = try {
+                    URLDecoder.decode(s, "UTF-8")
                 } catch (_: Exception) {
-                    return null
+                    null
                 }
-                return Invite(hosts, port, parts[2], parts[3], name, Role.entries.firstOrNull { it.name == parts[4] })
+                val moveId = if (parts.size == 8) parts[6] else ""
+                val moveName = if (parts.size == 8) decoded(parts[7]) ?: return null else ""
+                if (parts[3].isBlank()) {
+                    // 2.1's plain invite: no person, only the move.
+                    if (parts.size != 8 || parts[4].isNotBlank() || parts[5].isNotBlank()) return null
+                    return Invite(hosts, port, parts[2], moveId = moveId, moveName = moveName)
+                }
+                val name = decoded(parts[5]) ?: return null
+                return Invite(hosts, port, parts[2], parts[3], name, Role.entries.firstOrNull { it.name == parts[4] }, moveId, moveName)
             }
         }
+    }
+
+    /**
+     * A phone that has come with an Organiser's or a Decider's invite, waiting on the hosting phone
+     * for its person to say it is the right one ([Host.confirm]). [text] is what to show.
+     */
+    data class JoinRequest(val id: String, val personId: String, val personName: String, val role: Role, val deviceName: String) {
+        val text: String get() = "Joined: ${personName.ifBlank { "someone" }}, on ${deviceName.ifBlank { "a phone" }}"
     }
 
     /** IPv4 addresses other phones on the same network can reach. */
@@ -193,6 +304,47 @@ object WifiSync {
         null
     }
 
+    private fun helloFrom(json: String): Hello? = try {
+        if (json.startsWith("{")) AppJson.decodeFromString<Hello>(json) else null
+    } catch (_: Exception) {
+        null
+    }
+
+    /** What this phone says first about itself and its move. */
+    private fun helloOf(store: Store, claim: String = "", moveId: String? = null, youAre: String = ""): Hello {
+        val id = store.identity.value
+        val d = store.data.value
+        return Hello(
+            claim = claim, phoneId = store.phone.id, deviceName = store.phone.deviceName,
+            moveId = moveId ?: id.id, aliases = if (moveId == null) id.aliases else emptyList(), derived = moveId == null && id.derived,
+            ids = if (moveId == null && id.derived) sameMoveIds(d) else emptyList(), moveName = d.move.name,
+            elsewhere = store.lettersElsewhereNow().toList(), name = store.phone.settings.value.name.ifBlank { store.device.value.name },
+            youAre = youAre,
+        )
+    }
+
+    /** Some of the people and things of a move from before 2.1, for 2.0's same-move check. */
+    private fun sameMoveIds(d: AppData): List<String> =
+        (d.people.map { it.id } + d.rooms.map { it.id } + d.items.map { it.id } + d.boxes.map { it.id } + d.tasks.map { it.id } + d.expenses.map { it.id }).take(MAX_IDS)
+
+    /**
+     * Are this phone's move and the other's the same? The same ID, or one either knows the move by;
+     * or, when both worked theirs out from a move from before 2.1, 2.0's check once: they share some
+     * of their people, or (with no people) some of their things.
+     */
+    private fun sameMove(store: Store, other: Hello): Pair<Boolean, Boolean> {
+        val mine = store.identity.value
+        val them = MoveIdentity(other.moveId, other.aliases, other.derived)
+        if (mine.matches(them)) return true to false
+        if (!mine.derived || !other.derived) return false to false
+        val theirs = other.ids.toSet()
+        val d = store.data.value
+        val people = d.people.map { it.id }
+        val shared = if (people.isNotEmpty() && other.ids.any { id -> people.contains(id) }) true
+        else sameMoveIds(d).any { it in theirs }
+        return shared to shared
+    }
+
     /** Thrown inside an exchange to end it with a message for this phone's screen. */
     private class Stop(message: String) : IOException(message)
 
@@ -226,8 +378,23 @@ object WifiSync {
 
         private val personal = HashMap<String, Personal>()
 
+        /** Helper codes and until when each can be used. */
+        private val helperCodes = HashMap<String, Long>()
+
+        private val _waiting = MutableStateFlow<List<JoinRequest>>(emptyList())
+
+        /** Phones that came with an Organiser's or a Decider's invite, waiting for this phone's person to confirm each ([confirm]). */
+        val waiting: StateFlow<List<JoinRequest>> = _waiting
+
+        private val answers = HashMap<String, Pair<CountDownLatch, BooleanArray>>()
+
+        private val _helpers = MutableStateFlow<List<Person>>(emptyList())
+
+        /** Who has joined with a Helper code shown here, each for the screen to list with Remove. */
+        val helpersJoined: StateFlow<List<Person>> = _helpers
+
         /** The plain code: for phones whose people are already in the move, or to let a new phone in as itself. */
-        fun invite(hosts: List<String> = addresses()) = Invite(hosts, port, token)
+        fun invite(hosts: List<String> = addresses()) = Invite(hosts, port, token, moveId = store.moveId, moveName = store.data.value.move.name)
 
         /** Phones being served right now. */
         private val serving = java.util.concurrent.atomic.AtomicInteger(0)
@@ -245,7 +412,42 @@ object WifiSync {
             if (hosts.isEmpty()) return Outcome.Refused(NO_NETWORK)
             val code = newToken()
             synchronized(personal) { personal[code] = Personal(p.id, clock() + INVITE_MINUTES * 60_000L) }
-            return Outcome.Ok(Invite(hosts, port, code, p.id, p.name, p.role))
+            return Outcome.Ok(Invite(hosts, port, code, p.id, p.name, p.role, store.moveId, d.move.name))
+        }
+
+        /**
+         * A Helper code: for [HELPER_CODE_MINUTES] minutes, any number of phones can join with it as
+         * Helpers, each under the name it knows its owner by (made unique in the move). A phone of
+         * someone removed, or a retired phone, is refused.
+         */
+        fun helperCode(hosts: List<String> = addresses()): Outcome<Invite> {
+            val d = store.data.value
+            d.refusal(store.me, Action.MANAGE_PEOPLE)?.let { return Outcome.Refused(it) }
+            if (hosts.isEmpty()) return Outcome.Refused(NO_NETWORK)
+            val code = newToken()
+            synchronized(personal) { helperCodes[code] = clock() + HELPER_CODE_MINUTES * 60_000L }
+            return Outcome.Ok(Invite(hosts, port, code, HELPER_CODE, "", Role.HELPER, store.moveId, d.move.name))
+        }
+
+        /** Say whether the phone of a [waiting] request is the right one. Undo ([right] false) leaves the invite unused. */
+        fun confirm(requestId: String, right: Boolean) {
+            val a = synchronized(answers) { answers[requestId] } ?: return
+            a.second[0] = right
+            a.first.countDown()
+        }
+
+        /** Wait for this phone's person to confirm [r]: true for Right, false for Undo, null when nobody answered in time. */
+        private fun awaitConfirm(r: JoinRequest): Boolean? {
+            val latch = CountDownLatch(1)
+            val answer = BooleanArray(1)
+            synchronized(answers) { answers[r.id] = latch to answer }
+            _waiting.value = _waiting.value + r
+            try {
+                return if (latch.await(confirmMs.toLong(), TimeUnit.MILLISECONDS)) answer[0] else null
+            } finally {
+                synchronized(answers) { answers.remove(r.id) }
+                _waiting.value = _waiting.value.filter { it.id != r.id }
+            }
         }
 
         internal fun start() {
@@ -280,6 +482,7 @@ object WifiSync {
             var peer = "Other phone"
             var letter = ""
             var peerId = ""
+            var device = ""
             var mine: Personal? = null
             var listsDone = false
             try {
@@ -299,7 +502,7 @@ object WifiSync {
                     val length = din.readUnsignedShort()
                     if (length !in 4..16) throw Stop(NOT_HOUSEMOVE)
                     val magic = ByteArray(length).also { din.readFully(it) }.decodeToString()
-                    fun knows(code: String) = code == token || synchronized(personal) { personal.containsKey(code) }
+                    fun knows(code: String) = code == token || synchronized(personal) { personal.containsKey(code) || helperCodes.containsKey(code) }
                     if (magic == OLD_MAGIC) refuse("NO", VERSION_MISMATCH)
                     if (magic != MAGIC) {
                         if (!magic.startsWith("HMSYNC")) throw Stop(NOT_HOUSEMOVE)
@@ -317,7 +520,8 @@ object WifiSync {
                         // A phone on this version only says hello the 1.3 way after its own hello went unanswered ([tellOlderPhone]).
                         // The versions are the same; it was the connection that dropped.
                         if (magic == MAGIC_1_3 && theirLayout == SCHEMA) refuse("AGAIN", CONNECTION_LOST)
-                        refuse("VERSION", VERSION_MISMATCH)
+                        out.writeUTF("VERSION"); out.flush()
+                        throw Stop(VERSION_MISMATCH)
                     }
                     // The whole hello is read before anything is refused, so the answer is not lost
                     // to a connection closed with part of the hello unread.
@@ -326,20 +530,66 @@ object WifiSync {
                     letter = din.readUTF()
                     val theirSchema = din.readInt()
                     val theirPerson = personFrom(din.readUTF())
-                    val claim = din.readUTF()
+                    val last = din.readUTF()
                     val invited = synchronized(personal) { personal[theirToken] }
-                    if (theirToken != token && invited == null) refuse("NO", WRONG_CODE)
-                    if (theirSchema != SCHEMA) refuse("VERSION", VERSION_MISMATCH)
+                    val helperUntil = synchronized(personal) { helperCodes[theirToken] }
+                    if (theirToken != token && invited == null && helperUntil == null) refuse("NO", WRONG_CODE)
+                    if (theirSchema != SCHEMA) {
+                        // The other phone may be older and not know this phone's version; it is told it, for a newer one to see.
+                        out.writeUTF("VERSION"); out.writeInt(SCHEMA); out.flush()
+                        throw Older(theirSchema)
+                    }
+                    val hello = helloFrom(last) ?: refuse("NO", UNREADABLE)
+                    val claim = hello.claim
+                    device = hello.deviceName
                     peerId = theirPerson?.id ?: ""
 
                     val before = store.data.value
-                    if (invited != null) {
+                    // Which move: an invite names the move it is for; a sync is between two phones of one move.
+                    var aliasesToKeep: MoveIdentity? = null
+                    if (invited != null || helperUntil != null) {
+                        if (hello.moveId.isNotEmpty() && !store.identity.value.matches(hello.moveId)) refuse("WRONGMOVE", WRONG_MOVE)
+                    } else {
+                        val (same, byFallback) = sameMove(store, hello)
+                        if (!same) refuse("WRONGMOVE", WRONG_MOVE)
+                        if (byFallback || !store.identity.value.matches(hello.moveId)) aliasesToKeep = MoveIdentity(hello.moveId, hello.aliases, hello.derived)
+                    }
+                    // A retired phone: its work is taken in once, and nothing goes back to it.
+                    val retired = before.phoneEntry(hello.phoneId)?.takeIf { it.second.isRetired }
+                    if (retired != null && retired.second.collected) refuse("RETIRED", RETIRED_GONE)
+                    var joining: String? = null
+                    if (retired != null) {
+                        if (invited != null || helperUntil != null) refuse("RETIRED", RETIRED_GONE)
+                    } else if (helperUntil != null) {
+                        if (claim != HELPER_CODE || clock() > helperUntil) refuse("EXPIRED", INVITE_EXPIRED)
+                        val p = when (val o = store.admitHelper(hello.name.ifBlank { peer }, hello.phoneId, hello.deviceName, hello.elsewhere.toSet())) {
+                            is Outcome.Ok -> o.value
+                            is Outcome.Refused -> refuse(if (o.reason == Store.RETIRED_PHONE) "RETIRED" else "REMOVED", o.reason)
+                        }
+                        joining = p.id
+                        peerId = p.id
+                    } else if (invited != null) {
                         val free = synchronized(personal) {
                             (!invited.used && !invited.busy && clock() <= invited.until && claim == invited.personId).also { if (it) invited.busy = true }
                         }
                         if (!free) refuse("EXPIRED", INVITE_EXPIRED)
                         mine = invited
-                        if (before.person(invited.personId)?.removed != false) refuse("REMOVED", "That person is no longer in the move.")
+                        val p = before.person(invited.personId)
+                        if (p?.removed != false) refuse("REMOVED", "That person is no longer in the move.")
+                        // A phone of someone removed does not come back in under another name.
+                        before.phoneEntry(hello.phoneId)?.let { (owner, _) -> if (owner.removed) refuse("REMOVED", "That phone's person has been removed from this move.") }
+                        if (p.role != Role.HELPER) {
+                            // Nothing of the move is sent until this phone's person has seen which phone came, and said it is the right one.
+                            out.writeUTF("WAIT"); out.flush()
+                            val r = JoinRequest(newToken(), p.id, p.name, p.role, hello.deviceName.ifBlank { peer })
+                            when (awaitConfirm(r)) {
+                                true -> Unit
+                                false -> refuse("UNDONE", UNDONE)
+                                null -> refuse("UNDONE", NOT_CONFIRMED)
+                            }
+                        }
+                        store.admitPhone(invited.personId, hello.phoneId, hello.deviceName, hello.elsewhere.toSet())
+                        joining = invited.personId
                         peerId = invited.personId
                     } else {
                         if (claim.isNotEmpty()) refuse("NO", WRONG_CODE)
@@ -354,21 +604,51 @@ object WifiSync {
                             Admission.MEMBER -> Unit
                         }
                     }
-                    out.writeUTF("OK")
+                    out.writeUTF(if (retired != null) "ONEWAY" else "OK")
                     out.writeUTF(store.device.value.name)
                     out.writeUTF(store.device.value.letter)
                     out.writeUTF(personJson(store.me))
+                    out.writeUTF(AppJson.encodeToString(helloOf(store, youAre = joining ?: "")))
                     out.flush()
-                    when (din.readUTF()) {
-                        "GO" -> Unit
+                    val go = din.readUTF()
+                    when (go) {
+                        "GO", "TAKE" -> Unit
                         "REMOVED" -> throw Stop(REMOVED_SELF)
                         "STRANGER" -> throw Stop(NOT_ADDED)
+                        "WRONGMOVE" -> throw Stop(WRONG_MOVE)
+                        "NOTORGANISER" -> throw Stop("That phone is already in this move, and only syncs with an Organiser of it.")
                         else -> throw Stop(UNREADABLE)
+                    }
+
+                    if (retired != null) {
+                        // One way: the retired phone's data and photos come in, and nothing goes back.
+                        val theirs = readData(din)
+                        store.mergeIn(theirs)
+                        listsDone = true
+                        writeNames(out, haveFiles(store, Role.ORGANISER))
+                        val received = receiveFiles(din, store)
+                        store.markCollected(hello.phoneId)
+                        out.writeUTF("DONE"); out.flush()
+                        store.flush()
+                        onResult(Result(peer, letter, 0, received, RETIRED_HERE, peerPersonId = peerId, oneWay = true, peerDevice = device))
+                        return@use
+                    }
+                    if (go == "TAKE") {
+                        // This phone has been retired: the other phone takes in its work, and sends nothing back.
+                        val role = before.roleOfPeer(theirPerson) ?: Role.HELPER
+                        writeData(out, store.data.value.visibleTo(role))
+                        val theirFiles = readNames(din)
+                        listsDone = true
+                        val sent = sendFiles(out, store, wanted(store, theirFiles, role))
+                        onResult(Result(peer, letter, sent, 0, RETIRED_PHONE, peerPersonId = peerId, oneWay = true, peerDevice = device))
+                        return@use
                     }
 
                     // Data: receive theirs, merge, send back the merged set.
                     val theirs = readData(din)
                     val merged = store.mergeIn(theirs)
+                    aliasesToKeep?.let { store.adoptAliases(it) }
+                    val upTo = store.stampOf(merged)
                     val them = merged.person(peerId)?.takeIf { !it.removed }
                     // Someone this move has no role for is sent no more than a Helper would be.
                     val role = them?.role ?: Role.HELPER
@@ -381,18 +661,22 @@ object WifiSync {
                     writeNames(out, haveFiles(store, role))
                     val received = receiveFiles(din, store)
                     val sent = sendFiles(out, store, wanted(store, theirFiles, role))
-                    if (invited != null) {
-                        store.markJoined(invited.personId)
-                        synchronized(personal) { invited.used = true }
+                    if (joining != null) {
+                        store.markJoined(joining)
+                        if (invited != null) synchronized(personal) { invited.used = true }
+                        if (helperUntil != null) store.data.value.person(joining)?.let { p -> _helpers.value = _helpers.value.filter { it.id != p.id } + p }
                     }
+                    store.noteShared(upTo, everything = role != Role.HELPER)
                     store.flush()
-                    onResult(Result(peer, letter, sent, received, peerPersonId = peerId, joinedAs = if (invited != null) store.data.value.person(peerId) else null))
+                    onResult(Result(peer, letter, sent, received, peerPersonId = peerId, joinedAs = if (joining != null) store.data.value.person(peerId) else null, peerDevice = device))
                 }
+            } catch (e: Older) {
+                onResult(Result(peer, letter, 0, 0, VERSION_MISMATCH, peerPersonId = peerId, shareApp = e.schema < SCHEMA, peerSchema = e.schema, peerDevice = device))
             } catch (e: Exception) {
                 // Let go of the invite before saying the join failed, so a retry made the moment the failure shows is not
                 // told the invite is in use.
                 mine?.let { synchronized(personal) { it.busy = false } }
-                onResult(Result(peer, letter, 0, 0, whatWentWrong(e, listsDone), peerPersonId = peerId))
+                onResult(Result(peer, letter, 0, 0, whatWentWrong(e, listsDone), peerPersonId = peerId, peerDevice = device))
             } finally {
                 mine?.let { synchronized(personal) { it.busy = false } }
             }
@@ -404,15 +688,20 @@ object WifiSync {
                 server.close()
             } catch (_: IOException) {
             }
+            // Nobody is left to confirm a phone still waiting: it is told no.
+            synchronized(answers) { answers.values.toList() }.forEach { it.first.countDown() }
         }
     }
+
+    /** The other phone is on another data layout ([schema]). */
+    private class Older(val schema: Int) : IOException("different versions")
 
     /**
      * Start hosting. [clock] times the ten minutes of an invite; tests pass their own.
      * With [letNewPhonesIn] false the plain code only works for phones whose people are already
      * in the move, so the only way in is an invite made for a person. It is true by default, as
-     * before 2.0: a phone that is not in the move comes in as itself when this phone's person may
-     * add people.
+     * before 2.0: a phone of the same move that is not in it yet comes in as itself when this
+     * phone's person may add people.
      */
     fun host(store: Store, clock: () -> Long = System::currentTimeMillis, letNewPhonesIn: Boolean = true, onResult: (Result) -> Unit): Host {
         val h = Host(store, ServerSocket(0), newToken(), clock, letNewPhonesIn, onResult)
@@ -424,11 +713,22 @@ object WifiSync {
 
     /**
      * Connect to a hosting phone and sync both ways. Blocking; call off the main thread.
-     * With an invite made for a person ([Invite.personId]) this phone becomes that person:
-     * see [Result.joinedAs]. With [letNewPhonesIn] false it only syncs with a phone whose
-     * person is already in this phone's move.
+     * With an invite made for a person ([Invite.personId]), or a Helper code, this phone becomes
+     * that person: see [Result.joinedAs]. With [letNewPhonesIn] false it only syncs with a phone
+     * whose person is already in this phone's move. A phone already in a move (not on its own, or
+     * [holdsCard]: it already holds the move it is joining) joins only through a phone it knows as
+     * one of that move's Organisers. [onWaiting] is called when the other phone's person is asked
+     * to confirm this phone. Nothing is sent before this is called: the screen asks "Join Maple
+     * Road as Priya, Decider?" first ([Invite.question]).
      */
-    fun join(store: Store, invite: Invite, connectTimeoutMs: Int = 4000, letNewPhonesIn: Boolean = true): Result {
+    fun join(
+        store: Store,
+        invite: Invite,
+        connectTimeoutMs: Int = 4000,
+        letNewPhonesIn: Boolean = true,
+        holdsCard: Boolean = false,
+        onWaiting: () -> Unit = {},
+    ): Result {
         // With no Wi-Fi there is nothing to try: say so at once instead of waiting for every address to time out.
         if (invite.hosts.all { onLocalNetwork(it) } && addresses().isEmpty()) return Result("", "", 0, 0, NO_NETWORK)
         var lastError = UNREACHABLE
@@ -441,6 +741,11 @@ object WifiSync {
                 continue
             }
             var listsDone = false
+            var joined: Person? = null
+            var peer = ""
+            var letter = ""
+            var peerId = ""
+            var device = ""
             try {
                 socket.use { s ->
                     s.soTimeout = timeoutMs
@@ -454,9 +759,10 @@ object WifiSync {
                     out.writeUTF(store.device.value.letter)
                     out.writeInt(SCHEMA)
                     out.writeUTF(personJson(store.me))
-                    out.writeUTF(claim ?: "")
+                    val joiningMove = if (claim != null) invite.moveId else null
+                    out.writeUTF(AppJson.encodeToString(helloOf(store, claim ?: "", joiningMove)))
                     out.flush()
-                    val answer = try {
+                    var answer = try {
                         din.readUTF()
                     } catch (e: IOException) {
                         if (e !is EOFException && e !is SocketException) throw e
@@ -472,34 +778,106 @@ object WifiSync {
                                 // "AGAIN", or no answer at all: it was the connection that dropped.
                                 else -> CONNECTION_LOST
                             },
+                            shareApp = word == "VERSION",
                         )
                     }
+                    if (answer == "WAIT") {
+                        // The other phone's person is asked whether this is the right phone. Nothing has been sent yet.
+                        onWaiting()
+                        s.soTimeout = timeoutMs + confirmMs
+                        answer = din.readUTF()
+                        s.soTimeout = timeoutMs
+                    }
                     when (answer) {
-                        "OK" -> Unit
-                        "VERSION" -> return Result("", "", 0, 0, VERSION_MISMATCH)
+                        "OK", "ONEWAY" -> Unit
+                        "VERSION" -> {
+                            // A phone on 2.1 or later says its version; one on 2.0 does not, and is older.
+                            val theirs = try {
+                                s.soTimeout = 2000
+                                din.readInt()
+                            } catch (_: Exception) {
+                                -1
+                            }
+                            return Result("", "", 0, 0, VERSION_MISMATCH, shareApp = theirs < SCHEMA, peerSchema = maxOf(theirs, 0))
+                        }
                         "REMOVED" -> return Result("", "", 0, 0, REMOVED_SELF)
                         "STRANGER" -> return Result("", "", 0, 0, NOT_ADDED)
                         "EXPIRED" -> return Result("", "", 0, 0, INVITE_EXPIRED)
+                        "WRONGMOVE" -> return Result("", "", 0, 0, WRONG_MOVE)
+                        "RETIRED" -> return Result("", "", 0, 0, RETIRED_PHONE)
+                        "UNDONE" -> return Result("", "", 0, 0, UNDONE)
                         else -> return Result("", "", 0, 0, CODE_NOT_ACCEPTED)
                     }
-                    val peer = din.readUTF()
-                    val letter = din.readUTF()
+                    peer = din.readUTF()
+                    letter = din.readUTF()
                     val theirPerson = personFrom(din.readUTF())
-                    val peerId = theirPerson?.id ?: ""
+                    val hostHello = helloFrom(din.readUTF()) ?: Hello()
+                    device = hostHello.deviceName
+                    peerId = theirPerson?.id ?: ""
+                    val hostMove = MoveIdentity(hostHello.moveId, hostHello.aliases, hostHello.derived)
+                    fun refuse(word: String, message: String): Result {
+                        out.writeUTF(word); out.flush()
+                        return Result(peer, letter, 0, 0, message, peerPersonId = peerId, peerDevice = device)
+                    }
+
+                    if (answer == "ONEWAY") {
+                        // This phone has been retired: its last work goes to the other phone, and nothing comes back.
+                        out.writeUTF("GO")
+                        writeData(out, store.data.value.visibleTo(Role.ORGANISER))
+                        val theirFiles = readNames(din)
+                        listsDone = true
+                        val sent = sendFiles(out, store, wanted(store, theirFiles, Role.ORGANISER))
+                        din.readUTF()
+                        return Result(peer, letter, sent, 0, RETIRED_PHONE, peerPersonId = peerId, oneWay = true, peerDevice = device)
+                    }
 
                     val before = store.data.value
+                    var aliasesToKeep: MoveIdentity? = null
+                    // The person this phone joins as: the invite's, or for a Helper code the one the other phone made for it.
+                    val claimed = if (claim == HELPER_CODE) hostHello.youAre.ifEmpty { null } else claim
+                    var retiredHost = false
                     if (claim == null) {
+                        // A sync between phones of one move: the other phone's move is checked here too, before any data moves.
+                        if (hostMove.id.isNotEmpty()) {
+                            val (same, byFallback) = sameMove(store, hostHello)
+                            if (!same) return refuse("WRONGMOVE", WRONG_MOVE)
+                            if (byFallback || !store.identity.value.matches(hostMove.id)) aliasesToKeep = hostMove
+                        }
+                        retiredHost = before.phoneEntry(hostHello.phoneId)?.second?.let { it.isRetired && !it.collected } == true
+                        if (before.phoneEntry(hostHello.phoneId)?.second?.let { it.isRetired && it.collected } == true) return refuse("REMOVED", RETIRED_GONE)
                         val verdict = when (before.admission(store.device.value, theirPerson)) {
                             Admission.REMOVED -> "REMOVED" to "${peer.ifBlank { "That phone's person" }} has been removed from this move, so this phone did not sync with theirs."
                             Admission.STRANGER -> "STRANGER" to UNKNOWN_PHONE
                             Admission.NEWCOMER -> if (letNewPhonesIn) null else "STRANGER" to UNKNOWN_PHONE
                             Admission.MEMBER -> null
                         }
-                        if (verdict != null) {
+                        if (verdict != null && !retiredHost) {
                             if (verdict.first == "REMOVED") store.hearAbout(theirPerson)
-                            out.writeUTF(verdict.first); out.flush()
-                            return Result(peer, letter, 0, 0, verdict.second, peerPersonId = peerId)
+                            return refuse(verdict.first, verdict.second)
                         }
+                    } else {
+                        if (claimed == null) return refuse("STRANGER", CODE_NOT_ACCEPTED)
+                        // A phone already in a move, or already holding the one it is joining, joins only through a phone it
+                        // knows as an Organiser of that move.
+                        if (holdsCard || !store.isAlone()) {
+                            val known = theirPerson != null && before.person(theirPerson.id) != null
+                            if (!known || before.roleOfPeer(theirPerson) != Role.ORGANISER || !store.identity.value.matches(hostMove)) {
+                                return refuse("NOTORGANISER", NOT_THROUGH_ORGANISER)
+                            }
+                        }
+                    }
+
+                    if (retiredHost) {
+                        // The other phone has been retired: its work is taken in, and nothing of this phone's goes to it.
+                        out.writeUTF("TAKE"); out.flush()
+                        val theirs = readData(din)
+                        store.mergeIn(theirs)
+                        listsDone = true
+                        writeNames(out, haveFiles(store, Role.ORGANISER))
+                        val received = receiveFiles(din, store)
+                        store.markCollected(hostHello.phoneId)
+                        store.flush()
+                        return Result(peer, letter, 0, received, RETIRED_HERE, peerPersonId = peerId, oneWay = true, peerDevice = device)
                     }
                     out.writeUTF("GO")
 
@@ -507,16 +885,19 @@ object WifiSync {
                     // Whoever shows an invite is trusted to say who they are; anyone else is looked up.
                     val role = (if (claim != null) theirPerson?.role else before.roleOfPeer(theirPerson)) ?: Role.HELPER
                     // A phone joining its first move leaves behind the person it started as and what that person decided alone.
-                    val mine = if (claim != null) store.offerFor(claim) else store.data.value
+                    val mine = if (claimed != null) store.offerFor(claimed) else store.data.value
                     writeData(out, mine.visibleTo(role))
                     val merged = readData(din)
-                    var joined: Person? = null
-                    if (claim != null) {
-                        when (val o = store.joinAs(claim, merged)) {
+                    if (claimed != null) {
+                        when (val o = store.joinAs(claimed, merged, hostMove.takeIf { it.id.isNotEmpty() })) {
                             is Outcome.Ok -> joined = o.value
-                            is Outcome.Refused -> return Result(peer, letter, 0, 0, o.reason, peerPersonId = peerId)
+                            is Outcome.Refused -> return Result(peer, letter, 0, 0, o.reason, peerPersonId = peerId, peerDevice = device)
                         }
-                    } else store.mergeIn(merged)
+                    } else {
+                        store.mergeIn(merged)
+                        aliasesToKeep?.let { store.adoptAliases(it) }
+                    }
+                    val upTo = store.stampOf(merged)
                     // The host merged this phone's data before it sent its own, so both now have everything but photos.
                     listsDone = true
 
@@ -524,11 +905,14 @@ object WifiSync {
                     val theirFiles = readNames(din)
                     val sent = sendFiles(out, store, wanted(store, theirFiles, role))
                     val received = receiveFiles(din, store)
+                    store.noteShared(upTo, everything = role != Role.HELPER)
                     store.flush()
-                    return Result(peer, letter, sent, received, peerPersonId = peerId, joinedAs = joined)
+                    return Result(peer, letter, sent, received, peerPersonId = peerId, joinedAs = joined, peerDevice = device)
                 }
             } catch (e: Exception) {
                 lastError = whatWentWrong(e, listsDone)
+                // Joined, and only photos were lost on the way: the phone is in the move all the same.
+                if (joined != null) return Result(peer, letter, 0, 0, lastError, peerPersonId = peerId, joinedAs = joined, peerDevice = device)
             }
         }
         return Result("", "", 0, 0, lastError)

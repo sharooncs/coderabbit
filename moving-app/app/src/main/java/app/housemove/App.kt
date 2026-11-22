@@ -1,8 +1,29 @@
 package app.housemove
 
 import android.app.Application
+import android.os.Build
+import android.provider.Settings
+import app.housemove.data.Moves
 import app.housemove.data.Store
 
+/**
+ * The app's one place for its moves. [moves] lists, opens, creates, archives, removes and deletes
+ * them, joins and restores them, and gives the Store of the move in use. [store] is that Store for
+ * the screens that work on one move; a phone with no move yet gets a new one, as 2.0's first run
+ * did, until the "Your moves" screens are built.
+ */
 class App : Application() {
-    val store: Store by lazy { Store(filesDir) }
+    val moves: Moves by lazy { Moves(filesDir, noBackupFilesDir, deviceName = { deviceName() }) }
+
+    val store: Store get() = moves.currentOrNew()
+
+    /** The name the phone has in its own settings ("Priya's phone"), or its model when it has none. */
+    private fun deviceName(): String {
+        val set = try {
+            Settings.Global.getString(contentResolver, Settings.Global.DEVICE_NAME)
+        } catch (_: Exception) {
+            null
+        }
+        return set?.trim()?.takeIf { it.isNotEmpty() } ?: listOf(Build.MANUFACTURER, Build.MODEL).filter { !it.isNullOrBlank() }.joinToString(" ").trim()
+    }
 }

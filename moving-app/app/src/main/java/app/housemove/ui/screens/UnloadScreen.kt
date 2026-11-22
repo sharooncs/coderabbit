@@ -53,7 +53,7 @@ import app.housemove.data.PhotoKind
 import app.housemove.data.Priority
 import app.housemove.data.Ratio
 import app.housemove.data.Stage
-import app.housemove.data.labelFromQr
+import app.housemove.data.labelCodeOf
 import app.housemove.data.movables
 import app.housemove.data.roomColor
 import app.housemove.data.toMovable
@@ -94,7 +94,7 @@ fun UnloadScreen() {
         val found = mdFind(store.data.value, text)
         if (found == null) {
             arrival = null
-            unknown = labelFromQr(text)
+            unknown = labelCodeOf(text)
         } else deliver(found.carrier, found.inside)
     }
 

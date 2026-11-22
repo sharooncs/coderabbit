@@ -8,7 +8,7 @@ import kotlinx.serialization.Serializable
  * Version of the saved data layout. Two phones must be on the same one to sync,
  * so fields added by a newer version are never dropped by an older one.
  */
-const val SCHEMA = 4
+const val SCHEMA = 5
 
 /**
  * Every record carries an id, a last-modified time and a tombstone flag.
@@ -378,9 +378,34 @@ data class Reading(
     override val deleted: Boolean = false,
 ) : Rec
 
-/** One change of someone's role, or their removal from the move. [by] is blank when there was no Organiser to ask. */
+/**
+ * One change of someone's role, or their removal from the move. [by] is blank when there was no Organiser to ask.
+ * [phone] is the phone that made it, for grants made on version 2.1 or later; blank for older ones (see [Roles]).
+ */
 @Serializable
-data class Grant(val role: Role = Role.HELPER, val removed: Boolean = false, val at: Long = 0, val by: String = "")
+data class Grant(val role: Role = Role.HELPER, val removed: Boolean = false, val at: Long = 0, val by: String = "", val phone: String = "")
+
+/**
+ * One phone of a person: one installed copy of the app ([id] is its phone ID). Adding a phone
+ * never retires another; an Organiser retires one explicitly ([retired]).
+ */
+@Serializable
+data class PhoneEntry(
+    val id: String,
+    /** The name the phone has in its own settings, such as "Priya's phone". */
+    val name: String = "",
+    /** This phone's letter for handwritten codes in the move. No two phones share one. */
+    val letter: String = "",
+    /** The block of printed label numbers this phone was given, inclusive; 0 when it has none. */
+    val labelsFrom: Int = 0,
+    val labelsTo: Int = 0,
+    /** When it joined the move. */
+    val addedAt: Long = 0,
+    /** Who retired it and when (an Organiser), with a check value; empty while it is in use. */
+    val retired: Stamp = Stamp(),
+    /** A retired phone whose last work has been taken in. It is refused from then on. */
+    val collected: Boolean = false,
+)
 
 /**
  * Someone taking part in the move. [role] and [removed] are worked out from
@@ -398,6 +423,8 @@ data class Person(
     val removed: Boolean = false,
     /** Every role change and removal, oldest first. */
     val grants: List<Grant> = emptyList(),
+    /** The phones this person uses in the move (from version 2.1). */
+    val phones: List<PhoneEntry> = emptyList(),
     override val updatedAt: Long = 0,
     /** Not used: people are removed, never deleted. */
     override val deleted: Boolean = false,
