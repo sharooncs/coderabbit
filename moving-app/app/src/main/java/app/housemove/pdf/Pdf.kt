@@ -284,7 +284,9 @@ object Pdf {
         else listOf(i.widthCm, i.depthCm, i.heightCm).joinToString("×") { fmtNum(it).ifEmpty { "?" } }
 
     /** Everything being moved: items by old-home room, then boxes, with a volume estimate. */
-    fun inventory(context: Context, data: AppData): File {
+    fun inventory(context: Context, held: AppData): File {
+        // Values, makes, models and serial numbers are kept apart since 2.1 (see filledIn); this phone shows what it holds.
+        val data = held.filledIn()
         val doc = PdfDocument()
         val p = Pager(doc)
         p.newPage()
@@ -365,7 +367,8 @@ object Pdf {
 
     /** Damaged boxes and items with their before and after photos. */
     fun damageReport(context: Context, store: Store): File {
-        val data = store.data.value
+        // With the values, makes, models and serial numbers this phone holds (see filledIn).
+        val data = store.data.value.filledIn()
         val doc = PdfDocument()
         val p = Pager(doc)
         p.newPage()
@@ -433,7 +436,9 @@ object Csv {
     }
 
     /** Items and boxes as one spreadsheet-friendly file. */
-    fun inventory(context: Context, data: AppData): File {
+    fun inventory(context: Context, held: AppData): File {
+        // With the values, makes, models and serial numbers this phone holds (see filledIn).
+        val data = held.filledIn()
         val sb = StringBuilder()
         // The last three columns were added in 2.0, after the ones a spreadsheet may already rely on:
         // what kind of container a row is (or is in), its category, and the container something is packed in.

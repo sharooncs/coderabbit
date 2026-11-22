@@ -39,10 +39,11 @@ private val LETTER_COUNTRIES = setOf("US", "CA", "MX", "PH", "CL", "CO", "VE", "
  * because Android's PDF writer does not exist where they run.
  */
 fun interface TagPrinter {
-    fun make(context: Context, codes: List<String>, sheet: TagSheet): File
+    /** [moveTag] goes into each QR code, as on the box labels. */
+    fun make(context: Context, codes: List<String>, sheet: TagSheet, moveTag: String): File
 }
 
-val LocalTagPrinter = staticCompositionLocalOf { TagPrinter { context, codes, sheet -> Pdf.hangTags(context, codes, sheet) } }
+val LocalTagPrinter = staticCompositionLocalOf { TagPrinter { context, codes, sheet, moveTag -> Pdf.hangTags(context, codes, sheet, moveTag = moveTag) } }
 
 /**
  * The number the next printed code gets: one after the last made, and after any printed-style
@@ -265,8 +266,8 @@ fun LabelsScreen() {
                 PrintButtons(
                     enabled = codes.isNotEmpty() && busy == null,
                     busy = busy == "tags",
-                    onPrint = { produce("tags", share = false, after = markPrinted) { tagPrinter.make(context, codes, tagSheet) } },
-                    onShare = { produce("tags", share = true, after = markPrinted) { tagPrinter.make(context, codes, tagSheet) } },
+                    onPrint = { produce("tags", share = false, after = markPrinted) { tagPrinter.make(context, codes, tagSheet, store.moveTag) } },
+                    onShare = { produce("tags", share = true, after = markPrinted) { tagPrinter.make(context, codes, tagSheet, store.moveTag) } },
                 )
                 if (run.fresh.isNotEmpty() && first < next) {
                     GlassChip(

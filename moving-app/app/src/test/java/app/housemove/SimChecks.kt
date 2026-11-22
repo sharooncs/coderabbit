@@ -158,14 +158,19 @@ internal class Judge(val d: AppData) {
 /** A record without its protected parts and without what merely follows from other records. */
 internal fun plain(r: Any): Any = when (r) {
     // Hands are what both copies knew of together, and whether it is deleted is a part of its own ("gone").
+    // Since 2.1 where something is (stage and trip) is a protected part of its own, and the damage and the contents are
+    // worked out from their own records, so none of them is part of the plain record.
     is Item -> r.copy(
         disposition = Disposition.UNDECIDED, price = null, deadlineDay = null, decisionBy = Stamp(), destRoomId = null, roomBy = Stamp(),
         listed = false, gone = false, soldFor = null, outcomeBy = Stamp(),
-        // Something in a container is wherever the container is.
-        stage = if (r.boxId != null) Stage.AT_ORIGIN else r.stage, tripId = if (r.boxId != null) null else r.tripId,
+        stage = Stage.AT_ORIGIN, tripId = null, whereBy = Stamp(), handoverTo = null, paid = false, handoverBy = Stamp(), handedOver = false, handedOverBy = Stamp(),
+        damaged = false, damageNote = "",
         hands = emptyList(), deleted = false, deletedBy = Stamp(),
     )
-    is Box -> (if (r.parentId != null) r.copy(stage = Stage.AT_ORIGIN, tripId = null) else r).copy(hands = emptyList(), deleted = false, deletedBy = Stamp())
+    is Box -> r.copy(stage = Stage.AT_ORIGIN, tripId = null, whereBy = Stamp(), contents = "", damaged = false, damageNote = "", hands = emptyList(), deleted = false, deletedBy = Stamp())
+    is Hidden -> Hidden(id = r.id, updatedAt = r.updatedAt)
+    is Collect -> Collect(id = r.id, updatedAt = r.updatedAt)
+    is Damage -> r.copy(cleared = false, clearedBy = Stamp())
     is Room -> r.copy(hands = emptyList(), deleted = false, deletedBy = Stamp())
     is Photo -> r.copy(hands = emptyList(), deleted = false, deletedBy = Stamp())
     is BoxEntry -> r.copy(hands = emptyList())
@@ -230,7 +235,8 @@ private fun when_(r: Any): Long = if (r is MoveInfo) r.updatedAt else (r as Rec)
 private val HIDDEN_KINDS = setOf(PhotoKind.RECEIPT, PhotoKind.SERIAL)
 
 /** Is this a record a Helper's phone is not sent? */
-private fun hidden(r: Any): Boolean = r is Expense || (r is Photo && r.kind in HIDDEN_KINDS) || (r is Proposal && r.kind == ProposalKind.COST)
+private fun hidden(r: Any): Boolean = r is Expense || (r is Photo && r.kind in HIDDEN_KINDS) || (r is Proposal && r.kind == ProposalKind.COST) ||
+    r is Hidden || r is Collect || r is RefusedChange
 
 /**
  * The invariants. Each failure is noted on the simulation with the records it
@@ -505,6 +511,9 @@ internal class SimChecks(private val sim: Simulation) {
             val d = p.data
             for (e in d.expenses) broke(HELPERS, "${p.tag}, never anything but a Helper, holds cost ${e.id.take(8)}: ${short(e)}", e.id)
             for (x in d.proposals) if (x.kind == ProposalKind.COST) broke(HELPERS, "${p.tag}, never anything but a Helper, holds cost suggestion ${x.id.take(8)}", x.id)
+            for (x in d.hidden) broke(HELPERS, "${p.tag}, never anything but a Helper, holds the hidden details of ${x.id.take(8)}", x.id)
+            for (x in d.refused) broke(HELPERS, "${p.tag}, never anything but a Helper, holds the refused change ${x.id.take(8)}", x.id)
+            for (x in d.collect) if (x.to != p.personId) broke(HELPERS, "${p.tag}, never anything but a Helper, holds what someone else is to collect for ${x.id.take(8)}", x.id)
             for (x in d.photos) if (x.kind in HIDDEN_KINDS && x.by !in p.selves) broke(HELPERS, "${p.tag}, never anything but a Helper, holds the ${x.kind} photo ${x.id.take(8)} taken by ${x.by.take(8)}", x.id)
             for (f in p.store.photoDir.listFiles() ?: emptyArray<File>()) {
                 val ph = kinds[f.name] ?: continue
@@ -539,7 +548,9 @@ internal class SimChecks(private val sim: Simulation) {
         }
         for (b in tops) if (d.childrenOf(b.id).any { inside(it)?.id != b.id }) broke(NESTING, "${p.tag}: ${b.id.take(8)} lists something inside it that is not", b.id)
         val items = d.items.filter { !it.deleted }
-        val moving = items.filter { it.disposition == Disposition.MOVE }
+        // Things marked Store travel too once the move uses the storage unit.
+        val storing = d.usesStorage()
+        val moving = items.filter { it.disposition == Disposition.MOVE || (storing && it.disposition == Disposition.STORE) }
         val loose = moving.filter { it.boxId == null || live[it.boxId] == null }
         if (d.looseItems().map { it.id }.sorted() != loose.map { it.id }.sorted()) broke(COUNTED, "${p.tag}: the loose items are not the moving items that are in no container")
         for (i in items) {
@@ -564,8 +575,9 @@ internal class SimChecks(private val sim: Simulation) {
             pr.triage.done to items.count { it.disposition != Disposition.UNDECIDED }, pr.triage.total to items.size,
             pr.sealed.done to tops.count { it.sealed }, pr.sealed.total to tops.size,
             pr.loaded.done to mv.count { it != Stage.AT_ORIGIN }, pr.loaded.total to mv.size,
-            pr.delivered.done to mv.count { it == Stage.DELIVERED || it == Stage.DONE }, pr.delivered.total to mv.size,
-            pr.unpacked.done to mv.count { it == Stage.DONE }, pr.unpacked.total to mv.size,
+            pr.delivered.done to mv.count { it == Stage.DELIVERED || it == Stage.DONE }, pr.delivered.total to mv.count { it != Stage.STORED },
+            pr.unpacked.done to mv.count { it == Stage.DONE }, pr.unpacked.total to mv.count { it != Stage.STORED },
+            pr.stored.done to mv.count { it == Stage.STORED }, pr.stored.total to mv.size,
             pr.destinations.total to loose.size,
             pr.tasks.done to d.tasks.count { !it.deleted && it.done }, pr.tasks.total to d.tasks.count { !it.deleted },
             d.volume().cartons + d.volume().otherContainers to live.size,
@@ -678,7 +690,10 @@ internal class SimChecks(private val sim: Simulation) {
         fun helperOn(d: AppData, me: String) = d.people.any { it.role == Role.ORGANISER && !it.removed } && (d.person(me)?.let { it.removed || it.role == Role.HELPER } ?: true)
         val asHelper = helperOn(before, was) && helperOn(after.copy(people = after.people.filter { it.id != p.personId || it.id == was }), was)
         if (asHelper) {
-            fun share(d: AppData) = Triple(d.expenses.toSet(), d.photos.filter { it.kind in HIDDEN_KINDS }.toSet(), d.proposals.filter { it.kind == ProposalKind.COST }.toSet())
+            fun share(d: AppData) = listOf(
+                d.expenses.toSet(), d.photos.filter { it.kind in HIDDEN_KINDS }.toSet(), d.proposals.filter { it.kind == ProposalKind.COST }.toSet(),
+                d.hidden.toSet(), d.refused.toSet(),
+            )
             if (share(before) != share(after)) broke(HELPERS, "${p.tag}, a Helper's phone, took in costs, cost suggestions or receipt or serial-label photos in a merge", p.personId)
         }
 

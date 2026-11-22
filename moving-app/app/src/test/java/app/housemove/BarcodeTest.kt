@@ -177,7 +177,8 @@ class BarcodeTest {
 
         val s = store("tv")
         val tv = s.createItem("Living room TV", null)
-        s.put(s.data.value.item(tv.id)!!.copy(disposition = Disposition.MOVE, make = "Samsung", model = "QE55Q60", serial = "0AB3HCPT500123X", keepUpright = true))
+        s.put(s.data.value.item(tv.id)!!.copy(disposition = Disposition.MOVE, keepUpright = true))
+        assertTrue(s.setDetails(tv.id) { it.copy(make = "Samsung", model = "QE55Q60", serial = "0AB3HCPT500123X") }.ok)
         val bike = s.createItem("Road bike", null)
         s.put(s.data.value.item(bike.id)!!.copy(disposition = Disposition.MOVE, electronic = true))
         val lamp = s.createItem("Old monitor", null)
@@ -187,7 +188,8 @@ class BarcodeTest {
         assertTrue(d.item(tv.id)!!.isElectronic())
         assertTrue(d.item(bike.id)!!.isElectronic())   // switched on by hand
         assertFalse(d.item(lamp.id)!!.isElectronic())  // switched off by hand
-        assertEquals("Samsung QE55Q60", d.item(tv.id)!!.makeModel())
+        assertEquals("Samsung QE55Q60", d.hiddenOf(tv.id)!!.makeModel())
+        assertEquals("Samsung QE55Q60", d.filled(d.item(tv.id)!!).makeModel())
         assertEquals(tv.id, d.search("qe55q60").single().movable.id)
         assertEquals(tv.id, d.search("0ab3hcpt").single().movable.id)
         assertEquals(tv.id, d.findByAnyCode("0ab3hcpt500123x")!!.id)

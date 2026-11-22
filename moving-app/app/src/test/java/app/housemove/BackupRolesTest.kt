@@ -59,7 +59,23 @@ class BackupRolesTest {
         return phone
     }
 
-    private fun backupOf(s: Store) = ByteArrayOutputStream().also { Backup.export(s, it) }.toByteArray()
+    /**
+     * A backup of [s]. Since 2.1 a Helper's phone makes none ([Store.whyNoBackup]); one made by a Helper's phone on 2.0
+     * can still be restored, so for those this writes it as 2.0 did.
+     */
+    private fun backupOf(s: Store) = ByteArrayOutputStream().also { out ->
+        if (s.whyNoBackup() == null) Backup.export(s, out) else Backup.write(s, out)
+    }.toByteArray()
+
+    @Test
+    fun aHelpersPhoneMakesNoBackup() {
+        val asha = phone("Asha")
+        val hal = invited(asha, "Hal", Role.HELPER)
+        assertNotNull(hal.whyNoBackup())
+        val e = assertThrows(java.io.IOException::class.java) { Backup.export(hal, ByteArrayOutputStream()) }
+        assertEquals(hal.whyNoBackup(), e.message)
+        assertNull(asha.whyNoBackup())
+    }
 
     /**
      * [zip] with its data changed by [data], and its note of who made it kept ([KEEP]), replaced by [about], or left

@@ -50,7 +50,8 @@ class ProposalTest {
         hal = joined(asha, "Hal", Role.HELPER)
     }
 
-    private fun Store.item(id: String) = data.value.item(id)!!
+    // As the phone shows it: with the hidden details (price, sale, serial) where the phone holds them.
+    private fun Store.item(id: String) = data.value.let { d -> d.filled(d.item(id)!!) }
     private fun Store.proposal(id: String) = data.value.proposal(id)!!
 
     @Test
@@ -118,7 +119,9 @@ class ProposalTest {
         assertTrue(dan.data.value.proposalsBy(hal.me!!.id).isEmpty())
 
         val log = asha.data.value.latestActivity(30).map { asha.data.value.line(it) }
-        for (line in listOf("Dee suggested: Sell Sofa for 80", "Asha approved: Sell Sofa for 80", "Asha decided to sell Sofa", "Dee sold Sofa")) {
+        // Helpers are sent the log, so it gives no prices.
+        assertTrue(log.none { it.contains("80") })
+        for (line in listOf("Dee suggested: Sell Sofa", "Asha approved: Sell Sofa", "Asha decided to sell Sofa", "Dee sold Sofa")) {
             assertTrue("$line not in $log", line in log)
         }
     }

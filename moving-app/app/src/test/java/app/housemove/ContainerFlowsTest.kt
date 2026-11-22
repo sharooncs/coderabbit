@@ -80,7 +80,7 @@ class ContainerFlowsTest {
     /** What was last sent to be printed as hang tags. */
     private var tagCodes: List<String>? = null
     private var tagSheet: TagSheet? = null
-    private val printer = TagPrinter { context, codes, sheet ->
+    private val printer = TagPrinter { context, codes, sheet, _ ->
         tagCodes = codes
         tagSheet = sheet
         // Android's PDF writer is not there on the JVM: draw the first page the way the PDF draws it.
