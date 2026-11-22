@@ -399,14 +399,14 @@ class DeviceTest {
         tapDesc("Edit make, model and serial number") // typing them is behind the pencil
         type("Make", "Acme")
         type("Serial number", "SN-TEST-1")
-        assertEquals("SN-TEST-1", data.item("item1")!!.serial)
+        assertEquals("SN-TEST-1", data.serialOf("item1"))
         tap("Scan the serial number barcode")
         Thread.sleep(2500) // the camera looks for serial-number barcodes
         rule.waitForIdle()
         shot("31-scan-serial")
         type("Or type the serial number", "SN-TEST-2")
         tap("OK")
-        assertEquals("SN-TEST-2", data.item("item1")!!.serial)
+        assertEquals("SN-TEST-2", data.serialOf("item1"))
         see("SN-TEST-2")
         shot("32-device-details")
         tapDesc("Back")
