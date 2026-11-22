@@ -103,7 +103,7 @@ class PeopleTest {
         val d = s.data.value
 
         assertEquals(SCHEMA, d.version)
-        assertEquals(4, SCHEMA)
+        assertEquals(5, SCHEMA)
         // Every value 1.3 saved is still there: compare with the stamps (which are new) taken off.
         assertEquals(old.move, d.move.copy(changedBy = Stamp()))
         assertEquals(old.rooms, d.rooms)
@@ -432,7 +432,10 @@ class PeopleTest {
         assertEquals(o.me!!.id, replacement.device.value.personId)
         assertEquals("Asha", replacement.me!!.name)
         assertEquals("Asha", replacement.device.value.name)
-        assertEquals("A", replacement.device.value.letter)
+        // Since 2.1 a letter belongs to a phone, and is never used again: the new phone gets one of its own, so it never
+        // writes a code the lost phone wrote.
+        assertNotEquals("A", replacement.device.value.letter)
+        assertEquals(2, replacement.me!!.phones.size)
         assertEquals(Role.ORGANISER, replacement.myRole)
         // The person it started as stays behind, so the move does not gain an Organiser nobody knows.
         assertNull(replacement.data.value.person(started))
@@ -447,7 +450,8 @@ class PeopleTest {
         assertEquals("Asha", me.name)
         assertEquals(o.me!!.id, byHand.device.value.personId)
         assertEquals(Role.ORGANISER, byHand.myRole)
-        assertTrue(byHand.data.value.person(own)!!.removed)
+        // (Since 2.1 the person it made itself never counted in that move: nobody let them in, so they are not there at all.)
+        assertTrue(byHand.data.value.livePeople.none { it.id == own })
         assertEquals(setOf("Asha", "Dee"), byHand.data.value.livePeople.map { it.name }.toSet())
         // It carries on as Asha, and the others' phones accept what it does.
         assertTrue(replacement.setRole(dee.me!!.id, Role.ORGANISER).ok)

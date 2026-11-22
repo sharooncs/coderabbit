@@ -80,6 +80,9 @@ fun syncReport(r: WifiSync.Result, store: Store): SyncReport {
             WifiSync.WRONG_CODE -> "Someone used the wrong code"
             WifiSync.NOT_HOUSEMOVE -> "Not a HouseMove phone"
             WifiSync.UNREADABLE -> "Could not read the other phone"
+            WifiSync.WRONG_MOVE -> "A different move"
+            WifiSync.RETIRED_PHONE, WifiSync.RETIRED_GONE -> "A retired phone"
+            WifiSync.UNDONE, WifiSync.NOT_CONFIRMED -> "Not confirmed"
             else -> "Could not sync"
         }
         return SyncReport(false, title, r.error ?: "")

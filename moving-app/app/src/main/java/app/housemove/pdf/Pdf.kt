@@ -95,20 +95,20 @@ private fun ellipsize(paint: Paint, text: String, maxWidth: Float): String {
 
 object Pdf {
 
-    /** A sheet of QR labels for the given codes; each code is repeated [copies] times. */
-    fun labels(context: Context, codes: List<String>, sheet: LabelSheet, copies: Int = 1): File {
+    /** A sheet of QR labels for the given codes; each code is repeated [copies] times. [moveTag] goes in each QR code (see [labelQrText]). */
+    fun labels(context: Context, codes: List<String>, sheet: LabelSheet, copies: Int = 1, moveTag: String = ""): File {
         val doc = PdfDocument()
         val all = codes.flatMap { c -> List(copies.coerceAtLeast(1)) { c } }
         all.chunked(sheet.perPage).forEachIndexed { pageIndex, chunk ->
             val page = doc.startPage(PdfDocument.PageInfo.Builder(sheet.pageW, sheet.pageH, pageIndex + 1).create())
-            drawLabelPage(page.canvas, sheet, chunk)
+            drawLabelPage(page.canvas, sheet, chunk, moveTag)
             doc.finishPage(page)
         }
         return write(doc, outFile(context, "housemove-labels.pdf"))
     }
 
     /** Draw one page of labels. Coordinates are PDF points. */
-    fun drawLabelPage(c: Canvas, sheet: LabelSheet, codes: List<String>) {
+    fun drawLabelPage(c: Canvas, sheet: LabelSheet, codes: List<String>, moveTag: String = "") {
         val codePaint = textPaint(30f, bold = true)
         val small = textPaint(8f, color = Color.DKGRAY)
         val line = Paint().apply { color = Color.LTGRAY; style = Paint.Style.STROKE; strokeWidth = 0.5f }
@@ -120,7 +120,7 @@ object Pdf {
             if (sheet.outline) c.drawRect(x, y, x + sheet.cellW, y + sheet.cellH, line)
             val pad = 8f
             val qrSize = sheet.cellH - 2 * pad
-            val qr = qrBitmap(QR_PREFIX + code, 240)
+            val qr = qrBitmap(labelQrText(code, moveTag), 240)
             // No filtering: the squares of the code must stay sharp when scaled.
             c.drawBitmap(qr, null, RectF(x + pad, y + pad, x + pad + qrSize, y + pad + qrSize), Paint().apply { isFilterBitmap = false })
             val textX = x + pad + qrSize + 8f
@@ -135,12 +135,12 @@ object Pdf {
     }
 
     /** Sheets of hang tags for the given codes, for suitcases and bags; each code is repeated [copies] times. */
-    fun hangTags(context: Context, codes: List<String>, sheet: TagSheet, copies: Int = 1): File {
+    fun hangTags(context: Context, codes: List<String>, sheet: TagSheet, copies: Int = 1, moveTag: String = ""): File {
         val doc = PdfDocument()
         val all = codes.flatMap { c -> List(copies.coerceAtLeast(1)) { c } }
         all.chunked(sheet.perPage).forEachIndexed { pageIndex, chunk ->
             val page = doc.startPage(PdfDocument.PageInfo.Builder(sheet.pageW, sheet.pageH, pageIndex + 1).create())
-            drawTagPage(page.canvas, sheet, chunk)
+            drawTagPage(page.canvas, sheet, chunk, moveTag)
             doc.finishPage(page)
         }
         return write(doc, outFile(context, "housemove-hang-tags.pdf"))
@@ -150,7 +150,7 @@ object Pdf {
      * Draw one page of hang tags. Each tag has a cut line, a punch-hole mark at
      * the left, the QR code, the code in large type and a line to write on.
      */
-    fun drawTagPage(c: Canvas, sheet: TagSheet, codes: List<String>) {
+    fun drawTagPage(c: Canvas, sheet: TagSheet, codes: List<String>, moveTag: String = "") {
         val codePaint = textPaint(40f, bold = true)
         val small = textPaint(8f, color = Color.DKGRAY)
         val cut = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -173,7 +173,7 @@ object Pdf {
             val bodyX = x + TAG_HOLE_X * 2f
             val writeY = y + sheet.cellH - 18f
             val qrSize = (writeY - 22f - (y + pad)).coerceAtMost(sheet.cellW * 0.48f)
-            val qr = qrBitmap(QR_PREFIX + code, 240)
+            val qr = qrBitmap(labelQrText(code, moveTag), 240)
             // No filtering: the squares of the code must stay sharp when scaled.
             c.drawBitmap(qr, null, RectF(bodyX, y + pad, bodyX + qrSize, y + pad + qrSize), Paint().apply { isFilterBitmap = false })
             val textX = bodyX + qrSize + 8f
@@ -284,7 +284,9 @@ object Pdf {
         else listOf(i.widthCm, i.depthCm, i.heightCm).joinToString("×") { fmtNum(it).ifEmpty { "?" } }
 
     /** Everything being moved: items by old-home room, then boxes, with a volume estimate. */
-    fun inventory(context: Context, data: AppData): File {
+    fun inventory(context: Context, held: AppData): File {
+        // Values, makes, models and serial numbers are kept apart since 2.1 (see filledIn); this phone shows what it holds.
+        val data = held.filledIn()
         val doc = PdfDocument()
         val p = Pager(doc)
         p.newPage()
@@ -365,7 +367,8 @@ object Pdf {
 
     /** Damaged boxes and items with their before and after photos. */
     fun damageReport(context: Context, store: Store): File {
-        val data = store.data.value
+        // With the values, makes, models and serial numbers this phone holds (see filledIn).
+        val data = store.data.value.filledIn()
         val doc = PdfDocument()
         val p = Pager(doc)
         p.newPage()
@@ -433,7 +436,9 @@ object Csv {
     }
 
     /** Items and boxes as one spreadsheet-friendly file. */
-    fun inventory(context: Context, data: AppData): File {
+    fun inventory(context: Context, held: AppData): File {
+        // With the values, makes, models and serial numbers this phone holds (see filledIn).
+        val data = held.filledIn()
         val sb = StringBuilder()
         // The last three columns were added in 2.0, after the ones a spreadsheet may already rely on:
         // what kind of container a row is (or is in), its category, and the container something is packed in.

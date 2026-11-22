@@ -16,6 +16,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
-        (application as App).store.flush()
+        // The list of moves follows what happened in the one in use (a join changes which move it is).
+        (application as App).moves.refresh()
+        (application as App).moves.flush()
     }
 }

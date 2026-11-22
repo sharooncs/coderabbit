@@ -72,7 +72,7 @@ import app.housemove.data.PhotoKind
 import app.housemove.data.Qr
 import app.housemove.data.ScanFormats
 import app.housemove.data.canDelete
-import app.housemove.data.labelFromQr
+import app.housemove.data.labelCodeOf
 import coil.compose.AsyncImage
 import java.io.File
 import java.util.concurrent.Executors
@@ -486,7 +486,7 @@ fun ScanDialog(
                     Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
                 QrScanner(
-                    onText = { onCode(if (raw) it else labelFromQr(it)) },
+                    onText = { onCode(if (raw) it else labelCodeOf(it)) },
                     modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 16.dp).scannerFrame(),
                     formats = formats,
                 )

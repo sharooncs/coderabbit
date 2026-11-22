@@ -366,7 +366,7 @@ fun ScanScreen() {
             nav.open("sync?code=" + Uri.encode(text.trim()))
             return
         }
-        val code = labelFromQr(text)
+        val code = labelCodeOf(text)
         if (code.isBlank()) return
         val found = data.findByAnyCode(code)
         when {

@@ -102,7 +102,7 @@ fun LoadScreen() {
         val found = mdFind(store.data.value, text)
         val m = found?.carrier
         result = when {
-            found == null || m == null -> MdResult(MdTone.BAD, "Unknown label " + labelFromQr(text), "Pack it as a box first, or check the code.")
+            found == null || m == null -> MdResult(MdTone.BAD, "Unknown label " + labelCodeOf(text), "Pack it as a box first, or check the code.")
             m.stage == startStage -> mdLoadOne(store, m, tripNow(), found.inside)
             m.stage == Stage.LOADED -> MdResult(MdTone.WARN, "Already on the $vehicle", found.inside ?: m.title)
             m.stage == Stage.STORED -> MdResult(MdTone.WARN, "In storage", (found.inside ?: m.title) + ". Bring it back on a trip from storage.")

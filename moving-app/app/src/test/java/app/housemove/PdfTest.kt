@@ -103,6 +103,14 @@ class PdfTest {
                 assertTrue("${sheet.name} tag $i inside the ring is empty", !dark(hx + TAG_HOLE_R / 2, hy + TAG_HOLE_R / 2))
             }
         }
+        // Since 2.1 a tag, like a label, carries its move's tag in the QR code, and still reads as its code.
+        val tagged = render(TagSheet.A4_TAGS.pageW, TagSheet.A4_TAGS.pageH, 2) { Pdf.drawTagPage(it, TagSheet.A4_TAGS, listOf("L201"), moveTag = "K7Q2") }
+        val tw = (TagSheet.A4_TAGS.cellW * 2).toInt()
+        val th = (TagSheet.A4_TAGS.cellH * 2).toInt()
+        val tpx = IntArray(tw * th).also { tagged.getPixels(it, 0, tw, (TagSheet.A4_TAGS.left * 2).toInt(), (TagSheet.A4_TAGS.top * 2).toInt(), tw, th) }
+        val read = decoder.decode(ByteArray(tw * th) { n -> ((Color.red(tpx[n]) + Color.green(tpx[n]) + Color.blue(tpx[n])) / 3).toByte() }, tw, th)
+        assertEquals(labelQrText("L201", "K7Q2"), read)
+        assertEquals(ScannedLabel("L201", "K7Q2"), readLabel(read!!))
         // A part-filled page draws only the tags asked for.
         val one = render(TagSheet.A4_TAGS.pageW, TagSheet.A4_TAGS.pageH, 1) { Pdf.drawTagPage(it, TagSheet.A4_TAGS, listOf("B1")) }
         val (hx, hy) = TagSheet.A4_TAGS.hole(1)

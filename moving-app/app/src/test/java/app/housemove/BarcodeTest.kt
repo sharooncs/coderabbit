@@ -237,8 +237,10 @@ class BarcodeTest {
                 assertEquals("NO", DataInputStream(s.getInputStream()).readUTF())
             }
             assertEquals(1, a.data.value.liveBoxes.size)
-            // Same version still syncs.
+            // Same version still syncs (a phone joining the move with an invite: since 2.1 the plain code never mixes two moves).
             val b = store("joiner")
+            val p = a.addPerson("Ben", Role.HELPER).valueOrNull()!!
+            assertTrue(WifiSync.join(b, host.inviteFor(p.id, listOf("127.0.0.1")).valueOrNull()!!).ok)
             assertTrue(WifiSync.join(b, host.invite(listOf("127.0.0.1"))).ok)
         } finally {
             host.stop()

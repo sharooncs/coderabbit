@@ -285,7 +285,8 @@ class PhonesTogetherTest {
             assertEquals(Role.HELPER, d.person(omar.id)!!.role)
             // What he decided while he was an Organiser stands; what he decided afterwards does not.
             assertEquals(Disposition.SELL, d.item(sofa)!!.disposition)
-            assertEquals(70.0, d.priceOf(sofa)!!, 0.0)
+            // The price is a Helper's no longer: since 2.1 his phone lets it go once it has synced with an Organiser's.
+            if (s === asha) assertEquals(70.0, d.priceOf(sofa)!!, 0.0) else assertNull(d.priceOf(sofa))
             assertEquals(Disposition.UNDECIDED, d.item(lamp)!!.disposition)
             assertNull(d.task("late-task"))
             assertNull(d.expenses.firstOrNull { it.id == "late" })
@@ -298,12 +299,13 @@ class PhonesTogetherTest {
         // His phone now knows, and says no.
         assertEquals(Role.HELPER, omar.myRole)
         assertNotNull(omar.decide(lamp, Disposition.BIN).reason)
-        // From here on it is sent no costs: the one he made stays on his phone as it was, and changes to it pass him by.
+        // From here on it is sent no costs, and since 2.1 his phone let go of the one he made once Asha's had it; changes to it
+        // pass him by.
         asha.put(asha.data.value.expense("early")!!.copy(amount = 250.0))
         asha.put(Expense(id = "fuel", title = "Fuel", amount = 60.0))
         synced(asha, omar)
         synced(omar, asha)
-        assertEquals(200.0, omar.data.value.expense("early")!!.amount, 0.0)
+        assertNull(omar.data.value.expense("early"))
         assertNull(omar.data.value.expense("fuel"))
         assertEquals(250.0, asha.data.value.expense("early")!!.amount, 0.0)
     }
@@ -484,11 +486,15 @@ class PhonesTogetherTest {
         val codes = (1..3).flatMap { listOf(hal.nextHandCode(), dee.nextHandCode()) }
         assertEquals(codes.toString(), 6, codes.toSet().size)
 
-        // A phone that was started on its own and is let in as it is, with the letter of someone already in the move: the same.
+        // A phone that was started on its own with the letter of someone already in the move, and joins with an invite: since
+        // 2.1 its letter in the move comes from the phone that let it in, so it does not keep the one it had.
         val guest = phone("Guest")
         guest.setDevice { it.copy(letter = "A") }
         guest.createBox(guest.nextHandCode(), null)
-        synced(asha, guest)
+        val asGuest = asha.addPerson("Guest", Role.HELPER).valueOrNull()!!
+        val inviting = hosting(asha)
+        assertTrue(WifiSync.join(guest, inviting.host.inviteFor(asGuest.id, local).valueOrNull()!!).ok)
+        assertTrue(inviting.result().ok)
         everyone(asha, hal, dee, guest)
         for (s in listOf(asha, hal, dee, guest)) {
             assertTrue(s.data.value.duplicateLetters().isEmpty())
@@ -903,8 +909,13 @@ class PhonesTogetherTest {
         ben.put(Task(id = "bens", title = "Ben's task"))
         ben.put(Expense(id = "bens-cost", title = "Tape", amount = 3.0))
         val box = ben.createBox("X1", null).id
-        // Asha shows the ordinary code and lets the phone in as it is: a Helper. All of the above was set while her move
-        // already had an Organiser to ask, so none of it counts there, although every bit of it is newer than hers.
+        // Asha adds Ben as a Helper and his phone joins with the invite, bringing what it had. (Since 2.1 the ordinary code
+        // never lets in a phone of another move as it is.) All of the above was set while her move already had an Organiser
+        // to ask, so none of it counts there, although every bit of it is newer than hers.
+        val asBen = asha.addPerson("Ben", Role.HELPER).valueOrNull()!!
+        val inviting = hosting(asha)
+        assertTrue(WifiSync.join(ben, inviting.host.inviteFor(asBen.id, local).valueOrNull()!!).ok)
+        assertTrue(inviting.result().ok)
         synced(asha, ben)
         for (s in listOf(asha, ben)) {
             val d = s.data.value

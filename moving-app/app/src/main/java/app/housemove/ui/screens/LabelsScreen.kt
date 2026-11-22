@@ -40,10 +40,11 @@ private val LETTER_COUNTRIES = setOf("US", "CA", "MX", "PH", "CL", "CO", "VE", "
  * because Android's PDF writer does not exist where they run.
  */
 fun interface TagPrinter {
-    fun make(context: Context, codes: List<String>, sheet: TagSheet): File
+    /** [moveTag] goes into each QR code, as on the box labels. */
+    fun make(context: Context, codes: List<String>, sheet: TagSheet, moveTag: String): File
 }
 
-val LocalTagPrinter = staticCompositionLocalOf { TagPrinter { context, codes, sheet -> Pdf.hangTags(context, codes, sheet) } }
+val LocalTagPrinter = staticCompositionLocalOf { TagPrinter { context, codes, sheet, moveTag -> Pdf.hangTags(context, codes, sheet, moveTag = moveTag) } }
 
 /** Makes the Helper card. The app draws a PDF; tests put their own in its place, as for [TagPrinter]. */
 fun interface CardPrinter {
@@ -152,7 +153,8 @@ fun LabelsScreen() {
         }
     }
 
-    val next = data.nextLabelNumber()
+    // This phone's own label numbers, so two phones printing at the same time never print the same code.
+    val next = data.let { store.nextLabelNumber() }
 
     Screen("Labels and door signs") {
         ScrollColumn {
@@ -178,13 +180,13 @@ fun LabelsScreen() {
                 val codes = if (s != null && n != null) (s until s + n).map { labelCode(it) } else emptyList()
                 val markPrinted: () -> Unit = {
                     fixedStart = s
-                    store.setMove { it.copy(labelsPrinted = maxOf(it.labelsPrinted, last)) }
+                    store.labelsPrinted(last)
                 }
                 PrintButtons(
                     enabled = ready && busy == null,
                     busy = busy == "labels",
-                    onPrint = { produce("labels", share = false, after = markPrinted) { Pdf.labels(context, codes, sheet, copies) } },
-                    onShare = { produce("labels", share = true, after = markPrinted) { Pdf.labels(context, codes, sheet, copies) } },
+                    onPrint = { produce("labels", share = false, after = markPrinted) { Pdf.labels(context, codes, sheet, copies, store.moveTag) } },
+                    onShare = { produce("labels", share = true, after = markPrinted) { Pdf.labels(context, codes, sheet, copies, store.moveTag) } },
                 )
                 if (s != null && s < next) {
                     GlassChip(
@@ -268,13 +270,13 @@ fun LabelsScreen() {
                 }
                 val markPrinted: () -> Unit = {
                     tagStart = first
-                    store.setMove { it.copy(labelsPrinted = maxOf(it.labelsPrinted, run.lastNumber)) }
+                    store.labelsPrinted(run.lastNumber)
                 }
                 PrintButtons(
                     enabled = codes.isNotEmpty() && busy == null,
                     busy = busy == "tags",
-                    onPrint = { produce("tags", share = false, after = markPrinted) { tagPrinter.make(context, codes, tagSheet) } },
-                    onShare = { produce("tags", share = true, after = markPrinted) { tagPrinter.make(context, codes, tagSheet) } },
+                    onPrint = { produce("tags", share = false, after = markPrinted) { tagPrinter.make(context, codes, tagSheet, store.moveTag) } },
+                    onShare = { produce("tags", share = true, after = markPrinted) { tagPrinter.make(context, codes, tagSheet, store.moveTag) } },
                 )
                 if (run.fresh.isNotEmpty() && first < next) {
                     GlassChip(

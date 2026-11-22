@@ -624,8 +624,13 @@ internal class Hands(private val p: Simulation.Phone) {
     }
 
     private fun backup(): String {
-        p.backup = ByteArrayOutputStream().also { Backup.export(s, it) }.toByteArray()
-        return "made a backup → ok"
+        // Since 2.1 Helpers cannot make backups: the phone says so, and nothing is written.
+        return try {
+            p.backup = ByteArrayOutputStream().also { Backup.export(s, it) }.toByteArray()
+            "made a backup → ok"
+        } catch (e: java.io.IOException) {
+            "made a backup " + no(e.message)
+        }
     }
 
     private fun restore(): String? {
