@@ -39,7 +39,8 @@ internal object SimUpdates {
             sim.wrote(before, after, onlyNewStamps = true)
             to.hold()
             synchronized(sim.stats) {
-                sim.stats.notes.merge("update files opened" + if (r.ok) "" else ": " + SimStats.rule(r.message), 1, Int::plus)
+                val said = r.message.replace(Regex("^.* has been removed from this move, so the update was not taken in\\.$"), "(Its sender) has been removed from this move, so the update was not taken in.")
+                sim.stats.notes.merge("update files opened" + if (r.ok) "" else ": " + SimStats.rule(said), 1, Int::plus)
             }
             to.say("opened an update from ${from.tag}${if (n == 1) " again" else ""}: ${r.message}")
             if (!forIt && after != before) sim.broke(UPDATES, "${to.tag} took in an update that was not sent to it: ${r.message}")

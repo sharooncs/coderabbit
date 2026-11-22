@@ -738,6 +738,13 @@ internal class SimChecks(private val sim: Simulation) {
                 if (!mayGo) bad("dropped", k)
                 continue
             }
+            // A phone this one let in as it is (its person counts in nobody's name here) gets a Helper's grant in this phone's
+            // person's name as the sync begins (Store.letIn): a change of this phone's own, made before the data went across.
+            if (r is Person && r.updatedAt > newest) {
+                val known = listOfNotNull(a as Person?, b as Person?).flatMap { it.grants }.toSet()
+                val extra = r.grants.filter { it !in known }
+                if (extra.isNotEmpty() && extra.all { it.by == p.personId && it.role == Role.HELPER && !it.removed && it.at == r.updatedAt }) continue
+            }
             if (r.updatedAt != newest) {
                 bad("left the wrong version (${r.updatedAt}, not $newest) of", k)
                 continue

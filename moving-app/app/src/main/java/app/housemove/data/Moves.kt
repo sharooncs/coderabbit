@@ -496,7 +496,7 @@ class Moves(
      * ([Store.whyLetGo]). Only moves already open are looked at. Returns what to tell the person, also kept in
      * [farewells].
      */
-    fun tidy(today: Long = LocalDate.now().toEpochDay()): List<String> {
+    fun tidy(today: Long = LocalDate.now().toEpochDay()): List<String> = synchronized(checking) {
         val gone = ArrayList<String>()
         for ((folder, s) in synchronized(lock) { open.toMap() }) {
             val why = s.whyLetGo(today) ?: continue
@@ -509,8 +509,11 @@ class Moves(
             }
         }
         if (gone.isNotEmpty()) _farewells.value = _farewells.value + gone
-        return gone
+        gone
     }
+
+    /** Taken by [tidy] and [dailyBackups]: the app's start, a sync and going to the background can come at once. */
+    private val checking = Any()
 
     /**
      * Write today's small backup of each open move that needs one ([DailyBackup.due]: a move with a single
@@ -523,7 +526,9 @@ class Moves(
             null
         } ?: return 0
         var n = 0
-        for (s in synchronized(lock) { open.values.toList() }) if (DailyBackup.due(s, today) && DailyBackup.run(s, place, today)) n++
+        synchronized(checking) {
+            for (s in synchronized(lock) { open.values.toList() }) if (DailyBackup.due(s, today) && DailyBackup.run(s, place, today)) n++
+        }
         return n
     }
 
