@@ -66,7 +66,9 @@ object Backup {
      * and photos such a phone never holds.
      *
      * Only an Organiser may restore one. A backup of another move is not mixed into a move this phone
-     * shares with others ([Store.whyNotRestore]). Anything refused, and any file that is not a backup,
+     * shares with others ([Store.whyNotRestore]). A phone on its own that is not in the backup becomes
+     * the person whose phone made it ([About.by]), or a Helper of that move ([Store.restore]), never
+     * an Organiser of its own making. Anything refused, and any file that is not a backup,
      * gives an IllegalArgumentException whose message says why in words for the screen; nothing is
      * changed then, and no photo file is left behind. A backup made before version 2.0 is brought up
      * to date first ([migrate]), so nothing in it is lost.
@@ -115,7 +117,7 @@ object Backup {
             store.whyNotRestore(d)?.let { throw IllegalArgumentException(it) }
             // A backup is restored by an Organiser who chose the file, so parts of it that carry no stamp
             // (anything saved before 2.0) are taken as they stand rather than turned away as a sync would.
-            store.restore(migrate(d), replace, helpersShare = about.helpersShare)
+            store.restore(migrate(d), replace, helpersShare = about.helpersShare, madeBy = about.by)
             // The files of photos the move now has on record are kept; any other file in the zip is not.
             val wanted = store.data.value.photos.filter { !it.deleted }.map { it.file }.toSet()
             var photos = 0

@@ -50,6 +50,8 @@ import kotlin.concurrent.thread
  * that is not in the move yet joins with an invite an Organiser made for one
  * person ([Host.inviteFor]); the plain code only lets it in when the other
  * phone's person may add people. Someone who has been removed is refused.
+ * A phone holds one move: one that shares its move with others takes an invite
+ * only from an Organiser of that move, and answers any other STRANGER.
  *
  * The exchange, after the joiner connects (strings as writeUTF):
  * ```
@@ -87,6 +89,20 @@ object WifiSync {
     const val CODE_NOT_ACCEPTED = "The sync code was not accepted. Scan the QR code on the other phone again."
     const val UNREACHABLE = "Could not reach the other phone. Are both on the same Wi-Fi?"
     const val NO_NETWORK = "This phone is not on a Wi-Fi network or hotspot. Connect it to the same one as the other phone, then try again."
+
+    /**
+     * Shown on a phone that is in a move with others when it scans an invite from a phone that is not
+     * one of that move's Organisers: most likely an invite to another move. [moveName] is this phone's move.
+     */
+    fun alreadyInAMove(moveName: String): String {
+        val name = moveName.trim()
+        val move = when {
+            name.isEmpty() -> "a move"
+            name.equals("move", ignoreCase = true) || name.endsWith(" move", ignoreCase = true) -> name
+            else -> "$name move"
+        }
+        return "This phone is already in $move, and HouseMove 2.0 holds one move per phone. If this is the same move, sync with an Organiser first."
+    }
 
     /** How long an invite made for one person can be used. */
     const val INVITE_MINUTES = 10
@@ -425,8 +441,9 @@ object WifiSync {
     /**
      * Connect to a hosting phone and sync both ways. Blocking; call off the main thread.
      * With an invite made for a person ([Invite.personId]) this phone becomes that person:
-     * see [Result.joinedAs]. With [letNewPhonesIn] false it only syncs with a phone whose
-     * person is already in this phone's move.
+     * see [Result.joinedAs]. A phone that is not on its own takes such an invite only from an
+     * Organiser of its own move ([alreadyInAMove] otherwise). With [letNewPhonesIn] false it
+     * only syncs with a phone whose person is already in this phone's move.
      */
     fun join(store: Store, invite: Invite, connectTimeoutMs: Int = 4000, letNewPhonesIn: Boolean = true): Result {
         // With no Wi-Fi there is nothing to try: say so at once instead of waiting for every address to time out.
@@ -499,6 +516,15 @@ object WifiSync {
                             if (verdict.first == "REMOVED") store.hearAbout(theirPerson)
                             out.writeUTF(verdict.first); out.flush()
                             return Result(peer, letter, 0, 0, verdict.second, peerPersonId = peerId)
+                        }
+                    } else if (!store.isAlone()) {
+                        // A phone already in a move takes an invite only from an Organiser of that move. Anyone else's is an
+                        // invite to another move, and taking it would mix the two moves on both phones and on from there to
+                        // everyone in either. Nothing of this phone's has been sent, and nothing is.
+                        val organiser = before.admission(store.device.value, theirPerson) == Admission.MEMBER && before.roleOfPeer(theirPerson) == Role.ORGANISER
+                        if (!organiser) {
+                            out.writeUTF("STRANGER"); out.flush()
+                            return Result(peer, letter, 0, 0, alreadyInAMove(before.move.name), peerPersonId = peerId)
                         }
                     }
                     out.writeUTF("GO")

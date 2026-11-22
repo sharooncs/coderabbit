@@ -1298,16 +1298,33 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
      * anyone back rights they have lost. A backup from a Helper's phone ([helpersShare]) holds none of
      * what Helpers are not sent, so this phone keeps its own costs, cost suggestions, and receipt and
      * serial-label photos.
+     *
+     * Who the phone is afterwards. A phone whose person is in the backup stays who it is. A phone on
+     * its own whose person is not in it takes the backup's move for its own ([takeOn]): it becomes
+     * [madeBy], the person whose phone made the backup, or a Helper nobody has added yet. It does not
+     * stay the Organiser it made itself, because every phone in that move would take it for one. And
+     * a phone that shares its move takes in nobody from a backup who gave themselves their role
+     * ([withoutTheSelfMade]).
      */
-    internal fun restore(backup: AppData, replace: Boolean, helpersShare: Boolean = false) {
-        if (!replace) {
-            mergeIn(backup)
-            return
-        }
+    internal fun restore(backup: AppData, replace: Boolean, helpersShare: Boolean = false, madeBy: String = "") {
         synchronized(lock) {
             val cur = _data.value
-            var next = backup
-            if (sameMove(cur, backup) && cur.people.isNotEmpty()) {
+            if (backup.person(_device.value.personId) == null && isAlone()) {
+                val maker = backup.person(madeBy)?.takeIf { !it.removed }
+                // With nobody in it to become and no Organiser (a backup from before 2.0, say), the backup's move simply
+                // becomes this phone's, as before: there is nobody in it who could be misled.
+                if (maker != null || backup.hasOrganiser()) {
+                    takeOn(backup, replace, maker?.id)
+                    return
+                }
+            }
+            val incoming = if (cur.sharedHere()) backup.withoutTheSelfMade(cur) else backup
+            if (!replace) {
+                mergeIn(incoming)
+                return
+            }
+            var next = incoming
+            if (sameMove(cur, incoming) && cur.people.isNotEmpty()) {
                 next = next.copy(people = mergePeople(next.people, cur.people))
                 if (helpersShare) {
                     next = next.copy(
@@ -1319,6 +1336,45 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
             }
             replaceAll(next)
         }
+    }
+
+    /**
+     * A phone that was on its own takes on the move of [backup], whose people do not include it, as
+     * a phone does when it joins a move: it leaves its own move behind ([leavingOwnMove]), so what
+     * it decided alone does not count there and what it deleted alone stays deleted, and it becomes
+     * [personId], someone in the backup. With nobody to become, it goes on as a Helper nobody has
+     * added yet ([ensureMe]), for the backup's move has an Organiser, who can add it. With [replace]
+     * nothing of the phone's own is kept.
+     */
+    private fun takeOn(backup: AppData, replace: Boolean, personId: String?) {
+        val seen = maxStamp(backup)
+        lastStamp.updateAndGet { maxOf(it, seen) }
+        val next = if (replace) backup else merge(distrustUnstamped(leavingOwnMove(_data.value)), distrustUnstamped(backup))
+        if (personId != null) {
+            val t = now()
+            _data.value = next.copy(people = next.people.map { if (it.id == personId) it.copy(joinedAt = t, updatedAt = t) else it })
+            writeDevice(_device.value.copy(personId = personId))
+        } else {
+            _data.value = next
+        }
+        ensureMe()
+        giveWayOnLetter()
+        mirrorMe()
+        scheduleSave()
+        forgetDeletedPhotos()
+    }
+
+    /**
+     * This backup as it goes into [d], a move this phone shares, without anyone this phone has not
+     * heard of whom nobody else gave a role: every grant of theirs is open or their own. Such a
+     * person counts as whatever they first said they were, an Organiser even (a phone that took in
+     * another move's backup while on its own, on version 2.0), and the merge would pass them on to
+     * everyone in this move. Anyone really in the move reaches this phone with the next sync.
+     */
+    private fun AppData.withoutTheSelfMade(d: AppData): AppData {
+        val known = d.people.mapTo(HashSet()) { it.id }
+        val kept = people.filter { p -> p.id in known || p.grants.any { it.by.isNotEmpty() && it.by != p.id } }
+        return if (kept.size == people.size) this else copy(people = kept)
     }
 
     /** Erase everything on this phone, photos included, and start again. Organisers only. */
