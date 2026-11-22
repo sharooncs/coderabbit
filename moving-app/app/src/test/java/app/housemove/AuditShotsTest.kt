@@ -45,6 +45,7 @@ import app.housemove.ui.HouseSpot
 import app.housemove.ui.IsoHouse
 import app.housemove.ui.IsoRoom
 import app.housemove.ui.IsoRooms
+import app.housemove.ui.LocalMoves
 import app.housemove.ui.LocalSpeech
 import app.housemove.ui.LocalSyncAddresses
 import app.housemove.ui.RoomState
@@ -79,10 +80,15 @@ class AuditShotsTest {
 
     private fun seeded(): Store = phones().organiser
 
+    /** The other moves on the sample phone (see AuditMoves), made from the first move shown. */
+    private var shelf: Moves? = null
+
     /** The app as on a phone that can listen and is on a network, so microphones and codes are in the picture. */
     @Composable
     private fun App(store: Store, onNav: (NavHostController) -> Unit) {
-        CompositionLocalProvider(LocalSpeech provides Speech { _, _ -> }, LocalSyncAddresses provides { listOf("127.0.0.1") }) {
+        // A phone still starting out (the first-run pictures) has no other moves: it is shown on its own.
+        val moves = remember(store) { if (!store.data.value.move.setupDone) null else shelf ?: AuditMoves.shelf(tmp.newFolder(), store).also { shelf = it } }
+        CompositionLocalProvider(LocalSpeech provides Speech { _, _ -> }, LocalSyncAddresses provides { listOf("127.0.0.1") }, LocalMoves provides moves) {
             // Where the app opens is read once, as the real app does at start.
             val start = remember(store) { if (store.data.value.move.setupDone) "home" else null }
             AppRoot(store, startRoute = start, onNav = onNav)
@@ -200,12 +206,14 @@ class AuditShotsTest {
         val host = WifiSync.host(phones.organiser, letNewPhonesIn = false) {}
         try {
             use(Store(tmp.newFolder("joining")))
-            tap("Second phone for the same move?") // straight to the scanner
+            tap("Join theirs instead") // straight to the scanner
             tap("Type the code") // the typed way, which stands in for the camera here
             rule.onAllNodes(hasSetTextAction() and hasText("Or type the code")).onFirst()
                 .performTextReplacement(host.inviteFor(gran.id, listOf("127.0.0.1")).valueOrNull()!!.encode())
             rule.waitForIdle()
             tap("OK")
+            shot("join_ask")
+            tap("Yes") // nothing is sent before Yes
             rule.waitUntil(20_000) { rule.onAllNodes(hasText("You are Gran", substring = true)).fetchSemanticsNodes().isNotEmpty() }
             shot("setup_joined")
         } finally {
@@ -288,6 +296,13 @@ class AuditShotsTest {
             rule.waitForIdle()
         }
         fun shot(name: String) = rule.onAllNodes(isRoot()).onLast().captureRoboImage("build/audit/dialogs/$name.png")
+
+        // What can be done with one of the moves on the phone.
+        go("moves")
+        rule.onAllNodes(hasContentDescription("Back up, archive or remove Gran's flat clear-out") and hasClickAction()).onFirst().performClick()
+        rule.waitForIdle()
+        shot("move_actions")
+        tap("Close")
 
         go("tasks")
         rule.onAllNodes(hasContentDescription("Add a task") and hasClickAction()).onFirst().performClick()

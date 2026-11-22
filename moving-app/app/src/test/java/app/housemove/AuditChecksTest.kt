@@ -17,7 +17,9 @@ import androidx.compose.ui.test.performTextReplacement
 import androidx.navigation.NavGraph
 import androidx.navigation.NavHostController
 import app.housemove.data.*
+import androidx.compose.runtime.CompositionLocalProvider
 import app.housemove.ui.AppRoot
+import app.housemove.ui.LocalMoves
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -111,13 +113,19 @@ class AuditChecksTest {
 
     // ---- opening screens -----------------------------------------------------------
 
+    /** The other moves on the sample phone (see AuditMoves), for the screens that list them. */
+    private var shelf: Moves? = null
+
     private fun show(s: Store) {
         store = s
         if (shown == null) {
             shown = s
+            val moves = shelf ?: AuditMoves.shelf(tmp.newFolder(), s).also { shelf = it }
             rule.setContent {
                 val current = shown
-                if (current != null) key(current) { AppRoot(current, startRoute = START, onNav = { nav = it }) }
+                CompositionLocalProvider(LocalMoves provides moves) {
+                    if (current != null) key(current) { AppRoot(current, startRoute = START, onNav = { nav = it }) }
+                }
             }
         } else {
             shown = s

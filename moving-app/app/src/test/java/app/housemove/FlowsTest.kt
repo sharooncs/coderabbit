@@ -214,7 +214,8 @@ class FlowsTest {
     fun setupCanBeFinishedWithNoRoomsAndAddedLater() {
         start(setUp = false)
         see("What is it for?")
-        tap("Next"); tap("Next"); tap("Next"); tap("Finish")
+        tap("Next"); tap("Next"); tap("Skip"); tap("Skip") // the rooms can wait
+        tap("Do this later") // who is helping can wait too
         assertEquals("home", route())
         assertTrue(data.move.setupDone)
         see("Add the rooms of both homes")
@@ -227,7 +228,7 @@ class FlowsTest {
     @Test
     fun secondPhoneJoinsInsteadOfSettingUpAgain() {
         start(setUp = false)
-        tap("Second phone for the same move?")
+        tap("Join theirs instead")
         see("Scan the invite") // the scan itself, over a real connection, is in PeopleFlowsTest
         // The first phone's data arrives (as joining with its invite delivers it).
         val first = Store(tmp.newFolder("first"))

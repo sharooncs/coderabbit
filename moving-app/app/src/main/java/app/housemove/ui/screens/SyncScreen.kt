@@ -44,6 +44,16 @@ fun SyncScreen(code: String? = null) {
     val scope = rememberCoroutineScope()
     val addressesNow = LocalSyncAddresses.current
     val joiner = rememberJoiner()
+    val state = appState()
+
+    /** Use a scanned code: a sync code syncs at once; an invite made for a person goes to the join screen, which asks first. */
+    fun use(text: String): Boolean {
+        val invite = WifiSync.Invite.parse(text) ?: return false
+        if (invite.personId == null) return joiner.join(text)
+        state.pendingInvite = text.trim()
+        nav.open("join")
+        return true
+    }
 
     var host by remember { mutableStateOf<WifiSync.Host?>(null) }
     var scanning by remember { mutableStateOf(false) }
@@ -63,7 +73,7 @@ fun SyncScreen(code: String? = null) {
     LaunchedEffect(code) {
         if (code != null && !codeUsed) {
             codeUsed = true
-            joiner.join(code)
+            use(code)
         }
     }
 
@@ -227,6 +237,8 @@ fun SyncScreen(code: String? = null) {
                 Text("Each phone keeps its own full copy and works without internet. Syncing swaps the changes both ways, photos included.")
                 Text("If both phones changed the same thing, the most recent change wins.")
                 Text("A new phone joins with an invite from People. All phones must be on the same version of the app.")
+                Text("A phone with no HouseMove, or an older one, can get this phone's copy: Quick Share sends it without internet.")
+                PillButton("Share the app", onClick = { shareTheApp(context, scope) }, icon = Icons.Default.Share, primary = false)
             }
         }
     }
@@ -240,7 +252,7 @@ fun SyncScreen(code: String? = null) {
             onClose = { scanning = false },
             onCode = { text ->
                 note = null
-                if (joiner.join(text)) scanning = false
+                if (use(text)) scanning = false
                 else toast(context, "That is not a sync code. On the other phone tap \"Show sync code\".")
             },
         )
