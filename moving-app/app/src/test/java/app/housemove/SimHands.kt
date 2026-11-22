@@ -38,6 +38,8 @@ internal class Hands(private val p: Simulation.Phone) {
         8 to ::approve, 3 to ::decline, 3 to ::ask, 4 to ::answer, 5 to ::carryOut,
         9 to ::newContainer, 4 to ::editContainer, 8 to ::putIn, 3 to ::takeOut, 6 to ::nest, 2 to ::unNest,
         5 to ::seal, 8 to ::moveOn, 1 to ::bringBack, 3 to ::damage, 2 to ::deleteContainer,
+        // 2.1: damage as reports of their own, the storage unit, hand-overs of what is sold or given away.
+        3 to ::damageReport, 4 to ::storage, 3 to ::handover,
         3 to ::scan, 1 to ::deleteEntry,
         2 to ::newRoom, 2 to ::editRoom, 1 to ::deleteRoom,
         4 to ::addCost, 2 to ::editCost, 1 to ::deleteCost, 3 to ::pay, 2 to ::receipt,
@@ -349,6 +351,65 @@ internal class Hands(private val p: Simulation.Phone) {
         return "reported damage to item ${id(item.id)} → ok"
     }
 
+
+    // ---- 2.1: damage reports, the storage unit, hand-overs -------------------------------------
+
+    /** Report damage as a report of its own, or clear one (an Organiser's to do). */
+    private fun damageReport(): String? {
+        if (chance(35)) {
+            val x = pick(d.openDamage()) ?: return null
+            return "cleared damage report ${id(x.id)} on ${id(x.thingId)} " + said(s.clearDamage(x.id))
+        }
+        val thing = (if (chance(50)) pick(d.liveBoxes)?.id else pick(d.liveItems)?.id) ?: return null
+        return "reported damage to ${id(thing)} " + said(s.reportDamage(thing, pick(words)!!))
+    }
+
+    /** A trip to the storage unit or back from it; loading, unloading or undoing a step on one. */
+    private fun storage(): String? {
+        val data = d
+        return when (r.nextInt(5)) {
+            0 -> {
+                val back = chance(40)
+                val o = if (back) s.addTrip(from = Place.STORAGE) else s.addTrip(to = Place.STORAGE)
+                "added a trip ${if (back) "back from" else "to"} the storage unit " + said(o)
+            }
+            1 -> {
+                val trip = pick(data.tripsToStorage()) ?: return null
+                val things = data.movables().filter { it.stage == Stage.AT_ORIGIN }.shuffled(r).take(1 + r.nextInt(3))
+                if (things.isEmpty()) return null
+                "loaded ${things.joinToString { id(it.id) }} for the storage unit " + said(s.loadOnto(trip.id, things.map { it.id }))
+            }
+            2 -> {
+                val trip = pick(data.tripsFromStorage()) ?: return null
+                val things = (if (chance(80)) data.inStorage() else data.movables()).shuffled(r).take(1 + r.nextInt(2))
+                if (things.isEmpty()) return null
+                "loaded ${things.joinToString { id(it.id) }} to bring back from storage " + said(s.loadOnto(trip.id, things.map { it.id }))
+            }
+            3 -> {
+                val things = data.movables().filter { it.stage == Stage.LOADED }.shuffled(r).take(1 + r.nextInt(3))
+                if (things.isEmpty()) return null
+                "unloaded ${things.joinToString { id(it.id) }} " + said(s.unload(things.map { it.id }))
+            }
+            else -> {
+                val m = pick(data.movables().filter { it.stage != Stage.AT_ORIGIN }) ?: return null
+                "put ${id(m.id)} back a step " + said(s.putBack(listOf(m.id)))
+            }
+        }
+    }
+
+    /** Arrange a hand-over (an Organiser's, or a Decider's with an approved suggestion), mark it paid, or hand it over (anyone's). */
+    private fun handover(): String? {
+        val going = d.liveItems.filter { it.disposition == Disposition.SELL || it.disposition == Disposition.DONATE }
+        val item = (if (chance(85)) pick(going) else pick(d.liveItems)) ?: return null
+        return when (r.nextInt(3)) {
+            0 -> {
+                val to = pick(d.livePeople)?.id
+                "arranged the hand-over of ${id(item.id)} to ${id(to)} " + said(s.arrangeHandover(item.id, to, paid = chance(40)))
+            }
+            1 -> "marked ${id(item.id)} paid " + said(s.setPaid(item.id, chance(80)))
+            else -> "handed over ${id(item.id)} " + said(s.handOver(item.id, chance(90)))
+        }
+    }
     private fun deleteContainer(): String? {
         val box = pick(d.liveBoxes) ?: return null
         if (chance(50)) return "deleted container ${id(box.id)} " + said(s.tryDelete(box, withPhotos = chance(50)))
