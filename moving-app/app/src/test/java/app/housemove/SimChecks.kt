@@ -320,10 +320,24 @@ internal class SimChecks(private val sim: Simulation) {
      * another, on that phone or across the phones, but for what a phone brought from its own move into Maple Road when it
      * joined. In each move nobody shares a letter; each phone writes with a letter of its own in each of its moves and prints
      * from label numbers of its own, apart from those of its other moves.
+     *
+     * A few kinds of record take their ID from the thing they belong to, not a new one: an item's [Hidden] details and its
+     * amount to collect ([Collect]) have the item's ID, and a line of a box's contents ([ContentsLine]) is the box's ID and
+     * its words. A thing that was brought is in both moves under the same ID, so such a record made for it later in each
+     * move on its own has the same key in both. That is two records, one per move, not one record in two moves, and is
+     * not counted; such records of anything that was not brought are.
      */
     private fun apart() {
         val brought = sim.phones.flatMap { it.brought }.toSet()
         val broughtFiles = sim.phones.flatMap { it.broughtFiles }.toSet()
+        fun ofBrought(k: String): Boolean {
+            val id = k.substringAfter(':')
+            return when (k.substringBefore(':')) {
+                "hidden", "collect" -> "item:$id" in brought
+                "line" -> "box:${id.substringBefore('/')}" in brought
+                else -> false
+            }
+        }
         // Every record and photo file, by the moves it is in on any phone.
         val where = HashMap<String, HashSet<String>>()
         val files = HashMap<String, HashSet<String>>()
@@ -360,7 +374,7 @@ internal class SimChecks(private val sim: Simulation) {
         fun named(ids: Collection<String>) = ids.map { sim.others[it] ?: if (it == sim.phones[0].store.moveId) "Maple Road" else it.take(8) }
         var shown = 0
         for ((k, moves) in where.toSortedMap()) {
-            if (moves.size > 1 && k !in brought && shown++ < 4) broke(Simulation.MOVES_APART, "$k is in more than one move: ${named(moves)}", k.substringAfter(':'))
+            if (moves.size > 1 && k !in brought && !ofBrought(k) && shown++ < 4) broke(Simulation.MOVES_APART, "$k is in more than one move: ${named(moves)}", k.substringAfter(':'))
         }
         shown = 0
         for ((f, moves) in files.toSortedMap()) {
