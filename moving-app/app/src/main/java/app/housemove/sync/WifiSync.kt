@@ -65,7 +65,7 @@ import kotlin.concurrent.thread
  * The exchange, after the joiner connects (strings as writeUTF):
  * ```
  * joiner: MAGIC, token, name, letter, schema (int), own Person as JSON, hello as JSON (see Hello)
- * host:   [WAIT] OK | ONEWAY | NO | VERSION (+ schema) | REMOVED | STRANGER | EXPIRED | WRONGMOVE | RETIRED | UNDONE,
+ * host:   [WAIT] OK | ONEWAY | NO | VERSION (+ schema) | REMOVED | STRANGER | EXPIRED | WRONGMOVE | RETIRED | UNDONE | UNCONFIRMED,
  *         then if OK or ONEWAY: name, letter, own Person as JSON, hello as JSON
  * joiner: GO | TAKE | REMOVED | STRANGER | WRONGMOVE | NOTORGANISER
  * joiner: data      host: merged data      (each leaves out what the other's role is not sent)
@@ -382,6 +382,7 @@ object WifiSync {
         val token: String,
         private val clock: () -> Long,
         private val letNewPhonesIn: Boolean,
+        private val confirmJoins: Boolean,
         private val onResult: (Result) -> Unit,
     ) {
         val port: Int get() = server.localPort
@@ -592,14 +593,14 @@ object WifiSync {
                         if (p?.removed != false) refuse("REMOVED", "That person is no longer in the move.")
                         // A phone of someone removed does not come back in under another name.
                         before.phoneEntry(hello.phoneId)?.let { (owner, _) -> if (owner.removed) refuse("REMOVED", "That phone's person has been removed from this move.") }
-                        if (p.role != Role.HELPER) {
+                        if (confirmJoins && p.role != Role.HELPER) {
                             // Nothing of the move is sent until this phone's person has seen which phone came, and said it is the right one.
                             out.writeUTF("WAIT"); out.flush()
                             val r = JoinRequest(newToken(), p.id, p.name, p.role, hello.deviceName.ifBlank { peer })
                             when (awaitConfirm(r)) {
                                 true -> Unit
                                 false -> refuse("UNDONE", UNDONE)
-                                null -> refuse("UNDONE", NOT_CONFIRMED)
+                                null -> refuse("UNCONFIRMED", NOT_CONFIRMED)
                             }
                         }
                         store.admitPhone(invited.personId, hello.phoneId, hello.deviceName, hello.elsewhere.toSet())
@@ -715,10 +716,19 @@ object WifiSync {
      * With [letNewPhonesIn] false the plain code only works for phones whose people are already
      * in the move, so the only way in is an invite made for a person. It is true by default, as
      * before 2.0: a phone of the same move that is not in it yet comes in as itself when this
-     * phone's person may add people.
+     * phone's person may add people. With [confirmJoins], a phone that comes with an Organiser's or a
+     * Decider's invite waits in [Host.waiting] until this phone's person says it is the right one
+     * ([Host.confirm]); a screen that shows "Joined: Priya, on Priya's phone" with Right and Undo
+     * passes true. Screens from before 2.1, which show no such thing, leave it off.
      */
-    fun host(store: Store, clock: () -> Long = System::currentTimeMillis, letNewPhonesIn: Boolean = true, onResult: (Result) -> Unit): Host {
-        val h = Host(store, ServerSocket(0), newToken(), clock, letNewPhonesIn, onResult)
+    fun host(
+        store: Store,
+        clock: () -> Long = System::currentTimeMillis,
+        letNewPhonesIn: Boolean = true,
+        confirmJoins: Boolean = false,
+        onResult: (Result) -> Unit,
+    ): Host {
+        val h = Host(store, ServerSocket(0), newToken(), clock, letNewPhonesIn, confirmJoins, onResult)
         h.start()
         return h
     }
@@ -820,6 +830,7 @@ object WifiSync {
                         "WRONGMOVE" -> return Result("", "", 0, 0, WRONG_MOVE)
                         "RETIRED" -> return Result("", "", 0, 0, RETIRED_PHONE)
                         "UNDONE" -> return Result("", "", 0, 0, UNDONE)
+                        "UNCONFIRMED" -> return Result("", "", 0, 0, NOT_CONFIRMED)
                         else -> return Result("", "", 0, 0, CODE_NOT_ACCEPTED)
                     }
                     peer = din.readUTF()
