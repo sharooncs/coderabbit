@@ -38,6 +38,7 @@ internal object AuditSampleData {
         "moveday", "load", "unload", "reconcile", "sweep", "records/ORIGIN", "unpack", "budget", "reports",
         "rooms", "more", "sync", "settings", "search", "scan",
         "people", "people/add", "approvals", "activity",
+        "moves", "helping", "welcome", "join", "lost",
     )
 
     /** The same move on three phones: the Organiser's (Sam), a Decider's (Priya) and a Helper's (Tom). */

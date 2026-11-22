@@ -177,7 +177,7 @@ fun JoinScreen(inMove: Boolean) {
                 )
             }
             TypedCode(
-                hint = "Point at the invite on the other phone: People, then your name.",
+                hint = "Scan the invite on the other phone: People, then your name.",
                 onCode = { text ->
                     if (!read(text)) {
                         note = NOT_AN_INVITE

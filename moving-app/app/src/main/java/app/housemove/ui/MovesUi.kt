@@ -142,7 +142,12 @@ fun shareTheApp(context: Context, scope: CoroutineScope) {
                 null
             }
         }
-        if (file == null) toast(context, "This phone could not get the app ready to share. Try again in a moment.")
-        else Share.send(context, file, APK)
+        val sent = file != null && try {
+            Share.send(context, file, APK)
+            true
+        } catch (_: Exception) {
+            false
+        }
+        if (!sent) toast(context, "This phone could not get the app ready to share. Try again in a moment.")
     }
 }

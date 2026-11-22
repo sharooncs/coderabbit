@@ -192,6 +192,7 @@ class DeviceTest {
         tap("Kitchen")
         tap("Finish")
         waitFor("setup to finish") { data.move.setupDone }
+        tap("Do this later") // Who's helping? comes next, and can wait
         assertEquals(data.roomsOf(Home.DEST).single().id, data.roomsOf(Home.ORIGIN).single().mapsTo)
         assertTrue(data.liveTasks.size > 40)
         shot("02-home")

@@ -268,12 +268,12 @@ private fun CodePanel(
             toJoin.forEach { p ->
                 GlassChip(p.shownName(), selected = shown == p.id, onClick = { onShow(p.id) }, leading = { PersonOrb(p, size = 22.dp) })
             }
-            GlassChip("Helper code", icon = Role.HELPER.icon(), selected = shown == HELPER_CODE_TAB || (shown == null), onClick = { onShow(HELPER_CODE_TAB) })
+            GlassChip("Helper code", icon = Role.HELPER.icon(), selected = shown == HELPER_CODE_TAB, onClick = { onShow(HELPER_CODE_TAB) })
         }
         if (shown == null || code == null) {
-            // Everyone added has joined: the Helper code is one tap away.
+            // Nobody waiting to join: the Helper code is one tap away.
             Text(
-                if (toJoin.isEmpty()) "Everyone you added has joined. Helpers can still join with the Helper code." else "",
+                "Helpers can all join with one code: no names to add first. Each phone gives the name it knows.",
                 style = MaterialTheme.typography.bodyMedium, color = Night.TextSoft,
             )
             PillButton("Show the Helper code", onClick = { onShow(HELPER_CODE_TAB) }, icon = Icons.Default.QrCode2, modifier = Modifier.fillMaxWidth())
