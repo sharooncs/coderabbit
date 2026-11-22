@@ -490,6 +490,44 @@ class SyncPeopleTest {
         assertTrue(File(asha.photoDir, later.name).isFile)
     }
 
+    @Test
+    fun aPhoneTriedOutAloneInHelperModeHandsItsHiddenDetailsToTheOrganiserButNotThePriceItSetThere() {
+        val asha = store("Asha")
+        asha.setMove { it.copy(name = "Maple Road", setupDone = true) }
+        val hana = asha.addPerson("Hana", Role.HELPER).valueOrNull()!!
+        // Hana's phone was tried out alone in the old helper mode. Nobody is asked there, so what she sets carries nobody's name.
+        val phone = store("My phone")
+        phone.setDevice { it.copy(helper = true) }
+        phone.setMove { it.copy(name = "Trying it out", setupDone = true) }
+        val lamp = phone.createItem("Lamp", null).id
+        assertTrue(phone.decide(lamp, Disposition.SELL, 12.0).ok)
+        assertTrue(phone.setDetails(lamp) { it.copy(make = "Anglepoise") }.ok)
+        val own = phone.data.value.hiddenOf(lamp)!!
+        assertEquals(12.0, own.price!!, 0.0)
+        assertEquals("", own.priceBy.by)
+        assertTrue(own.priceBy.at > 0)
+
+        val h = hosting(asha)
+        val r = WifiSync.join(phone, h.host.inviteFor(hana.id, local).valueOrNull()!!)
+        assertTrue(r.error, r.ok)
+        assertTrue(h.result().ok)
+        assertEquals(Role.HELPER, phone.myRole)
+        // Asha's phone has the lamp's hidden record now. The asking price Hana set alone was set while this move had an
+        // Organiser to ask, so it is no decision here: it is left unset, in nobody's name and at no time, as if never set.
+        // The make goes in as data from before there was anybody to ask.
+        val got = asha.data.value.hiddenOf(lamp)!!
+        assertNull(got.price)
+        assertEquals(Stamp(sum = got.priceSum()), got.priceBy)
+        assertEquals("Anglepoise", got.make)
+        // Her phone is a Helper's: it handed the record to an Organiser's phone, which holds it, and lets it go.
+        assertNull(phone.data.value.hiddenOf(lamp))
+        assertFalse(phone.data.value.holdsHidden(phone.me!!.id))
+        // Syncing again changes neither.
+        assertTrue(sync(asha, phone).second.ok)
+        assertEquals(got, asha.data.value.hiddenOf(lamp))
+        assertNull(phone.data.value.hiddenOf(lamp))
+    }
+
     // ---- coming from 1.3 --------------------------------------------------------------
 
     @Test
