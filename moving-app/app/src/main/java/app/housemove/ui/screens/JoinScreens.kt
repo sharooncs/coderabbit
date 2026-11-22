@@ -417,7 +417,7 @@ fun LostPhoneScreen(inMove: Boolean) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text("No backup?", style = MaterialTheme.typography.titleSmall)
                         Text(
-                            "If someone else is an Organiser of the move, they can let this phone in: on their phone, People, your name, New phone. Then tap Join a move here.",
+                            "If someone else runs the move with you, they can let this phone in: on their phone, People, your name, New phone. Then tap Join a move here.",
                             style = MaterialTheme.typography.bodyMedium, color = Night.TextSoft,
                         )
                     }
