@@ -952,12 +952,14 @@ class Store internal constructor(
 
     /**
      * The next letter from this phone's own block (see [nextInBlock]), never one it has handed out
-     * before, nor one in [avoid]. Noted as handed out.
+     * before, nor one it has written codes with itself (its person may have taken another letter since,
+     * but those codes are still on things), nor one in [avoid]. Noted as handed out.
      */
     private fun allotLetter(d: AppData, avoid: Set<String> = emptySet()): String {
         val c = codes
         val own = _device.value.letter
-        val letter = d.nextInBlock(own, c.founder, c.lettersGiven.toSet() + avoid) ?: d.freeLetter(avoid = c.lettersGiven.toSet() + avoid)
+        val taken = c.lettersGiven.toSet() + c.lettersUsed + avoid
+        val letter = d.nextInBlock(own, c.founder, taken) ?: d.freeLetter(avoid = taken)
         saveCodes(c.copy(lettersGiven = c.lettersGiven + letter))
         return letter
     }
@@ -1028,6 +1030,10 @@ class Store internal constructor(
         // This phone writes with its person's letter: one it uses in another of its moves would give the same codes in both.
         if (p.id == actor.id && lettersElsewhere().any { it.equals(l, ignoreCase = true) }) {
             return@act Outcome.Refused("This phone uses the letter $l in another of its moves. Choose another, so its codes are never the same in two moves.")
+        }
+        // The codes this phone wrote with a letter are still on things after its person has taken another: nobody else gets it.
+        if (p.id != actor.id && codes.lettersUsed.any { it.equals(l, ignoreCase = true) }) {
+            return@act Outcome.Refused("This phone has written codes with the letter $l. Choose another, so no code is on two things.")
         }
         Outcome.Ok(savePerson(p.copy(letter = l)))
     }

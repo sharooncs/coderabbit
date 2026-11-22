@@ -463,6 +463,32 @@ class PeopleTest {
         assertNotNull(store("another").apply { mergeIn(replacement.data.value) }.becomePerson(hal.id).reason)
     }
 
+    /**
+     * Found by the simulation with phones working while they sync: the founder's phone, which hands out the single letters,
+     * took another letter for its own person and then gave the one it had written codes with to someone it added, who wrote
+     * the same codes. And an Organiser's phone that had not yet heard of the change, renaming her, gave her the old letter
+     * back: two people had it.
+     */
+    @Test
+    fun aLetterThisPhoneWroteCodesWithIsNeverGivenToAnyoneElse() {
+        val asha = store("asha")
+        asha.setDevice { it.copy(name = "Asha", letter = "A") }
+        val omar = joined(asha, "Omar", Role.ORGANISER)
+        assertEquals("A1", asha.nextHandCode())
+        assertTrue(asha.setLetter(asha.me!!.id, "QA").ok)
+        val friend = asha.addPerson("Friend", Role.HELPER).valueOrNull()!!
+        assertNotEquals("A", friend.letter)
+        val refused = asha.setLetter(friend.id, "A")
+        assertFalse(refused.ok)
+        assertTrue(refused.reason, refused.reason!!.contains("written codes with the letter A"))
+        // Omar renames her on his phone, which still has her as A, and the two phones meet.
+        assertTrue(omar.renamePerson(asha.me!!.id, "Asha M").ok)
+        asha.mergeIn(omar.data.value)
+        omar.mergeIn(asha.data.value)
+        assertEquals(emptyList<String>(), asha.data.value.duplicateLetters())
+        assertEquals(emptyList<String>(), omar.data.value.duplicateLetters())
+    }
+
     @Test
     fun erasingStartsAFreshPersonSoAnErasedPhoneCannotComeBackWithMoreRights() {
         val o = store("o")
