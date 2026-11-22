@@ -435,7 +435,7 @@ class PeopleFlowsTest {
         // Approve: the decision is made, in the Organiser's name.
         tap("Approve")
         assertEquals(Disposition.SELL, data.item("sofa")!!.disposition)
-        assertEquals(80.0, data.item("sofa")!!.price!!, 0.0)
+        assertEquals(80.0, data.priceOf("sofa")!!, 0.0)
         assertEquals(ProposalState.APPROVED, data.proposal(sell.id)!!.state)
         assertEquals("Approved: Sell Sofa for 80", toast())
 

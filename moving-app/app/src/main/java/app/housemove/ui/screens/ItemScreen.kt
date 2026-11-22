@@ -85,6 +85,11 @@ fun ItemScreen(id: String) {
         store.data.value.item(id)?.let { store.put(f(it)) }
     }
 
+    // Make, model, serial number, dates and value are on the item's hidden record (Store.setDetails).
+    fun details(f: (Hidden) -> Hidden) {
+        store.setDetails(id, f).okOrSay(context)
+    }
+
     val moving = item.disposition == Disposition.MOVE
     val leaving = item.disposition == Disposition.SELL || item.disposition == Disposition.DONATE || item.disposition == Disposition.BIN
     val origin = data.room(item.originRoomId)
@@ -278,7 +283,7 @@ fun ItemScreen(id: String) {
                         }
                         SpeakButton("Make and model?", contentDescription = "Say the make and model", size = 40.dp) { said ->
                             val words = said.trim().split(Regex("\\s+"), limit = 2)
-                            edit { it.copy(make = words[0].replaceFirstChar { c -> c.uppercase() }, model = words.getOrElse(1) { "" }) }
+                            details { it.copy(make = words[0].replaceFirstChar { c -> c.uppercase() }, model = words.getOrElse(1) { "" }) }
                         }
                         GlassOrb(
                             if (editingDevice) Icons.Default.Check else Icons.Default.Edit,
@@ -287,15 +292,15 @@ fun ItemScreen(id: String) {
                         )
                     }
                     if (editingDevice) {
-                        TextInput(item.make, { v -> edit { it.copy(make = v) } }, "Make", key = "$id-make")
-                        TextInput(item.model, { v -> edit { it.copy(model = v) } }, "Model", key = "$id-model")
-                        TextInput(item.serial, { v -> edit { it.copy(serial = v.trim()) } }, "Serial number", key = "$id-serial-$serialScans")
+                        TextInput(item.make, { v -> details { it.copy(make = v) } }, "Make", key = "$id-make")
+                        TextInput(item.model, { v -> details { it.copy(model = v) } }, "Model", key = "$id-model")
+                        TextInput(item.serial, { v -> details { it.copy(serial = v.trim()) } }, "Serial number", key = "$id-serial-$serialScans")
                     }
                     BigAction(Icons.Default.QrCodeScanner, "Scan the serial number barcode", onClick = { scanningSerial = true }, primary = item.serial.isBlank())
                     PhotoStrip(item.id, PhotoKind.SERIAL, label = "Photo of the serial label")
                     PhotoStrip(item.id, PhotoKind.RECEIPT, label = "Receipt or warranty card")
-                    DateButton(item.boughtDay, { d -> edit { it.copy(boughtDay = d) } }, "Bought", Modifier.fillMaxWidth())
-                    DateButton(item.warrantyDay, { d -> edit { it.copy(warrantyDay = d) } }, "Warranty until", Modifier.fillMaxWidth())
+                    DateButton(item.boughtDay, { d -> details { it.copy(boughtDay = d) } }, "Bought", Modifier.fillMaxWidth())
+                    DateButton(item.warrantyDay, { d -> details { it.copy(warrantyDay = d) } }, "Warranty until", Modifier.fillMaxWidth())
 
                     // What travels with it: the remote, the leads, the stand.
                     HorizontalDivider(color = Night.Hairline)
@@ -372,7 +377,7 @@ fun ItemScreen(id: String) {
                 ).filter { (moving && movesHouse) || it.on }
                 ToggleTiles(handling + journey, columns = 2)
                 if (item.hazardous) Hint("Gas bottles, paint and fuel cannot go in the $vehicle.")
-                AmountPicker(item.value, { v -> edit { it.copy(value = v) } }, "What it is worth", currency, presets = WORTH_PRESETS)
+                AmountPicker(item.value, { v -> details { it.copy(value = v) } }, "What it is worth", currency, presets = WORTH_PRESETS)
             }
 
             // Where it is now and any damage. Until it leaves the old home this is rarely wanted, so it
@@ -535,7 +540,7 @@ fun ItemScreen(id: String) {
             onCode = { text ->
                 val serial = text.trim()
                 if (serial.isNotEmpty()) {
-                    edit { it.copy(serial = serial) }
+                    details { it.copy(serial = serial) }
                     serialScans++
                     toast(context, "Serial number: $serial. Check it against the label.")
                     scanningSerial = false

@@ -33,8 +33,8 @@ class MergeRulesTest {
 
     /** What a sync does to the data, both ways: each phone is sent what its person's role is sent. */
     private fun sync(a: Store, b: Store) {
-        val merged = a.mergeIn(b.data.value.visibleTo(a.myRole))
-        b.mergeIn(merged.visibleTo(b.myRole))
+        val merged = a.mergeIn(b.data.value.sentTo(a.myRole, a.me?.id))
+        b.mergeIn(merged.sentTo(b.myRole, b.me?.id))
     }
 
     private fun Store.item(id: String) = data.value.item(id)!!
@@ -74,7 +74,7 @@ class MergeRulesTest {
     private fun everyoneAgreesOn(itemId: String): Item {
         for (round in 1..2) for (p in listOf(omar, dee, hal)) sync(asha, p)
         val all = listOf(asha, omar, dee, hal).map { it.item(itemId) }
-        assertEquals(1, all.toSet().size)
+        assertEquals(all.joinToString("\n"), 1, all.toSet().size)
         return all[0]
     }
 
@@ -333,7 +333,12 @@ class MergeRulesTest {
             // And once everyone has synced, every phone has the same sofa and the same suggestion.
             val item = everyoneAgreesOn(sofa)
             assertEquals("route $n", Disposition.SELL, item.disposition)
-            assertEquals("route $n", 90.0, item.price!!, 0.0)
+            // The price and the sale are on the hidden record, which the Helper's phone is not sent.
+            for (phone in listOf(asha, omar, dee)) {
+                assertEquals("route $n", 90.0, phone.data.value.priceOf(sofa)!!, 0.0)
+                assertEquals("route $n", 85.0, phone.data.value.hiddenOf(sofa)!!.soldFor!!, 0.0)
+            }
+            assertNull("route $n", hal.data.value.hiddenOf(sofa))
             assertTrue("route $n", item.gone)
             assertEquals("route $n", asha.me!!.id, item.decisionBy.by)
             assertEquals("route $n", dee.me!!.id, item.outcomeBy.by)
@@ -388,7 +393,7 @@ class MergeRulesTest {
         for (phone in listOf(asha, omar, dee, hal)) {
             assertEquals(Role.HELPER, phone.data.value.person(omar.me!!.id)!!.role)
             assertEquals(Disposition.SELL, phone.item(sofa).disposition) // decided while he was an Organiser
-            assertEquals(70.0, phone.item(sofa).price!!, 0.0)
+            if (phone !== hal) assertEquals(70.0, phone.data.value.priceOf(sofa)!!, 0.0) // the price is not sent to Helpers
             assertEquals(Disposition.UNDECIDED, phone.item(lamp).disposition) // decided after he no longer was
         }
         assertEquals(Role.HELPER, omar.myRole)

@@ -169,7 +169,8 @@ class ItemFlowsTest {
         settle()
     }
 
-    private fun Store.item(id: String) = data.value.item(id)!!
+    // As the phone shows it: with the hidden details (price, sale, serial) where the phone holds them.
+    private fun Store.item(id: String) = data.value.let { d -> d.filled(d.item(id)!!) }
     private fun Store.proposal(id: String) = data.value.proposal(id)!!
     private fun Store.waiting() = data.value.waitingProposals()
 
@@ -422,7 +423,8 @@ class ItemFlowsTest {
         // A Helper is not offered it anywhere either.
         show(hal, "disposal")
         rule.onAllNodes(hasContentDescription("Gone", substring = true)).assertCountEquals(0)
-        tap("Asking £ 80") // for a Helper the price is not a button: the tap just opens the item
+        dontSee("£ 80") // Helpers are not sent prices
+        tap("No price yet") // and what stands in for it is not a button for them: the tap just opens the item
         cannotTap("£ 50")
         assertNotNull(hal.carryOut(sofa, gone = true).reason)
 

@@ -594,4 +594,9 @@ internal fun AppData.records(): Sequence<Pair<String, Rec>> = sequence {
     for (r in people) yield("person:" + r.id to r)
     for (r in proposals) yield("proposal:" + r.id to r)
     for (r in activity) yield("activity:" + r.id to r)
+    for (r in hidden) yield("hidden:" + r.id to r)
+    for (r in collect) yield("collect:" + r.id to r)
+    for (r in damage) yield("damage:" + r.id to r)
+    for (r in lines) yield("line:" + r.id to r)
+    for (r in refused) yield("refused:" + r.id to r)
 }

@@ -55,9 +55,9 @@ import app.housemove.data.*
 val LocalStore = staticCompositionLocalOf<Store> { error("Store not provided") }
 val LocalNav = staticCompositionLocalOf<NavHostController> { error("Nav not provided") }
 
-/** The current dataset; recomposes when anything changes. */
+/** The current dataset; recomposes when anything changes. Items carry their hidden details where this phone holds them ([filledIn]). */
 @Composable
-fun appData(): AppData = LocalStore.current.data.collectAsState().value
+fun appData(): AppData = LocalStore.current.data.collectAsState().value.let { d -> androidx.compose.runtime.remember(d) { d.filledIn() } }
 
 @Composable
 fun deviceInfo(): DeviceInfo = LocalStore.current.device.collectAsState().value
@@ -647,6 +647,7 @@ fun RoomPicker(
 fun stageText(stage: Stage, isBox: Boolean, vehicle: String = "van"): String = when (stage) {
     Stage.AT_ORIGIN -> "At old home"
     Stage.LOADED -> "On the $vehicle"
+    Stage.STORED -> "In storage"
     Stage.DELIVERED -> "Delivered"
     Stage.DONE -> if (isBox) "Unpacked" else "In place"
 }

@@ -36,15 +36,23 @@ private inline fun <T : Rec> mergeEach(a: List<T>, b: List<T>, f: (x: T?, y: T?,
 /**
  * One protected part of a record (see Rules.kt): where its stamp is, the check
  * value over its values, and whether the person on a stamp was allowed to set it.
+ * A change that carries a name and a check value that holds, but whose author was not
+ * allowed to make it, is noted in [refusals] as [what], with [tried] saying what it was.
  */
-private class Guarded<T>(val roles: Roles, val stamp: (T) -> Stamp, val sum: (T) -> String, val allowed: (T, Stamp) -> Boolean) {
+private class Guarded<T : Rec>(
+    val roles: Roles, val stamp: (T) -> Stamp, val sum: (T) -> String, val allowed: (T, Stamp) -> Boolean,
+    val refusals: Refusals? = null, val what: String = "", val tried: (T) -> String = { "change {}" },
+) {
     fun good(r: T?): Boolean {
         if (r == null) return false
         val s = stamp(r)
         if (s.sum.isEmpty()) return s.by.isEmpty() // never stamped: data from before there were roles
         if (s.sum != sum(r)) return false // the values were changed without a new stamp
         // Set in nobody's name: that counts from a time when the move had no Organiser to ask, and not otherwise.
-        return if (s.by.isEmpty()) roles.nobodyToAsk(s.at) else allowed(r, s)
+        if (s.by.isEmpty()) return roles.nobodyToAsk(s.at)
+        if (allowed(r, s)) return true
+        refusals?.add(what, r.id, s, tried(r))
+        return false
     }
 
     /**
@@ -68,13 +76,33 @@ private class Guarded<T>(val roles: Roles, val stamp: (T) -> Stamp, val sum: (T)
     }
 }
 
-private fun mergeMove(a: MoveInfo, b: MoveInfo, roles: Roles): MoveInfo {
+private fun mergeMove(a: MoveInfo, b: MoveInfo, roles: Roles, refusals: Refusals): MoveInfo {
     val newer = when {
         a.updatedAt != b.updatedAt -> if (a.updatedAt > b.updatedAt) a else b
         else -> if (a.toString() >= b.toString()) a else b
     }
-    val settings = Guarded<MoveInfo>(roles, { it.changedBy }, { it.settingsSum() }) { _, s -> roles.organiserAt(s.by, s.at) }
-    val from = settings.pick(a, b, newer) ?: newer
+    // MoveInfo is not a record with an id; the check is made here, as Guarded makes it for records.
+    fun good(m: MoveInfo): Boolean {
+        val s = m.changedBy
+        if (s.sum.isEmpty()) return s.by.isEmpty()
+        if (s.sum != m.settingsSum()) return false
+        if (s.by.isEmpty()) return roles.nobodyToAsk(s.at)
+        return roles.organiserAt(s.by, s.at).also { if (!it) refusals.add("settings", "move", s, "change the move settings") }
+    }
+    val ga = good(a)
+    val gb = good(b)
+    val from = when {
+        ga && gb -> when {
+            a.changedBy.at != b.changedBy.at -> if (a.changedBy.at > b.changedBy.at) a else b
+            a.changedBy.sum.isEmpty() != b.changedBy.sum.isEmpty() -> if (a.changedBy.sum.isEmpty()) b else a
+            a.changedBy == b.changedBy || (a.changedBy.by.isEmpty() && b.changedBy.by.isEmpty()) -> newer
+            a.changedBy.by != b.changedBy.by -> if (a.changedBy.by > b.changedBy.by) a else b
+            else -> if (a.changedBy.sum >= b.changedBy.sum) a else b
+        }
+        ga -> a
+        gb -> b
+        else -> newer
+    }
     val printed = maxOf(a.labelsPrinted, b.labelsPrinted)
     return if (from.updatedAt == newer.updatedAt && from.labelsPrinted == printed) from else from.copy(updatedAt = newer.updatedAt, labelsPrinted = printed)
 }
@@ -90,18 +118,30 @@ private val CLASS = mapOf(
  * a state that merely followed from other changes, and a state nobody had the
  * right to set falls back to waiting.
  */
-private fun mergeProposals(a: List<Proposal>, b: List<Proposal>, roles: Roles): List<Proposal> {
+private fun mergeProposals(a: List<Proposal>, b: List<Proposal>, roles: Roles, refusals: Refusals): List<Proposal> {
     fun good(p: Proposal?): Boolean {
         if (p == null || p.decided.sum != p.stateSum()) return false // the state or what was proposed changed without a stamp
         // An approval or refusal in nobody's name only counts from a time when there was no Organiser to give it.
         if (p.decided.by.isEmpty()) return CLASS.getValue(p.state) < 2 || roles.nobodyToAsk(p.decided.at)
-        return roles.organiserAt(p.decided.by, p.decided.at)
+        return roles.organiserAt(p.decided.by, p.decided.at).also {
+            if (!it) refusals.add("approval", p.id, p.decided, if (p.state == ProposalState.DECLINED) "decline a suggestion" else "approve a suggestion")
+        }
     }
     /** Withdrawn by the person who made it, with the stamp to show it. */
     fun withdrawnRightly(p: Proposal?): Boolean = p != null && p.deleted && p.withdrawn.by.isNotEmpty() && p.withdrawn.by == p.by && p.withdrawn.sum == p.withdrawnSum()
     return mergeEach(a, b) { x, y, newer ->
-        val role = roles.at(newer.by, newer.createdAt) ?: return@mergeEach null
-        if (role == Role.HELPER && newer.kind != ProposalKind.QUESTION) return@mergeEach null
+        val role = roles.at(newer.by, newer.createdAt)
+        if (role == null || (role == Role.HELPER && newer.kind != ProposalKind.QUESTION)) {
+            val tried = when (newer.kind) {
+                ProposalKind.COST -> "suggest a cost"
+                ProposalKind.TASK -> "suggest a task"
+                ProposalKind.ITEM_ROOM -> "suggest a room for {}"
+                else -> "make a suggestion about {}"
+            }
+            // About the thing it names, so the Organisers see which; a cost is never named.
+            refusals.add("suggestion", if (newer.kind == ProposalKind.COST) "" else newer.targetId, Stamp(newer.by, newer.createdAt), tried)
+            return@mergeEach null
+        }
         val gx = good(x)
         val gy = good(y)
         val from = when {
@@ -154,7 +194,9 @@ private inline fun <T : Rec> keepHands(a: List<T>, b: List<T>, merged: List<T>, 
  * goes round until nothing more comes back. It is worked out from the merged data alone, so
  * every phone that holds the same reaches the same.
  */
-internal fun keepDeletionsToTheRule(d: AppData, roles: Roles): AppData {
+internal fun keepDeletionsToTheRule(d: AppData, roles: Roles): AppData = keepDeletionsToTheRule(d, roles, null)
+
+private fun keepDeletionsToTheRule(d: AppData, roles: Roles, refusals: Refusals?): AppData {
     fun doubtful(x: Owned): Boolean {
         if (!x.deleted) return false
         val s = x.deletedBy
@@ -167,7 +209,10 @@ internal fun keepDeletionsToTheRule(d: AppData, roles: Roles): AppData {
         val hands = HandsOn(cur)
         var back = false
         fun <T : Owned> List<T>.checked(): List<T> = mapChanged { x ->
-            if (doubtful(x) && !deletionStands(x, roles, hands)) x.undeleted().also { back = true } else x
+            if (doubtful(x) && !deletionStands(x, roles, hands)) {
+                if (x.deletedBy.sum == deletedSum() && !(x is Photo && x.kind in HIDDEN_FROM_HELPERS)) refusals?.add("delete", x.id, x.deletedBy, "delete {}")
+                x.undeleted().also { back = true }
+            } else x
         }
         val next = cur.copy(items = cur.items.checked(), boxes = cur.boxes.checked(), rooms = cur.rooms.checked(), photos = cur.photos.checked())
         if (!back) return cur
@@ -175,45 +220,156 @@ internal fun keepDeletionsToTheRule(d: AppData, roles: Roles): AppData {
     }
 }
 
-private fun mergeItems(a: List<Item>, b: List<Item>, roles: Roles, approvals: Approvals, rooms: List<Room>): List<Item> {
+private fun mergeItems(a: List<Item>, b: List<Item>, roles: Roles, approvals: Approvals, rooms: List<Room>, refusals: Refusals): List<Item> {
     val organiser = { _: Item, s: Stamp -> roles.organiserAt(s.by, s.at) }
-    val decision = Guarded<Item>(roles, { it.decisionBy }, { it.decisionSum() }, organiser)
-    val room = Guarded<Item>(roles, { it.roomBy }, { it.roomSum() }, organiser)
+    val decision = Guarded<Item>(roles, { it.decisionBy }, { it.decisionSum() }, organiser, refusals, "decision") { decideVerb(it.disposition) }
+    val room = Guarded<Item>(roles, { it.roomBy }, { it.roomSum() }, organiser, refusals, "room") { "choose the room {} goes to" }
     var decided = Stamp()
-    val outcome = Guarded<Item>(roles, { it.outcomeBy }, { it.outcomeSum() }) { item, s ->
-        when (roles.at(s.by, s.at)) {
-            Role.ORGANISER -> true
-            Role.DECIDER -> approvals.coveredThen(ProposalKind.ITEM_DECISION, item.id, s, decided)
-            else -> false
-        }
+    var disposition = Disposition.UNDECIDED
+    fun carriedOut(item: Item, s: Stamp) = when (roles.at(s.by, s.at)) {
+        Role.ORGANISER -> true
+        Role.DECIDER -> approvals.coveredThen(ProposalKind.ITEM_DECISION, item.id, s, decided)
+        else -> false
     }
+    val outcome = Guarded<Item>(roles, { it.outcomeBy }, { it.outcomeSum() }, ::carriedOut, refusals, "outcome") { outcomeVerb(it) }
+    val handover = Guarded<Item>(roles, { it.handoverBy }, { it.handoverSum() }, ::carriedOut, refusals, "handover") { "arrange the hand-over of {}" }
+    val handed = Guarded<Item>(roles, { it.handedOverBy }, { it.handedOverSum() }, { _, s ->
+        roles.organiserAt(s.by, s.at) || (roles.memberAt(s.by, s.at) && (disposition == Disposition.SELL || disposition == Disposition.DONATE))
+    }, refusals, "handed") { if (it.handedOver) "mark {} handed over" else "mark {} not handed over" }
+    val where = Guarded<Item>(roles, { it.whereBy }, { it.whereSum() }, { _, s -> roles.memberAt(s.by, s.at) }, refusals, "where") { "move {}" }
     return mergeEach(a, b) { x, y, newer ->
         var r = newer
         val d = decision.pick(x, y, newer)
-        if (d == null) r = r.copy(disposition = Disposition.UNDECIDED, price = null, deadlineDay = null).let { it.copy(decisionBy = Stamp(sum = it.decisionSum())) }
-        else if (d !== newer) r = r.copy(disposition = d.disposition, price = d.price, deadlineDay = d.deadlineDay, decisionBy = d.decisionBy)
+        if (d == null) r = r.copy(disposition = Disposition.UNDECIDED, deadlineDay = null).let { it.copy(decisionBy = Stamp(sum = it.decisionSum())) }
+        else if (d !== newer) r = r.copy(disposition = d.disposition, deadlineDay = d.deadlineDay, decisionBy = d.decisionBy)
         val p = room.pick(x, y, newer)
         if (p == null) r = r.copy(destRoomId = rooms.firstOrNull { it.id == r.originRoomId && !it.deleted }?.mapsTo).let { it.copy(roomBy = Stamp(sum = it.roomSum())) }
         else if (p !== newer) r = r.copy(destRoomId = p.destRoomId, roomBy = p.roomBy)
         decided = r.decisionBy
+        disposition = r.disposition
         val o = outcome.pick(x, y, newer)
-        if (o == null) r = r.copy(listed = false, gone = false, soldFor = null).let { it.copy(outcomeBy = Stamp(sum = it.outcomeSum())) }
-        else if (o !== newer) r = r.copy(listed = o.listed, gone = o.gone, soldFor = o.soldFor, outcomeBy = o.outcomeBy)
+        if (o == null) r = r.copy(listed = false, gone = false).let { it.copy(outcomeBy = Stamp(sum = it.outcomeSum())) }
+        else if (o !== newer) r = r.copy(listed = o.listed, gone = o.gone, outcomeBy = o.outcomeBy)
+        val h = handover.pick(x, y, newer)
+        if (h == null) r = r.copy(handoverTo = null, paid = false).let { it.copy(handoverBy = Stamp(sum = it.handoverSum())) }
+        else if (h !== newer) r = r.copy(handoverTo = h.handoverTo, paid = h.paid, handoverBy = h.handoverBy)
+        val g = handed.pick(x, y, newer)
+        if (g == null) r = r.copy(handedOver = false).let { it.copy(handedOverBy = Stamp(sum = it.handedOverSum())) }
+        else if (g !== newer) r = r.copy(handedOver = g.handedOver, handedOverBy = g.handedOverBy)
+        // Where it is: the newest move anyone in the move made, on or back. With no such stamp the newer copy says.
+        val w = where.pick(x, y, newer)
+        if (w != null && w !== newer) r = r.copy(stage = w.stage, tripId = w.tripId, whereBy = w.whereBy)
         r
     }
 }
 
+/** Containers: where each is has its own stamp, as for items; the rest is the newer copy's. */
+private fun mergeBoxes(a: List<Box>, b: List<Box>, roles: Roles, refusals: Refusals): List<Box> {
+    val where = Guarded<Box>(roles, { it.whereBy }, { it.whereSum() }, { _, s -> roles.memberAt(s.by, s.at) }, refusals, "where") { "move {}" }
+    return mergeEach(a, b) { x, y, newer ->
+        val w = where.pick(x, y, newer)
+        if (w == null || w === newer) newer else newer.copy(stage = w.stage, tripId = w.tripId, whereBy = w.whereBy)
+    }
+}
+
+/**
+ * What Helpers are not sent. Never a Helper's to write: details are an Organiser's or a Decider's, the asking
+ * price goes with the decision (an Organiser's), and what it sold for with carrying the sale out.
+ */
+private fun mergeHidden(a: List<Hidden>, b: List<Hidden>, roles: Roles, approvals: Approvals, items: Map<String, Item>, refusals: Refusals): List<Hidden> {
+    val details = Guarded<Hidden>(roles, { it.detailsBy }, { it.detailsSum() }, { _, s ->
+        roles.at(s.by, s.at).let { it == Role.ORGANISER || it == Role.DECIDER }
+    }, refusals, "details") { "change the make, model, serial number or value of {}" }
+    val price = Guarded<Hidden>(roles, { it.priceBy }, { it.priceSum() }, { _, s -> roles.organiserAt(s.by, s.at) }, refusals, "price") { "set the asking price of {}" }
+    var decided = Stamp()
+    val sale = Guarded<Hidden>(roles, { it.saleBy }, { it.saleSum() }, { h, s ->
+        when (roles.at(s.by, s.at)) {
+            Role.ORGANISER -> true
+            Role.DECIDER -> approvals.coveredThen(ProposalKind.ITEM_DECISION, h.id, s, decided)
+            else -> false
+        }
+    }, refusals, "sale") { "record what {} sold for" }
+    return mergeEach(a, b) { x, y, newer ->
+        var r = newer
+        val d = details.pick(x, y, newer)
+        if (d == null) r = r.copy(value = null, make = "", model = "", serial = "", boughtDay = null, warrantyDay = null).let { it.copy(detailsBy = Stamp(sum = it.detailsSum())) }
+        else if (d !== newer) r = r.copy(value = d.value, make = d.make, model = d.model, serial = d.serial, boughtDay = d.boughtDay, warrantyDay = d.warrantyDay, detailsBy = d.detailsBy)
+        val p = price.pick(x, y, newer)
+        if (p == null) r = r.copy(price = null).let { it.copy(priceBy = Stamp(sum = it.priceSum())) }
+        else if (p !== newer) r = r.copy(price = p.price, priceBy = p.priceBy)
+        decided = items[r.id]?.decisionBy ?: Stamp()
+        val s = sale.pick(x, y, newer)
+        if (s == null) r = r.copy(soldFor = null).let { it.copy(saleBy = Stamp(sum = it.saleSum())) }
+        else if (s !== newer) r = r.copy(soldFor = s.soldFor, saleBy = s.saleBy)
+        r
+    }
+}
+
+/** Amounts to collect at a hand-over: whoever may arrange the hand-over (as for carrying the sale out). */
+private fun mergeCollect(a: List<Collect>, b: List<Collect>, roles: Roles, approvals: Approvals, items: Map<String, Item>, refusals: Refusals): List<Collect> {
+    var decided = Stamp()
+    val by = Guarded<Collect>(roles, { it.by }, { it.collectSum() }, { c, s ->
+        when (roles.at(s.by, s.at)) {
+            Role.ORGANISER -> true
+            Role.DECIDER -> approvals.coveredThen(ProposalKind.ITEM_DECISION, c.id, s, decided)
+            else -> false
+        }
+    }, refusals, "collect") { "arrange the hand-over of {}" }
+    return mergeEach(a, b) { x, y, newer ->
+        decided = items[newer.id]?.decisionBy ?: Stamp()
+        val c = by.pick(x, y, newer)
+        when {
+            c == null -> newer.copy(to = "", amount = null).let { it.copy(by = Stamp(sum = it.collectSum())) }
+            c !== newer -> newer.copy(to = c.to, amount = c.amount, by = c.by)
+            else -> newer
+        }
+    }
+}
+
+/**
+ * Damage reports. Anyone in the move reports damage, and each report is its own record, so two phones
+ * reporting apart keep both. Clearing one is an Organiser's, with a stamp; until then the report carries its
+ * reporter's own stamp, which no one else's "not cleared" can stand in for.
+ */
+private fun mergeDamage(a: List<Damage>, b: List<Damage>, roles: Roles, refusals: Refusals): List<Damage> {
+    val cleared = Guarded<Damage>(roles, { it.clearedBy }, { it.clearedSum() }, { x, s ->
+        roles.organiserAt(s.by, s.at) || (!x.cleared && s.by == x.by && s.at == x.at)
+    }, refusals, "cleared") { if (it.cleared) "clear a damage report on {}" else "reopen a damage report on {}" }
+    return mergeEach(a, b) { x, y, newer ->
+        val c = cleared.pick(x, y, newer)
+        when {
+            c == null -> newer.copy(cleared = false).let { it.copy(clearedBy = Stamp(it.by, it.at, it.clearedSum())) }
+            c !== newer -> newer.copy(cleared = c.cleared, clearedBy = c.clearedBy)
+            else -> newer
+        }
+    }
+}
+
+/**
+ * Contents lines: the newer copy of each line, so a removed line (its tombstone is newer) never comes back
+ * from an older copy, and the same words in a box are one line however many phones added them. Lines made
+ * from a box's 2.0 text at the upgrade are kept only from the newest such text of that box, as 2.0 itself
+ * would have kept only the newer box; lines added since are always kept.
+ */
+private fun mergeLines(a: List<ContentsLine>, b: List<ContentsLine>): List<ContentsLine> {
+    val merged = mergeList(a, b)
+    if (merged.none { it.batch != 0L }) return merged
+    val newest = HashMap<String, Long>()
+    for (l in merged) if (l.batch != 0L) newest.merge(l.boxId, l.batch, ::maxOf)
+    return merged.filter { it.batch == 0L || it.batch == newest[it.boxId] }
+}
+
 /** Costs. One created by someone who may not create costs is left out altogether. */
-private fun mergeExpenses(a: List<Expense>, b: List<Expense>, roles: Roles, approvals: Approvals): List<Expense> {
-    val cost = Guarded<Expense>(roles, { it.costBy }, { it.costSum() }) { _, s -> roles.organiserAt(s.by, s.at) }
+private fun mergeExpenses(a: List<Expense>, b: List<Expense>, roles: Roles, approvals: Approvals, refusals: Refusals): List<Expense> {
+    val cost = Guarded<Expense>(roles, { it.costBy }, { it.costSum() }, { _, s -> roles.organiserAt(s.by, s.at) }, refusals, "cost") { "change a cost" }
     var costed = Stamp()
-    val paid = Guarded<Expense>(roles, { it.paidBy }, { it.paidSum() }) { e, s ->
+    val paid = Guarded<Expense>(roles, { it.paidBy }, { it.paidSum() }, { e, s ->
         when (roles.at(s.by, s.at)) {
             Role.ORGANISER -> true
             Role.DECIDER -> approvals.coveredThen(ProposalKind.COST, e.id, s, costed)
             else -> false
         }
-    }
+    }, refusals, "paid") { if (it.planned) "mark a cost not paid" else "mark a cost paid" }
     return mergeEach(a, b) { x, y, newer ->
         val c = cost.pick(x, y, newer) ?: return@mergeEach null
         var r = if (c === newer) newer else newer.copy(title = c.title, amount = c.amount, category = c.category, day = c.day, deleted = c.deleted, costBy = c.costBy)
@@ -226,12 +382,12 @@ private fun mergeExpenses(a: List<Expense>, b: List<Expense>, roles: Roles, appr
 }
 
 /** Tasks. One created by someone who may not create tasks is left out altogether. */
-private fun mergeTasks(a: List<Task>, b: List<Task>, roles: Roles): List<Task> {
-    val plan = Guarded<Task>(roles, { it.planBy }, { it.planSum() }) { _, s -> roles.organiserAt(s.by, s.at) }
+private fun mergeTasks(a: List<Task>, b: List<Task>, roles: Roles, refusals: Refusals): List<Task> {
+    val plan = Guarded<Task>(roles, { it.planBy }, { it.planSum() }, { _, s -> roles.organiserAt(s.by, s.at) }, refusals, "task") { "change the task {}" }
     var assignee: String? = null
-    val done = Guarded<Task>(roles, { it.doneBy }, { it.doneSum() }) { _, s ->
+    val done = Guarded<Task>(roles, { it.doneBy }, { it.doneSum() }, { _, s ->
         roles.organiserAt(s.by, s.at) || (s.by == assignee && roles.memberAt(s.by, s.at))
-    }
+    }, refusals, "done") { if (it.done) "tick off the task {}" else "untick the task {}" }
     return mergeEach(a, b) { x, y, newer ->
         val p = plan.pick(x, y, newer) ?: return@mergeEach null
         var r = if (p === newer) newer else newer.copy(
@@ -247,7 +403,7 @@ private fun mergeTasks(a: List<Task>, b: List<Task>, roles: Roles): List<Task> {
 }
 
 /** Photos. A receipt attached to a cost by someone who could not carry that cost out is left out. */
-private fun mergePhotos(a: List<Photo>, b: List<Photo>, roles: Roles, approvals: Approvals, expenses: List<Expense>): List<Photo> {
+private fun mergePhotos(a: List<Photo>, b: List<Photo>, roles: Roles, approvals: Approvals, expenses: List<Expense>, refusals: Refusals): List<Photo> {
     val merged = mergeList(a, b)
     if (merged.none { it.kind == PhotoKind.RECEIPT && it.by.isNotEmpty() }) return merged
     val costs = expenses.associateBy { it.id }
@@ -258,7 +414,7 @@ private fun mergePhotos(a: List<Photo>, b: List<Photo>, roles: Roles, approvals:
             Role.ORGANISER -> true
             Role.DECIDER -> approvals.coveredThen(ProposalKind.COST, cost.id, Stamp(p.by, p.createdAt), cost.costBy)
             else -> false
-        }
+        }.also { if (!it) refusals.add("receipt", "", Stamp(p.by, p.createdAt), "attach a receipt to a cost") }
     }
 }
 
@@ -270,22 +426,29 @@ private fun mergePhotos(a: List<Photo>, b: List<Photo>, roles: Roles, approvals:
  * change made by someone whose role does not allow it is not accepted while
  * the rest of that record still is. Both copies are checked the same way,
  * whichever phone they came from, so every phone ends up with the same result.
+ * Each change turned away is kept for the Organisers ([refusedChanges]).
+ * Data still in 2.0's shape is brought up to 2.1 first ([upgradeRecordsTo21]).
  */
-fun merge(a: AppData, b: AppData): AppData {
+fun merge(a0: AppData, b0: AppData): AppData {
+    val a = upgradeRecordsTo21(a0)
+    val b = upgradeRecordsTo21(b0)
     val people = mergePeople(a.people, b.people)
     val roles = Roles(people)
+    val refusals = Refusals(roles)
     val rooms = mergeList(a.rooms, b.rooms)
-    val proposals = mergeProposals(a.proposals, b.proposals, roles)
+    val proposals = mergeProposals(a.proposals, b.proposals, roles, refusals)
     val approvals = Approvals(proposals)
-    val expenses = mergeExpenses(a.expenses, b.expenses, roles, approvals)
+    val expenses = mergeExpenses(a.expenses, b.expenses, roles, approvals, refusals)
+    val items = keepHands(a.items, b.items, mergeItems(a.items, b.items, roles, approvals, rooms, refusals), { it.hands }) { r, h -> r.copy(hands = h) }
+    val byId = items.associateBy { it.id }
     val merged = AppData(
         version = maxOf(a.version, b.version),
-        move = mergeMove(a.move, b.move, roles),
+        move = mergeMove(a.move, b.move, roles, refusals),
         rooms = keepHands(a.rooms, b.rooms, rooms, { it.hands }) { r, h -> r.copy(hands = h) },
-        items = keepHands(a.items, b.items, mergeItems(a.items, b.items, roles, approvals, rooms), { it.hands }) { r, h -> r.copy(hands = h) },
-        boxes = keepHands(a.boxes, b.boxes, mergeList(a.boxes, b.boxes), { it.hands }) { r, h -> r.copy(hands = h) },
-        photos = keepHands(a.photos, b.photos, mergePhotos(a.photos, b.photos, roles, approvals, expenses), { it.hands }) { r, h -> r.copy(hands = h) },
-        tasks = mergeTasks(a.tasks, b.tasks, roles),
+        items = items,
+        boxes = keepHands(a.boxes, b.boxes, mergeBoxes(a.boxes, b.boxes, roles, refusals), { it.hands }) { r, h -> r.copy(hands = h) },
+        photos = keepHands(a.photos, b.photos, mergePhotos(a.photos, b.photos, roles, approvals, expenses, refusals), { it.hands }) { r, h -> r.copy(hands = h) },
+        tasks = mergeTasks(a.tasks, b.tasks, roles, refusals),
         expenses = expenses,
         supplies = mergeList(a.supplies, b.supplies),
         trips = mergeList(a.trips, b.trips),
@@ -294,6 +457,11 @@ fun merge(a: AppData, b: AppData): AppData {
         people = people,
         proposals = proposals,
         activity = mergeList(a.activity, b.activity),
+        hidden = mergeHidden(a.hidden, b.hidden, roles, approvals, byId, refusals),
+        collect = mergeCollect(a.collect, b.collect, roles, approvals, byId, refusals),
+        damage = mergeDamage(a.damage, b.damage, roles, refusals),
+        lines = mergeLines(a.lines, b.lines),
     )
-    return settle(keepDeletionsToTheRule(merged, roles))
+    val kept = keepDeletionsToTheRule(merged, roles, refusals)
+    return settle(kept.copy(refused = refusals.into(mergeList(a.refused, b.refused))))
 }

@@ -116,8 +116,14 @@ fun AppData.statusOf(m: Movable): String {
     return if (c.stage == Stage.LOADED && c.carriedByHand()) "Carried by hand" else m.stage.label
 }
 
-/** Every item marked Move, including those packed in a container. See [looseItems] for the ones that travel on their own. */
-fun AppData.movingItems(): List<Item> = liveItems.filter { it.disposition == Disposition.MOVE }
+/**
+ * Every item marked Move, including those packed in a container. See [looseItems] for the ones that travel on their own.
+ * Once the move uses the storage unit ([usesStorage]), items marked Store travel too: to the storage unit.
+ */
+fun AppData.movingItems(): List<Item> {
+    val storing = usesStorage()
+    return liveItems.filter { it.disposition == Disposition.MOVE || (storing && it.disposition == Disposition.STORE) }
+}
 
 /**
  * What has to be loaded, unloaded and accounted for: every container that is
@@ -144,7 +150,8 @@ fun AppData.findByAnyCode(code: String): Movable? {
     val c = code.trim()
     if (c.isEmpty()) return null
     findByLabel(c)?.let { return it }
-    liveItems.firstOrNull { it.serial.isNotBlank() && it.serial.equals(c, ignoreCase = true) }?.let { return it.toMovable() }
+    // Serial numbers are on the hidden records, which a Helper's phone does not hold.
+    hidden.firstOrNull { !it.deleted && it.serial.isNotBlank() && it.serial.equals(c, ignoreCase = true) }?.let { h -> item(h.id)?.let { return it.toMovable() } }
     liveEntries.firstOrNull { it.code == c }?.let { e -> box(e.boxId)?.let { return it.toMovable() } }
     return null
 }
@@ -241,9 +248,13 @@ data class Progress(
     val roomsPacked: Ratio,
     val sealed: Ratio,
     val loaded: Ratio,
+    /** Delivered or unpacked at the new home, out of everything not in storage. */
     val delivered: Ratio,
+    /** Unpacked, out of everything not in storage. */
     val unpacked: Ratio,
     val tasks: Ratio,
+    /** At the storage unit, out of everything: in storage, not delivered. */
+    val stored: Ratio = Ratio(0, 0),
 )
 
 fun AppData.progress(): Progress {
@@ -254,22 +265,26 @@ fun AppData.progress(): Progress {
     val mv = boxes.map { it.toMovable() } + moving.map { it.toMovable() }
     val origin = roomsOf(Home.ORIGIN)
     val tasks = liveTasks
+    // Things at the storage unit are in storage, not delivered: they are left out of what is to be delivered and unpacked.
+    val stored = mv.count { it.stage == Stage.STORED }
     return Progress(
         triage = Ratio(items.count { it.disposition != Disposition.UNDECIDED }, items.size),
         destinations = Ratio(moving.count { room(it.destRoomId) != null }, moving.size),
         roomsPacked = Ratio(origin.count { it.packed }, origin.size),
         sealed = Ratio(boxes.count { it.sealed }, boxes.size),
         loaded = Ratio(mv.count { it.stage != Stage.AT_ORIGIN }, mv.size),
-        delivered = Ratio(mv.count { it.stage == Stage.DELIVERED || it.stage == Stage.DONE }, mv.size),
-        unpacked = Ratio(mv.count { it.stage == Stage.DONE }, mv.size),
+        delivered = Ratio(mv.count { it.stage == Stage.DELIVERED || it.stage == Stage.DONE }, mv.size - stored),
+        unpacked = Ratio(mv.count { it.stage == Stage.DONE }, mv.size - stored),
         tasks = Ratio(tasks.count { it.done }, tasks.size),
+        stored = Ratio(stored, mv.size),
     )
 }
 
 /** Things that need attention, most urgent first. Each has a route to the screen that fixes it. */
 data class Issue(val text: String, val route: String, val severe: Boolean = false)
 
-fun AppData.issues(now: Long = today()): List<Issue> {
+/** [role] is the phone's: a Helper's phone does not hold serial numbers, so it is not told none are recorded. */
+fun AppData.issues(now: Long = today(), role: Role? = null): List<Issue> {
     val out = ArrayList<Issue>()
     val mv = movables()
     val anyDelivered = mv.any { it.stage == Stage.DELIVERED || it.stage == Stage.DONE }
@@ -291,14 +306,18 @@ fun AppData.issues(now: Long = today()): List<Issue> {
     if (uses(Part.PLAN) && noDest > 0) out += Issue("$noDest item${if (noDest == 1) "" else "s"} with no destination room", "plan")
     val wontFit = moving.count { fitOf(it) == Fit.NO && !it.needsDisassembly }
     if (uses(Part.PLAN) && wontFit > 0) out += Issue("$wontFit item${if (wontFit == 1) "" else "s"} won't fit through the door assembled", "plan", severe = true)
-    val toGo = liveItems.count { it.disposition in listOf(Disposition.SELL, Disposition.DONATE, Disposition.BIN) && !it.gone }
+    // Something handed over to the buyer or the charity has gone, as far as clearing the house goes.
+    val toGo = liveItems.count { it.disposition in listOf(Disposition.SELL, Disposition.DONATE, Disposition.BIN) && !it.gone && !it.handedOver }
     if (uses(Part.TRIAGE) && toGo > 0) out += Issue("$toGo item${if (toGo == 1) "" else "s"} still to sell, donate or bin", "disposal")
     val boxNoDest = top.count { room(it.destRoomId) == null }
     if (uses(Part.BOXES) && uses(Part.PLAN) && boxNoDest > 0) out += Issue("$boxNoDest box${if (boxNoDest == 1) "" else "es"} with no destination room", "boxes")
     val unsealed = top.count { !it.sealed && it.stage == Stage.AT_ORIGIN }
     if (uses(Part.BOXES) && unsealed > 0) out += Issue("$unsealed box${if (unsealed == 1) "" else "es"} still open", "boxes")
-    val noSerial = movingItems().count { it.isElectronic() && it.serial.isBlank() && photosOf(it.id, PhotoKind.SERIAL).isEmpty() }
-    if (uses(Part.DEVICES) && noSerial > 0) out += Issue("$noSerial device${if (noSerial == 1) "" else "s"} with no serial number recorded", "electronics")
+    // Serial numbers and their photos are not sent to Helpers, so only a phone that holds them can tell.
+    if (role != Role.HELPER) {
+        val noSerial = movingItems().count { it.isElectronic() && serialOf(it.id).isBlank() && photosOf(it.id, PhotoKind.SERIAL).isEmpty() }
+        if (uses(Part.DEVICES) && noSerial > 0) out += Issue("$noSerial device${if (noSerial == 1) "" else "s"} with no serial number recorded", "electronics")
+    }
     // A container counts as described when anything at all is recorded in it: text, a photo, scanned things, items or other containers.
     val boxesWithEntries = liveEntries.map { it.boxId }.toSet() + liveItems.mapNotNull { it.boxId } + liveBoxes.mapNotNull { it.parentId }
     val blank = liveBoxes.count { b -> b.contents.isBlank() && photosOf(b.id).isEmpty() && b.id !in boxesWithEntries }
@@ -310,13 +329,19 @@ fun AppData.issues(now: Long = today()): List<Issue> {
 
 data class Hit(val movable: Movable, val detail: String)
 
-/** Search boxes and items by name, contents, label, notes and room name. */
-fun AppData.search(query: String): List<Hit> {
+/**
+ * Search boxes and items by name, contents, label, notes and room name, and items by make, model and serial
+ * number where this phone holds them. For a Helper ([role]) what is marked "travels with me" is left out.
+ */
+fun AppData.search(query: String, role: Role? = null): List<Hit> {
     val words = query.lowercase().split(' ', ',').filter { it.isNotBlank() }
     if (words.isEmpty()) return emptyList()
     fun matches(text: String) = words.all { text.contains(it) }
     val out = ArrayList<Hit>()
+    val helper = role == Role.HELPER
+    fun hiddenFromHelper(m: Movable) = helper && (m.travelsWithMe || carrierOf(m).travelsWithMe)
     for (b in liveBoxes) {
+        if (hiddenFromHelper(b.toMovable())) continue
         val text = listOf(b.label, b.name, b.contents, b.notes, b.category, b.kind.label, room(b.destRoomId)?.name, room(b.originRoomId)?.name)
             .joinToString(" ").lowercase()
         if (!matches(text)) continue
@@ -324,12 +349,14 @@ fun AppData.search(query: String): List<Hit> {
         out += Hit(b.toMovable(), listOfNotNull(inside, b.contents.ifBlank { b.notes }.ifBlank { null }).joinToString(" · "))
     }
     for (i in liveItems) {
-        val text = listOf(i.name, i.label, i.notes, i.make, i.model, i.serial, i.accessories, room(i.destRoomId)?.name, room(i.originRoomId)?.name)
+        if (hiddenFromHelper(i.toMovable())) continue
+        val h = hiddenOf(i.id)
+        val text = listOf(i.name, i.label, i.notes, h?.make, h?.model, h?.serial, i.accessories, room(i.destRoomId)?.name, room(i.originRoomId)?.name)
             .joinToString(" ").lowercase()
         if (!matches(text)) continue
         // An item packed in a container is still found by its own name; the detail says where it is packed.
         val inside = containerOf(i)?.let { "In ${it.title()}" }
-        val detail = listOf(i.make, i.model, i.serial).filter { it.isNotBlank() }.joinToString(" ").ifBlank { i.notes }
+        val detail = listOfNotNull(h?.make, h?.model, h?.serial).filter { it.isNotBlank() }.joinToString(" ").ifBlank { i.notes }
         out += Hit(i.toMovable(), listOfNotNull(inside, detail.ifBlank { null }).joinToString(" · "))
     }
     // Books and products scanned into a box: the hit is the box, with what matched as the detail.
@@ -339,6 +366,7 @@ fun AppData.search(query: String): List<Hit> {
         val matched = list.filter { e -> matches(listOf(e.title, e.author, e.code).joinToString(" ").lowercase()) }
         if (matched.isEmpty()) continue
         val b = box(boxId) ?: continue
+        if (hiddenFromHelper(b.toMovable())) continue
         seen += boxId
         out += Hit(b.toMovable(), matched.take(3).joinToString("; ") { it.title.ifBlank { it.code } } + if (matched.size > 3) " and ${matched.size - 3} more" else "")
     }
@@ -352,13 +380,15 @@ fun AppData.search(query: String): List<Hit> {
  */
 fun AppData.whereIs(m: Movable): String {
     val carrier = carrierOf(m)
-    if (carrier.id != m.id && carrier.stage != Stage.DONE) return "In ${carrier.title} · ${placeOf(carrier)}"
-    return placeOf(m)
+    if (carrier.id != m.id && carrier.stage != Stage.DONE) return "In ${carrier.title} · ${placeText(carrier)}"
+    return placeText(m)
 }
 
-private fun AppData.placeOf(m: Movable): String = when (m.stage) {
+private fun AppData.placeText(m: Movable): String = when (m.stage) {
     Stage.AT_ORIGIN -> "${move.originName}: ${room(m.originRoomId)?.name ?: "no room"}"
     Stage.LOADED -> if (m.carriedByHand()) "Carried by hand, on its way to ${move.destName}" else "On the ${vehicle()}" + (trip(m.tripId)?.let { " (${it.name})" } ?: "")
+    // The storage unit is one place with no rooms.
+    Stage.STORED -> "At the storage unit"
     Stage.DELIVERED, Stage.DONE -> "${move.destName}: ${room(m.destRoomId)?.name ?: "no room"}"
 }
 
