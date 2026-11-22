@@ -69,6 +69,18 @@ jobs:
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back emulated -camera-front emulated
           working-directory: moving-app
           script: ./gradlew :app:connectedDebugAndroidTest
+      - name: Show why the device tests failed
+        if: failure()
+        working-directory: moving-app/app/build/outputs
+        run: |
+          # The test results and each test's logcat, printed here so they can be read from the log alone.
+          find . -name '*.xml' -path '*androidTest-results*' -exec grep -l '<failure' {} + | xargs -r grep -h -A40 '<failure' | head -300 || true
+          for f in $(find . -name 'logcat-*.txt'); do
+            if grep -q 'FATAL EXCEPTION\|Process crashed\|ANR in' "$f"; then
+              echo "== $f"
+              grep -h -B2 -A45 'FATAL EXCEPTION\|ANR in' "$f" | head -150
+            fi
+          done
       - uses: actions/upload-artifact@v4
         if: always()
         with:
