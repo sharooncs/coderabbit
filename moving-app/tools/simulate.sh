@@ -5,8 +5,12 @@
 #   tools/simulate.sh              50 seeds, starting at seed 1
 #   tools/simulate.sh 300          300 seeds
 #   tools/simulate.sh 1 4711       seed 4711 alone, to look at a failure again
+# One seed in ten more is run with the phones working while they sync. Those alone:
+#   HM_SIM_LOOSE=500 HM_SIM_LOOSE_JOBS=4 tools/simulate.sh 0          500, four at a time
+#   HM_SIM_LOOSE_SEEDS=161,161,181 HM_SIM_LOOSE_JOBS=4 tools/simulate.sh 0   named ones, repeats allowed
 # A failing seed prints what led to the failure. With HM_SIM_TRACE=1 the whole
-# trace of every seed is written to build/simulation-trace.txt as well.
+# trace of every seed is written to build/simulation-trace.txt as well, and that of
+# each threaded seed that broke something to build/simulation-trace.txt.loose.
 cd "$(dirname "$0")/.." || exit 1
 export HM_SIM_SEEDS="${1:-50}"
 export HM_SIM_FIRST="${2:-1}"
