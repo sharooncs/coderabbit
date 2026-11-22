@@ -15,10 +15,47 @@ fun <T : Rec> mergeList(a: List<T>, b: List<T>): List<T> {
     return out.values.toList()
 }
 
-private fun <T : Rec> newer(x: T, y: T): T = when {
-    x.updatedAt != y.updatedAt -> if (x.updatedAt > y.updatedAt) x else y
-    x.deleted != y.deleted -> if (x.deleted) x else y
-    else -> if (x.toString() >= y.toString()) x else y
+/**
+ * The newer copy. Two copies of the same time (two phones changed the record at the same moment) are told apart first by
+ * what the newer copy decides ([ownPart]), never by what the merge then settles by itself: the merged copy has those
+ * parts from wherever they stand, so it would compare differently with the same copy at the next merge, and merging
+ * the same data again (an update file opened twice) would choose the other copy and change the record.
+ */
+private fun <T : Rec> newer(x: T, y: T): T {
+    if (x.updatedAt != y.updatedAt) return if (x.updatedAt > y.updatedAt) x else y
+    if (x == y) return x
+    val ox = ownPart(x)
+    val oy = ownPart(y)
+    return when {
+        ox != oy -> if (ox > oy) x else y
+        x.deleted != y.deleted -> if (x.deleted) x else y
+        else -> if (x.toString() >= y.toString()) x else y
+    }
+}
+
+/**
+ * What the newer copy of a record decides at a merge, as text: the record without what the merge settles by itself,
+ * which is each protected part (from the copy whose stamp stands), the hands (both copies' together), whether it is
+ * deleted (by the rule of who may delete), its people's roles and phones, and what follows from other records (where a
+ * thing in a container is, its damage and a container's contents). Blank for a record the merge takes whole from the
+ * newer copy, and for one whose parts are all protected.
+ */
+private fun ownPart(r: Rec): String = when (r) {
+    is Item -> r.copy(
+        disposition = Disposition.UNDECIDED, deadlineDay = null, decisionBy = Stamp(), destRoomId = null, roomBy = Stamp(),
+        listed = false, gone = false, outcomeBy = Stamp(), handoverTo = null, paid = false, handoverBy = Stamp(), handedOver = false, handedOverBy = Stamp(),
+        stage = Stage.AT_ORIGIN, tripId = null, whereBy = Stamp(), damaged = false, damageNote = "", hands = emptyList(), deleted = false, deletedBy = Stamp(),
+    ).toString()
+    is Box -> r.copy(
+        stage = Stage.AT_ORIGIN, tripId = null, whereBy = Stamp(), contents = "", damaged = false, damageNote = "",
+        hands = emptyList(), deleted = false, deletedBy = Stamp(),
+    ).toString()
+    is Room -> r.copy(hands = emptyList(), deleted = false, deletedBy = Stamp()).toString()
+    is Photo -> r.copy(hands = emptyList(), deleted = false, deletedBy = Stamp()).toString()
+    is BoxEntry -> r.copy(hands = emptyList()).toString()
+    is Damage -> r.copy(cleared = false, clearedBy = Stamp()).toString()
+    is Person -> r.copy(role = Role.HELPER, removed = false, grants = emptyList(), phones = emptyList(), deleted = false).toString()
+    else -> ""
 }
 
 /** Like [mergeList], but [f] sees both phones' copies of each record and decides what is kept (null: nothing). */
@@ -463,5 +500,28 @@ fun merge(a0: AppData, b0: AppData): AppData {
         lines = mergeLines(a.lines, b.lines),
     )
     val kept = keepDeletionsToTheRule(merged, roles, refusals)
-    return settle(kept.copy(refused = refusals.into(mergeList(a.refused, b.refused))))
+    val settled = settle(kept)
+    noteWhereItFollows(kept, settled, roles, refusals)
+    return settled.copy(refused = refusals.into(mergeList(a.refused, b.refused)))
+}
+
+/**
+ * Things in a container take its place and its stamp ([mirrorContainers]), so a merge can give a thing a stamp neither
+ * copy of it had: it went into a container, or one it is in came back from a deletion that did not stand. When its
+ * author had no right to that move, the next merge turns it away on the thing as well as on the container, as it does
+ * whenever such a copy comes in. It is noted here, by the merge that gave the stamp, so that merging the same again
+ * notes nothing new.
+ */
+private fun noteWhereItFollows(before: AppData, after: AppData, roles: Roles, refusals: Refusals) {
+    fun check(id: String, s: Stamp, was: Stamp?, sum: String) {
+        if (s != was && s.by.isNotEmpty() && s.sum == sum && !roles.memberAt(s.by, s.at)) refusals.add("where", id, s, "move {}")
+    }
+    if (after.items !== before.items) {
+        val was = before.items.associateBy { it.id }
+        for (i in after.items) if (!i.deleted && i.boxId != null) check(i.id, i.whereBy, was[i.id]?.whereBy, i.whereSum())
+    }
+    if (after.boxes !== before.boxes) {
+        val was = before.boxes.associateBy { it.id }
+        for (b in after.boxes) if (!b.deleted && b.parentId != null) check(b.id, b.whereBy, was[b.id]?.whereBy, b.whereSum())
+    }
 }

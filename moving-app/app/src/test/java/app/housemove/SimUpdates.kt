@@ -114,7 +114,10 @@ internal object SimUpdates {
                 val a = first!!.records().toMap()
                 val b = targetAfter?.records()?.toMap().orEmpty()
                 val k = (a.keys + b.keys).firstOrNull { a[it] != b[it] } ?: if (first!!.move != targetAfter?.move) Simulation.MOVE else "?"
-                sim.broke(UPDATES, "opening the same update of $name twice changed ${to.tag}'s data again (“${r.message}”), first at $k:\n      once: ${a[k].toString().take(500)}\n      twice: ${b[k].toString().take(500)}", listOf(k.substringAfter(':')))
+                val x = a[k].toString().split(", ")
+                val y = b[k].toString().split(", ")
+                val diff = if (a[k] != null && b[k] != null && x.size == y.size) x.indices.filter { x[it] != y[it] }.joinToString("; ") { "${x[it]} became ${y[it]}" }.take(900) else ""
+                sim.broke(UPDATES, "opening the same update of $name twice changed ${to.tag}'s data again (“${r.message}”), first at $k:\n      once: ${a[k].toString().take(500)}\n      twice: ${b[k].toString().take(500)}" + (if (diff.isNotEmpty()) "\n      what changed: $diff" else ""), listOf(k.substringAfter(':')))
             }
             if (wasHelper && target!!.myRole == Role.HELPER && !hiddenOf(targetAfter!!).all { it in hiddenBefore }) {
                 sim.broke(UPDATES, "${to.tag}, a Helper's phone, took in something a Helper is not sent from ${from.tag}'s update")
