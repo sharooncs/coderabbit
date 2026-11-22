@@ -483,7 +483,8 @@ class SyncPeopleTest {
         assertTrue(sync(dee, asha).second.ok)
         assertNull(dee.data.value.expense("fuel"))
         assertFalse(File(dee.photoDir, later.name).exists())
-        assertEquals(180.0, dee.data.value.expense("van")!!.amount, 0.0) // her old copy
+        // Since 2.1 her phone lets go of its old copy once it has synced with an Organiser's, which has everything it had.
+        assertNull(dee.data.value.expense("van"))
         assertEquals(195.0, asha.data.value.expense("van")!!.amount, 0.0) // the real one
         assertEquals(60.0, asha.data.value.expense("fuel")!!.amount, 0.0)
         assertTrue(File(asha.photoDir, later.name).isFile)
@@ -525,10 +526,11 @@ class SyncPeopleTest {
         }
         assertEquals(Role.ORGANISER, b.data.value.person(a.me!!.id)!!.role)
         assertEquals(Role.HELPER, a.data.value.person(b.me!!.id)!!.role)
-        // Ben's phone was in helper mode, so he is a Helper: from now on it is sent no costs, but keeps the one it had.
+        // Ben's phone was in helper mode, so he is a Helper: from now on it is sent no costs, and since 2.1 it lets go of the one
+        // it had once Asha's phone, an Organiser's, has everything it held.
         a.put(Expense(id = "e2", title = "Fuel", amount = 40.0))
         assertTrue(sync(a, b).second.ok)
-        assertEquals(listOf("e1"), b.data.value.expenses.map { it.id })
+        assertTrue(b.data.value.expenses.isEmpty())
         assertEquals(2, a.data.value.liveExpenses.size)
         // And his phone no longer changes decisions, while Asha's does.
         b.put(b.data.value.item("sofa")!!.copy(disposition = Disposition.BIN))
