@@ -284,7 +284,8 @@ class SyncPeopleTest {
     fun aHelpersPhoneIsNotSentCostsReceiptsOrSerialLabelsAndSyncingBackRemovesNothing() {
         val asha = store("Asha")
         val tv = asha.createItem("TV", null)
-        asha.put(asha.data.value.item(tv.id)!!.copy(serial = "SN-123", make = "Sony", disposition = Disposition.MOVE))
+        asha.put(asha.data.value.item(tv.id)!!.copy(disposition = Disposition.MOVE))
+        assertTrue(asha.setDetails(tv.id) { it.copy(serial = "SN-123", make = "Sony") }.ok)
         val box = asha.createBox("L001", null)
         asha.put(Expense(id = "van", title = "Van hire", amount = 180.0, planned = false))
         val receipt = asha.photo("van", PhotoKind.RECEIPT, 3000)
@@ -302,9 +303,10 @@ class SyncPeopleTest {
         assertTrue(d.proposals.none { it.kind == ProposalKind.COST })
         assertEquals(listOf(PhotoKind.CONTENTS), d.photos.map { it.kind })
         assertEquals(listOf(contents.name), hal.photoDir.list()!!.toList())
-        // Everything a Helper works with is: the item with its details, the box and its photo.
-        assertEquals("SN-123", d.item(tv.id)!!.serial)
-        assertEquals("Sony", d.item(tv.id)!!.make)
+        // Everything a Helper works with is: the item, the box and its photo. Its serial number and make are not (2.1).
+        assertEquals(Disposition.MOVE, d.item(tv.id)!!.disposition)
+        assertNull(d.hiddenOf(tv.id))
+        assertEquals("", d.item(tv.id)!!.serial)
         assertNotNull(d.box(box.id))
 
         // The Decider's phone has all of it.
@@ -340,7 +342,7 @@ class SyncPeopleTest {
             val item = x.item(tv.id)!!
             assertEquals("Screen wrapped", item.notes)
             assertEquals(Stage.LOADED, item.stage)
-            assertEquals("SN-123", item.serial)
+            assertEquals("SN-123", x.serialOf(tv.id))
             assertEquals(Disposition.MOVE, item.disposition)
             assertTrue(x.box(box.id)!!.sealed)
         }

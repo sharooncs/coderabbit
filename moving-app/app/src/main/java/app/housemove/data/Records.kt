@@ -59,6 +59,16 @@ fun AppData.isDamaged(thingId: String): Boolean = index.damage[thingId]?.any { !
 /** Every open damage report, oldest first. */
 fun AppData.openDamage(): List<Damage> = damage.filter { !it.deleted && !it.cleared }.sortedWith(DAMAGE_ORDER)
 
+/**
+ * The lines of a box's contents as written in its text: split at commas, semicolons and new lines only, so
+ * "Kettle and toaster" written as one stays one ([contentsLines] also splits at "and", for what is said).
+ * Trimmed, with no repeats.
+ */
+fun storedLines(text: String): List<String> {
+    val seen = HashSet<String>()
+    return text.split(Regex("[,;\\n\\r]+")).map { it.trim().trimEnd('.').trim() }.filter { it.isNotEmpty() && seen.add(it.lowercase()) }
+}
+
 /** The id of the line [text] of box [boxId]: the same words in the same box are always the same line. */
 internal fun lineId(boxId: String, text: String): String = boxId + "/" + seal(text.trim().lowercase())
 
@@ -100,13 +110,13 @@ internal fun withCaches(d: AppData): AppData {
 internal val Actor.isOrganiser: Boolean get() = open || (me != null && !me.removed && me.role == Role.ORGANISER)
 
 /**
- * Make the lines of box [boxId] those of [text] ([contentsLines]): lines no longer there are removed
+ * Make the lines of box [boxId] those of [text] ([storedLines]): lines no longer there are removed
  * (a tombstone, so an older copy never brings them back), new ones are added, and a line removed earlier
  * and written again comes back. Returns whether anything changed.
  */
 internal fun Draft.setLines(boxId: String, text: String): Boolean {
     val want = LinkedHashMap<String, String>()
-    for (w in contentsLines(text)) want.putIfAbsent(lineId(boxId, w), w)
+    for (w in storedLines(text)) want.putIfAbsent(lineId(boxId, w), w)
     val have = HashSet<String>()
     var changed = false
     val kept = d.lines.mapChanged { l ->

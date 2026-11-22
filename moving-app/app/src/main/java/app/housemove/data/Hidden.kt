@@ -5,52 +5,44 @@ package app.housemove.data
  *
  * Helpers are not sent: costs and cost suggestions, receipts and serial-label photos (as in 2.0), and since
  * 2.1 an item's [Hidden] record (value, make, model, serial number, dates, asking price, what it sold for),
- * suggestions that carry a price, the refused changes kept for Organisers, and the amounts to collect at
- * hand-overs other than their own. Whole records are left out, never single fields, so a Helper's copy of an
- * item can never blank any of these on another phone, and leaving a record out is not a deletion.
+ * the refused changes kept for Organisers, and the amounts to collect at hand-overs other than their own.
+ * Whole records are left out, never single fields, so a Helper's copy of an item can never blank any of these
+ * on another phone, and leaving a record out is not a deletion. The activity log, which Helpers are sent,
+ * names no amounts.
+ *
+ * A Decider's suggestion keeps the price it suggests, and Helpers are sent suggestions: a Helper's phone needs
+ * the approved ones to accept what a Decider carries out, and a suggestion has to reach an Organiser by way of
+ * any phone with what it asks for.
  *
  * A Helper's phone that holds such data from before (2.0 sent it, or the person was a Decider until lately)
  * keeps it until it has finished a full sync with an Organiser's or a Decider's phone, which then holds
  * everything it had; then it lets it go ([withoutHiddenFor], [Store.fullSyncDone]).
  */
 
-/** A suggestion that carries an asking price, which Helpers are not sent. */
-fun Proposal.priced(): Boolean = kind == ProposalKind.ITEM_DECISION && price != null
-
 /**
  * The part of the data that is sent to a phone whose person is [personId] with [role]: everything for an
  * Organiser or a Decider. A Helper (or anyone this phone does not know the role of) is sent what [visibleTo]
- * leaves them, without hidden records, priced suggestions or refused changes, and with only the amounts to
- * collect at hand-overs given to them. The sync sends this.
+ * leaves them, without hidden records or refused changes, and with only the amounts to collect at hand-overs
+ * given to them. The sync sends this.
  */
 fun AppData.sentTo(role: Role?, personId: String? = null): AppData {
     val r = role ?: Role.HELPER
     if (r != Role.HELPER) return this
-    val v = visibleTo(Role.HELPER)
-    return v.copy(
+    return visibleTo(Role.HELPER).copy(
         hidden = emptyList(),
         refused = emptyList(),
         collect = if (personId.isNullOrEmpty()) emptyList() else collect.filter { c -> c.to == personId && item(c.id)?.handoverTo == personId },
-        proposals = v.proposals.filter { !it.priced() },
     )
 }
 
 /**
- * What a Helper's phone keeps of a merge, beyond [withHelpersShareOf]: none of the hidden records, priced
- * suggestions or refused changes that came in (it keeps what it had, [was]), and of the amounts to collect,
- * only those given to [me].
+ * What a Helper's phone keeps of a merge, beyond [withHelpersShareOf]: none of the hidden records or refused
+ * changes that came in (it keeps what it had, [was]), and of the amounts to collect, only those given to [me].
  */
 internal fun AppData.withHelpersHiddenOf(was: AppData, me: String): AppData {
-    val pricedWere = was.proposals.filter { it.priced() }.associateBy { it.id }
-    val ids = proposals.map { it.id }.toSet()
     val collectWere = was.collect.filter { it.to != me }.associateBy { it.id }
     val mine = collect.filter { it.to == me && it.id !in collectWere }
-    return copy(
-        hidden = was.hidden,
-        refused = was.refused,
-        collect = mine + collectWere.values,
-        proposals = proposals.mapNotNull { if (it.priced()) pricedWere[it.id] else it } + pricedWere.values.filter { it.id !in ids },
-    )
+    return copy(hidden = was.hidden, refused = was.refused, collect = mine + collectWere.values)
 }
 
 /**
@@ -60,7 +52,7 @@ internal fun AppData.withHelpersHiddenOf(was: AppData, me: String): AppData {
 fun AppData.withoutHiddenFor(me: String): AppData = copy(
     expenses = emptyList(),
     photos = photos.filter { it.kind !in HIDDEN_FROM_HELPERS },
-    proposals = proposals.filter { it.kind != ProposalKind.COST && !it.priced() },
+    proposals = proposals.filter { it.kind != ProposalKind.COST },
     hidden = emptyList(),
     refused = emptyList(),
     collect = collect.filter { it.to == me && item(it.id)?.handoverTo == me },
@@ -69,7 +61,7 @@ fun AppData.withoutHiddenFor(me: String): AppData = copy(
 /** Does this phone hold anything a Helper is not sent? */
 fun AppData.holdsHidden(me: String): Boolean =
     expenses.isNotEmpty() || hidden.isNotEmpty() || refused.isNotEmpty() || photos.any { it.kind in HIDDEN_FROM_HELPERS } ||
-        proposals.any { it.kind == ProposalKind.COST || it.priced() } || collect.any { it.to != me || item(it.id)?.handoverTo != me }
+        proposals.any { it.kind == ProposalKind.COST } || collect.any { it.to != me || item(it.id)?.handoverTo != me }
 
 /** Why this phone may not make a backup, in words for the screen, or null when it may. Helpers cannot make backups. */
 fun AppData.whyNoBackup(device: DeviceInfo): String? =

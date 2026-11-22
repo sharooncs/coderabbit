@@ -111,6 +111,9 @@ class PhonesTogetherTest {
             if (costs) d.expenses.toSet() else 0,
             d.proposals.filter { costs || it.kind != ProposalKind.COST }.toSet(),
             d.photos.filter { costs || it.kind !in HIDDEN_FROM_HELPERS }.toSet(),
+            // What else Helpers are not sent (2.1), and what every phone holds alike.
+            if (costs) listOf(d.hidden.toSet(), d.collect.toSet(), d.refused.toSet()) else 0,
+            d.damage.toSet(), d.lines.toSet(),
         )
     }
 
@@ -187,12 +190,12 @@ class PhonesTogetherTest {
                 assertEquals(omar.id, d.item(lamp)!!.decisionBy.by)
                 // Omar had changed the decision before Dee acted, so her go-ahead had already ended: what she marked is not kept.
                 assertFalse(d.item(lamp)!!.gone)
-                assertNull(d.item(lamp)!!.soldFor)
+                assertNull(d.hiddenOf(lamp)?.soldFor)
                 assertFalse(d.mayCarryOut(d.person(dee.id), d.item(lamp)!!))
                 assertNotNull(dee.carryOut(lamp, gone = true).reason)
             } else {
                 assertEquals(Disposition.SELL, d.item(lamp)!!.disposition)
-                assertEquals(40.0, d.item(lamp)!!.price!!, 0.0)
+                assertEquals(40.0, d.priceOf(lamp)!!, 0.0)
                 assertEquals(asha.id, d.item(lamp)!!.decisionBy.by)
                 assertTrue(dee.carryOut(lamp, gone = true, soldFor = 35.0).ok)
                 everyone(asha, omar, dee)
@@ -282,7 +285,7 @@ class PhonesTogetherTest {
             assertEquals(Role.HELPER, d.person(omar.id)!!.role)
             // What he decided while he was an Organiser stands; what he decided afterwards does not.
             assertEquals(Disposition.SELL, d.item(sofa)!!.disposition)
-            assertEquals(70.0, d.item(sofa)!!.price!!, 0.0)
+            assertEquals(70.0, d.priceOf(sofa)!!, 0.0)
             assertEquals(Disposition.UNDECIDED, d.item(lamp)!!.disposition)
             assertNull(d.task("late-task"))
             assertNull(d.expenses.firstOrNull { it.id == "late" })

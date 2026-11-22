@@ -844,8 +844,10 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
      * an Organiser's decision in the move it joins.
      */
     fun joinAs(personId: String, remote: AppData): Outcome<Person> = synchronized(lock) {
-        val incoming = distrustUnstamped(remote)
-        val target = incoming.person(personId) ?: return Outcome.Refused("That person is not in the move.")
+        val sent = distrustUnstamped(remote)
+        val target = sent.person(personId) ?: return Outcome.Refused("That person is not in the move.")
+        // A phone joining as a Helper takes in nothing a Helper is not sent, whatever the other phone sent it.
+        val incoming = if (sent.hasOrganiser() && target.role == Role.HELPER) sent.sentTo(Role.HELPER, personId) else sent
         if (target.removed) return Outcome.Refused("${target.name.ifBlank { "That person" }} has been removed from the move.")
         val dev = _device.value
         val seen = maxStamp(incoming)
@@ -1323,8 +1325,7 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
                     next = next.copy(
                         expenses = cur.expenses,
                         photos = next.photos.filter { it.kind !in HIDDEN_FROM_HELPERS } + cur.photos.filter { it.kind in HIDDEN_FROM_HELPERS },
-                        proposals = next.proposals.filter { it.kind != ProposalKind.COST && !it.priced() } +
-                            cur.proposals.filter { it.kind == ProposalKind.COST || it.priced() },
+                        proposals = next.proposals.filter { it.kind != ProposalKind.COST } + cur.proposals.filter { it.kind == ProposalKind.COST },
                         hidden = cur.hidden,
                         refused = cur.refused,
                         collect = cur.collect,
@@ -1497,10 +1498,10 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
         Outcome.Ok(setDamageNote(damageId, note) ?: x)
     }
 
-    /** Make a box's contents the lines of [text] ([contentsLines]): lines no longer in it are removed, new ones added. */
+    /** Make a box's contents the lines of [text] ([storedLines]): lines no longer in it are removed, new ones added. */
     fun setContents(boxId: String, text: String): Outcome<Box> = act(Action.WORK) {
         val box = d.box(boxId) ?: return@act Outcome.Refused("That container is no longer here.")
-        saveBoxes(listOf(box.copy(contents = contentsLines(text).joinToString(", "))))
+        saveBoxes(listOf(box.copy(contents = storedLines(text).joinToString(", "))))
         Outcome.Ok(d.box(boxId) ?: box)
     }
 

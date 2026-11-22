@@ -107,8 +107,17 @@ class PeopleTest {
         // Every value 1.3 saved is still there: compare with the stamps (which are new) taken off.
         assertEquals(old.move, d.move.copy(changedBy = Stamp()))
         assertEquals(old.rooms, d.rooms)
-        assertEquals(old.items, d.items.map { it.copy(decisionBy = Stamp(), roomBy = Stamp(), outcomeBy = Stamp(), deletedBy = Stamp()) })
-        assertEquals(old.boxes, d.boxes)
+        // Since 2.1 the price and the serial number are on the items' hidden records: filled back in, nothing is missing.
+        assertEquals(
+            old.items,
+            d.filledIn().items.map {
+                it.copy(decisionBy = Stamp(), roomBy = Stamp(), outcomeBy = Stamp(), deletedBy = Stamp(), whereBy = Stamp(), handoverBy = Stamp(), handedOverBy = Stamp())
+            },
+        )
+        assertNull(d.item("i1")!!.price)
+        assertEquals("SN1", d.hiddenOf("i2")!!.serial)
+        assertEquals(old.boxes, d.boxes.map { it.copy(whereBy = Stamp()) })
+        assertEquals(listOf("Plates"), d.linesOf("b1").map { it.text })
         assertEquals(old.photos, d.photos)
         assertEquals(old.tasks, d.tasks.map { it.copy(planBy = Stamp(), doneBy = Stamp()) })
         assertEquals(old.expenses, d.expenses.map { it.copy(costBy = Stamp(), paidBy = Stamp()) })
@@ -185,7 +194,7 @@ class PeopleTest {
         Backup.import(s, ByteArrayInputStream(zip))
         val d = s.data.value
         assertEquals(Disposition.SELL, d.item("i1")!!.disposition)
-        assertEquals(120.0, d.item("i1")!!.price!!, 0.0)
+        assertEquals(120.0, d.priceOf("i1")!!, 0.0)
         assertTrue(d.item("i1")!!.gone)
         assertEquals("Van hire", d.expense("e1")!!.title)
         assertTrue(d.task("k1")!!.done)
@@ -313,7 +322,8 @@ class PeopleTest {
         val newHall = o.createRoom(Home.DEST, "Hall")
         val oldKitchen = o.createRoom(Home.ORIGIN, "Kitchen").copy(mapsTo = newKitchen.id).also { o.put(it) }
         val sofa = o.createItem("Sofa", oldKitchen.id)
-        o.put(o.data.value.item(sofa.id)!!.copy(disposition = Disposition.SELL, price = 50.0))
+        o.put(o.data.value.item(sofa.id)!!.copy(disposition = Disposition.SELL))
+        assertTrue(o.decide(sofa.id, Disposition.SELL, 50.0).ok)
         o.put(Task(id = "task", title = "Book the van"))
         o.put(Expense(id = "cost", title = "Van", amount = 100.0, planned = true))
         val dee = joined(o, "Dee", Role.DECIDER)
@@ -322,11 +332,15 @@ class PeopleTest {
         for (phone in listOf(dee, hal)) {
             val who = phone.me!!.name
             val item = phone.data.value.item(sofa.id)!!
-            // The plain save keeps the protected parts as they were and takes the rest.
+            val hiddenBefore = phone.data.value.hiddenOf(sofa.id)
+            // The plain save keeps the protected parts as they were and takes the rest. The price and the sale are
+            // not on the item at all (they are on its hidden record), so they cannot be changed by saving it either.
             phone.put(item.copy(disposition = Disposition.BIN, price = 1.0, destRoomId = newHall.id, gone = true, listed = true, soldFor = 9.0, notes = "scratched", fragile = true))
             val after = phone.data.value.item(sofa.id)!!
             assertEquals(who, Disposition.SELL, after.disposition)
-            assertEquals(who, 50.0, after.price!!, 0.0)
+            assertNull(who, after.price)
+            assertEquals(who, hiddenBefore, phone.data.value.hiddenOf(sofa.id))
+            assertEquals(who, 50.0, o.data.value.priceOf(sofa.id)!!, 0.0)
             assertEquals(who, newKitchen.id, after.destRoomId)
             assertFalse(who, after.gone || after.listed)
             assertNull(who, after.soldFor)

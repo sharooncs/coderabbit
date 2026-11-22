@@ -64,7 +64,7 @@ fun upgradeRecordsTo21(d: AppData): AppData {
         oldDamage(b.id, b.damaged, b.damageNote, b.updatedAt)
         if (b.contents.isBlank() || b.id in hasLines) continue
         val batch = maxOf(1L, b.updatedAt)
-        contentsLines(b.contents).forEachIndexed { n, text ->
+        storedLines(b.contents).forEachIndexed { n, text ->
             lines += ContentsLine(lineId(b.id, text), b.id, text, sort = n.toLong(), batch = batch, updatedAt = b.updatedAt)
         }
     }

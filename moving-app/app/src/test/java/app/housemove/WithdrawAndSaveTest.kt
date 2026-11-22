@@ -25,8 +25,8 @@ class WithdrawAndSaveTest {
     }
 
     private fun sync(a: Store, b: Store) {
-        val merged = a.mergeIn(b.data.value.visibleTo(a.myRole))
-        b.mergeIn(merged.visibleTo(b.myRole))
+        val merged = a.mergeIn(b.data.value.sentTo(a.myRole, a.me?.id))
+        b.mergeIn(merged.sentTo(b.myRole, b.me?.id))
     }
 
     private fun everyone() = repeat(2) { for (p in listOf(omar, dee, hal)) sync(asha, p) }

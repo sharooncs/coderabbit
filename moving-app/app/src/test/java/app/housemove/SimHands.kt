@@ -4,6 +4,9 @@ import app.housemove.data.*
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 
+/** The stages on the way from the old home to the new one, in order. */
+private val HOME_WAY = listOf(Stage.AT_ORIGIN, Stage.LOADED, Stage.DELIVERED, Stage.DONE)
+
 /**
  * What one phone's owner does: one random, realistic action at a time, through
  * the same Store calls the screens use. Every phone tries everything, whatever
@@ -76,7 +79,9 @@ internal class Hands(private val p: Simulation.Phone) {
         val item = s.createItem(pick(things)!! + " " + (1 + r.nextInt(99)), room?.id)
         if (chance(40)) {
             val label = if (chance(50)) handCode() else null
-            s.put(d.item(item.id)!!.copy(fragile = chance(30), value = r.nextInt(900).toDouble(), widthCm = 40.0 + r.nextInt(160), depthCm = 30.0 + r.nextInt(70), heightCm = 40.0 + r.nextInt(150), label = label))
+            val worth = r.nextInt(900).toDouble()
+            s.put(d.item(item.id)!!.copy(fragile = chance(30), widthCm = 40.0 + r.nextInt(160), depthCm = 30.0 + r.nextInt(70), heightCm = 40.0 + r.nextInt(150), label = label))
+            s.setDetails(item.id) { it.copy(value = worth) } // what it is worth is not a Helper's to set: refused for them
         }
         return "added item ${id(item.id)} ${item.name} → ok"
     }
@@ -87,7 +92,7 @@ internal class Hands(private val p: Simulation.Phone) {
         when (r.nextInt(3)) {
             0 -> s.put(item.copy(notes = note))
             1 -> s.put(item.copy(name = pick(things)!! + " " + r.nextInt(99), fragile = !item.fragile))
-            else -> s.updateItems(listOf(item.id)) { it.copy(serial = "SN-" + r.nextInt(9999), make = "Make" + r.nextInt(9)) }
+            else -> return "set the serial number of item ${id(item.id)} " + said(s.setDetails(item.id) { it.copy(serial = "SN-" + r.nextInt(9999), make = "Make" + r.nextInt(9)) })
         }
         return "edited item ${id(item.id)} → ok"
     }
@@ -180,7 +185,7 @@ internal class Hands(private val p: Simulation.Phone) {
         val items = d.liveItems.shuffled(r).take(1 + r.nextInt(3))
         if (items.isEmpty()) return null
         val what = disposition()
-        if (items.size == 1) s.put(items[0].copy(disposition = what, price = price(what))) else s.updateItems(items.map { it.id }) { it.copy(disposition = what) }
+        if (items.size == 1) s.put(items[0].copy(disposition = what)) else s.updateItems(items.map { it.id }) { it.copy(disposition = what) }
         val after = items.mapNotNull { d.item(it.id) }
         return "saved ${what.name} on ${items.joinToString { id(it.id) }} " + took(after.all { it.disposition == what }, "the decision")
     }
@@ -310,8 +315,9 @@ internal class Hands(private val p: Simulation.Phone) {
     /** Load, deliver or unpack: a few things at the same stage move on one stage, by their own label or that of something inside them. */
     private fun moveOn(): String? {
         val data = d
-        val from = Stage.entries[r.nextInt(3)]
-        val to = Stage.entries[from.ordinal + 1]
+        // The way through the new home; the storage unit is a way of its own (storageTrip).
+        val from = HOME_WAY[r.nextInt(3)]
+        val to = HOME_WAY[HOME_WAY.indexOf(from) + 1]
         val trip = if (to == Stage.LOADED) pick(data.liveTrips)?.id else null
         val boxes = (if (chance(80)) data.topBoxes() else data.liveBoxes).filter { it.stage == from }.shuffled(r).take(r.nextInt(4))
         val items = (if (chance(80)) data.looseItems() else data.liveItems).filter { it.stage == from }.shuffled(r).take(r.nextInt(3))
@@ -323,7 +329,12 @@ internal class Hands(private val p: Simulation.Phone) {
 
     private fun bringBack(): String? {
         val box = pick(d.liveBoxes.filter { it.stage != Stage.AT_ORIGIN }) ?: return null
-        s.updateBoxes(listOf(box.id)) { it.copy(stage = Stage.entries[it.stage.ordinal - 1]) }
+        if (chance(50)) return "put container ${id(box.id)} back a step " + said(s.putBack(listOf(box.id)))
+        val back = when (box.stage) {
+            Stage.STORED -> Stage.LOADED
+            else -> HOME_WAY[maxOf(0, HOME_WAY.indexOf(box.stage) - 1)]
+        }
+        s.updateBoxes(listOf(box.id)) { it.copy(stage = back) }
         return "put container ${id(box.id)} back a stage → ok"
     }
 
