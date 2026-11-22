@@ -149,17 +149,21 @@ private fun keyNumbers(data: AppData, device: DeviceInfo): List<KeyNumber> {
     return out.take(3)
 }
 
+/** How Home is shaped for this phone's person: an Organiser's (or someone alone), a Decider's or a Helper's. */
+internal fun homeRole(data: AppData, device: DeviceInfo): MoveRole = when {
+    // A Helper's phone, or the old "helper mode" on a phone that is alone.
+    device.helper || (data.hasOrganiser() && data.roleOf(device) == MoveRole.HELPER) -> MoveRole.HELPER
+    data.hasOrganiser() && data.roleOf(device) == MoveRole.DECIDER -> MoveRole.DECIDER
+    else -> MoveRole.ORGANISER
+}
+
 @Composable
 fun HomeScreen() {
     val nav = LocalNav.current
     val data = appData()
     val device = deviceInfo()
-
-    // A Helper's phone shows only a Helper's jobs. (The switch follows the role; alone it is the old "helper mode".)
-    if (device.helper && data.move.setupDone) {
-        HelperHome()
-        return
-    }
+    // Everyone has the same house, numbers and dock; what follows below them is shaped by the role.
+    val role = if (data.move.setupDone) homeRole(data, device) else MoveRole.ORGANISER
 
     val packing = data.uses(Part.BOXES)
     val next = nextStep(data, suggests = !data.can(device, Action.DECIDE) && data.can(device, Action.SUGGEST))
@@ -175,8 +179,38 @@ fun HomeScreen() {
             val firstPage = if (roomy) minOf(maxHeight - 34.dp, 620.dp) else 0.dp
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                 HomeHero(data, device, packing, Modifier.fillMaxWidth().heightIn(min = firstPage))
-                // Without boxes the big button is the next step itself; with them, it is when the next step is packing.
-                HomeDetails(data, device, next, inPageAction = if (roomy) null else action, nextIsAction = !packing || next.route == "pack")
+                val inPage = if (roomy) null else action
+                when (role) {
+                    MoveRole.HELPER -> RoleDetails(data, device, inPage) { HelperSections(data, device) }
+                    MoveRole.DECIDER -> RoleDetails(data, device, inPage) {
+                        DeciderSections(data, device)
+                        NeedsAttention(data, device)
+                    }
+                    // Without boxes the big button is the next step itself; with them, it is when the next step is packing.
+                    MoveRole.ORGANISER -> HomeDetails(data, device, next, inPageAction = inPage, nextIsAction = !packing || next.route == "pack")
+                }
+            }
+        }
+    }
+}
+
+/** Below the fold for a Decider or a Helper: the big button on a short screen, their own sections, then Sync and People. */
+@Composable
+private fun RoleDetails(data: AppData, device: DeviceInfo, inPageAction: DockAction?, sections: @Composable ColumnScope.() -> Unit) {
+    val nav = LocalNav.current
+    val store = LocalStore.current
+    Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (inPageAction != null) BigAction(inPageAction.icon, inPageAction.label, inPageAction.onClick)
+        sections()
+        if (data.shared()) {
+            SyncRow(device)
+            // Who else is on the move, and what this role does. The role is an Organiser's to change.
+            PersonPill(data.me(device), "People", data.roleOf(device).line(), role = null, onClick = { nav.open("people") })
+        } else if (device.helper) {
+            // The old "helper mode" on a phone that is alone.
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Hint("Helper mode: only the essentials are shown.", Modifier.weight(1f))
+                GlassChip("Show everything", onClick = { store.setDevice { it.copy(helper = false) } })
             }
         }
     }
@@ -201,6 +235,8 @@ private fun HomeHero(data: AppData, device: DeviceInfo, packing: Boolean, modifi
                 }
             }
         }
+        // News about this phone's own role: "You are now a Decider", and what a promotion still waits for.
+        RoleBanner(data, device, Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp))
 
         // Three numbers that say where the move stands.
         Row(
@@ -219,8 +255,12 @@ private fun HomeHero(data: AppData, device: DeviceInfo, packing: Boolean, modifi
                 style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center,
                 maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.semantics { heading() },
             )
+            // On a move with other people, whose phone this is in the move comes first: "Helper · Old home · 4 rooms".
             Text(
-                move.originName + " · " + oldRooms.size + if (oldRooms.size == 1) " room" else " rooms",
+                listOfNotNull(
+                    data.roleOf(device).label.takeIf { data.shared() },
+                    move.originName + " · " + oldRooms.size + if (oldRooms.size == 1) " room" else " rooms",
+                ).joinToString(" · "),
                 style = MaterialTheme.typography.bodyMedium, color = Night.TextDim, textAlign = TextAlign.Center, maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -328,38 +368,51 @@ private fun HomeDetails(data: AppData, device: DeviceInfo, next: NextStep, inPag
             }
         }
 
-        // Needs attention: the worst three, the rest on request. Nobody is sent to a screen the
-        // Everything list does not offer them, and overdue jobs are raised only with someone who
-        // may tick one of them off; for anyone else they are an Organiser's to see to.
-        val me = data.me(device)
-        val jobsAreMine = data.liveTasks.any { !it.done && (data.dueDay(it) ?: Long.MAX_VALUE) < today() && data.mayTick(me, it) }
-        val issues = data.issues().filter { offeredTo(it.route, data, device) && (it.route != "tasks" || jobsAreMine) }
-        if (issues.isNotEmpty()) {
-            var all by rememberSaveable { mutableStateOf(false) }
-            Section("Needs attention") {
-                (if (all) issues else issues.take(3)).forEach { issue ->
-                    Row(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { nav.open(issue.route) }.heightIn(min = 48.dp).padding(vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            if (issue.severe) Icons.Default.ErrorOutline else Icons.Default.Info,
-                            contentDescription = if (issue.severe) "Urgent" else null,
-                            tint = if (issue.severe) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp),
-                        )
-                        Spacer(Modifier.width(10.dp))
-                        Text(issue.text, modifier = Modifier.weight(1f))
-                        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-                if (issues.size > 3) {
-                    GlassChip(
-                        if (all) "Show fewer" else "Show ${issues.size - 3} more",
-                        icon = if (all) Icons.Default.ExpandLess else Icons.Default.ExpandMore, onClick = { all = !all },
-                    )
-                }
+        // Changes refused at a sync, which only an Organiser is told of, and the people on the move.
+        if (data.can(device, Action.MANAGE_PEOPLE) && data.shared()) {
+            RefusedSection(data)
+            PeopleRow(data, device)
+        }
+        NeedsAttention(data, device)
+        if (data.shared()) SyncRow(device)
+    }
+}
+
+/**
+ * Needs attention: the worst three, the rest on request. Nobody is sent to a screen the
+ * Everything list does not offer them, and overdue jobs are raised only with someone who
+ * may tick one of them off; for anyone else they are an Organiser's to see to.
+ */
+@Composable
+private fun NeedsAttention(data: AppData, device: DeviceInfo) {
+    val nav = LocalNav.current
+    val me = data.me(device)
+    val jobsAreMine = data.liveTasks.any { !it.done && (data.dueDay(it) ?: Long.MAX_VALUE) < today() && data.mayTick(me, it) }
+    val issues = data.issues(role = data.roleOf(device)).filter { offeredTo(it.route, data, device) && (it.route != "tasks" || jobsAreMine) }
+    if (issues.isEmpty()) return
+    var all by rememberSaveable { mutableStateOf(false) }
+    Section("Needs attention") {
+        (if (all) issues else issues.take(3)).forEach { issue ->
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { nav.open(issue.route) }.heightIn(min = 48.dp).padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    if (issue.severe) Icons.Default.ErrorOutline else Icons.Default.Info,
+                    contentDescription = if (issue.severe) "Urgent" else null,
+                    tint = if (issue.severe) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(issue.text, modifier = Modifier.weight(1f))
+                Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+        }
+        if (issues.size > 3) {
+            GlassChip(
+                if (all) "Show fewer" else "Show ${issues.size - 3} more",
+                icon = if (all) Icons.Default.ExpandLess else Icons.Default.ExpandMore, onClick = { all = !all },
+            )
         }
     }
 }
@@ -526,56 +579,6 @@ private fun KeyNumberView(k: KeyNumber, withOrb: Boolean, modifier: Modifier = M
         Column(horizontalAlignment = if (withOrb) Alignment.Start else Alignment.CenterHorizontally) {
             Text(k.value, fontSize = 18.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
             Text(k.label, style = MaterialTheme.typography.bodySmall, fontSize = 11.sp, color = Night.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-    }
-}
-
-/**
- * Home for a helper's phone: the same lit house as everyone's Home, with the room to pack
- * next called out, then only the jobs a helper does, as large tiles.
- */
-@Composable
-private fun HelperHome() {
-    val nav = LocalNav.current
-    val store = LocalStore.current
-    val data = appData()
-    val device = deviceInfo()
-    val p = data.progress()
-    val mine = myPerson()
-    // On a shared move the phone is a Helper because of its person's role; alone it is the old "helper mode".
-    val shared = data.shared()
-    // No search and scan buttons in the top bar here: both are among the tiles, with their names.
-    Screen(
-        title = data.move.name.ifBlank { "HouseMove" }, back = false, tab = "home",
-        subtitle = if (shared && mine != null && mine.name.isNotBlank()) "${mine.name} · Helper" else "Helper",
-    ) {
-        ScrollColumn {
-            // A little smaller than on the full Home, so the first row of jobs is in sight with it.
-            LitHouse(data, device, data.uses(Part.BOXES), Modifier.widthIn(max = 360.dp).fillMaxWidth().align(Alignment.CenterHorizontally))
-            // How the questions this Helper asked stand, when there are any.
-            if (suggestionStrip(data, device) != null) SuggestionsSlot(Modifier.fillMaxWidth())
-            data class Job(val icon: ImageVector, val title: String, val route: String, val status: String?, val part: Part?)
-            val jobs = listOf(
-                Job(Icons.Default.Inventory2, "Pack a box", "pack", "${p.sealed.done} of ${p.sealed.total} sealed", Part.BOXES),
-                Job(Icons.Default.LocalShipping, "Load the ${data.vehicle()}", "load", "${p.loaded.done} of ${p.loaded.total} on", Part.MOVE_DAY),
-                Job(Icons.Default.Download, "Unload", "unload", "${p.delivered.done} of ${p.delivered.total} in", Part.MOVE_DAY),
-                Job(Icons.Default.Unarchive, "Unpack", "unpack", "${p.unpacked.done} of ${p.unpacked.total} done", Part.UNPACK),
-                Job(Icons.Default.Search, "Find anything", "search", null, null),
-                Job(Icons.Default.QrCodeScanner, "Scan a label", "scan", null, null),
-            ).filter { it.part == null || data.uses(it.part) }
-            TileGrid(jobs, columns = 2) { job, m ->
-                Tile(job.icon, job.title, onClick = { nav.open(job.route) }, modifier = m.heightIn(min = 108.dp), status = job.status)
-            }
-            BigAction(Icons.Default.Sync, "Sync with the other phones", onClick = { nav.open("sync") }, primary = false)
-            if (shared) {
-                // Who else is on the move, and what a Helper does. The role is an Organiser's to change.
-                PersonPill(mine, "People", MoveRole.HELPER.line(), role = null, onClick = { nav.open("people") })
-            } else {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Hint("Helper mode: only the essentials are shown.", Modifier.weight(1f))
-                    GlassChip("Show everything", onClick = { store.setDevice { it.copy(helper = false) } })
-                }
-            }
         }
     }
 }

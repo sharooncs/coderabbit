@@ -55,9 +55,17 @@ import app.housemove.data.*
 val LocalStore = staticCompositionLocalOf<Store> { error("Store not provided") }
 val LocalNav = staticCompositionLocalOf<NavHostController> { error("Nav not provided") }
 
-/** The current dataset; recomposes when anything changes. Items carry their hidden details where this phone holds them ([filledIn]). */
+/**
+ * The current dataset as this phone's person may see it ([shownTo]); recomposes when anything changes. Items carry
+ * their hidden details where this phone holds them and its person may see them ([filledIn]).
+ */
 @Composable
-fun appData(): AppData = LocalStore.current.data.collectAsState().value.let { d -> androidx.compose.runtime.remember(d) { d.filledIn() } }
+fun appData(): AppData {
+    val store = LocalStore.current
+    val d = store.data.collectAsState().value
+    val device = store.device.collectAsState().value
+    return d.shownTo(device)
+}
 
 @Composable
 fun deviceInfo(): DeviceInfo = LocalStore.current.device.collectAsState().value
