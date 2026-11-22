@@ -83,7 +83,9 @@ object Backup {
      * and photos such a phone never holds.
      *
      * Only an Organiser may restore one. A backup of another move is not mixed into a move this phone
-     * shares with others ([Store.whyNotRestore]). Anything refused, and any file that is not a backup,
+     * shares with others ([Store.whyNotRestore]). A phone on its own that is not in the backup becomes
+     * the person whose phone made it ([About.by]), or a Helper of that move ([Store.restore]), never
+     * an Organiser of its own making. Anything refused, and any file that is not a backup,
      * gives an IllegalArgumentException whose message says why in words for the screen; nothing is
      * changed then, and no photo file is left behind. A backup made before version 2.0 is brought up
      * to date first ([migrate]), so nothing in it is lost.

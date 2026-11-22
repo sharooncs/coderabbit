@@ -411,21 +411,30 @@ class PeopleTest {
         val dee = joined(o, "Dee", Role.DECIDER)
         val backup = ByteArrayOutputStream().also { Backup.export(o, it) }.toByteArray()
 
-        // Asha's phone is lost. A new one starts as its own person, restores the backup, and says who it is.
+        // Asha's phone is lost. A new one starts as its own person and restores her backup: the phone made it, so it is Asha again.
         val replacement = store("replacement")
         val started = replacement.me!!.id
         Backup.import(replacement, ByteArrayInputStream(backup))
-        assertEquals(3, replacement.data.value.people.size)
-        assertNotNull(replacement.becomePerson("nobody").reason)
-        val me = replacement.becomePerson(o.me!!.id).valueOrNull()!!
-        assertEquals("Asha", me.name)
         assertEquals(o.me!!.id, replacement.device.value.personId)
+        assertEquals("Asha", replacement.me!!.name)
         assertEquals("Asha", replacement.device.value.name)
         assertEquals("A", replacement.device.value.letter)
         assertEquals(Role.ORGANISER, replacement.myRole)
-        // The person it started as steps out, so the move does not gain an Organiser nobody knows.
-        assertTrue(replacement.data.value.person(started)!!.removed)
-        assertEquals(setOf("Asha", "Dee"), replacement.data.value.livePeople.map { it.name }.toSet())
+        // The person it started as stays behind, so the move does not gain an Organiser nobody knows.
+        assertNull(replacement.data.value.person(started))
+        assertEquals(setOf("Asha", "Dee"), replacement.data.value.people.map { it.name }.toSet())
+        assertNotNull(replacement.becomePerson("nobody").reason)
+        assertEquals("Asha", replacement.becomePerson(o.me!!.id).valueOrNull()!!.name)
+        // A phone that took the data in some other way can still say who it is, and the person it started as then steps out.
+        val byHand = store("by hand")
+        val own = byHand.me!!.id
+        byHand.mergeIn(o.data.value)
+        val me = byHand.becomePerson(o.me!!.id).valueOrNull()!!
+        assertEquals("Asha", me.name)
+        assertEquals(o.me!!.id, byHand.device.value.personId)
+        assertEquals(Role.ORGANISER, byHand.myRole)
+        assertTrue(byHand.data.value.person(own)!!.removed)
+        assertEquals(setOf("Asha", "Dee"), byHand.data.value.livePeople.map { it.name }.toSet())
         // It carries on as Asha, and the others' phones accept what it does.
         assertTrue(replacement.setRole(dee.me!!.id, Role.ORGANISER).ok)
         dee.mergeIn(replacement.data.value)

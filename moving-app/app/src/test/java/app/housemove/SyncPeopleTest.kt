@@ -278,6 +278,113 @@ class SyncPeopleTest {
         assertEquals(Role.DECIDER, hal.data.value.person(dee.me!!.id)!!.role)
     }
 
+    // ---- one move per phone ---------------------------------------------------------
+
+    private fun alreadyIn(move: String) =
+        "This phone is already in $move move, and it joins that move only through one of its Organisers. If this is the same move, sync with an Organiser first."
+
+    @Test
+    fun aPhoneAlreadyInAMoveIsNotTakenIntoAnotherOneByItsInvite() {
+        // Elm: Zed runs it and Hal helps.
+        val zed = store("Zed")
+        zed.setMove { it.copy(name = "Elm", setupDone = true) }
+        zed.createBox("E1", null)
+        val hal = invited(zed, "Hal", Role.HELPER)
+        hal.createBox("E2", null)
+        // Maple: Asha runs it and has added Pat.
+        val asha = store("Asha")
+        asha.setMove { it.copy(name = "Maple", setupDone = true) }
+        asha.createBox("M1", null)
+        val pat = asha.addPerson("Pat", Role.ORGANISER).valueOrNull()!!
+        val h = hosting(asha)
+        val invite = h.host.inviteFor(pat.id, local).valueOrNull()!!
+
+        // Hal's phone, and then Zed's, scan Asha's invite. Nothing of either move reaches the other, on either phone.
+        for (phone in listOf(hal, zed)) {
+            val mine = phone.data.value
+            val myself = phone.device.value
+            val hers = asha.data.value
+            val r = WifiSync.join(phone, invite)
+            assertEquals(alreadyIn("Elm"), r.error)
+            assertNull(r.joinedAs)
+            assertEquals(WifiSync.NOT_ADDED, h.result().error)
+            assertEquals(mine, phone.data.value)
+            assertEquals(myself, phone.device.value)
+            assertEquals(hers, asha.data.value)
+        }
+        assertEquals(0L, asha.data.value.person(pat.id)!!.joinedAt)
+        // The invite is still Pat's to use, and Pat's phone gets Maple alone.
+        val patPhone = store("Pat's phone")
+        val r = WifiSync.join(patPhone, invite)
+        assertTrue(r.error, r.ok)
+        assertTrue(h.result().ok)
+        assertEquals(pat.id, patPhone.me!!.id)
+        assertNotNull(patPhone.data.value.findByLabel("M1"))
+        for (s in listOf(patPhone, asha)) {
+            assertNull(s.data.value.findByLabel("E1"))
+            assertNull(s.data.value.findByLabel("E2"))
+            assertNull(s.data.value.person(hal.me!!.id))
+        }
+        assertNull(hal.data.value.findByLabel("M1"))
+        assertNull(zed.data.value.person(pat.id))
+    }
+
+    @Test
+    fun aPhoneInTheMoveStillTakesAnInviteFromOneOfItsOrganisersAndANewPhoneJoinsAsBefore() {
+        val asha = store("Asha")
+        asha.setMove { it.copy(name = "Maple", setupDone = true) }
+        val box = asha.createBox("L001", null).id
+        val hal = invited(asha, "Hal", Role.HELPER)
+        val dee = invited(asha, "Dee", Role.DECIDER)
+
+        // Hal's phone is handed on to Pat: an invite from an Organiser the phone knows.
+        val pat = asha.addPerson("Pat", Role.DECIDER).valueOrNull()!!
+        val h = hosting(asha)
+        val r = WifiSync.join(hal, h.host.inviteFor(pat.id, local).valueOrNull()!!)
+        assertTrue(r.error, r.ok)
+        assertTrue(h.result().ok)
+        assertEquals(pat.id, hal.me!!.id)
+        assertEquals(Role.DECIDER, hal.myRole)
+
+        // Omar was made an Organiser after Dee's phone last synced. It has not heard of him, but Asha, whom it knows, added him.
+        val omar = invited(asha, "Omar", Role.ORGANISER)
+        assertNull(dee.data.value.person(omar.me!!.id))
+        val ned = omar.addPerson("Ned", Role.HELPER).valueOrNull()!!
+        val byOmar = hosting(omar)
+        val r2 = WifiSync.join(dee, byOmar.host.inviteFor(ned.id, local).valueOrNull()!!)
+        assertTrue(r2.error, r2.ok)
+        assertTrue(byOmar.result().ok)
+        assertEquals(ned.id, dee.me!!.id)
+        assertEquals(Role.HELPER, dee.myRole)
+
+        // Omar has since been made a Helper. Hal's phone has heard, Omar's has not: his invite no longer brings that phone in.
+        assertTrue(asha.setRole(omar.me!!.id, Role.HELPER).ok)
+        assertTrue(sync(asha, hal).second.ok)
+        val kim = omar.addPerson("Kim", Role.HELPER).valueOrNull()!!
+        val stale = hosting(omar)
+        val before = hal.data.value
+        assertEquals(alreadyIn("Maple"), WifiSync.join(hal, stale.host.inviteFor(kim.id, local).valueOrNull()!!).error)
+        assertEquals(WifiSync.NOT_ADDED, stale.result().error)
+        assertEquals(before, hal.data.value)
+        assertEquals(pat.id, hal.me!!.id)
+
+        // A new phone joins as it always has, and so does one tried out on its own first, bringing its things.
+        val lee = asha.addPerson("Lee", Role.HELPER).valueOrNull()!!
+        val fresh = store()
+        assertTrue(WifiSync.join(fresh, h.host.inviteFor(lee.id, local).valueOrNull()!!).ok)
+        assertTrue(h.result().ok)
+        assertEquals(lee.id, fresh.me!!.id)
+        assertNotNull(fresh.data.value.box(box))
+        val mo = asha.addPerson("Mo", Role.HELPER).valueOrNull()!!
+        val solo = store("Solo")
+        val own = solo.createBox("X1", null).id
+        assertTrue(WifiSync.join(solo, h.host.inviteFor(mo.id, local).valueOrNull()!!).ok)
+        assertTrue(h.result().ok)
+        assertEquals(mo.id, solo.me!!.id)
+        assertNotNull(asha.data.value.box(own))
+        assertNotNull(solo.data.value.box(box))
+    }
+
     // ---- what a Helper's phone is sent ----------------------------------------------
 
     @Test

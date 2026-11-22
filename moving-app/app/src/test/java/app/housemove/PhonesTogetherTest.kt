@@ -1071,21 +1071,23 @@ class PhonesTogetherTest {
         assertEquals(Role.HELPER, omar.data.value.person(asha.id)!!.role)
         assertEquals("Maple Road, again", asha.data.value.move.name)
 
-        // A new phone restores someone else's backup: it starts as a person of its own, and can then say who it is.
-        val fresh = phone("New phone")
-        val started = fresh.id
-        Backup.import(fresh, ByteArrayInputStream(early), replace = true)
-        assertNotNull(fresh.me)
-        assertNotEquals(started, fresh.id)
-        assertTrue(fresh.can(Action.WORK))
-        assertTrue(fresh.becomePerson(omar.id).ok)
-        assertEquals(omar.id, fresh.id)
-        // Merged in rather than replaced, the phone keeps the person it was.
-        val other = phone("Other")
-        val mine = other.id
-        Backup.import(other, ByteArrayInputStream(early))
-        assertEquals(mine, other.id)
-        assertNotNull(other.me)
+        // A new phone restores that backup, over its data or merged into it: it becomes the person whose phone made it, with the
+        // role the backup gives him, and not an Organiser of its own making. What he is now, it learns at the next sync.
+        for (replace in listOf(true, false)) {
+            val fresh = phone("New phone")
+            val started = fresh.id
+            Backup.import(fresh, ByteArrayInputStream(early), replace)
+            assertEquals(omar.id, fresh.id)
+            assertNull(fresh.data.value.person(started))
+            assertEquals(Role.DECIDER, fresh.myRole)
+            assertTrue(fresh.can(Action.WORK))
+            assertFalse(fresh.can(Action.MANAGE_PEOPLE))
+            assertTrue(fresh.becomePerson(omar.id).ok)
+            assertNotNull(fresh.data.value.box(box))
+            synced(asha, fresh)
+            assertEquals(Role.ORGANISER, fresh.myRole)
+            assertEquals(Role.HELPER, fresh.data.value.person(asha.id)!!.role)
+        }
     }
 
     /**

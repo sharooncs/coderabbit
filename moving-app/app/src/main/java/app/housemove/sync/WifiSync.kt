@@ -120,6 +120,20 @@ object WifiSync {
     const val RETIRED_HERE = "That phone has been retired from this move. Its last work was taken in, and nothing was sent back to it."
     const val RETIRED_GONE = "That phone has been retired from this move and its work was already taken in, so it was not synced."
 
+    /**
+     * Shown on a phone that is in a move with others when it scans an invite from a phone that is not
+     * one of that move's Organisers: most likely an invite to another move. [moveName] is this phone's move.
+     */
+    fun alreadyInAMove(moveName: String): String {
+        val name = moveName.trim()
+        val move = when {
+            name.isEmpty() -> "a move"
+            name.equals("move", ignoreCase = true) || name.endsWith(" move", ignoreCase = true) -> name
+            else -> "$name move"
+        }
+        return "This phone is already in $move, and it joins that move only through one of its Organisers. If this is the same move, sync with an Organiser first."
+    }
+
     /** How long an invite made for one person can be used. */
     const val INVITE_MINUTES = 10
 
@@ -859,11 +873,11 @@ object WifiSync {
                         if (claimed == null) return refuse("STRANGER", CODE_NOT_ACCEPTED)
                         // A phone already in a move, or already holding the one it is joining, joins only through a phone it
                         // knows as an Organiser of that move.
+                        // Anyone else's is an invite to another move, and taking it would mix the two moves on both phones and on
+                        // from there to everyone in either. Nothing of this phone's has been sent, and nothing is.
                         if (holdsCard || !store.isAlone()) {
-                            val known = theirPerson != null && before.person(theirPerson.id) != null
-                            if (!known || before.roleOfPeer(theirPerson) != Role.ORGANISER || !store.identity.value.matches(hostMove)) {
-                                return refuse("NOTORGANISER", NOT_THROUGH_ORGANISER)
-                            }
+                            val organiser = before.admission(store.device.value, theirPerson) == Admission.MEMBER && before.roleOfPeer(theirPerson) == Role.ORGANISER
+                            if (!organiser || !store.identity.value.matches(hostMove)) return refuse("STRANGER", alreadyInAMove(before.move.name))
                         }
                     }
 
