@@ -10,6 +10,8 @@ import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasClickAction
@@ -153,7 +155,15 @@ class DeviceTest {
         try {
             rule.waitUntil(timeoutMs) { condition() }
         } catch (e: Throwable) {
-            throw AssertionError("Timed out waiting for: $what", e)
+            // Say what was on screen instead, so a failure in CI can be read from its log alone.
+            val shown = try {
+                rule.onAllNodes(hasText("", substring = true), useUnmergedTree = true).fetchSemanticsNodes()
+                    .mapNotNull { n -> (n.config.getOrNull(SemanticsProperties.EditableText)?.let { "[field] $it " } ?: "") +
+                        (n.config.getOrNull(SemanticsProperties.Text)?.joinToString(" ") ?: "") }
+                    .filter { it.isNotBlank() }.distinct().take(60).joinToString(" | ")
+            } catch (_: Throwable) { "(could not read the screen)" }
+            shot("failed-wait")
+            throw AssertionError("Timed out waiting for: $what. On screen: $shown", e)
         }
     }
 
