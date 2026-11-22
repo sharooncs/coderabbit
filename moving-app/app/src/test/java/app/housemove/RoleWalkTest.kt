@@ -187,9 +187,15 @@ class RoleWalkTest {
             "decide or suggest what happens to a thing", Regex("item_.*|triage|items|walk"),
             { c, _ -> c.kind in listOf("RadioButton", "Button") && c.texts.size == 1 && c.says(*decisions) }, can(Action.DECIDE, Action.SUGGEST),
         ),
+        // The new-home rooms are open on the page only while a moving thing has none (as in 2.0); once it has one, the line
+        // that says where it goes ("Going to", a button for whoever may choose, a plain badge for a Helper) opens them.
         Gate(
             "choose or suggest the room a thing goes to", Regex("item_.*"),
-            { c, d -> c.kind == "RadioButton" && c.texts.size == 1 && d.roomsOf(Home.DEST).any { it.name == c.texts[0] } }, can(Action.DECIDE, Action.SUGGEST),
+            { c, d ->
+                (c.kind == "RadioButton" && c.texts.size == 1 && d.roomsOf(Home.DEST).any { it.name == c.texts[0] }) ||
+                    (c.kind == "Button" && c.described.contains("Going to"))
+            },
+            can(Action.DECIDE, Action.SUGGEST),
         ),
         Gate("suggest rooms on the room plan", Regex("plan"), { c, _ -> c.mentions("Suggest") || c.mentions("Accept all") }, can(Action.DECIDE, Action.SUGGEST)),
         Gate(

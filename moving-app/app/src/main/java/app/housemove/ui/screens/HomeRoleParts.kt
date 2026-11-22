@@ -46,8 +46,9 @@ import app.housemove.ui.*
 internal fun RoleBanner(data: AppData, device: DeviceInfo, modifier: Modifier = Modifier) {
     val nav = LocalNav.current
     val store = LocalStore.current
-    val seen = rememberSeenRoles(device.personId)
-    val news = data.roleNews(device, seen.seenAt)
+    // While the banner of a join says who the phone is now (HomeBannerSlot), "You joined as" would say it twice.
+    val joinBanner = LocalAppState.current?.banner?.let { it.moveId.isEmpty() || it.moveId == store.moveId } == true
+    val news = data.roleNews(device)?.takeIf { !(it.joined && joinBanner) }
     // What the phone holds is read from the Store itself: the screens' copy never shows a Helper anything hidden.
     val raw by store.data.collectAsState()
     val waiting = raw.awaitsHidden(device)
@@ -70,7 +71,7 @@ internal fun RoleBanner(data: AppData, device: DeviceInfo, modifier: Modifier = 
                             Text(news.role.line(), style = MaterialTheme.typography.bodySmall, color = Night.TextSoft)
                         }
                     }
-                    RowButton("Got it", onClick = { seen.mark(news.at) }, forward = false, icon = Icons.Default.Check)
+                    RowButton("Got it", onClick = { store.roleNewsRead(news.at) }, forward = false, icon = Icons.Default.Check)
                 }
             }
             if (waiting) {

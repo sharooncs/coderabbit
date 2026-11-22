@@ -147,9 +147,10 @@ fun HelpingScreen() {
                 CodePanel(h, addresses, toJoin, shown, onShow = { chosen = it }, helpersJoined = helpersJoined, modifier = Modifier.bringIntoViewRequester(codes))
             }
 
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Hint("No HouseMove on their phone? Send it this one's.", Modifier.weight(1f))
+            Hint("No HouseMove on their phone? Send it this one's, or show a code to download it.")
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 GlassChip("Share the app", icon = Icons.Default.Share, onClick = { shareTheApp(context, scope) })
+                DownloadCodeButton(chip = true)
             }
         }
         BigAction(

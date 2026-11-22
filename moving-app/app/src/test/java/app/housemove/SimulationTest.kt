@@ -122,14 +122,17 @@ class SimulationTest {
         val all = SimStats().also { s -> outcomes.forEach { s.add(it.stats) } }
         val md = StringBuilder()
         md.append("# Seven-phone simulation\n\n")
-        md.append("Two Organisers, two Deciders and three Helpers in one move, each phone with its own Store, clock and thread, ")
-        md.append("syncing in random pairs over localhost sockets. Made by `tools/simulate.sh`.\n\n")
+        md.append("Two Organisers, two Deciders and three Helpers in one move, each phone with its own list of moves, clock and thread, ")
+        md.append("syncing in random pairs over localhost sockets. Some phones also keep a move of their own (one tried out alone before it ")
+        md.append("joined, or one started mid-run) or join another phone's, switch between their moves, scan labels found in more than one, ")
+        md.append("and sync or scan codes from whichever move they have open. Made by `tools/simulate.sh`.\n\n")
         md.append("| | |\n| --- | --- |\n")
         md.append("| Seeds run | $count (seeds $first to ${first + count - 1}), in $seconds s |\n")
         md.append("| Seeds that broke an invariant | ${outcomes.count { it.failures.isNotEmpty() }} |\n")
         md.append("| Actions performed | ${all.actions}: ${all.accepted} went through, ${all.actions - all.accepted} were refused or left unchanged by the rules |\n")
         md.append("| Actions done in the middle of a sync | ${all.midSync} |\n")
         md.append("| Syncs | ${all.syncs}: ${all.syncsOk} completed, ${all.cut} cut off part-way (${all.retried} of those retried at once), ${all.syncs - all.syncsOk - all.cut} refused |\n")
+        md.append("| Syncs with another move open on one phone or both | ${all.crossSyncs} |\n")
         md.append("\n## Invariants\n\n| Invariant | Result |\n| --- | --- |\n")
         for (name in SimChecks.ALL) {
             val seeds = outcomes.filter { o -> o.failures.any { it.invariant == name } }.map { it.seed }

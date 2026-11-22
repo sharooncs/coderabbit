@@ -38,6 +38,9 @@ import app.housemove.ui.Speech
 import app.housemove.ui.installedApk
 import app.housemove.ui.shareSheet
 import app.housemove.ui.line
+import app.housemove.ui.screens.APP_DOWNLOAD_NOTE
+import app.housemove.ui.screens.APP_DOWNLOAD_URL
+import app.housemove.ui.screens.SHOW_DOWNLOAD_CODE
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.After
 import org.junit.Assert.*
@@ -688,6 +691,12 @@ class MovesFlowsTest {
             assertEquals("out", file.parentFile!!.name)
             assertArrayEquals(apk.readBytes(), file.readBytes())
             assertTrue(phone.cards.value.isEmpty())
+            // Beside it, for a phone with internet: a code to download the app, and what it needs.
+            tap(SHOW_DOWNLOAD_CODE)
+            see(APP_DOWNLOAD_NOTE)
+            assertEquals(APP_DOWNLOAD_URL, codeOnScreen())
+            tap("Done")
+            dontSee(APP_DOWNLOAD_NOTE)
         } finally {
             server.close()
         }

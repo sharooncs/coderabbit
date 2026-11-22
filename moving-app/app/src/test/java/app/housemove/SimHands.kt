@@ -15,7 +15,11 @@ private val HOME_WAY = listOf(Stage.AT_ORIGIN, Stage.LOADED, Stage.DELIVERED, St
  */
 internal class Hands(private val p: Simulation.Phone) {
     private val sim get() = p.sim
-    private val s get() = p.store
+    /** The move in use on the phone: Maple Road, or another of its moves. */
+    private val s get() = p.current
+
+    /** This phone's person in that move. */
+    private val myId get() = s.device.value.personId
     private val r get() = p.rnd
     private val d: AppData get() = s.data.value
 
@@ -55,6 +59,8 @@ internal class Hands(private val p: Simulation.Phone) {
     private val total = menu.sumOf { it.first }
 
     fun one(): String {
+        // An edit left open on a screen of another move went with that screen when this move was opened.
+        if (p.pendingIn !== s) p.pending = null
         p.pending?.let { late ->
             if (chance(40)) {
                 p.pending = null
@@ -108,7 +114,7 @@ internal class Hands(private val p: Simulation.Phone) {
 
     /** Something this phone's person added: they may delete it while nobody else has had a hand in it. */
     private fun deleteOwn(): String? {
-        val me = p.personId
+        val me = myId
         val things = d.liveItems.filter { it.createdBy == me } + d.liveBoxes.filter { it.createdBy == me } +
             d.liveRooms.filter { it.createdBy == me } + d.livePhotos.filter { it.by == me }
         val x = pick(things) ?: return null
@@ -136,7 +142,7 @@ internal class Hands(private val p: Simulation.Phone) {
     }
 
     private fun withdraw(): String? {
-        val mine = d.waitingProposals().filter { it.by == p.personId }
+        val mine = d.waitingProposals().filter { it.by == myId }
         val prop = (if (chance(85)) pick(mine) else pick(d.waitingProposals())) ?: return null
         return "withdrew suggestion ${id(prop.id)} about ${id(prop.targetId)} " + said(s.withdraw(prop.id))
     }
@@ -255,7 +261,7 @@ internal class Hands(private val p: Simulation.Phone) {
 
     // ---- containers ------------------------------------------------------------------------
 
-    private fun handCode(): String = s.nextHandCode().also { synchronized(p.handCodes) { p.handCodes += it } }
+    private fun handCode(): String = s.nextHandCode().also { synchronized(p.handCodes) { p.handCodes += "${s.moveId}/$it" } }
 
     private fun newContainer(): String {
         val kind = ContainerKind.entries[r.nextInt(ContainerKind.entries.size)]
@@ -539,7 +545,7 @@ internal class Hands(private val p: Simulation.Phone) {
     }
 
     private fun tick(): String? {
-        val mine = d.liveTasks.filter { it.assignedTo == p.personId }
+        val mine = d.liveTasks.filter { it.assignedTo == myId }
         val t = (if (chance(60)) pick(mine) else null) ?: pick(d.liveTasks) ?: return null
         val done = chance(85)
         if (chance(70)) return "ticked task ${id(t.id)} " + said(s.tick(t.id, done))
@@ -589,8 +595,8 @@ internal class Hands(private val p: Simulation.Phone) {
     }
 
     private fun rename(): String? {
-        val who = (if (chance(60)) d.person(p.personId) else pick(d.people)) ?: return null
-        if (who.id == p.personId && chance(30)) {
+        val who = (if (chance(60)) d.person(myId) else pick(d.people)) ?: return null
+        if (who.id == myId && chance(30)) {
             val name = p.name + " " + r.nextInt(99)
             s.setDevice { it.copy(name = name) }
             return "renamed this phone $name → ok"
@@ -598,10 +604,18 @@ internal class Hands(private val p: Simulation.Phone) {
         return "renamed ${id(who.id)} " + said(s.renamePerson(who.id, who.name.take(10) + " " + r.nextInt(99)))
     }
 
-    /** A new letter: usually one nobody has ever had (each phone hands out its own), sometimes one that is taken. */
+    /**
+     * A new letter: usually one nobody has ever had (each phone hands out its own), sometimes one that is taken, and for
+     * the phone's own person now and then the letter it writes with in another of its moves.
+     */
     private fun changeLetter(): String? {
-        val who = (if (chance(60)) d.person(p.personId) else pick(d.livePeople)) ?: return null
-        val letter = if (chance(25)) pick(d.people)!!.letter else "${"QRSTUVW"[p.index]}${'A' + (lettersGiven++ % 26)}"
+        val who = (if (chance(60)) d.person(myId) else pick(d.livePeople)) ?: return null
+        val elsewhere = if (who.id == myId) p.stores().filter { it !== s }.map { it.device.value.letter }.filter { it.isNotBlank() } else emptyList()
+        val letter = when {
+            elsewhere.isNotEmpty() && chance(30) -> pick(elsewhere)!!
+            chance(25) -> pick(d.people)!!.letter
+            else -> "${"QRSTUVW"[p.index]}${'A' + (lettersGiven++ % 26)}"
+        }
         return "gave ${id(who.id)} the letter $letter " + said(s.setLetter(who.id, letter))
     }
 
@@ -627,19 +641,27 @@ internal class Hands(private val p: Simulation.Phone) {
         // Since 2.1 Helpers cannot make backups: the phone says so, and nothing is written.
         return try {
             p.backup = ByteArrayOutputStream().also { Backup.export(s, it) }.toByteArray()
+            p.backupOf = s.moveId
             "made a backup → ok"
         } catch (e: java.io.IOException) {
             "made a backup " + no(e.message)
         }
     }
 
+    /**
+     * Restore the last backup this phone made, as the Sync screen does: into the move in use. That may be another move than
+     * the one the backup is of; then nothing of it may go in (it belongs in a card of its own, which "Lost your phone?" makes).
+     */
     private fun restore(): String? {
         val zip = p.backup ?: return null
+        val into = s
+        val other = !into.identity.value.matches(p.backupOf)
         return try {
-            Backup.import(s, ByteArrayInputStream(zip))
-            "restored its backup into the data → ok"
+            Backup.import(into, ByteArrayInputStream(zip))
+            if (other) sim.broke(Simulation.CROSS, "${p.tag} restored a backup of ${sim.others[p.backupOf] ?: "Maple Road"} into ${into.data.value.move.name}, another move", listOf(p.backupOf, into.moveId))
+            "restored its backup${if (other) " of another move" else ""} into the data → ok"
         } catch (e: IllegalArgumentException) {
-            "restored its backup " + no(e.message)
+            "restored its backup${if (other) " of another move" else ""} " + no(e.message)
         }
     }
 
@@ -652,14 +674,16 @@ internal class Hands(private val p: Simulation.Phone) {
     /** Open something on a screen now and save it later, when a sync may have changed it underneath. */
     private fun openForLater(): String? {
         if (p.pending != null) return null
+        val st = s
+        p.pendingIn = st
         val note = "saved late " + r.nextInt(999)
         if (chance(50)) {
             val item = pick(d.liveItems) ?: return null
-            p.pending = { s.put(item.copy(notes = note)); "saved the edit of item ${id(item.id)} it had open → ok" }
+            p.pending = { st.put(item.copy(notes = note)); "saved the edit of item ${id(item.id)} it had open → ok" }
             return "opened item ${id(item.id)} to edit → ok"
         }
         val box = pick(d.liveBoxes) ?: return null
-        p.pending = { s.put(box.copy(notes = note)); "saved the edit of container ${id(box.id)} it had open → ok" }
+        p.pending = { st.put(box.copy(notes = note)); "saved the edit of container ${id(box.id)} it had open → ok" }
         return "opened container ${id(box.id)} to edit → ok"
     }
 }

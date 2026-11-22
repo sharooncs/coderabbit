@@ -150,8 +150,9 @@ fun SyncReportCard(report: SyncReport, modifier: Modifier = Modifier) {
         if (report.shareApp) {
             PillButton(
                 "Share the app", onClick = { shareTheApp(context, scope) }, icon = Icons.Default.Share,
-                modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+                modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
             )
+            DownloadCodeButton(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 16.dp))
         }
     }
 }

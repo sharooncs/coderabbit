@@ -200,6 +200,8 @@ object WifiSync {
         val moveName: String = "",
         /** Letters the phone uses in its other moves. */
         val elsewhere: List<String> = emptyList(),
+        /** The label numbers the phone prints from in its other moves, as first and last of each in turn. */
+        val labelsElsewhere: List<Int> = emptyList(),
         /** The name the phone's owner goes by: given with a Helper code. */
         val name: String = "",
         /** From the host: its own person. */
@@ -335,9 +337,13 @@ object WifiSync {
             moveId = moveId ?: id.id, aliases = if (moveId == null) id.aliases else emptyList(), derived = moveId == null && id.derived,
             ids = if (moveId == null && id.derived) sameMoveIds(d) else emptyList(), moveName = d.move.name,
             elsewhere = store.lettersElsewhereNow().toList(), name = store.phone.settings.value.name.ifBlank { store.device.value.name },
+            labelsElsewhere = store.labelsElsewhereNow().flatMap { listOf(it.first, it.last) },
             youAre = youAre, key = store.phone.keys.publicText, keyAt = store.phone.keys.madeAt,
         )
     }
+
+    /** The label numbers a joining phone prints from in its other moves, as its hello says them. */
+    private fun ranges(hello: Hello): List<IntRange> = hello.labelsElsewhere.chunked(2).filter { it.size == 2 && it[0] <= it[1] }.map { it[0]..it[1] }
 
     /** Some of the people and things of a move from before 2.1, for 2.0's same-move check. */
     private fun sameMoveIds(d: AppData): List<String> =
@@ -587,7 +593,7 @@ object WifiSync {
                         val known = before.phoneEntry(hello.phoneId)?.first
                         val id = known?.id ?: store.newPersonId()
                         if (known == null) onGo = {
-                            store.admitHelper(hello.name.ifBlank { peer }, hello.phoneId, hello.deviceName, hello.elsewhere.toSet(), id, hello.key, hello.keyAt)
+                            store.admitHelper(hello.name.ifBlank { peer }, hello.phoneId, hello.deviceName, hello.elsewhere.toSet(), id, hello.key, hello.keyAt, ranges(hello))
                         }
                         joining = id
                         peerId = id
@@ -611,7 +617,7 @@ object WifiSync {
                                 null -> refuse("UNCONFIRMED", NOT_CONFIRMED)
                             }
                         }
-                        onGo = { store.admitPhone(invited.personId, hello.phoneId, hello.deviceName, hello.elsewhere.toSet(), hello.key, hello.keyAt) }
+                        onGo = { store.admitPhone(invited.personId, hello.phoneId, hello.deviceName, hello.elsewhere.toSet(), hello.key, hello.keyAt, ranges(hello)) }
                         joining = invited.personId
                         peerId = invited.personId
                     } else {

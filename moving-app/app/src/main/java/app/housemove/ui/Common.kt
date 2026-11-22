@@ -287,7 +287,11 @@ fun HomeBannerSlot() {
                 Text(b.title, style = MaterialTheme.typography.titleSmall)
                 if (b.text.isNotBlank()) Text(b.text, style = MaterialTheme.typography.bodySmall, color = Night.TextSoft)
             }
-            GlassOrb(Icons.Default.Close, "Dismiss", size = 36.dp, onClick = { state.banner = null })
+            // Closed, it also counts as read the role news it gave ("You joined as …"), so that does not come up after it.
+            GlassOrb(Icons.Default.Close, "Dismiss", size = 36.dp, onClick = {
+                state.banner = null
+                store.me?.grants?.maxOfOrNull { it.at }?.let { store.roleNewsRead(it) }
+            })
         }
     }
 }

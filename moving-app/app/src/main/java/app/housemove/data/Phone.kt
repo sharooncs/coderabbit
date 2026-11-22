@@ -134,12 +134,30 @@ internal data class Codes(
     val founder: Boolean = false,
     /** Every letter this phone has handed out in the move. */
     val lettersGiven: List<String> = emptyList(),
+    /** Every letter this phone has written codes with in the move, its present one and any before it: none is taken in another move. */
+    val lettersUsed: List<String> = emptyList(),
     /** How many blocks of label numbers it has handed out ([givenBlock]). */
     val blocksGiven: Int = 0,
 )
 
 /** The founding phone's block of label numbers. It prints from 1 to 999 itself, as 2.0 did, and hands out the rest a thousand at a time. */
 internal val FOUNDER_LABELS = 1..99_999
+
+/**
+ * The founding phone's block of label numbers, as [FOUNDER_LABELS], unless this phone prints from those in another of its moves
+ * ([elsewhere]): then the first block of the same size, a million at a time further on, that it prints from in none of them.
+ */
+internal fun founderBlock(elsewhere: List<IntRange>): IntRange {
+    var k = 0
+    while (true) {
+        val block = if (k == 0) FOUNDER_LABELS else k * 1_000_000 until k * 1_000_000 + FOUNDER_LABELS.last
+        val own = ownLabels(block.first, block.last)
+        if (elsewhere.none { it.overlaps(own) }) return block
+        k++
+    }
+}
+
+internal fun IntRange.overlaps(other: IntRange): Boolean = !isEmpty() && !other.isEmpty() && first <= other.last && other.first <= last
 
 /** The numbers a phone prints from its block [from]..[to]: see [FOUNDER_LABELS]; half of a block of a thousand or more; a smaller block whole. */
 internal fun ownLabels(from: Int, to: Int): IntRange = when {

@@ -653,7 +653,7 @@ data class RefusedChange(
     val targetId: String = "",
     /** What they tried, for after "tried to", with {} where the thing's name goes: "mark {} sold". */
     val tried: String = "",
-    /** Their role when they made it, or null when they were not in the move then. */
+    /** No longer filled in: the role they had then is worked out when the change is shown (see [describe]). */
     val role: Role? = null,
     override val updatedAt: Long = 0,
     override val deleted: Boolean = false,

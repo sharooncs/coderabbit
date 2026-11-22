@@ -15,42 +15,79 @@ import java.util.Random
 internal object SimUpdates {
     const val UPDATES = "An update file opened only on the phones it was sent to, the same one twice changed nothing more, and a Helper's phone took in nothing hidden"
 
-    /** [from] sends an update; [to] opens it, once or twice. Called between rounds of work, as syncs are. */
+    /**
+     * [from] sends an update of the move it has open, Maple Road or another of its moves; [to] opens it, once or twice,
+     * through its list of moves, which finds the move the update is for by its ID whichever move is in use there
+     * ([Moves.openUpdate]). Only that move may change on [to]; one [to] does not hold is not added, and it says so.
+     * Called between rounds of work, as syncs are.
+     */
     fun pass(sim: Simulation, from: Simulation.Phone, to: Simulation.Phone, rnd: Random) {
         if (from === to) return
+        val sending = from.current
         val file = from.onUi {
             try {
-                ByteArrayOutputStream().also { Update.write(from.store, it) }.toByteArray()
+                ByteArrayOutputStream().also { Update.write(sending, it) }.toByteArray()
             } catch (e: IOException) {
                 null.also { from.say("sent no update: ${e.message}") }
             }
         } ?: return
-        val forIt = to.store.phone.id in Update.peek(ByteArrayInputStream(file)).to
-        from.say("sent an update to ${Update.peek(ByteArrayInputStream(file)).to.size} phones, ${to.tag} ${if (forIt) "among them" else "not among them"}")
+        val maple = sending === from.store
+        val name = if (maple) "Maple Road" else sim.others[sending.moveId] ?: sending.data.value.move.name
+        val sent = Update.peek(ByteArrayInputStream(file)).to
+        val held = to.moves.cards.value.any { it.matches(sending.moveId) }
+        val forIt = held && to.store.phone.id in sent
+        from.say("sent an update of $name to ${sent.size} phones, ${to.tag} ${if (forIt) "among them" else if (held) "not among them" else "not in that move"}")
         val twice = rnd.nextInt(4) == 0
         val takeIn = rnd.nextInt(3) == 0
         var first: AppData? = null
+        var promoted = false
         repeat(if (twice) 2 else 1) { n ->
             val before = to.data
-            val wasHelper = before.hasOrganiser() && to.store.myRole == Role.HELPER
-            val hiddenBefore = hiddenOf(before)
-            val r = to.onUi { Update.open(to.store, ByteArrayInputStream(file), takeInRemoved = takeIn) }
+            val moves = to.onUi { to.snapshot() }
+            // The move the update is of, as [to] holds it (null when it holds none).
+            val target = to.onUi { to.stores().firstOrNull { it.identity.value.matches(sending.identity.value) } }
+            val wasHelper = target != null && target.data.value.hasOrganiser() && target.myRole == Role.HELPER
+            val hiddenBefore = target?.let { hiddenOf(it.data.value) } ?: emptySet()
+            val targetBefore = target?.data?.value
+            val r = to.onUi { to.moves.openUpdate({ ByteArrayInputStream(file) }, takeInRemoved = takeIn) }
             val after = to.data
+            val movesAfter = to.onUi { to.snapshot() }
+            val targetAfter = target?.data?.value
             sim.wrote(before, after, onlyNewStamps = true)
             to.hold()
             synchronized(sim.stats) {
                 val said = r.message.replace(Regex("^.* has been removed from this move, so the update was not taken in\\.$"), "(Its sender) has been removed from this move, so the update was not taken in.")
-                sim.stats.notes.merge("update files opened" + if (r.ok) "" else ": " + SimStats.rule(said), 1, Int::plus)
+                sim.stats.notes.merge("update files opened" + (if (maple) "" else " of a move beside Maple Road") + if (r.ok) "" else ": " + SimStats.rule(said), 1, Int::plus)
             }
-            to.say("opened an update from ${from.tag}${if (n == 1) " again" else ""}: ${r.message}")
-            if (!forIt && after != before) sim.broke(UPDATES, "${to.tag} took in an update that was not sent to it: ${r.message}")
-            if (!forIt && r.ok) sim.broke(UPDATES, "${to.tag} opened an update that was not sent to it")
+            to.say("opened an update of $name from ${from.tag}${if (n == 1) " again" else ""}: ${r.message}")
+            // Only the move the update is of changes on the phone that opens it, whichever move it has open.
+            if (movesAfter.keys != moves.keys) sim.broke(Simulation.CROSS, "${to.tag}'s list of moves changed when it opened an update of $name")
+            for ((id, was) in moves) {
+                if (target != null && id == target.moveId) continue
+                if (movesAfter[id] != was) sim.broke(Simulation.CROSS, "${to.tag}'s ${sim.others[id] ?: "Maple Road"} changed when it opened an update of $name")
+            }
+            if (!held && (r.ok || r.message != Update.NOT_ON_PHONE)) sim.broke(Simulation.CROSS, "${to.tag} opened an update of $name, which it does not hold, and was told “${r.message}”")
+            if (held && !forIt && targetAfter != targetBefore) sim.broke(UPDATES, "${to.tag} took in an update that was not sent to it: ${r.message}")
+            if (held && !forIt && r.ok) sim.broke(UPDATES, "${to.tag} opened an update that was not sent to it")
             if (forIt && r.message == Update.DAMAGED) sim.broke(UPDATES, "${to.tag} found an update from ${from.tag} damaged")
-            if (n == 1 && first != null && after != first) sim.broke(UPDATES, "opening the same update twice changed ${to.tag}'s data again")
-            if (wasHelper && to.store.myRole == Role.HELPER && !hiddenOf(after).all { it in hiddenBefore }) {
+            // A Helper's phone that the first opening told its person is no Helper now takes in, the second time, what a Helper is
+            // not sent, as it would at its next sync ("Costs and decisions arrive at your next sync"). Nothing else may come.
+            val onlyHidden = promoted && targetAfter != null && first != null && targetAfter.copy(
+                expenses = first!!.expenses, hidden = first!!.hidden, refused = first!!.refused, collect = first!!.collect,
+                photos = targetAfter.photos.filter { it.kind !in HIDDEN_FROM_HELPERS } + first!!.photos.filter { it.kind in HIDDEN_FROM_HELPERS },
+                proposals = targetAfter.proposals.filter { it.kind != ProposalKind.COST } + first!!.proposals.filter { it.kind == ProposalKind.COST },
+            ).let { d -> d.records().toMap() == first!!.records().toMap() && d.move == first!!.move }
+            if (n == 1 && first != null && targetAfter != first && !onlyHidden) {
+                val a = first!!.records().toMap()
+                val b = targetAfter?.records()?.toMap().orEmpty()
+                val k = (a.keys + b.keys).firstOrNull { a[it] != b[it] } ?: if (first!!.move != targetAfter?.move) Simulation.MOVE else "?"
+                sim.broke(UPDATES, "opening the same update of $name twice changed ${to.tag}'s data again (“${r.message}”), first at $k:\n      once: ${a[k].toString().take(500)}\n      twice: ${b[k].toString().take(500)}", listOf(k.substringAfter(':')))
+            }
+            if (wasHelper && target!!.myRole == Role.HELPER && !hiddenOf(targetAfter!!).all { it in hiddenBefore }) {
                 sim.broke(UPDATES, "${to.tag}, a Helper's phone, took in something a Helper is not sent from ${from.tag}'s update")
             }
-            first = after
+            if (n == 0 && wasHelper && target!!.myRole != Role.HELPER) promoted = true
+            first = targetAfter
         }
     }
 

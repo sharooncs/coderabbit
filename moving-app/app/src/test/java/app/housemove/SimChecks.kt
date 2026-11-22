@@ -254,9 +254,12 @@ internal class SimChecks(private val sim: Simulation) {
         const val LETTERS = "No two people have the same letter"
         const val CODES = "The app never gave out the same handwritten code twice"
         const val PHOTOS = "Photo files arrived whole on every phone that should have them"
-        const val DISK = "The data on disk loads again into the same state"
         const val TWICE = "A label used on two things is flagged on every phone"
-        val ALL = listOf(Simulation.RUN, SAME, LOST, MERGE, RULES, HELPERS, COUNTED, NESTING, LETTERS, CODES, TWICE, PHOTOS, DISK, Simulation.OUTSIDERS, SimUpdates.UPDATES)
+        const val DISK = "The data on disk loads again into the same state, in every move on the phone"
+        val ALL = listOf(
+            Simulation.RUN, SAME, LOST, MERGE, RULES, HELPERS, COUNTED, NESTING, LETTERS, CODES, TWICE, PHOTOS, DISK, Simulation.OUTSIDERS, SimUpdates.UPDATES,
+            Simulation.MOVES_APART, Simulation.CROSS, Simulation.LETTERS_APART, Simulation.SCANNED,
+        )
     }
 
     private fun broke(invariant: String, message: String, vararg ids: String?) = sim.broke(invariant, message, ids.toList())
@@ -306,7 +309,63 @@ internal class SimChecks(private val sim: Simulation) {
         for (p in sim.phones) twice(p)
         photos(c, full)
         outsider()
+        apart()
         disk()
+    }
+
+    // ---- the other moves on the phones ----------------------------------------------------------
+
+    /**
+     * Every phone's moves are kept apart: one card per move, and no record (people included) or photo file of one move in
+     * another, on that phone or across the phones, but for what a phone brought from its own move into Maple Road when it
+     * joined. In each move nobody shares a letter; each phone writes with a letter of its own in each of its moves and prints
+     * from label numbers of its own, apart from those of its other moves.
+     */
+    private fun apart() {
+        val brought = sim.phones.flatMap { it.brought }.toSet()
+        val broughtFiles = sim.phones.flatMap { it.broughtFiles }.toSet()
+        // Every record and photo file, by the moves it is in on any phone.
+        val where = HashMap<String, HashSet<String>>()
+        val files = HashMap<String, HashSet<String>>()
+        for (p in sim.phones) {
+            val stores = p.onUi { p.stores() }
+            val ids = stores.map { it.moveId }
+            if (ids.toSet().size != ids.size || stores.any { a -> stores.any { b -> a !== b && a.identity.value.matches(b.identity.value) } }) {
+                broke(Simulation.MOVES_APART, "${p.tag} has more than one card for the same move: ${p.moves.cards.value.map { "${it.name} ${it.moveId.take(8)}" }}")
+            }
+            if (stores.none { it === p.store }) broke(Simulation.MOVES_APART, "${p.tag} no longer has Maple Road in its list of moves")
+            for (s in stores) {
+                val move = s.identity.value.id
+                for ((k, _) in s.data.value.records()) where.getOrPut(k) { HashSet() } += move
+                for (f in s.photoDir.list() ?: emptyArray()) if (!f.endsWith(".part")) files.getOrPut(f) { HashSet() } += move
+                if (s !== p.store) for (f in s.photoDir.listFiles() ?: emptyArray<File>()) {
+                    if (f.name.endsWith(".part")) broke(PHOTOS, "${p.tag} was left with the half-received file ${f.name} in ${s.data.value.move.name}")
+                    val length = sim.born[f.name]
+                    if (length != null && f.length() != length) broke(PHOTOS, "${p.tag} has ${f.name} with ${f.length()} bytes instead of $length in ${s.data.value.move.name}")
+                }
+                if (s !== p.store) letters(s.data.value, " in ${s.data.value.move.name} on ${p.tag}")
+            }
+            // What this phone itself writes with and prints from, in each of its moves.
+            val own = stores.map { s -> Triple(s.data.value.move.name.ifBlank { s.moveId.take(8) }, s.device.value.letter.uppercase(), s.labelRange()) }
+            val selves = stores.map { it.device.value.personId }
+            for ((i, a) in own.withIndex()) for (b in own.drop(i + 1)) {
+                if (a.second.isNotBlank() && a.second == b.second) {
+                    broke(Simulation.LETTERS_APART, "${p.tag} writes with the letter ${a.second} both in ${a.first} and in ${b.first}" + sim.lately(p), *selves.toTypedArray())
+                }
+                if (!a.third.isEmpty() && !b.third.isEmpty() && a.third.first <= b.third.last && b.third.first <= a.third.last) {
+                    broke(Simulation.LETTERS_APART, "${p.tag} prints labels ${a.third} in ${a.first} and ${b.third} in ${b.first}" + sim.lately(p), *selves.toTypedArray())
+                }
+            }
+        }
+        fun named(ids: Collection<String>) = ids.map { sim.others[it] ?: if (it == sim.phones[0].store.moveId) "Maple Road" else it.take(8) }
+        var shown = 0
+        for ((k, moves) in where.toSortedMap()) {
+            if (moves.size > 1 && k !in brought && shown++ < 4) broke(Simulation.MOVES_APART, "$k is in more than one move: ${named(moves)}", k.substringAfter(':'))
+        }
+        shown = 0
+        for ((f, moves) in files.toSortedMap()) {
+            if (moves.size > 1 && f !in broughtFiles && shown++ < 4) broke(Simulation.MOVES_APART, "the photo file $f is in more than one move: ${named(moves)}")
+        }
     }
 
     /** Labels used on more than one live thing, worked out afresh, against what the app flags. */
@@ -596,15 +655,21 @@ internal class SimChecks(private val sim: Simulation) {
         if (counts.toSet().size > 1) broke(COUNTED, "the phones do not agree on progress: " + c.indices.joinToString { "${c[it].tag} ${counts[it]}" })
     }
 
-    private fun letters(d: AppData) {
+    private fun letters(d: AppData, where: String = "") {
         for ((letter, who) in d.people.filter { it.letter.isNotBlank() }.groupBy { it.letter.uppercase() }) {
-            if (who.size > 1) broke(LETTERS, "the letter $letter belongs to ${who.joinToString { "${it.name} (${it.id.take(8)})" }}", *who.map { it.id }.toTypedArray())
+            if (who.size > 1) broke(LETTERS, "the letter $letter belongs to ${who.joinToString { "${it.name} (${it.id.take(8)})" }}$where", *who.map { it.id }.toTypedArray())
         }
     }
 
+    /** No code is given out twice in one move, and no phone gives out the same code twice, in whichever of its moves. */
     private fun codes() {
         val all = sim.phones.flatMap { p -> p.handCodes.map { it.uppercase() to p.tag } }
-        for ((code, where) in all.groupBy({ it.first }, { it.second })) if (where.size > 1) broke(CODES, "the code $code was given out ${where.size} times: on ${where.joinToString()}")
+        for ((code, where) in all.groupBy({ it.first }, { it.second })) {
+            if (where.size > 1) broke(CODES, "the code ${code.substringAfter('/')} was given out ${where.size} times in ${sim.others[code.substringBefore('/').lowercase()] ?: "one move"}: on ${where.joinToString()}")
+        }
+        for (p in sim.phones) for ((code, n) in p.handCodes.groupingBy { it.substringAfter('/').uppercase() }.eachCount()) {
+            if (n > 1) broke(Simulation.LETTERS_APART, "${p.tag} gave out the code $code $n times across its moves")
+        }
     }
 
     private fun photos(c: List<Simulation.Phone>, full: List<Simulation.Phone>) {
@@ -621,21 +686,31 @@ internal class SimChecks(private val sim: Simulation) {
         }
     }
 
+    /** Every phone starts again: its list of moves is the same, and each move loads into the state it had, with the same settings. */
     private fun disk() {
         for (p in sim.phones) {
-            val before = p.data
-            val device = p.store.device.value
-            p.onUi { p.store.close() }
-            val again = p.onUi { Store(p.dir, p.clock) }
-            if (again.data.value != before) {
-                val a = canon(before, true)
-                val b = canon(again.data.value, true)
-                val k = (a.keys + b.keys).firstOrNull { a[it] != b[it] }
-                broke(DISK, "${p.tag} loaded something else from disk than it had, first at $k\n      had: ${short(a[k])}\n      loaded: ${short(b[k])}", k?.substringAfter(':'))
+            val had = p.onUi { p.stores().map { Triple(it.moveId, it.data.value, it.device.value) } }
+            val cards = p.moves.cards.value.map { it.moveId }.sorted()
+            p.onUi { p.stores().forEach { it.close() } }
+            val again = p.onUi { p.openMoves() }
+            if (again.cards.value.map { it.moveId }.sorted() != cards) broke(DISK, "${p.tag} started again with other moves than it had: ${again.cards.value.map { it.name }}")
+            for ((id, before, device) in had) {
+                val s = p.onUi { again.store(id) }
+                if (s == null) {
+                    broke(DISK, "${p.tag} started again without the move ${sim.others[id] ?: "Maple Road"}")
+                    continue
+                }
+                val where = if (id == p.store.moveId) "" else " in ${sim.others[id] ?: id.take(8)}"
+                if (s.data.value != before) {
+                    val a = canon(before, true)
+                    val b = canon(s.data.value, true)
+                    val k = (a.keys + b.keys).firstOrNull { a[it] != b[it] }
+                    broke(DISK, "${p.tag} loaded something else from disk than it had$where, first at $k\n      had: ${short(a[k])}\n      loaded: ${short(b[k])}", k?.substringAfter(':'))
+                }
+                if (s.device.value != device) broke(DISK, "${p.tag} loaded other phone settings than it had$where: $device against ${s.device.value}")
+                if (s.loadWarning != null) broke(DISK, "${p.tag}$where: ${s.loadWarning}")
             }
-            if (again.device.value != device) broke(DISK, "${p.tag} loaded other phone settings than it had: $device against ${again.device.value}")
-            if (again.loadWarning != null) broke(DISK, "${p.tag}: ${again.loadWarning}")
-            p.onUi { again.close() }
+            p.onUi { again.cards.value.forEach { again.store(it.moveId)?.close() } }
         }
     }
 
@@ -782,7 +857,10 @@ internal class SimChecks(private val sim: Simulation) {
                 }
                 is Person -> {
                     val want = ((a as Person?)?.grants.orEmpty() + (b as Person?)?.grants.orEmpty()).toSet()
-                    if (r.grants.toSet() != want) bad("lost or invented a grant on", k)
+                    // The same Helper's grant from letting a phone in (Store.letIn) on a copy the merge then stamped over with the
+                    // other phone's newer one: that copy is not among those that went in, but the grant is this phone's own.
+                    val letIn = (r.grants.toSet() - want).all { it.by == p.personId && it.role == Role.HELPER && !it.removed && it.at <= r.updatedAt }
+                    if (!r.grants.containsAll(want) || !letIn) bad("lost or invented a grant on", k)
                     val now = j.book.now(r.id)
                     if (now == null || now.first != r.role || now.second != r.removed) bad("gave the wrong role to", k)
                 }

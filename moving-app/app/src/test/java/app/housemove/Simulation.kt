@@ -18,6 +18,13 @@ import java.util.concurrent.TimeUnit
  * long random sequence of things at the same time and syncing in random pairs
  * over localhost sockets. See SimulationTest for what is checked afterwards.
  *
+ * Each phone keeps its moves as the app does, in a list of moves ([Moves]): it
+ * starts or joins Maple Road through that list, and some phones keep or start
+ * another move beside it ("Storage", another family's move) or join one another
+ * phone started. They switch between their moves, work in whichever is open,
+ * scan labels found in more than one, and sync or scan codes from the move they
+ * have open; the checks see that the moves stay apart.
+ *
  * A run is decided entirely by its seed. Each phone works on its own thread
  * with its own seeded choices, ids and clock; a round lets some phones work and
  * some pairs sync at once, but never lets two things touch the same Store
@@ -50,12 +57,40 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
         val selves = HashSet<String>()
         val dir = File(sim.root, tag).apply { mkdirs() }
         val clock: () -> Long = { sim.time + offset }
+
+        /** The moves on this phone, kept as the app keeps them ([Moves]): Maple Road, and any other it starts or joins. */
+        lateinit var moves: Moves
+
+        /** Maple Road on this phone: the move the run is about, and the one its checks look at. */
         lateinit var store: Store
         lateinit var host: WifiSync.Host
+
+        /** The move in use on this phone, the one its person works on: Maple Road, or another of its moves. */
+        val current: Store get() = moves.current.value ?: store
+        val inMaple: Boolean get() = current === store
+
+        /** What this phone brought from a move of its own into Maple Road when it joined ("Bring your things"): in both moves since. */
+        val brought = HashSet<String>()
+        val broughtFiles = HashSet<String>()
+
+        /** The move the last backup this phone made is of. */
+        var backupOf = ""
+
+        val opened: Boolean get() = ::moves.isInitialized
+
+        /** The phone's list of moves, opened from its folders as the app does at start. */
+        fun openMoves(): Moves = Moves(File(dir, "files"), File(dir, "nobackup"), { "$name's phone" }, clock)
+
+        /** Every move's Store on this phone, in the list's order. Call on the phone's own thread. */
+        fun stores(): List<Store> = moves.cards.value.mapNotNull { moves.store(it.moveId) }
+
+        /** What each move on the phone holds, by move ID: its data and its photo files. Call on the phone's own thread. */
+        fun snapshot(): Map<String, Pair<AppData, Set<String>>> =
+            stores().associate { it.moveId to (it.data.value to (it.photoDir.list()?.toSet() ?: emptySet())) }
         val heard = LinkedBlockingQueue<WifiSync.Result>()
         lateinit var hands: Hands
 
-        /** Codes [Store.nextHandCode] gave this phone. */
+        /** Codes [Store.nextHandCode] gave this phone, each with the move it was given in: as "move ID/code". */
         val handCodes = ArrayList<String>()
 
         /** Every version (by its stamp) of each record this phone has ever held. */
@@ -75,6 +110,9 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
 
         /** An edit opened on a screen earlier and not saved yet. */
         var pending: (() -> String)? = null
+
+        /** The move whose screen that edit is on. Opening another move replaces every screen, and the edit with it. */
+        var pendingIn: Store? = null
         private var said = 0
         private val lock = Any()
 
@@ -87,17 +125,22 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
             sim.trace(this, said++, text)
         }
 
-        fun hold(d: AppData = data) = synchronized(lock) {
+        fun hold(d: AppData = data, s: Store = store) = synchronized(lock) {
+            val me = s.device.value.personId
             for ((k, r) in d.records()) held.getOrPut(k) { HashSet() }.add(r.updatedAt)
             held.getOrPut(MOVE) { HashSet() }.add(d.move.updatedAt)
             if (d.move.labelsPrinted > labelsSeen) labelsSeen = d.move.labelsPrinted
-            if (d.person(personId)?.role.let { it != null && it != Role.HELPER }) sawMore = true
-            selves += personId
+            if (d.person(me)?.role.let { it != null && it != Role.HELPER }) sawMore = true
+            selves += me
         }
 
-        /** One random action, with everything it wrote noted down. Runs on this phone's own thread. */
+        /**
+         * One random action in the move in use, with everything it wrote to Maple Road noted down. Runs on this phone's
+         * own thread. What is done in another move is in the trace with that move's name before it.
+         */
         fun act(note: String = "") {
             val before = data
+            val elsewhere = current.takeIf { it !== store }?.let { "[" + it.data.value.move.name.ifBlank { "another move" } + "] " } ?: ""
             val text = try {
                 hands.one()
             } catch (e: Exception) {
@@ -107,7 +150,7 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
             sim.wrote(before, data)
             hold()
             sim.count(text)
-            say(text + note)
+            say(elsewhere + text + note)
         }
     }
 
@@ -256,7 +299,7 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
             } catch (_: Exception) {
             }
             try {
-                p.onUi { p.store.close() }
+                p.onUi { if (p.opened) p.stores().forEach { it.close() } }
             } catch (_: Exception) {
             }
             p.ui.shutdownNow()
@@ -329,14 +372,16 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
         )
         for ((i, w) in who.withIndex()) {
             val p = Phone(this, i, w.first, w.second, w.third, errors[i])
-            // A phone picks its first letter at random; here it is fixed so that the run repeats.
-            File(p.dir, "device.json").writeText("""{"name":"${w.second}","letter":"${"AZZYZXZ"[i]}"}""")
+            // Each phone keeps its moves as the app does ([Moves]). Its phone ID is made at random the first time; here it is
+            // fixed so that the run repeats. The name its person goes by is in the phone's own settings.
+            File(p.dir, "nobackup").mkdirs()
+            File(p.dir, "nobackup/phone-id").writeText("psim-$i-$seed-phone")
+            File(p.dir, "files").mkdirs()
+            File(p.dir, "files/phone.json").writeText("""{"name":"${w.second}"}""")
             p.onUi {
-                p.store = Store(p.dir, p.clock)
+                p.moves = p.openMoves()
                 p.hands = Hands(p)
             }
-            // Started from the phone's own thread, so that the threads that serve its syncs take their ids from the same seeded source.
-            p.host = p.onUi { WifiSync.host(p.store, p.clock) { p.heard.add(it) } }
             phones += p
         }
         val xdir = File(root, "X1").apply { mkdirs() }
@@ -345,8 +390,10 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
         asOutsider { outsider.createBox("V1", null) }
         val o1 = phones[0]
         o1.onUi {
-            val s = o1.store
+            val s = o1.moves.create("Maple Road", yourName = "Asha")
+            o1.store = s
             val before = s.data.value
+            // A new move's phone takes a letter at random; here it is fixed so that the run repeats.
             s.setDevice { it.copy(name = "Asha", letter = "A") }
             s.setMove { it.copy(name = "Maple Road", moveDay = 20_600, currency = "£", setupDone = true) }
             for (name in listOf("Kitchen", "Living room", "Main bedroom", "Garage")) {
@@ -362,19 +409,28 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
             wrote(before, s.data.value)
             o1.hold()
         }
+        // Started from the phone's own thread, so that the threads that serve its syncs take their ids from the same seeded source.
+        o1.host = o1.onUi { WifiSync.host(o1.store, o1.clock) { o1.heard.add(it) } }
         // Two of the phones were tried out alone before they were invited: one as it comes, one in the old "helper mode".
+        // The first brings its things into Maple Road when it joins ("Bring your things?"); the second does or does not.
+        // A phone that does not keeps its own move beside Maple Road.
+        bringing = setOf(3) + if (rnd.nextBoolean()) setOf(5) else emptySet()
         for (p in listOf(phones[3], phones[5])) p.onUi {
-            val s = p.store
+            val s = p.moves.create("Trying it out")
+            s.setDevice { it.copy(letter = "${"AZZYZXZ"[p.index]}") }
             val before = s.data.value
             if (p.role == Role.HELPER) s.setDevice { it.copy(helper = true) }
             s.setMove { it.copy(name = "Trying it out", vanCapacityM3 = 9.0, setupDone = true) }
             val item = s.createItem("Old ${p.name} lamp", null)
             s.decide(item.id, Disposition.SELL, 12.0)
-            s.createBox(s.nextHandCode().also { p.handCodes += it }, null)
+            val ends = if (p.index in bringing) o1.store.moveId else s.moveId
+            s.createBox(s.nextHandCode().also { p.handCodes += "$ends/$it" }, null)
             s.put(Task(id = newId(), title = "${p.name}'s own list"))
             s.put(Expense(id = newId(), title = "${p.name}'s own cost", amount = 5.0))
-            wrote(before, s.data.value)
-            p.hold()
+            if (p.index in bringing) {
+                wrote(before, s.data.value)
+                p.hold(s.data.value, s)
+            }
         }
         // Everyone comes in through an invite. Omar first; after that either Organiser adds and invites, without the two syncing in between.
         invite(o1, phones[1])
@@ -392,11 +448,29 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
             o.valueOrNull() ?: throw IllegalStateException("${by.tag} could not add ${p.tag}: ${o.reason}")
         }
         val invite = by.host.inviteFor(person.id, local).valueOrNull() ?: throw IllegalStateException("no invite for ${p.tag}")
-        val beforeJoin = p.data
+        // The phone's own move, if it was tried out alone: what it brings comes from there.
+        val own = p.moves.current.value
+        val bring = p.index in bringing
+        val beforeJoin = if (bring) own!!.data.value else AppData()
+        val ownFiles = own?.photoDir?.list()?.toSet() ?: emptySet()
         val beforeHost = by.data
-        val r = p.net.submit(Callable { WifiSync.join(p.store, invite) }).get(60, TimeUnit.SECONDS)
+        // As the app joins: the invite is read first ("Join Maple Road as Dan, Decider?"), then the phone's list of moves joins it.
+        val r = p.net.submit(Callable {
+            val check = p.moves.readInvite(invite.encode()) ?: throw IllegalStateException("${p.tag} could not read its invite")
+            if (check.card != null) broke(MOVES_APART, "${p.tag} was told it already holds Maple Road before it ever joined it")
+            if ((check.bringOffer != null) != (own != null)) broke(MOVES_APART, "${p.tag} was ${if (own == null) "" else "not "}offered to bring its own things: ${check.bringOffer}")
+            p.moves.join(check, bringThings = bring)
+        }).get(60, TimeUnit.SECONDS)
         val hosted = by.heard.poll(40, TimeUnit.SECONDS)
         if (!r.ok || hosted?.ok != true) throw IllegalStateException("${p.tag} could not join ${by.tag}: ${r.error} / ${hosted?.error}")
+        p.store = p.moves.current.value ?: throw IllegalStateException("${p.tag} joined but has no move in use")
+        if (p.store.moveId != by.store.moveId) throw IllegalStateException("${p.tag} joined, but its move in use is ${p.store.moveId}, not Maple Road")
+        if (own != null && p.moves.cards.value.none { it.matches(own.moveId) }) broke(MOVES_APART, "${p.tag}'s own move went when it joined Maple Road")
+        if (bring) {
+            for ((k, _) in beforeJoin.records()) p.brought += k
+            p.broughtFiles += ownFiles
+        }
+        p.host = p.onUi { WifiSync.host(p.store, p.clock) { p.heard.add(it) } }
         // Joining stamps the person on both phones; those are writes too.
         wrote(beforeJoin, p.data, onlyNewStamps = true)
         wrote(beforeHost, by.data, onlyNewStamps = true)
@@ -419,12 +493,18 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
         if (rnd.nextInt(10) == 0) outsiderTriesOn(phones[rnd.nextInt(phones.size)])
         // Phones that cannot meet: one sends an update file through a messaging app, another opens it (SimUpdates).
         if (rnd.nextInt(4) == 0) SimUpdates.pass(this, phones[rnd.nextInt(phones.size)], phones[rnd.nextInt(phones.size)], rnd)
+        if (rnd.nextInt(3) == 0) elsewhere()
         val free = phones.shuffled(rnd).toMutableList()
         val jobs = ArrayList<Future<*>>()
         repeat(listOf(0, 1, 1, 1, 2, 2, 3)[rnd.nextInt(7)]) {
             if (free.size < 2) return@repeat
             val h = free.removeAt(0)
             val j = free.removeAt(0)
+            // A phone syncs the move it has open. When either has another move open, that is what they sync, or try to.
+            if (!h.inMaple || !j.inMaple) {
+                jobs += pool.submit { crossSync(h, j) }
+                return@repeat
+            }
             val cut = if (rnd.nextInt(6) == 0) Wire.Cut(1 + rnd.nextInt(8), listOf(0, 1, 7, 60, 900, 5000, 30_000)[rnd.nextInt(7)]) else null
             val busy = rnd.nextInt(3) == 0
             val plan = rnd.nextLong()
@@ -441,6 +521,8 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
 
     /** Everyone syncs with everyone, round after round, until a whole round changes nothing anywhere. */
     private fun settle() {
+        // Everyone goes back to Maple Road to finish it.
+        for (p in phones) p.onUi { if (!p.inMaple) p.pending = null; p.moves.open(p.store.moveId) }
         val pairs = ArrayList<Pair<Phone, Phone>>()
         for (a in phones) for (b in phones) if (a.index < b.index) pairs += a to b
         var quiet = false
@@ -467,6 +549,238 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
         val groups = phones.groupBy { find(it.index) }.values
         community = groups.maxWithOrNull(compareBy({ it.size }, { -it.minOf { p -> p.index } })) ?: emptyList()
         for (p in phones) p.say("!at the end: ${if (p in community) "in the move" else "outside the move"}, ${p.store.myRole.label}")
+    }
+
+    // ---- other moves on the phones ------------------------------------------------------
+
+    /** Which of the two phones tried out alone bring their things into Maple Road when they join (by index). */
+    private var bringing: Set<Int> = emptySet()
+
+    /** The moves the phones started beside Maple Road, by ID, with their names. */
+    val others = LinkedHashMap<String, String>()
+
+    private val otherNames = listOf("Storage", "Elm Street", "Gran's flat", "Garage sale", "Uni room", "The allotment")
+
+    private fun note(what: String) = synchronized(stats) { stats.notes.merge(what, 1, Int::plus) }
+
+    /**
+     * Something about the phone's other moves, done while nothing else runs: a phone starts a move of its own (it is its
+     * Organiser), switches to another of its moves, scans a label of one of them, invites another phone into one, or
+     * scans the sync code of a move it is not in.
+     */
+    private fun elsewhere() {
+        val p = phones[rnd.nextInt(phones.size)]
+        val q = phones.filter { it !== p }[rnd.nextInt(phones.size - 1)]
+        when (rnd.nextInt(12)) {
+            0, 1 -> startMove(p)
+            2, 3, 4, 5 -> switchMove(p)
+            6, 7 -> scanAcross(p)
+            8, 9 -> inviteElsewhere(p, q)
+            else -> strangeCode(p, q)
+        }
+    }
+
+    /** [p] starts a move of its own beside Maple Road, through its list of moves, and puts a few things in it. It is then in use. */
+    private fun startMove(p: Phone) {
+        if (p.moves.cards.value.size >= 3 || others.size >= 4) return switchMove(p)
+        val name = otherNames[rnd.nextInt(otherNames.size)]
+        val storage = name == "Storage"
+        val s = p.onUi {
+            val s = p.moves.create(name)
+            p.pending = null
+            // A new move's phone takes a letter it uses in none of its other moves, at random; here one such letter is picked
+            // from the run's own choices, so that the run repeats. The phone takes it only if it is so.
+            val taken = s.lettersElsewhereNow()
+            val free = ('A'..'Z').map { "$it" }.filter { it !in taken }
+            s.setDevice { it.copy(letter = free[p.rnd.nextInt(free.size)]) }
+            s.setMove { it.copy(name = name, setupDone = true, kind = if (storage) MoveKind.STORAGE else MoveKind.SELF, moveDay = 20_610L + p.rnd.nextInt(30)) }
+            val rooms = listOf("Loft", "Shed").map { s.createRoom(Home.ORIGIN, it) }
+            if (!storage) s.createRoom(Home.DEST, "Hall")
+            for (n in 1..2) s.createItem(listOf("Bike", "Lamp", "Desk", "Rug")[p.rnd.nextInt(4)] + " " + n, rooms[n % 2].id)
+            // Old printed labels, as Maple Road has too, and a code written by hand.
+            s.createBox("L%03d".format(1 + p.rnd.nextInt(6)), rooms[0].id)
+            s.createBox(s.nextHandCode().also { synchronized(p.handCodes) { p.handCodes += "${s.moveId}/$it" } }, rooms[1].id)
+            s
+        }
+        synchronized(others) { others[s.moveId] = name }
+        note("moves started on a phone beside Maple Road")
+        p.say("!started a move of its own, $name (${s.moveId.take(8)}), as its Organiser, letter ${s.device.value.letter}")
+    }
+
+    /** [p] opens another of its moves, as its list of moves does: back to Maple Road more often than not. */
+    private fun switchMove(p: Phone) {
+        val cards = p.moves.cards.value
+        if (cards.size < 2) return
+        val maple = cards.first { it.matches(p.store.moveId) }
+        val to = if (!p.inMaple && rnd.nextInt(10) < 6) maple else cards[rnd.nextInt(cards.size)]
+        val opened = p.onUi { p.moves.open(to.moveId) }
+        p.pending = null
+        if (opened == null || p.current !== opened || !opened.identity.value.matches(to.moveId)) {
+            broke(MOVES_APART, "${p.tag} opened ${to.name} (${to.moveId.take(8)}) from its list, but has ${p.current.data.value.move.name} (${p.current.moveId.take(8)}) in use")
+        }
+        note("switches between the moves on a phone")
+        p.say("switched to ${to.name.ifBlank { "a move" }}")
+    }
+
+    /**
+     * [p] scans a label of one of its moves: printed with its move's tag, printed before tags (also as "HM:L001"), or written by hand.
+     * Its list of moves must name every one of its moves that holds that label, and no other; for a tagged one, the move of the tag.
+     */
+    private fun scanAcross(p: Phone) {
+        val stores = p.onUi { p.stores() }
+        fun labels(d: AppData) = d.liveBoxes.map { it.label } + d.liveItems.mapNotNull { it.label }
+        val all = stores.flatMap { labels(it.data.value) }.filter { it.isNotBlank() }.distinctBy { it.uppercase() }.sorted()
+        if (all.isEmpty()) return
+        val code = all[rnd.nextInt(all.size)]
+        val holding = stores.filter { s -> labels(s.data.value).any { it.equals(code, ignoreCase = true) } }
+        val tagged = rnd.nextInt(3) == 0
+        val of = holding[rnd.nextInt(holding.size)]
+        val text = when {
+            tagged -> labelQrText(code, of.moveTag)
+            rnd.nextBoolean() -> "HM:$code"
+            else -> code
+        }
+        val got = p.onUi { p.moves.movesHolding(text) }.map { it.moveId }.toSet()
+        val want = if (tagged) p.moves.cards.value.filter { of.moveTag in it.tags }.map { it.moveId }.toSet() else holding.map { it.moveId }.toSet()
+        if (got != want) {
+            broke(SCANNED, "${p.tag} scanned $text: its list of moves says ${got.map { others[it] ?: it.take(8) }}, but ${want.map { others[it] ?: it.take(8) }} hold it")
+        }
+        if (!tagged && want.size > 1) note("old labels found in more than one move on a phone, so the screen asks which")
+        p.say("scanned the label $text: in ${got.size} of its moves")
+    }
+
+    /**
+     * [p] adds [q]'s person to one of its own other moves and shows the invite; [q] reads it and joins through its list of moves.
+     * Joining puts the move in a card of its own, opened; nothing in [q]'s other moves changes.
+     */
+    private fun inviteElsewhere(p: Phone, q: Phone) {
+        val choices = p.onUi { p.stores() }.filter { s -> s !== p.store && s.can(Action.MANAGE_PEOPLE) && q.moves.cards.value.none { it.matches(s.moveId) } }
+        if (choices.isEmpty()) return startMove(p)
+        val s = choices[rnd.nextInt(choices.size)]
+        val role = Role.entries[rnd.nextInt(3)]
+        val person = p.onUi { s.addPerson(q.name, role) }.valueOrNull() ?: return
+        val heard = LinkedBlockingQueue<WifiSync.Result>()
+        val host = p.onUi { WifiSync.host(s, p.clock) { heard.add(it) } }
+        try {
+            val invite = host.inviteFor(person.id, local).valueOrNull() ?: return
+            val before = q.onUi { q.snapshot() }
+            val r = q.net.submit(Callable {
+                val check = q.moves.readInvite(invite.encode()) ?: throw IllegalStateException("${q.tag} could not read an invite")
+                if (check.card != null) broke(MOVES_APART, "${q.tag} was told it holds ${check.card?.name}, which it never joined")
+                q.moves.join(check, bringThings = false).also { if (it.ok) q.pending = null }
+            }).get(60, TimeUnit.SECONDS)
+            val hosted = heard.poll(40, TimeUnit.SECONDS)
+            val name = s.data.value.move.name
+            if (!r.ok || hosted?.ok != true) {
+                note("invites into another move that did not go through")
+                q.say("!could not join $name from ${p.tag}'s invite: ${r.error} / ${hosted?.error}")
+                return
+            }
+            val now = q.current
+            if (!now.identity.value.matches(s.moveId) || q.moves.cards.value.size != before.size + 1) {
+                broke(MOVES_APART, "${q.tag} joined $name, but has ${now.data.value.move.name} in use and ${q.moves.cards.value.size} moves (had ${before.size})")
+            }
+            val after = q.onUi { q.snapshot() }
+            for ((id, was) in before) if (after[id] != was) broke(MOVES_APART, "${q.tag}'s move ${others[id] ?: "Maple Road"} changed when it joined $name")
+            note("phones that joined another move beside Maple Road")
+            q.say("!joined $name as ${q.name} (${role.label}, letter ${now.device.value.letter}) from ${p.tag}'s invite")
+        } finally {
+            host.stop()
+        }
+    }
+
+    /**
+     * [q] shows the sync code of the move it has open, and [p], which is not in that move, scans it through its list of moves.
+     * Nothing is exchanged, both phones say they are on different moves, and no move is added to [p] or changed on either.
+     */
+    private fun strangeCode(p: Phone, q: Phone) {
+        val m = q.current
+        if (p.moves.cards.value.any { it.matches(m.moveId) }) return switchMove(p)
+        val heard = LinkedBlockingQueue<WifiSync.Result>()
+        val host = q.onUi { WifiSync.host(m, q.clock) { heard.add(it) } }
+        try {
+            val mine = p.onUi { p.snapshot() }
+            val theirs = q.onUi { q.snapshot() }
+            val r = p.net.submit(Callable {
+                val check = p.moves.readInvite(host.invite(local).encode()) ?: throw IllegalStateException("${p.tag} could not read a sync code")
+                p.moves.join(check)
+            }).get(60, TimeUnit.SECONDS)
+            val hosted = heard.poll(40, TimeUnit.SECONDS)
+            val name = m.data.value.move.name
+            if (r.ok || r.joinedAs != null || hosted?.ok == true) broke(CROSS, "${p.tag} synced with ${q.tag}'s $name by its plain code, a move it is not in")
+            if (r.error != WifiSync.WRONG_MOVE || hosted?.error != WifiSync.WRONG_MOVE) {
+                broke(CROSS, "${p.tag} scanned the code of ${q.tag}'s $name, a move it is not in, and the phones said “${r.error}” / “${hosted?.error}”, not that they are on different moves")
+            }
+            if (p.onUi { p.snapshot() } != mine) broke(CROSS, "${p.tag}'s moves changed when it scanned the code of ${q.tag}'s $name, which it is not in")
+            if (q.onUi { q.snapshot() } != theirs) broke(CROSS, "${q.tag}'s moves changed when ${p.tag}, not in $name, scanned its code")
+            val left = File(p.dir, "files/moves").listFiles()?.filter { it.name.endsWith(".new") }.orEmpty()
+            if (left.isNotEmpty()) broke(CROSS, "${p.tag} was left with a move half joined (${left.first().name}) after a code it could not use")
+            note("sync codes of a move the phone is not in, scanned through its list of moves")
+            p.say("scanned the code of ${q.tag}'s $name: ${r.error}")
+        } finally {
+            host.stop()
+        }
+    }
+
+    /**
+     * [h] shows the sync code of the move it has open, and [j] scans it from the move it has open, as the Sync screen does.
+     * On different moves nothing is exchanged and both say so; on the same one (a move beside Maple Road both are in) it is
+     * an ordinary sync of that move, and nothing else on either phone changes.
+     */
+    private fun crossSync(h: Phone, j: Phone) {
+        val hs = h.current
+        val js = j.current
+        val same = hs.identity.value.matches(js.identity.value)
+        val heard = LinkedBlockingQueue<WifiSync.Result>()
+        val host = h.onUi { WifiSync.host(hs, h.clock) { heard.add(it) } }
+        try {
+            val hBefore = if (loose) null else h.onUi { h.snapshot() }
+            val jBefore = if (loose) null else j.onUi { j.snapshot() }
+            val r = j.net.submit(Callable { WifiSync.join(js, host.invite(local), letNewPhonesIn = js.isAlone()) }).get(120, TimeUnit.SECONDS)
+            val hosted = heard.poll(60, TimeUnit.SECONDS)
+            val names = "${j.tag} in ${js.data.value.move.name} and ${h.tag} in ${hs.data.value.move.name}"
+            synchronized(stats) {
+                stats.crossSyncs++
+                for (e in listOfNotNull(r.error, hosted?.error).toSet()) stats.syncErrors.merge(SimStats.rule(e), 1, Int::plus)
+            }
+            if (!same) {
+                if (r.ok || hosted?.ok == true) broke(CROSS, "$names synced, though they are on different moves")
+                if (r.error != WifiSync.WRONG_MOVE || hosted?.error != WifiSync.WRONG_MOVE) {
+                    broke(CROSS, "$names tried to sync and were told “${r.error}” / “${hosted?.error}”, not that they are on different moves")
+                }
+            }
+            if (hBefore != null && jBefore != null) {
+                val hAfter = h.onUi { h.snapshot() }
+                val jAfter = j.onUi { j.snapshot() }
+                for ((p, before, after, open) in listOf(Quad(h, hBefore, hAfter, hs), Quad(j, jBefore, jAfter, js))) {
+                    for ((id, was) in before) {
+                        if (same && id == open.moveId) continue
+                        if (after[id] != was) broke(CROSS, "$names ${if (same) "synced their move" else "tried to sync"}, and ${p.tag}'s ${others[id] ?: "Maple Road"} changed")
+                    }
+                }
+            }
+            val how = if (r.ok) "ok" else r.error
+            j.say("synced ${js.data.value.move.name} with ${h.tag}, which has ${hs.data.value.move.name} open: $how")
+            h.say("hosted ${j.tag}, which has ${js.data.value.move.name} open, from ${hs.data.value.move.name}: $how")
+        } finally {
+            host.stop()
+        }
+    }
+
+    private data class Quad<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
+
+    /**
+     * A phone let in as it is gets a Helper's grant in the name of the person of the phone that let it in, as the sync begins
+     * ([Store.letIn]), on a copy of that person the merge of the same sync may stamp over with the other phone's newer one.
+     * That copy's grants are noted as written, so the end does not take them for grants nobody made.
+     */
+    private fun letIn(p: Phone, before: AppData) {
+        val me = p.personId
+        for (person in p.data.people) {
+            val had = before.person(person.id)?.grants?.toSet() ?: emptySet()
+            if (person.grants.none { it !in had && it.by == me && it.role == Role.HELPER && !it.removed }) continue
+            synchronized(versions) { versions.getOrPut("person:" + person.id) { ArrayList() } += person }
+        }
     }
 
     // ---- one sync ----------------------------------------------------------------------
@@ -533,6 +847,8 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
         // Joining stamps nothing in an ordinary sync, but note any new stamp all the same.
         wrote(x.hostAtStart!!, h.data, onlyNewStamps = true)
         wrote(x.joinerAtStart!!, j.data, onlyNewStamps = true)
+        letIn(h, x.hostAtStart!!)
+        letIn(j, x.joinerAtStart!!)
         h.hold(); j.hold()
         handedOver(h, x.hostAtStart!!, j)
         handedOver(j, x.joinerAtStart!!, h)
@@ -555,6 +871,10 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
         const val REFUSED = "→ no: "
         const val RUN = "The run finished and the phones went quiet"
         const val OUTSIDERS = "A phone outside the move (a used or photographed code, a wrong code, version 1.3) got nothing and changed nothing"
+        const val MOVES_APART = "Nothing from one move appears in another on any phone: records, photos, people (one card per move)"
+        const val CROSS = "Syncs and joins between phones on different moves exchange nothing and say so"
+        const val LETTERS_APART = "A phone's letters and label numbers never clash across its moves"
+        const val SCANNED = "A scanned label is found in exactly the moves on the phone that hold it"
     }
 }
 
@@ -588,6 +908,9 @@ internal class SimStats {
     var syncsOk = 0
     var cut = 0
     var retried = 0
+
+    /** Syncs tried between phones of which one or both had another move than Maple Road open. */
+    var crossSyncs = 0
     val refusals = TreeMap<String, Int>()
     val syncErrors = TreeMap<String, Int>()
     val notes = TreeMap<String, Int>()
@@ -597,6 +920,7 @@ internal class SimStats {
 
     fun add(o: SimStats) {
         actions += o.actions; accepted += o.accepted; midSync += o.midSync; syncs += o.syncs; syncsOk += o.syncsOk; cut += o.cut; retried += o.retried
+        crossSyncs += o.crossSyncs
         for ((k, v) in o.refusals) refusals.merge(k, v, Int::plus)
         for ((k, v) in o.syncErrors) syncErrors.merge(k, v, Int::plus)
         for ((k, v) in o.notes) notes.merge(k, v, Int::plus)

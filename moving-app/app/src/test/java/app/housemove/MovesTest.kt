@@ -2,6 +2,7 @@ package app.housemove
 
 import app.housemove.data.*
 import app.housemove.sync.WifiSync
+import app.housemove.ui.screens.roleNews
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Rule
@@ -299,6 +300,87 @@ class MovesTest {
         assertTrue(dee.device.value.letter.startsWith(omar.device.value.letter))
     }
 
+    /**
+     * Found by the simulation with several moves per phone: a phone founding two moves printed L001 onwards in both, two
+     * moves that let it in gave it the same block, it could take in one move the letter it writes with in another, and a
+     * backup of one move restored from the Sync screen of another (on its own) turned that move into the first.
+     */
+    @Test
+    fun aPhonesMovesKeepTheirLabelNumbersLettersAndBackupsApart() {
+        val m = moves(device("Asha's phone"))
+        val maple = m.create("Maple Road", yourName = "Asha")
+        val storage = m.create("Storage")
+        // It founded both, and prints from numbers of its own in each: Maple Road's from 1, as always.
+        assertEquals(1, maple.nextLabelNumber())
+        assertFalse("${maple.labelRange()} ${storage.labelRange()}", maple.labelRange().overlaps(storage.labelRange()))
+        // The letter it writes with in Maple Road is not taken in Storage.
+        val letter = maple.device.value.letter
+        val refused = storage.setLetter(storage.me!!.id, letter)
+        assertFalse(refused.ok)
+        assertTrue(refused.reason, refused.reason!!.contains("another of its moves"))
+        // Nor is one it wrote codes with in Maple Road before it took another there.
+        val written = maple.nextHandCode()
+        assertTrue(maple.setLetter(maple.me!!.id, "QX").ok)
+        assertEquals("QX", maple.device.value.letter)
+        assertFalse(storage.setLetter(storage.me!!.id, written.takeWhile { it.isLetter() }).ok)
+
+        // Let in to two moves of other phones, each of which gives it its first block: it prints from neither twice.
+        val elm = moves(device("Omar's phone")).create("Elm Street", yourName = "Omar")
+        val oak = moves(device("Dee's phone")).create("Oak Lane", yourName = "Dee")
+        val priya = moves(device("Priya's phone"))
+        assertTrue(joinThrough(priya, elm, "Priya", Role.DECIDER).ok)
+        assertTrue(joinThrough(priya, oak, "Priya", Role.HELPER).ok)
+        val inElm = priya.store(elm.moveId)!!.labelRange()
+        val inOak = priya.store(oak.moveId)!!.labelRange()
+        assertFalse(inElm.isEmpty() || inOak.isEmpty())
+        assertFalse("$inElm $inOak", inElm.overlaps(inOak))
+
+        // A backup of Maple Road chosen on Storage's Sync screen: Storage has things of its own, and stays as it is.
+        storage.createBox("S1", null)
+        maple.createBox("M1", null)
+        val zip = java.io.ByteArrayOutputStream().also { Backup.export(maple, it) }.toByteArray()
+        val before = storage.data.value
+        val e = assertThrows(IllegalArgumentException::class.java) { Backup.import(storage, java.io.ByteArrayInputStream(zip)) }
+        assertTrue(e.message, e.message!!.contains("another move"))
+        assertEquals(before, storage.data.value)
+        assertNotEquals(maple.moveId, storage.moveId)
+        // Through the list of moves it goes into Maple Road's own card; on a phone without it, into a new one.
+        assertTrue(m.restore({ java.io.ByteArrayInputStream(zip) }).ok)
+        assertEquals(2, m.cards.value.size)
+        val other = moves(device("Sam's phone"))
+        other.create("Sam's own")
+        assertTrue(other.restore({ java.io.ByteArrayInputStream(zip) }).ok)
+        assertEquals(2, other.cards.value.size)
+        assertNotNull(other.store(maple.moveId)!!.data.value.findByLabel("M1"))
+    }
+
+    /**
+     * Also found by the simulation: in a move with no Organiser (a phone on its own in helper mode) a person seemed to be
+     * added and was gone once the move was read back; and a refused carry-out was worded from the decision, which two
+     * phones may hold differently.
+     */
+    @Test
+    fun nobodyIsAddedToAMoveWithNoOrganiserAndARefusedChangeReadsTheSameEverywhere() {
+        val d = device("Hana's phone")
+        val m = moves(d)
+        val own = m.create("Trying it out", yourName = "Hana")
+        own.setDevice { it.copy(helper = true) }
+        val refused = own.addPerson("Asha", Role.ORGANISER)
+        assertFalse(refused.ok)
+        assertEquals(Store.NOBODY_TO_ADD, refused.reason)
+        own.setDevice { it.copy(helper = false) }
+        val asha = own.addPerson("Asha", Role.ORGANISER).valueOrNull()!!
+        m.flush()
+        assertNotNull(moves(d).store(own.moveId)!!.data.value.person(asha.id))
+
+        val sold = Item(id = "sofa", name = "Sofa", gone = true, disposition = Disposition.SELL)
+        assertEquals(outcomeVerb(sold), outcomeVerb(sold.copy(disposition = Disposition.UNDECIDED)))
+        val r = RefusedChange("refused/x", by = asha.id, at = 5, what = "outcome", targetId = "sofa", tried = outcomeVerb(sold), role = Role.HELPER)
+        val data = own.data.value.copy(items = listOf(sold))
+        assertTrue(data.describe(r), data.describe(r).contains("tried to mark Sofa sold"))
+        assertTrue(data.copy(items = listOf(sold.copy(disposition = Disposition.DONATE))).describe(r).contains("tried to mark Sofa donated"))
+    }
+
     // ---- Android's own backup ------------------------------------------------------------
 
     @Test
@@ -327,5 +409,53 @@ class MovesTest {
         assertNotEquals(code, s.nextHandCode())
         assertFalse(File(s.photoDir, f.name).exists())
         assertEquals(2, s.me!!.phones.size)
+    }
+
+    // ---- the banner about one's own role -------------------------------------------------
+
+    /**
+     * "You joined as a Decider" is put away per move and per person, in that move's settings for the phone: it does not
+     * come back when the app starts again, it is not put away in the phone's other move, and a later change of role is
+     * news again.
+     */
+    @Test
+    fun theRoleBannerIsPutAwayPerMoveAndPerPersonAndStaysAway() {
+        val asha = moves(device("Asha's phone")).create("Maple Road", yourName = "Asha")
+        val omar = moves(device("Omar's phone")).create("Elm Street", yourName = "Omar")
+        val pd = device("Priya's phone")
+        val priya = moves(pd)
+        assertTrue(joinThrough(priya, asha, "Priya", Role.DECIDER).ok)
+        assertTrue(joinThrough(priya, omar, "Priya", Role.HELPER).ok)
+        val maple = priya.store(asha.moveId)!!
+        val elm = priya.store(omar.moveId)!!
+        fun news(s: Store) = s.data.value.roleNews(s.device.value)?.title
+        assertEquals("You joined as a Decider", news(maple))
+        assertEquals("You joined as a Helper", news(elm))
+
+        // Got it, in Maple Road: gone there, still there in Elm Street.
+        maple.roleNewsRead(maple.data.value.roleNews(maple.device.value)!!.at)
+        assertNull(news(maple))
+        assertEquals("You joined as a Helper", news(elm))
+
+        // The app starts again: the same.
+        priya.flush()
+        val again = moves(pd)
+        val maple2 = again.store(asha.moveId)!!
+        val elm2 = again.store(omar.moveId)!!
+        assertNull(news(maple2))
+        assertEquals("You joined as a Helper", news(elm2))
+        assertEquals(mapOf(maple2.device.value.personId to maple2.device.value.roleReadAt), maple2.device.value.rolesRead)
+
+        // Made a Helper later: that is news again.
+        assertTrue(asha.setRole(maple2.me!!.id, Role.HELPER).ok)
+        sync(asha, maple2)
+        assertEquals("You are now a Helper", news(maple2))
+
+        // Another person on the same phone in the same move has read nothing yet.
+        val sam = asha.addPerson("Sam", Role.DECIDER).valueOrNull()!!
+        sync(asha, maple2)
+        assertTrue(maple2.becomePerson(sam.id).ok)
+        assertEquals(0L, maple2.device.value.roleReadAt)
+        assertEquals("You joined as a Decider", news(maple2))
     }
 }
