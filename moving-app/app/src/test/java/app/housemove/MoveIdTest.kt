@@ -100,7 +100,7 @@ class MoveIdTest {
         assertEquals(SCHEMA, d.version)
         assertEquals(setOf("asha", "omar", "ben"), d.people.map { it.id }.toSet())
         assertEquals(Disposition.SELL, d.item("sofa")!!.disposition)
-        assertEquals(80.0, d.item("sofa")!!.price!!, 0.0)
+        assertEquals(80.0, d.priceOf("sofa")!!, 0.0)
         assertNotNull(d.findByLabel("L001"))
         assertEquals("Maple Road", d.move.name)
         assertEquals(77L, s.device.value.lastSyncAt)

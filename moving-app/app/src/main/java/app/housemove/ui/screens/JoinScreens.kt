@@ -136,11 +136,18 @@ fun JoinScreen(inMove: Boolean) {
     fun yes(a: JoinStep.Asking, bring: Boolean) {
         val working = JoinStep.Working(a.invite.moveName.ifBlank { "the move" })
         step = working
-        state.scope.launch {
-            val r = withContext(Dispatchers.IO) {
-                val waited = { working.waiting = true }
-                if (moves != null && a.check != null) moves.join(a.check, bringThings = bring, onWaiting = waited)
-                else WifiSync.join(single!!, a.invite, letNewPhonesIn = single.isAlone(), onWaiting = waited)
+        // On the main thread whatever the scope resumes on: the end of it opens Home.
+        state.scope.launch(Dispatchers.Main) {
+            val r = try {
+                withContext(Dispatchers.IO) {
+                    val waited = { working.waiting = true }
+                    if (moves != null && a.check != null) moves.join(a.check, bringThings = bring, onWaiting = waited)
+                    else WifiSync.join(single!!, a.invite, letNewPhonesIn = single.isAlone(), onWaiting = waited)
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                // Whatever went wrong, the screen says so and can scan again, rather than wait for ever.
+                WifiSync.Result("", "", 0, 0, WifiSync.CONNECTION_LOST)
             }
             val joined = r.joinedAs != null || r.ok
             if (!joined) {
@@ -353,7 +360,7 @@ fun LostPhoneScreen(inMove: Boolean) {
         if (uri == null) return@rememberLauncherForActivityResult
         working = true
         problem = null
-        state.scope.launch {
+        state.scope.launch(Dispatchers.Main) {
             val outcome = withContext(Dispatchers.IO) {
                 fun read() = context.contentResolver.openInputStream(uri) ?: throw IllegalArgumentException(Backup.NOT_A_BACKUP)
                 if (moves != null) moves.restore({ read() })

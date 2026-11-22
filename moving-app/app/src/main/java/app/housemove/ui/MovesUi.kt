@@ -134,7 +134,8 @@ internal var installedApk: (Context) -> File = { File(it.applicationInfo.sourceD
  * copied to the shared cache folder first, which the app's FileProvider serves.
  */
 fun shareTheApp(context: Context, scope: CoroutineScope) {
-    scope.launch {
+    // The share sheet and any message are on the main thread, whatever thread the scope resumes on.
+    scope.launch(Dispatchers.Main) {
         val file = withContext(Dispatchers.IO) {
             try {
                 Share.outFile(context, "HouseMove.apk").also { out -> installedApk(context).copyTo(out, overwrite = true) }

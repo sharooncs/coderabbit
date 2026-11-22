@@ -2,6 +2,8 @@ package app.housemove.ui.screens
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -110,21 +112,30 @@ fun HelpingScreen() {
     Screen(
         "Who's helping?", back = !firstRun, subtitle = data.move.name.ifBlank { "Your move" },
     ) {
+        // Someone just added: their invite is brought into sight, below the ways to add people.
+        val codes = remember { BringIntoViewRequester() }
+        var added by remember { mutableIntStateOf(0) }
+        LaunchedEffect(added) { if (added > 0) runCatching { codes.bringIntoView() } }
+        fun add(name: String, role: Role) {
+            store.addPerson(name, role).orSay(context)?.let {
+                chosen = it.id
+                added++
+            }
+        }
         ScrollColumn(Modifier.weight(1f)) {
-            if (organisers < 2) SecondOrganiser { name ->
-                store.addPerson(name, Role.ORGANISER).orSay(context)?.let { chosen = it.id }
-            }
-            AddSomeone { name, role -> store.addPerson(name, role).orSay(context)?.let { chosen = it.id } }
-
-            heard?.let { report ->
-                SyncReportCard(report)
-            }
-
-            // A phone that came with an Organiser's or a Decider's invite: nothing is sent until this phone says it is the right one.
+            // A phone that came with an Organiser's or a Decider's invite comes first: nothing is sent until this phone says it is the right one.
             val request = waiting.firstOrNull()
             if (h != null && request != null) {
                 JoinRequestCard(request, data.person(request.personId), onAnswer = { right -> h.confirm(request.id, right) })
-            } else if (addresses.isEmpty()) {
+            }
+            heard?.let { report -> SyncReportCard(report) }
+
+            if (organisers < 2) SecondOrganiser { name -> add(name, Role.ORGANISER) }
+            AddSomeone { name, role -> add(name, role) }
+
+            // The codes wait while the phone that came is answered.
+            if (h != null && request != null) Unit
+            else if (addresses.isEmpty()) {
                 Section(tone = GlassTone.Red) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Icon(Icons.Default.WifiOff, contentDescription = null, tint = Night.RedPale)
@@ -133,7 +144,7 @@ fun HelpingScreen() {
                     GlassChip("Check again", icon = Icons.Default.Refresh, onClick = { looked++ })
                 }
             } else if (h != null) {
-                CodePanel(h, addresses, toJoin, shown, onShow = { chosen = it }, helpersJoined = helpersJoined)
+                CodePanel(h, addresses, toJoin, shown, onShow = { chosen = it }, helpersJoined = helpersJoined, modifier = Modifier.bringIntoViewRequester(codes))
             }
 
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -250,11 +261,12 @@ private fun CodePanel(
     shown: String?,
     onShow: (String) -> Unit,
     helpersJoined: List<Person>,
+    modifier: Modifier = Modifier,
 ) {
     val store = LocalStore.current
     val context = LocalContext.current
     val data = appData()
-    Section(if (toJoin.isEmpty()) "Helper code" else "Invites") {
+    Section(if (toJoin.isEmpty()) "Helper code" else "Invites", modifier) {
         // Each person's invite is made when it is shown, and lasts ten minutes; the Helper code likewise.
         val code: ShownInvite? = remember(shown, host) {
             val made = when (shown) {

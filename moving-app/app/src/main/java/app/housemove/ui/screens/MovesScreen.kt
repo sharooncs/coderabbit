@@ -46,6 +46,9 @@ private class MoveSummary(
     val needsYou: Boolean = !here && store?.needsYou() == true
     val earlier: Boolean = card.archived || data?.finished() == true
     val setUp: Boolean = data?.move?.setupDone != false
+
+    /** Helpers make no backups: what Helpers are not sent is not on their phone to save (the Store's rule). */
+    val mayBackUp: Boolean = store?.whyNoBackup() == null
 }
 
 /**
@@ -87,7 +90,7 @@ fun MovesScreen() {
         val s = id?.let { if (store.identity.value.matches(it)) store else moves?.store(it) }
         if (uri == null || s == null) return@rememberLauncherForActivityResult
         working = true
-        scope.launch {
+        scope.launch(Dispatchers.Main) {
             val error = withContext(Dispatchers.IO) {
                 try {
                     context.contentResolver.openOutputStream(uri)!!.use { Backup.export(s, it) }
@@ -143,7 +146,7 @@ fun MovesScreen() {
 
     // What can be done with one move.
     acting?.let { s ->
-        val helperOfShared = s.shared && s.role == Role.HELPER
+        val mayBackUp = s.mayBackUp
         val canDelete = moves?.whyNotDelete(s.card.moveId) == null && moves != null
         GlassDialog(
             s.name, onDismiss = { acting = null }, icon = s.kind.icon(),
@@ -151,7 +154,7 @@ fun MovesScreen() {
             buttons = { DialogCancel({ acting = null }, "Close") },
         ) {
             // Helpers make no backups: what Helpers are not sent is not on their phone to save.
-            if (!helperOfShared) MenuButton(Icons.Default.SaveAlt, "Back up") { acting = null; backUp(s) }
+            if (mayBackUp) MenuButton(Icons.Default.SaveAlt, "Back up") { acting = null; backUp(s) }
             if (moves != null) {
                 if (s.card.archived) MenuButton(Icons.Default.Unarchive, "Bring back from Earlier moves") { acting = null; moves.archive(s.card.moveId, false) }
                 else MenuButton(Icons.Default.Archive, "Archive") { acting = null; moves.archive(s.card.moveId, true) }
@@ -194,7 +197,7 @@ fun MovesScreen() {
                         m.open(s.card.moveId)
                     }
                 }
-                if (!(s.shared && s.role == Role.HELPER)) MenuButton(Icons.Default.SaveAlt, "Back up first") { close(); backUp(s) }
+                if (s.mayBackUp) MenuButton(Icons.Default.SaveAlt, "Back up first") { close(); backUp(s) }
                 MenuButton(Icons.Default.PhonelinkErase, "Remove anyway", danger = true) {
                     close()
                     m.remove(s.card.moveId, evenIfUnshared = true).okOrSay(context)

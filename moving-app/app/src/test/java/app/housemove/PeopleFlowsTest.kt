@@ -15,6 +15,7 @@ import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -315,7 +316,7 @@ class PeopleFlowsTest {
         // The lost one is retired here, after asking.
         tap("Retire")
         see("If it turns up, its work comes in once")
-        tap("Retire", index = 1)
+        click(rule.onAllNodes(hasText("Retire") and hasClickAction()).onLast()) // the dialog's own button
         assertEquals(1, data.person(hal.id)!!.phones.count { it.isRetired })
         see("Retired")
 

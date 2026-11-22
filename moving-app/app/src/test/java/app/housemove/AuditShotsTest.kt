@@ -85,7 +85,8 @@ class AuditShotsTest {
     /** The app as on a phone that can listen and is on a network, so microphones and codes are in the picture. */
     @Composable
     private fun App(store: Store, onNav: (NavHostController) -> Unit) {
-        val moves = remember { shelf ?: AuditMoves.shelf(tmp.newFolder(), store).also { shelf = it } }
+        // A phone still starting out (the first-run pictures) has no other moves: it is shown on its own.
+        val moves = remember(store) { if (!store.data.value.move.setupDone) null else shelf ?: AuditMoves.shelf(tmp.newFolder(), store).also { shelf = it } }
         CompositionLocalProvider(LocalSpeech provides Speech { _, _ -> }, LocalSyncAddresses provides { listOf("127.0.0.1") }, LocalMoves provides moves) {
             // Where the app opens is read once, as the real app does at start.
             val start = remember(store) { if (store.data.value.move.setupDone) "home" else null }
@@ -210,6 +211,7 @@ class AuditShotsTest {
                 .performTextReplacement(host.inviteFor(gran.id, listOf("127.0.0.1")).valueOrNull()!!.encode())
             rule.waitForIdle()
             tap("OK")
+            shot("join_ask")
             tap("Yes") // nothing is sent before Yes
             rule.waitUntil(20_000) { rule.onAllNodes(hasText("You are Gran", substring = true)).fetchSemanticsNodes().isNotEmpty() }
             shot("setup_joined")
@@ -293,6 +295,13 @@ class AuditShotsTest {
             rule.waitForIdle()
         }
         fun shot(name: String) = rule.onAllNodes(isRoot()).onLast().captureRoboImage("build/audit/dialogs/$name.png")
+
+        // What can be done with one of the moves on the phone.
+        go("moves")
+        rule.onAllNodes(hasContentDescription("Back up, archive or remove Gran's flat clear-out") and hasClickAction()).onFirst().performClick()
+        rule.waitForIdle()
+        shot("move_actions")
+        tap("Close")
 
         go("tasks")
         rule.onAllNodes(hasContentDescription("Add a task") and hasClickAction()).onFirst().performClick()
