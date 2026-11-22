@@ -677,7 +677,12 @@ class MovesFlowsTest {
             shot("different-versions")
             tap("Share the app")
             // The installed app goes to the share sheet (and so to Quick Share) from the shared cache folder.
-            rule.waitUntil(10_000) { shared.isNotEmpty() }
+            // The copy is made off the main thread and handed over on it: let the main thread run while waiting.
+            val until = System.currentTimeMillis() + 10_000
+            while (shared.isEmpty() && System.currentTimeMillis() < until) {
+                settle()
+                Thread.sleep(50)
+            }
             val (file, type) = shared.poll()!!
             assertEquals("application/vnd.android.package-archive", type)
             assertEquals("out", file.parentFile!!.name)
