@@ -1506,23 +1506,20 @@ class Store internal constructor(
      * Restore a backup, already checked with [whyNotRestore] and brought up to date with [migrate].
      *
      * Who the phone is afterwards: a phone whose own person is in the backup stays itself. A phone on
-     * its own leaves its own move behind, as when joining one (its things go in, its person does
-     * not), and becomes the person whose phone made the backup ([madeBy]), or a Helper when that
-     * person is not in it or has been removed. A phone that shares its move with others stays itself,
-     * and people the backup brings whom this phone does not know and whose only grants are open ones
-     * are not taken in: nobody ever let them into this move.
+     * its own whose person is not in it takes the backup's move for its own ([restoreOntoLonePhone])
+     * when the backup has someone to become or an Organiser: it leaves its own move behind, as when
+     * joining one (its things go in, its person does not), and becomes the person whose phone made
+     * the backup ([madeBy]), or a Helper when that person is not in it or has been removed. With
+     * neither (a backup from before 2.0, say), the backup's move simply becomes this phone's, as
+     * before: there is nobody in it who could be misled. A phone that shares its move with others
+     * stays itself, and takes in nobody from the backup it does not know who gave themselves their
+     * role ([withoutTheSelfMade]): nobody ever let them into this move.
      *
      * Merged in, nothing on the phone is lost. With [replace] the phone goes back to the backup, but
      * who is in the move and every role change and removal since are kept, so a restore never gives
      * anyone back rights they have lost. A backup from a Helper's phone ([helpersShare]) holds none of
      * what Helpers are not sent, so this phone keeps its own costs, cost suggestions, and receipt and
      * serial-label photos. [identity] is the backup's move, when it says (2.1 and later).
-     *
-     * A phone on its own whose person is not in the backup takes the backup's move for its own
-     * ([restoreOntoLonePhone]) when the backup has someone to become or an Organiser; with neither
-     * (a backup from before 2.0, say), the backup's move simply becomes this phone's, as before:
-     * there is nobody in it who could be misled. A phone that shares its move takes in nobody from
-     * a backup who gave themselves their role ([withoutTheSelfMade]).
      */
     internal fun restore(backup: AppData, replace: Boolean, helpersShare: Boolean = false, madeBy: String = "", identity: MoveIdentity? = null) {
         synchronized(lock) {
@@ -1710,22 +1707,35 @@ class Store internal constructor(
      * that phone remembers ([PhoneSettings.name]), made unique in the move ("Sam 2"). A phone of
      * someone removed, or a retired one, is refused; one already in the move comes in as who it is.
      */
-    internal fun admitHelper(name: String, phoneId: String, deviceName: String, avoid: Set<String>): Outcome<Person> = synchronized(lock) {
-        val d = _data.value
-        d.refusal(me, Action.MANAGE_PEOPLE)?.let { return Outcome.Refused(it) }
-        d.phoneEntry(phoneId)?.let { (p, ph) ->
-            if (ph.isRetired) return Outcome.Refused(RETIRED_PHONE)
-            if (p.removed) return Outcome.Refused("${p.name.ifBlank { "That person" }} has been removed from the move.")
-            return Outcome.Ok(p)
+    internal fun admitHelper(name: String, phoneId: String, deviceName: String, avoid: Set<String>, id: String = newId()): Outcome<Person> = synchronized(lock) {
+        whyNotAdmitHelper(phoneId)?.let { return Outcome.Refused(it) }
+        _data.value.phoneEntry(phoneId)?.let { return Outcome.Ok(it.first) }
+        val added = act(Action.MANAGE_PEOPLE) {
+            val base = name.trim().ifBlank { "Helper" }
+            val names = d.people.filter { !it.removed }.map { it.name.trim().lowercase() }.toSet()
+            var shown = base
+            var n = 2
+            while (shown.lowercase() in names) shown = "$base ${n++}"
+            val p = savePerson(Person(id = id, name = shown, role = Role.HELPER, letter = allotLetter(d, avoid), grants = listOf(grantOf(Role.HELPER, false, t, actor.signature))))
+            events.say("added $shown as a Helper", p.id)
+            Outcome.Ok(p)
         }
-        val base = name.trim().ifBlank { "Helper" }
-        val names = d.people.filter { !it.removed }.map { it.name.trim().lowercase() }.toSet()
-        var shown = base
-        var n = 2
-        while (shown.lowercase() in names) shown = "$base ${n++}"
-        val added = addPerson(shown, Role.HELPER).valueOrNull() ?: return Outcome.Refused("Only an Organiser can add people, change roles or remove people.")
-        return admitPhone(added.id, phoneId, deviceName, avoid)
+        val p = added.valueOrNull() ?: return added
+        return admitPhone(p.id, phoneId, deviceName, avoid)
     }
+
+    /** Why a phone may not join with a Helper code shown here: this phone's person may not add people, or that phone is retired or its person removed. */
+    internal fun whyNotAdmitHelper(phoneId: String): String? {
+        val d = _data.value
+        d.refusal(me, Action.MANAGE_PEOPLE)?.let { return it }
+        val (p, ph) = d.phoneEntry(phoneId) ?: return null
+        if (ph.isRetired) return RETIRED_PHONE
+        if (p.removed) return "${p.name.ifBlank { "That person" }} has been removed from the move."
+        return null
+    }
+
+    /** A new person's id, for one that is made a little later (see [admitHelper]). */
+    internal fun newPersonId(): String = newId()
 
     /** Has anyone but this phone's person ever joined the move? Then it cannot be deleted, only removed from this phone. */
     fun everShared(): Boolean {

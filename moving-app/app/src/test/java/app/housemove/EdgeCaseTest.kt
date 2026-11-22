@@ -28,6 +28,15 @@ class EdgeCaseTest {
     private fun store(name: String, clock: () -> Long = System::currentTimeMillis) = Store(tmp.newFolder(name), clock)
 
     /** Exchange both ways without the network, as a sync does. */
+    /**
+     * A phone that has joined [host]'s move as [name], as an invite brings it in. Since 2.1 two phones
+     * each with a move of its own never mix them, so phones that sync here are of one move.
+     */
+    private fun joinedTo(host: Store, name: String, clock: () -> Long = System::currentTimeMillis): Store {
+        val p = host.addPerson(name, Role.ORGANISER).valueOrNull()!!
+        return store(name, clock).also { assertTrue(it.joinAs(p.id, host.data.value).ok) }
+    }
+
     private fun exchange(a: Store, b: Store) {
         val merged = a.mergeIn(b.data.value)
         b.mergeIn(merged)
@@ -90,7 +99,7 @@ class EdgeCaseTest {
     fun laterDeleteRemovesAndLaterEditRestores() {
         var t = 1_000L
         val a = store("a") { t++ }
-        val b = store("b") { t++ }
+        val b = joinedTo(a, "b") { t++ }
         val one = a.createBox("L001", null)
         val two = a.createBox("L002", null)
         exchange(a, b)
@@ -137,21 +146,23 @@ class EdgeCaseTest {
         var ta = 1_000L
         var tb = 2_000L
         val a = store("a") { ta++ }
-        val b = store("b") { tb++ }
         a.setDevice { it.copy(letter = "A", nextSeq = 1) }
-        b.setDevice { it.copy(letter = "A", nextSeq = 1) }
+        val b = joinedTo(a, "b") { tb++ }
+        // Apart, each phone takes the letter Q for itself: neither knows the other has.
+        a.setDevice { it.copy(letter = "Q", nextSeq = 1) }
+        b.setDevice { it.copy(letter = "Q", nextSeq = 1) }
         a.createBox(a.nextHandCode(), null)
         b.createBox(b.nextHandCode(), null)
         exchange(a, b)
         assertEquals(2, a.data.value.liveBoxes.size)
-        assertEquals(listOf("A1"), a.data.value.duplicateLabels())
-        assertTrue(a.data.value.issues().any { it.severe && it.text.contains("A1") })
+        assertEquals(listOf("Q1"), a.data.value.duplicateLabels())
+        assertTrue(a.data.value.issues().any { it.severe && it.text.contains("Q1") })
         // After the clash is known, the next code on either phone avoids it.
-        assertEquals("A2", a.nextHandCode())
+        assertEquals("Q2", a.nextHandCode())
         // And it cannot happen again: the phone that came to the letter second has taken another.
-        assertEquals("A", a.device.value.letter)
-        assertNotEquals("A", b.device.value.letter)
-        assertTrue(b.device.value.letter.startsWith("A"))
+        assertEquals("Q", a.device.value.letter)
+        assertNotEquals("Q", b.device.value.letter)
+        assertTrue(b.device.value.letter.startsWith("Q"))
         exchange(a, b)
         assertTrue(a.data.value.duplicateLetters().isEmpty())
         assertNotEquals(a.nextHandCode(), b.nextHandCode())
@@ -173,7 +184,7 @@ class EdgeCaseTest {
     @Test
     fun photoDeletedOnOnePhoneDisappearsFromTheOther() {
         val a = store("a")
-        val b = store("b")
+        val b = joinedTo(a, "b")
         val box = a.createBox("L001", null)
         val f = a.newPhotoFile().apply { writeBytes(ByteArray(3000) { 3 }) }
         val photo = a.addPhoto(box.id, PhotoKind.CONTENTS, f)
@@ -191,7 +202,7 @@ class EdgeCaseTest {
     @Test
     fun missingPhotoFileIsFetchedOnTheNextSyncAndLostOnesDoNotBreakIt() {
         val a = store("a")
-        val b = store("b")
+        val b = joinedTo(a, "b")
         val box = a.createBox("L001", null)
         val good = a.newPhotoFile().apply { writeBytes(ByteArray(4000) { 4 }) }
         a.addPhoto(box.id, PhotoKind.CONTENTS, good)
@@ -243,8 +254,8 @@ class EdgeCaseTest {
     @Test
     fun strangerOnTheNetworkCannotBreakTheHost() {
         val a = store("a")
-        val b = store("b")
         a.createBox("L001", null)
+        val b = joinedTo(a, "b")
         val results = ArrayList<WifiSync.Result>()
         val host = WifiSync.host(a) { synchronized(results) { results.add(it) } }
         try {

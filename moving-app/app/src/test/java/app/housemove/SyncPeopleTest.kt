@@ -225,7 +225,21 @@ class SyncPeopleTest {
         val asha = store("Asha")
         asha.createBox("L001", null)
         val hal = invited(asha, "Hal", Role.HELPER)
+        // Since 2.1 a phone with a move of its own is never let into another by the plain code (see JoiningTest). A phone of
+        // this move that nobody has added: one that restored a backup of it which does not say who made it.
+        val other = store("Other")
+        other.createBox("S0", null)
+        assertEquals(WifiSync.WRONG_MOVE, sync(asha, other).second.error)
         val stranger = store("Stranger")
+        val zip = java.io.ByteArrayOutputStream().also { o ->
+            java.util.zip.ZipOutputStream(o).use { z ->
+                z.putNextEntry(java.util.zip.ZipEntry("data.json")); z.write(AppJson.encodeToString(AppData.serializer(), asha.data.value).toByteArray()); z.closeEntry()
+                z.putNextEntry(java.util.zip.ZipEntry("about.json")); z.write("""{"by":"nobody","moveId":"${asha.moveId}"}""".toByteArray()); z.closeEntry()
+            }
+        }.toByteArray()
+        Backup.import(stranger, java.io.ByteArrayInputStream(zip))
+        assertEquals(asha.moveId, stranger.moveId)
+        assertEquals(Role.HELPER, stranger.myRole)
         stranger.createBox("S1", null)
 
         // With a Helper's phone, either way round, nothing is exchanged.
@@ -236,8 +250,7 @@ class SyncPeopleTest {
         assertEquals(WifiSync.UNKNOWN_PHONE, joined.error)
         assertEquals(WifiSync.NOT_ADDED, hosted.error)
         assertEquals(listOf("L001"), hal.data.value.liveBoxes.map { it.label })
-        assertEquals(listOf("S1"), stranger.data.value.liveBoxes.map { it.label })
-        assertEquals(1, stranger.data.value.people.size)
+        assertEquals(setOf("L001", "S1"), stranger.data.value.liveBoxes.map { it.label }.toSet())
 
         // An Organiser can keep the ordinary code for phones already in the move, so that the only way in is an invite.
         val membersOnly = hosting(asha, letNewPhonesIn = false)
@@ -248,13 +261,14 @@ class SyncPeopleTest {
         assertEquals(WifiSync.UNKNOWN_PHONE, WifiSync.join(asha, hosting(stranger).host.invite(local), letNewPhonesIn = false).error)
         assertEquals(2, asha.data.value.people.size)
 
-        // Otherwise an Organiser showing their code is the one who may add a phone: it comes in as it is, as before 2.0.
+        // Otherwise an Organiser showing their code is the one who may add a phone: it comes in as it is, a Helper.
         val (a, s) = sync(asha, stranger)
         assertTrue(a.error, a.ok)
         assertTrue(s.error, s.ok)
         assertEquals(setOf("L001", "S1"), asha.data.value.liveBoxes.map { it.label }.toSet())
         assertEquals(3, asha.data.value.people.size)
         assertEquals(stranger.me!!.id, a.peerPersonId)
+        assertEquals(Role.HELPER, asha.data.value.person(stranger.me!!.id)!!.role)
         // Now it is in the move, and the Helper's phone syncs with it once it has heard so.
         assertTrue(sync(asha, hal).second.ok)
         assertTrue(sync(hal, stranger).second.ok)

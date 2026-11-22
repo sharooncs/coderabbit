@@ -364,8 +364,9 @@ class PeopleFlowsTest {
         show(newStore())
         tap("Second phone for the same move?")
         scan(host.invite(local).encode())
-        waitFor("Not added to this move yet")
-        see("Ask an Organiser to add you and show you your invite")
+        // Since 2.1 what stops it first is that its move is another one: nothing is exchanged.
+        waitFor("A different move")
+        see("That phone is on a different move")
         assertEquals("setup", route())
         assertFalse(data.move.setupDone)
         assertTrue(data.people.none { it.name == "Asha" })
@@ -377,31 +378,33 @@ class PeopleFlowsTest {
     }
 
     @Test
-    fun theSyncCodeLetsANewPhoneInOnlyWhileTheMoveHasOnePerson() {
+    fun theSyncCodeNeverMixesInAPhoneWithAMoveOfItsOwn() {
         val asha = organiser()
         show(asha, "sync")
         dontSee("This phone is") // one person: nothing about who is who
         tap("Show sync code")
-        // As before 2.0: a second phone joins as itself by scanning the plain code.
+        // Since 2.1 a phone with a move of its own is not let in by the plain code, even while this move has one person: the
+        // two moves would be mixed. It says so, and nothing is exchanged.
         val partner = newStore("Ben")
-        val r = WifiSync.join(partner, codeOnScreen(), letNewPhonesIn = partner.isAlone())
-        assertTrue(r.error, r.ok)
-        waitFor("Synced with Ben")
-        assertEquals(2, data.livePeople.size)
+        partner.createBox("B0", null)
+        assertEquals(WifiSync.WRONG_MOVE, WifiSync.join(partner, codeOnScreen(), letNewPhonesIn = partner.isAlone()).error)
+        waitFor("A different move")
+        assertEquals(1, data.livePeople.size)
+        assertTrue(data.liveBoxes.isEmpty())
         tap("Stop showing the code")
 
-        // Now there are two people, so the next phone needs an invite.
+        // Ben's phone joins with an invite instead; from then on the two phones of the move sync with the code.
+        val ben = asha.addPerson("Ben", Role.ORGANISER).valueOrNull()!!
+        assertTrue(WifiSync.join(partner, hosting(asha).inviteFor(ben.id, listOf("127.0.0.1")).valueOrNull()!!).ok)
         see("This phone is Asha")
         tap("Show sync code")
         val stranger = newStore("Mallory")
-        assertEquals(WifiSync.NOT_ADDED, WifiSync.join(stranger, codeOnScreen(), letNewPhonesIn = stranger.isAlone()).error)
-        waitFor("That phone is not on this move")
+        assertEquals(WifiSync.WRONG_MOVE, WifiSync.join(stranger, codeOnScreen(), letNewPhonesIn = stranger.isAlone()).error)
         assertEquals(2, data.livePeople.size)
-        // The two that are on the move still sync.
         partner.createBox("B1", null)
         assertTrue(WifiSync.join(partner, codeOnScreen(), letNewPhonesIn = partner.isAlone()).ok)
         waitFor("Synced with Ben")
-        assertEquals(1, data.liveBoxes.size)
+        assertEquals(setOf("B0", "B1"), data.liveBoxes.map { it.label }.toSet())
     }
 
     // ---- approvals ------------------------------------------------------------------

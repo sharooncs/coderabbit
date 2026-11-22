@@ -252,8 +252,9 @@ class NetworkTest {
         val photographed = h.host.invite(local)
         val stranger = phone("Eve")
         val r = WifiSync.join(stranger, photographed)
-        assertEquals(WifiSync.NOT_ADDED, r.error)
-        assertEquals(WifiSync.UNKNOWN_PHONE, h.result().error)
+        // Since 2.1 its own move is not Asha's, and that is what stops it, before anything else is looked at.
+        assertEquals(WifiSync.WRONG_MOVE, r.error)
+        assertEquals(WifiSync.WRONG_MOVE, h.result().error)
         assertTrue(stranger.data.value.liveBoxes.isEmpty())
         assertTrue(stranger.data.value.people.none { it.id == asha.me!!.id })
         // A member still syncs with the same code.

@@ -66,7 +66,7 @@ import kotlin.concurrent.thread
  * ```
  * joiner: MAGIC, token, name, letter, schema (int), own Person as JSON, hello as JSON (see Hello)
  * host:   [WAIT] OK | ONEWAY | NO | VERSION (+ schema) | REMOVED | STRANGER | EXPIRED | WRONGMOVE | RETIRED | UNDONE | UNCONFIRMED,
- *         then if OK or ONEWAY: name, letter, own Person as JSON, hello as JSON
+ *         then if OK or ONEWAY: name, letter, hello as JSON (with its own Person, which is all 2.0 sent there)
  * joiner: GO | TAKE | REMOVED | STRANGER | WRONGMOVE
  * joiner: data      host: merged data      (each leaves out what the other's role is not sent)
  * joiner: file names   host: file names   joiner: files   host: files
@@ -202,6 +202,8 @@ object WifiSync {
         val elsewhere: List<String> = emptyList(),
         /** The name the phone's owner goes by: given with a Helper code. */
         val name: String = "",
+        /** From the host: its own person. */
+        val person: Person? = null,
         /** From the host: the person the joining phone joins as. */
         val youAre: String = "",
     )
@@ -570,16 +572,20 @@ object WifiSync {
                     val retired = before.phoneEntry(hello.phoneId)?.takeIf { it.second.isRetired }
                     if (retired != null && retired.second.collected) refuse("RETIRED", RETIRED_GONE)
                     var joining: String? = null
+                    // What is written into this move for the phone that came (its person, its phone), once it has said GO:
+                    // a phone that turns this one down at the last moment leaves nothing behind here.
+                    var onGo: () -> Unit = {}
                     if (retired != null) {
                         if (invited != null || helperUntil != null) refuse("RETIRED", RETIRED_GONE)
                     } else if (helperUntil != null) {
                         if (claim != HELPER_CODE || clock() > helperUntil) refuse("EXPIRED", INVITE_EXPIRED)
-                        val p = when (val o = store.admitHelper(hello.name.ifBlank { peer }, hello.phoneId, hello.deviceName, hello.elsewhere.toSet())) {
-                            is Outcome.Ok -> o.value
-                            is Outcome.Refused -> refuse(if (o.reason == Store.RETIRED_PHONE) "RETIRED" else "REMOVED", o.reason)
-                        }
-                        joining = p.id
-                        peerId = p.id
+                        store.whyNotAdmitHelper(hello.phoneId)?.let { refuse(if (it == Store.RETIRED_PHONE) "RETIRED" else "REMOVED", it) }
+                        // A phone already in the move comes in as who it is; any other as a new Helper, made once it says GO.
+                        val known = before.phoneEntry(hello.phoneId)?.first
+                        val id = known?.id ?: store.newPersonId()
+                        if (known == null) onGo = { store.admitHelper(hello.name.ifBlank { peer }, hello.phoneId, hello.deviceName, hello.elsewhere.toSet(), id) }
+                        joining = id
+                        peerId = id
                     } else if (invited != null) {
                         val free = synchronized(personal) {
                             (!invited.used && !invited.busy && clock() <= invited.until && claim == invited.personId).also { if (it) invited.busy = true }
@@ -600,7 +606,7 @@ object WifiSync {
                                 null -> refuse("UNCONFIRMED", NOT_CONFIRMED)
                             }
                         }
-                        store.admitPhone(invited.personId, hello.phoneId, hello.deviceName, hello.elsewhere.toSet())
+                        onGo = { store.admitPhone(invited.personId, hello.phoneId, hello.deviceName, hello.elsewhere.toSet()) }
                         joining = invited.personId
                         peerId = invited.personId
                     } else {
@@ -615,7 +621,7 @@ object WifiSync {
                             Admission.NEWCOMER -> {
                                 if (!letNewPhonesIn) refuse("STRANGER", UNKNOWN_PHONE)
                                 // Let in as it is: what it says of itself counts for nothing in 2.1, so this phone's person adds it, as a Helper.
-                                if (theirPerson != null && before.roleOfPeer(theirPerson) == null) store.letIn(theirPerson)
+                                if (theirPerson != null && before.roleOfPeer(theirPerson) == null) onGo = { store.letIn(theirPerson) }
                             }
                             Admission.MEMBER -> Unit
                         }
@@ -623,12 +629,13 @@ object WifiSync {
                     out.writeUTF(if (retired != null) "ONEWAY" else "OK")
                     out.writeUTF(store.device.value.name)
                     out.writeUTF(store.device.value.letter)
-                    out.writeUTF(personJson(store.me))
-                    out.writeUTF(AppJson.encodeToString(helloOf(store, youAre = joining ?: "")))
+                    // Where 2.0 sent its own Person, 2.1 sends its hello, with its Person in it.
+                    out.writeUTF(AppJson.encodeToString(helloOf(store, youAre = joining ?: "").copy(person = store.me)))
                     out.flush()
                     val go = din.readUTF()
                     when (go) {
-                        "GO", "TAKE" -> Unit
+                        "GO" -> onGo()
+                        "TAKE" -> Unit
                         "REMOVED" -> throw Stop(REMOVED_SELF)
                         "STRANGER" -> throw Stop(NOT_ADDED)
                         "WRONGMOVE" -> throw Stop(WRONG_MOVE)
@@ -835,8 +842,10 @@ object WifiSync {
                     }
                     peer = din.readUTF()
                     letter = din.readUTF()
-                    val theirPerson = personFrom(din.readUTF())
-                    val hostHello = helloFrom(din.readUTF()) ?: Hello()
+                    // 2.0 sent its own Person here; 2.1 sends its hello, with its Person in it.
+                    val said = din.readUTF()
+                    val hostHello = helloFrom(said) ?: Hello()
+                    val theirPerson = hostHello.person ?: personFrom(said)
                     device = hostHello.deviceName
                     peerId = theirPerson?.id ?: ""
                     val hostMove = MoveIdentity(hostHello.moveId, hostHello.aliases, hostHello.derived)
