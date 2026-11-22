@@ -1,5 +1,11 @@
 package app.housemove.ui.screens
 
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -118,7 +124,8 @@ fun BoxScreen(id: String) {
     val nearby = data.looseItems().filter { it.stage == box.stage }
     val loose = nearby.filter { it.originRoomId == box.originRoomId && it.couldBePacked() }
     val anyLoose = nearby.isNotEmpty()
-    val lines = contentsLines(box.contents)
+    // What is inside, line by line: each line is a record of its own, added and removed on its own.
+    val lines = data.linesOf(box.id).map { it.text }.ifEmpty { storedLines(box.contents) }
     val photos = data.photosOf(box.id, PhotoKind.CONTENTS).size
     val missing = listOfNotNull(
         "a room to go to".takeIf { dest == null && parent == null },
@@ -126,8 +133,14 @@ fun BoxScreen(id: String) {
     )
     val narrow = narrowScreen(360f)
 
-    fun setContents(f: (String) -> String) {
-        edit { it.copy(contents = f(it.contents)) }
+    /** Add lines to what is inside, or take one away: each is a change of its own, so another phone's lines stay. */
+    fun addLines(vararg more: String) {
+        store.addLines(id, *more)
+        typingRound++
+    }
+
+    fun removeLine(line: String) {
+        store.removeLine(id, line)
         typingRound++
     }
 
@@ -193,7 +206,7 @@ fun BoxScreen(id: String) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                     ListHeading("What's inside", Modifier.weight(1f))
                     SpeakButton("What is in the $word?", contentDescription = "Say what's inside", size = 40.dp) { said ->
-                        setContents { addContents(it, *contentsLines(said).map { l -> l.replaceFirstChar(Char::uppercase) }.toTypedArray()) }
+                        addLines(*contentsLines(said).map { l -> l.replaceFirstChar(Char::uppercase) }.toTypedArray())
                     }
                     GlassOrb(Icons.Default.QrCodeScanner, "Scan barcodes of books and products", size = 40.dp) { scanIn = true }
                     GlassOrb(Icons.Default.Edit, "Edit what's inside", kind = if (typing) OrbKind.Selected else OrbKind.Plain, size = 40.dp) { typing = !typing }
@@ -207,22 +220,16 @@ fun BoxScreen(id: String) {
                 val shownUsual = if (allChips) usual else usual.take((budget - shownLines.size).coerceAtLeast(0))
                 val hidden = lines.size - shownLines.size + usual.size - shownUsual.size
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    shownLines.forEach { line -> GlassChip(line, selected = true, onClick = { setContents { removeContents(it, line) } }) }
-                    shownUsual.forEach { chip -> GlassChip(chip, onClick = { setContents { addContents(it, chip) } }) }
+                    shownLines.forEach { line -> GlassChip(line, selected = true, onClick = { removeLine(line) }) }
+                    shownUsual.forEach { chip -> GlassChip(chip, onClick = { addLines(chip) }) }
                     if (hidden > 0) GlassChip("$hidden more", icon = Icons.Default.ExpandMore, tone = GlassTone.Amber, onClick = { allChips = true })
                     else if (allChips && lines.size + usual.size > budget) {
                         GlassChip("Fewer", icon = Icons.Default.ExpandLess, tone = GlassTone.Amber, onClick = { allChips = false })
                     }
                 }
-                if (typing) {
-                    TextInput(
-                        box.contents,
-                        onChange = { v -> edit { it.copy(contents = v) } },
-                        label = "What's inside",
-                        key = "$id:$typingRound",
-                        singleLine = false,
-                    )
-                }
+                // Typed lines are saved when the field is left (or closed, or Done is pressed), never on each
+                // keystroke: a half-typed word never becomes a line that is then taken away again.
+                if (typing) ContentsField(id, lines.joinToString(", "), key = "$id:$typingRound")
                 if (entries.isNotEmpty()) ScannedInRow(entries) { scanIn = true }
             }
 
@@ -336,17 +343,14 @@ fun BoxScreen(id: String) {
                 val onTheMove: @Composable ColumnScope.() -> Unit = {
                     FoldLabel("Where it is now")
                     IconChoice(
-                        Stage.entries.map { Choice(it, stageText(it, isBox = true, vehicle), it.icon()) },
+                        Stage.entries.filter { it != Stage.STORED || data.offersStorage() || box.stage == Stage.STORED }
+                            .map { Choice(it, stageText(it, isBox = true, vehicle), it.icon()) },
                         box.stage,
                         onPick = { s -> edit { it.copy(stage = s) } },
                         columns = if (narrow) 2 else 4,
                     )
                     HorizontalDivider(color = Night.Hairline)
-                    SwitchRow("Damaged in the move", box.damaged, onChange = { v -> edit { it.copy(damaged = v) } })
-                    if (box.damaged) {
-                        DamageText(box.damageNote, { v -> edit { it.copy(damageNote = v) } }, key = box.id + ":damage")
-                        PhotoStrip(box.id, PhotoKind.DAMAGE, label = "Damage photos")
-                    }
+                    DamageSection(box.id, box.nameAndCode())
                 }
                 if (travelled) Fold(
                     "On the move", Pic.Where, open = box.damaged, key = "move",
@@ -442,7 +446,7 @@ fun BoxScreen(id: String) {
                 val code = raw.trim()
                 val d = store.data.value
                 val found = d.findByLabel(code)
-                    ?: d.liveItems.firstOrNull { it.serial.isNotBlank() && it.serial.equals(code, ignoreCase = true) }?.toMovable()
+                    ?: d.findByAnyCode(code)?.takeIf { !it.isBox }
                 if (code.isNotBlank()) {
                     itemTrouble = when {
                         found == null -> "Nothing here has the label $code."
@@ -658,4 +662,47 @@ private fun SealBar(word: String, sealed: Boolean, missing: List<String>, onSeal
             }
         }
     }
+}
+
+/**
+ * Typing what is inside, behind the pencil: one line of words, commas between things. What was typed is saved
+ * as lines when the field is left, Done is pressed or the pencil closes it, so the lines another phone adds
+ * meanwhile stay, and a half-typed word is never saved.
+ */
+@Composable
+private fun ContentsField(boxId: String, current: String, key: String) {
+    val store = LocalStore.current
+    val focus = LocalFocusManager.current
+    var text by remember(key) { mutableStateOf(current) }
+    var focused by remember(key) { mutableStateOf(false) }
+    val latest by rememberUpdatedState(text)
+    // What the field started from (or was last saved as): only what was typed or taken out since is saved, so a
+    // line added meanwhile by a chip, the microphone or another phone stays.
+    val base = remember(key) { mutableStateOf(storedLines(current)) }
+    fun commit() {
+        val typed = storedLines(latest)
+        val typedKeys = typed.map { it.lowercase() }.toSet()
+        val baseKeys = base.value.map { it.lowercase() }.toSet()
+        val removed = base.value.filter { it.lowercase() !in typedKeys }.map { it.lowercase() }.toSet()
+        val added = typed.filter { it.lowercase() !in baseKeys }
+        base.value = typed
+        if (removed.isEmpty() && added.isEmpty()) return
+        val now = store.data.value.linesOf(boxId).map { it.text }.filter { it.lowercase() !in removed }
+        store.setContents(boxId, (now + added).joinToString("\n"))
+    }
+    DisposableEffect(key) { onDispose { commit() } }
+    OutlinedTextField(
+        value = text,
+        onValueChange = { text = it },
+        label = { Text("What's inside") },
+        placeholder = { Text("Plates, mugs, tea towels") },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { commit(); focus.clearFocus() }),
+        colors = glassFieldColors(),
+        modifier = Modifier.fillMaxWidth().onFocusChanged { f ->
+            if (focused && !f.isFocused) commit()
+            focused = f.isFocused
+        },
+    )
 }

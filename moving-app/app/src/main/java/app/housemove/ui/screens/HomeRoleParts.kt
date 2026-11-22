@@ -90,7 +90,7 @@ internal fun SyncRow(device: DeviceInfo, modifier: Modifier = Modifier) {
         GlassOrb(Icons.Default.Sync, null, size = 40.dp)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text("Sync", style = MaterialTheme.typography.titleSmall)
+            Text("Sync with the other phones", style = MaterialTheme.typography.titleSmall)
             Text(
                 if (device.lastSyncAt == 0L) "Not synced yet" else "Last synced ${agoText(device.lastSyncAt)}",
                 style = MaterialTheme.typography.bodySmall, color = Night.TextDim, maxLines = 1,

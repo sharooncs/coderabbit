@@ -255,10 +255,10 @@ private fun HomeHero(data: AppData, device: DeviceInfo, packing: Boolean, modifi
                 style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center,
                 maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.semantics { heading() },
             )
-            // On a move with other people, whose phone this is in the move comes first: "Helper · Old home · 4 rooms".
+            // On a move with other people, whose phone this is comes first: "Sam · Helper · Old home · 4 rooms".
             Text(
                 listOfNotNull(
-                    data.roleOf(device).label.takeIf { data.shared() },
+                    data.me(device)?.takeIf { data.shared() }?.let { it.shownName() + " · " + data.roleOf(device).label },
                     move.originName + " · " + oldRooms.size + if (oldRooms.size == 1) " room" else " rooms",
                 ).joinToString(" · "),
                 style = MaterialTheme.typography.bodyMedium, color = Night.TextDim, textAlign = TextAlign.Center, maxLines = 1,

@@ -85,7 +85,17 @@ fun UnloadScreen() {
         unknown = null
         reporting = false
         val already = mdArrived(m.stage)
-        if (!already) mdSetStage(store, m, Stage.DELIVERED)
+        when {
+            already -> Unit
+            // On its way: unloaded where its trip goes, the new home or the storage unit.
+            m.stage == Stage.LOADED -> store.unload(listOf(m.id))
+            // Scanned at the door from storage, never marked as on a trip back: it came back from storage.
+            m.stage == Stage.STORED -> mdStorageTrip(store, fromStorage = true)?.let { trip ->
+                store.loadOnto(trip, listOf(m.id))
+                store.unload(listOf(m.id))
+            }
+            else -> mdSetStage(store, m, Stage.DELIVERED)
+        }
         arrival = MdArrival(m.id, m.isBox, m.stage, already, inside)
     }
 
@@ -102,6 +112,8 @@ fun UnloadScreen() {
     val all = data.movables()
     val carried = remember(data) { data.carriedCounts() }
     val arrivedCount = all.count { mdArrived(it.stage) }
+    // What is at the storage unit is in storage, not delivered: it is left out of what is to come in.
+    val storedCount = all.count { it.stage == Stage.STORED }
     val trips = data.liveTrips
     val filter = tripFilter?.takeIf { id -> trips.any { it.id == id } }
     val order = compareBy<Movable>({ it.priority.ordinal }, { data.room(it.destRoomId)?.name ?: "~" }, { it.title })
@@ -133,14 +145,17 @@ fun UnloadScreen() {
                             MdResult(MdTone.BAD, "Unknown label $code", "Carry it in and sort it out later."),
                             Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
                         )
-                        a != null && shown != null && reporting -> MdDamagePanel(shown, onClose = { reporting = false })
+                        a != null && shown != null && reporting -> DamagePanel(
+                            shown.id, shown.title, onClose = { reporting = false }, Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                        )
                         a != null && shown != null -> MdArrivalPanel(
                             m = shown,
                             arrival = a,
                             carried = carried[shown.id] ?: 0,
                             onDamage = { reporting = true },
                             onUndo = {
-                                mdSetStage(store, shown, a.prev)
+                                // One step back: onto its trip again, or where it was when it was scanned in without one.
+                                if (a.prev == Stage.LOADED) store.putBack(listOf(shown.id)) else mdSetStage(store, shown, a.prev)
                                 arrival = null
                             },
                         )
@@ -148,17 +163,20 @@ fun UnloadScreen() {
                 }
                 item(key = "head") {
                     ProgressCard(
-                        Ratio(arrivedCount, all.size),
-                        "$arrivedCount of ${all.size} delivered",
+                        Ratio(arrivedCount, all.size - storedCount),
+                        "$arrivedCount of ${all.size - storedCount} delivered",
                         Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp),
-                        sub = if (stillOn > 0) "$stillOn still on the $vehicle" else null,
+                        sub = listOfNotNull(
+                            if (stillOn > 0) "$stillOn still on the $vehicle" else null,
+                            if (storedCount > 0) "$storedCount in storage" else null,
+                        ).joinToString(" · ").ifBlank { null },
                     ) {
                         if (trips.size > 1) Row(
                             Modifier.horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
                             GlassChip("All trips", selected = filter == null, onClick = { tripFilter = null })
-                            trips.forEach { t -> GlassChip(t.name, selected = filter == t.id, onClick = { tripFilter = t.id }) }
+                            trips.forEach { t -> GlassChip(t.name, icon = t.chipIcon(), selected = filter == t.id, onClick = { tripFilter = t.id }) }
                         }
                     }
                 }
@@ -180,7 +198,7 @@ fun UnloadScreen() {
                 }
                 items(onVan, key = { "m" + it.id }) { m ->
                     MdThingRow(m, carried = carried[m.id] ?: 0, onClick = { deliver(m) }) {
-                        RowButton("Here", onClick = { deliver(m) })
+                        RowButton(if (data.arrivalStage(m.tripId) == Stage.STORED) "In storage" else "Here", onClick = { deliver(m) })
                     }
                 }
                 if (withMe.isNotEmpty()) {
@@ -203,9 +221,11 @@ fun UnloadScreen() {
  */
 @Composable
 private fun MdArrivalPanel(m: Movable, arrival: MdArrival, carried: Int, onDamage: () -> Unit, onUndo: () -> Unit) {
-    val room = appData().room(m.destRoomId)
+    val stored = m.stage == Stage.STORED
+    // At the storage unit there are no rooms: the sign is the storage unit itself.
+    val room = if (stored) null else appData().room(m.destRoomId)
     val rc = room?.let { roomColor(it.color) }
-    val name = room?.name ?: "No room set"
+    val name = if (stored) Place.STORAGE.label else room?.name ?: "No room set"
     val already = arrival.already
     Column(
         Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth()
@@ -222,13 +242,14 @@ private fun MdArrivalPanel(m: Movable, arrival: MdArrival, carried: Int, onDamag
                     when {
                         already && room != null -> "Already scanned in. It goes to"
                         already -> "Already scanned in"
+                        stored -> "In storage. Leave it in the"
                         room != null -> "Carry it to"
                         else -> "Carried in"
                     },
                     style = MaterialTheme.typography.titleMedium,
                 )
                 arrival.inside?.let {
-                    Text(if (already) it else "$it: delivered ${mdShort(m)}", style = MaterialTheme.typography.bodyMedium, color = Night.TextSoft)
+                    Text(if (already) it else "$it: " + (if (stored) "stored " else "delivered ") + mdShort(m), style = MaterialTheme.typography.bodyMedium, color = Night.TextSoft)
                 }
             }
         }
@@ -280,40 +301,6 @@ private fun MdArrivalPanel(m: Movable, arrival: MdArrival, carried: Int, onDamag
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             RowButton("Report damage", onDamage, forward = false, icon = Pic.Damage)
             if (!already) RowButton("Undo", onUndo, forward = false, icon = Icons.Default.Undo)
-        }
-    }
-}
-
-/**
- * Reporting damage, in the place of the arrival panel: the photo comes first, as one
- * large camera target. What happened is optional, and entered as on the box's or item's
- * own page: the usual words to tap, or said, or typed behind the pencil.
- */
-@Composable
-private fun MdDamagePanel(m: Movable, onClose: () -> Unit) {
-    val store = LocalStore.current
-    val data = appData()
-    val saved = (if (m.isBox) data.box(m.id)?.damageNote else data.item(m.id)?.damageNote) ?: ""
-    var note by remember(m.id) { mutableStateOf(saved) }
-    Column(
-        Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth()
-            .glass(RoundedCornerShape(28.dp), GlassTone.Red, sheen = true).padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            MdMark(MdTone.BAD, size = 40.dp)
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text("Damage", style = MaterialTheme.typography.titleMedium)
-                Text(m.title, style = MaterialTheme.typography.bodyMedium, color = Night.TextSoft, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-        }
-        PhotoHero(m.id, PhotoKind.DAMAGE, label = "Damage", height = 160.dp, emptyText = "Photograph it")
-        DamageText(note, { note = it }, key = m.id + ":arrival-damage")
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            RowButton("Save", onClick = { mdSetDamage(store, m, true, note.trim()); onClose() }, icon = Icons.Default.Check, look = RowButtonLook.Primary)
-            if (m.damaged) RowButton("Not damaged", onClick = { mdSetDamage(store, m, false, ""); onClose() }, forward = false)
-            RowButton("Cancel", onClose, forward = false)
         }
     }
 }
