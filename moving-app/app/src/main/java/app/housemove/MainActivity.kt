@@ -10,8 +10,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val store = (application as App).store
-        setContent { AppRoot(store) }
+        val moves = (application as App).moves
+        // The move used last opens; a phone with none opens on "Start a new move" and "Join a move".
+        setContent { AppRoot(moves) }
     }
 
     override fun onStop() {

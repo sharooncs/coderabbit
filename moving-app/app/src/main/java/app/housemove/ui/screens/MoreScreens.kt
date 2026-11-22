@@ -359,6 +359,10 @@ fun ScanScreen() {
     var typed by remember { mutableStateOf("") }
     // Typing a code is the way round the camera, for a handwritten label: it stays out of sight until asked for.
     var typing by rememberSaveable { mutableStateOf(false) }
+    val moves = LocalMoves.current
+    val state = LocalAppState.current
+    /** A label held by more than one move on this phone, or only by another: which move to open it in. */
+    var which by remember { mutableStateOf<Pair<String, List<MoveCard>>?>(null) }
 
     fun handle(text: String) {
         if (WifiSync.Invite.parse(text) != null) {
@@ -369,6 +373,14 @@ fun ScanScreen() {
         val code = labelCodeOf(text)
         if (code.isBlank()) return
         val found = data.findByAnyCode(code)
+        if (moves != null && which == null) {
+            // An old label (no move tag) can be in two moves on this phone; a new one says its move. Ask when it is not plainly this one.
+            val holders = moves.movesHolding(text)
+            if (holders.any { !it.matches(store.moveId) } && (holders.size > 1 || found == null)) {
+                which = code to holders
+                return
+            }
+        }
         when {
             found != null -> nav.openMovable(found)
             // A shop barcode that nothing was recorded against is not a label to start a box with.
@@ -379,7 +391,7 @@ fun ScanScreen() {
 
     Screen("Scan a label") {
         QrScanner(
-            onText = { if (unknown == null && notRecorded == null) handle(it) },
+            onText = { if (unknown == null && notRecorded == null && which == null) handle(it) },
             modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 16.dp).scannerFrame(),
             formats = ScanFormats.ANY,
         )
@@ -412,6 +424,32 @@ fun ScanScreen() {
             text = "Nothing with this barcode has been scanned into a box yet. To record it, open the box and tap \"Scan books and products into this box\".",
             buttons = { PillButton("OK", onClick = { notRecorded = null }) },
         )
+    }
+
+    which?.let { (code, holders) ->
+        fun pick(card: MoveCard) {
+            which = null
+            if (card.matches(store.moveId)) {
+                data.findByAnyCode(code)?.let { nav.openMovable(it) }
+                return
+            }
+            // The thing is opened in the other move, once its screens are up.
+            val there = moves?.store(card.moveId)?.data?.value?.findByAnyCode(code)
+            state?.pendingRoute = there?.let { if (it.isBox) "box/${it.id}" else "item/${it.id}" }
+            moves?.open(card.moveId)
+        }
+        GlassDialog(
+            if (holders.size > 1) "Which move?" else "In another move", onDismiss = { which = null }, icon = Pic.Label,
+            text = if (holders.size > 1) "Label $code is in ${holders.size} moves on this phone. Open it in:" else "Label $code is not in this move. Open it in:",
+            buttons = { DialogCancel({ which = null }) },
+        ) {
+            holders.forEach { card ->
+                PillButton(
+                    card.name.ifBlank { "A move" } + if (card.matches(store.moveId)) " (open now)" else "",
+                    onClick = { pick(card) }, icon = Icons.Default.Home, primary = false, modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
     }
 
     unknown?.let { code ->

@@ -68,16 +68,30 @@ fun KindPicker(modifier: Modifier = Modifier, large: Boolean = false) {
     )
 }
 
+/** The name a new move starts with, so it is never nameless in the list of moves. Said or typed over in one tap. */
+private fun defaultMoveName(kind: MoveKind): String = when (kind) {
+    MoveKind.STORAGE -> "Our storage"
+    MoveKind.INVENTORY -> "Our home"
+    else -> "Our move"
+}
+
+/** Kinds of use one person runs alone: no people screens until a second person is added. */
+internal fun MoveKind.onePerson(): Boolean = this == MoveKind.INVENTORY || this == MoveKind.STORAGE
+
 /**
- * First-run wizard: what it is for, the move, the rooms. Every page can be passed with
- * "Next" alone: names have defaults, the date can wait, rooms are tapped. A second phone
- * for a move that already exists joins it here instead: one tap opens the scanner for its invite.
+ * Start a new move: what it is for (or "Join theirs instead"), the move (its name filled in,
+ * the date and your name optional), the rooms of the old home and of the new one, each
+ * skippable, the new home's in one tap from the old one's, and left out for a list of things.
+ * Finishing saves the move and goes on to Who's helping? (not for kinds one person runs alone).
+ * Every page can be passed with one tap and nothing typed.
  */
 @Composable
 fun SetupScreen() {
     val store = LocalStore.current
     val nav = LocalNav.current
     val context = LocalContext.current
+    val moves = LocalMoves.current
+    val state = appState()
     val data = appData()
     var step by rememberSaveable { mutableIntStateOf(0) }
     val inventoryOnly = data.move.kind == MoveKind.INVENTORY
@@ -89,115 +103,80 @@ fun SetupScreen() {
     )
     val last = titles.size - 1
     val at = step.coerceAtMost(last)
+    val invites = allowed(Action.MANAGE_PEOPLE) && !data.move.kind.onePerson()
+    val cards = moves?.cards?.collectAsState()?.value.orEmpty()
+    val others = cards.any { !it.matches(store.moveId) }
 
-    val joiner = rememberJoiner()
-    var scanning by remember { mutableStateOf(false) }
-    val report = joiner.report
-
-    // Leaving is asked for both by the button and by the data changing; only the first counts.
-    fun goHome() {
-        if (nav.currentDestination?.route == "setup") nav.navigate("home") { popUpTo("setup") { inclusive = true } }
+    // Leaving is asked for both by the buttons and by the data changing; only the first counts.
+    fun leave(route: String) {
+        if (nav.currentDestination?.route == "setup") nav.navigate(route) { popUpTo("setup") { inclusive = true } }
     }
 
-    // A phone that took in a move that is already set up skips the wizard, once it has been told who it now is.
-    LaunchedEffect(data.move.setupDone, joiner.busy, report) {
-        // Read as they are now, not as they were when this was composed: the end of a join sets both at once.
-        if (store.data.value.move.setupDone && !joiner.busy && joiner.report == null) goHome()
+    // A move that is set up some other way meanwhile (its data came from another phone) goes Home.
+    LaunchedEffect(data.move.setupDone) { if (store.data.value.move.setupDone) leave("home") }
+
+    /** Give up this new move, which nobody else has seen: it is deleted, and the phone goes back to where it was. */
+    fun giveUp(then: String?) {
+        val m = moves ?: return
+        state.pendingRoute = then
+        val back = state.returnTo?.takeIf { id -> !store.identity.value.matches(id) }
+        state.returnTo = null
+        if (m.delete(store.moveId).ok && back != null) m.open(back)
     }
 
-    // This phone has just met another one: say what came of it before anything else.
-    if (report != null && report.ok) {
-        Screen(title = if (report.joinedAs != null) "You are in" else "Synced", back = false) {
-            ScrollColumn(Modifier.weight(1f)) {
-                val who = report.joinedAs
-                if (who == null) SyncReportCard(report) else {
-                    // Who this phone now is, large, so there is no doubt about it.
-                    Column(
-                        Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 8.dp), horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        PersonOrb(who, size = 104.dp, me = true)
-                        Text(report.title, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
-                        Text(report.text, style = MaterialTheme.typography.bodyLarge, color = Night.TextSoft, textAlign = TextAlign.Center)
-                    }
-                    Section {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            GlassOrb(Icons.Default.Home, null, size = 40.dp)
-                            Spacer(Modifier.width(12.dp))
-                            Column {
-                                Text(data.move.name.ifBlank { "The move" }, style = MaterialTheme.typography.titleMedium)
-                                Text(
-                                    listOfNotNull(
-                                        "${data.livePeople.size} people", data.move.moveDay?.let { "move day " + fmtDay(it) },
-                                    ).joinToString(" · "),
-                                    style = MaterialTheme.typography.bodySmall, color = Night.TextDim,
-                                )
-                            }
-                        }
-                    }
-                }
-                if (!data.move.setupDone) Hint("That move is not set up yet. You can finish setting it up here.")
-            }
-            BigAction(
-                Icons.AutoMirrored.Filled.ArrowForward, "Start",
-                onClick = { if (data.move.setupDone) goHome() else joiner.report = null },
-                modifier = Modifier.padding(16.dp),
-            )
-        }
-        return
+    fun joinInstead() {
+        // On a phone with moves, the new one (nothing in it yet) makes way; the join makes a card of its own.
+        if (moves != null && moves.whyNotDelete(store.moveId) == null) giveUp("join") else nav.open("join")
     }
 
-    Screen(title = titles[at], back = false) {
+    Screen(
+        title = titles[at], back = false,
+        actions = { if (moves != null && others) TopAction(Icons.Default.Close, "Give up this new move") { giveUp(null) } },
+    ) {
         Meter((at + 1) / titles.size.toFloat(), Modifier.fillMaxWidth().padding(horizontal = 16.dp), height = 4.dp)
-        if (joiner.busy) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 4.dp))
         ScrollColumn(Modifier.weight(1f)) {
             when (at) {
                 0 -> {
-                    if (report != null) SyncReportCard(report)
                     // A tall phone opens on the lit house, as Home does, instead of on empty ground; a short one goes straight to the choice.
-                    else if (LocalConfiguration.current.let { it.screenHeightDp / it.fontScale >= 780f }) {
+                    if (LocalConfiguration.current.let { it.screenHeightDp / it.fontScale >= 780f }) {
                         IsoHouse(Modifier.widthIn(max = 300.dp).align(Alignment.CenterHorizontally), boxes = 1)
                     }
                     KindPicker(large = true)
-                    // Joining a move that exists is one tap from here: straight to the scanner.
-                    ActionPill(
-                        Icons.Default.QrCodeScanner, "Second phone for the same move?", "Scan your invite: on the first phone, People, then you",
-                        Modifier.enabledLook(!joiner.busy),
-                    ) { if (!joiner.busy) scanning = true }
+                    // Joining a move someone has started is one tap from here: straight to the scanner.
+                    ActionPill(Icons.Default.QrCodeScanner, "Join theirs instead", "Has someone already started this move? Scan their invite.") { joinInstead() }
                 }
                 1 -> MoveDetails(inventoryOnly)
                 2 -> RoomSetup(Home.ORIGIN)
                 else -> RoomSetup(Home.DEST)
             }
         }
+        // The rooms can wait: with none tapped, the button says Skip.
+        val skipping = at >= 2 && data.roomsOf(if (at == 2) Home.ORIGIN else Home.DEST).isEmpty()
         Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             if (at > 0) BigAction(Icons.AutoMirrored.Filled.ArrowBack, "Back", onClick = { step = at - 1 }, modifier = Modifier.weight(1f), primary = false)
             BigAction(
-                if (at < last) Icons.AutoMirrored.Filled.ArrowForward else Icons.Default.Check, if (at < last) "Next" else "Finish",
+                when {
+                    skipping -> Icons.Default.SkipNext
+                    at < last -> Icons.AutoMirrored.Filled.ArrowForward
+                    else -> Icons.Default.Check
+                },
+                when {
+                    skipping -> "Skip"
+                    at < last -> "Next"
+                    else -> "Finish"
+                },
                 onClick = {
-                    if (at < last) step = at + 1 else if (finishSetup(store).orSay(context) != null) goHome()
+                    if (at < last) step = at + 1
+                    // Saved; then who is helping, for a move with people in it.
+                    else if (finishSetup(store).orSay(context) != null) leave(if (invites) "helping" else "home")
                 },
                 modifier = Modifier.weight(1f),
             )
         }
     }
-
-    if (scanning) {
-        ScanDialog(
-            title = "Scan the invite on the other phone",
-            raw = true,
-            // An invite is far too long to type unless there is no other way: the field waits behind a chip.
-            typingFolded = true,
-            onClose = { scanning = false },
-            onCode = { text ->
-                if (joiner.join(text)) scanning = false
-                else toast(context, "That is not an invite. On the other phone open People and show your invite.")
-            },
-        )
-    }
 }
 
-/** The second page: the date by a tap, your name by voice, and the names of things with their defaults folded away. */
+/** The second page: the move's name (filled in), the date by a tap, your name by voice; the names of the two places folded away. */
 @Composable
 private fun MoveDetails(inventoryOnly: Boolean) {
     val store = LocalStore.current
@@ -208,36 +187,64 @@ private fun MoveDetails(inventoryOnly: Boolean) {
     fun change(f: (MoveInfo) -> MoveInfo) {
         store.changeMove(f).orSay(context)
     }
+    LaunchedEffect(Unit) {
+        if (store.data.value.move.name.isBlank()) change { it.copy(name = defaultMoveName(it.kind)) }
+    }
+    var renaming by rememberSaveable { mutableStateOf(false) }
+    var said by rememberSaveable { mutableIntStateOf(0) }
+    SayOrType(
+        icon = { GlassOrb(Icons.Default.Home, null, size = 52.dp) },
+        title = move.name.ifBlank { defaultMoveName(move.kind) }, sub = if (inventoryOnly) "What to call your home" else "Name of the move",
+        prompt = "What is the move called?", sayDescription = "Say the name of the move", typeDescription = "Type the name of the move",
+        onSaid = { name -> change { it.copy(name = name) }; said++ }, onType = { renaming = !renaming },
+    )
+    if (renaming) TextInput(move.name, { v -> change { it.copy(name = v) } }, "Name of the move", key = "move-name-$said")
     if (!inventoryOnly) {
         DateButton(move.moveDay, { d -> change { it.copy(moveDay = d) } }, "Move day", Modifier.fillMaxWidth().heightIn(min = 56.dp))
     }
     var naming by rememberSaveable { mutableStateOf(false) }
     var spoken by rememberSaveable { mutableIntStateOf(0) }
-    GlassCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(26.dp), sheen = true) {
-        Row(Modifier.padding(start = 14.dp, top = 12.dp, bottom = 12.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            PersonOrb(myPerson(), size = 52.dp, me = true)
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text(device.name.ifBlank { "Your name" }, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("So the others know who did what", style = MaterialTheme.typography.bodySmall, color = Night.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            SpeakButton("What is your name?", contentDescription = "Say your name") { said ->
-                store.setDevice { it.copy(name = said.replaceFirstChar { c -> c.uppercase() }) }
-                spoken++
-            }
-            Spacer(Modifier.width(4.dp))
-            GlassOrb(Icons.Default.Edit, "Type your name") { naming = !naming }
-        }
-    }
+    SayOrType(
+        icon = { PersonOrb(myPerson(), size = 52.dp, me = true) },
+        title = device.name.ifBlank { "Your name" }, sub = "So the others know who did what",
+        prompt = "What is your name?", sayDescription = "Say your name", typeDescription = "Type your name",
+        onSaid = { name -> store.setDevice { it.copy(name = name) }; spoken++ }, onType = { naming = !naming },
+    )
     if (naming) TextInput(device.name, { v -> store.setDevice { it.copy(name = v) } }, "Your name", key = "device-$spoken")
     Fold(
-        "Names", Icons.Default.Edit,
-        summary = listOfNotNull(move.name.ifBlank { null }, if (inventoryOnly) move.originName else move.originName + " → " + move.destName).joinToString(" · "),
+        "Names of the places", Icons.Default.Edit,
+        summary = if (inventoryOnly) move.originName else move.originName + " → " + move.destName,
     ) {
-        TextInput(move.name, { v -> change { it.copy(name = v) } }, "Name of the move (optional)", key = "name", placeholder = "e.g. Maple Road move", mic = true)
         TextInput(move.originName, { v -> change { it.copy(originName = v) } }, if (inventoryOnly) "What to call your home" else "Where you are moving from", key = "origin")
         if (!inventoryOnly) {
             TextInput(move.destName, { v -> change { it.copy(destName = v) } }, "Where you are moving to", key = "dest")
+        }
+    }
+}
+
+/** A name to give: shown large, said with the microphone, or typed behind the pencil. */
+@Composable
+private fun SayOrType(
+    icon: @Composable () -> Unit,
+    title: String,
+    sub: String,
+    prompt: String,
+    sayDescription: String,
+    typeDescription: String,
+    onSaid: (String) -> Unit,
+    onType: () -> Unit,
+) {
+    GlassCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(26.dp), sheen = true) {
+        Row(Modifier.padding(start = 14.dp, top = 12.dp, bottom = 12.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            icon()
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(sub, style = MaterialTheme.typography.bodySmall, color = Night.TextDim)
+            }
+            SpeakButton(prompt, contentDescription = sayDescription) { said -> onSaid(said.replaceFirstChar { c -> c.uppercase() }) }
+            Spacer(Modifier.width(4.dp))
+            GlassOrb(Icons.Default.Edit, typeDescription) { onType() }
         }
     }
 }
@@ -274,7 +281,7 @@ internal fun RoomAdder(home: Home, modifier: Modifier = Modifier) {
     } else emptyList()
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            if (notYet.size > 1) {
+            if (notYet.isNotEmpty()) {
                 GlassChip(
                     "Same as ${data.move.originName.lowercase()} (${notYet.size})", icon = Icons.Default.DoneAll, tone = GlassTone.Mint,
                     onClick = {

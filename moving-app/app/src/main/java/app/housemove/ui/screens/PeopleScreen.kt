@@ -90,7 +90,8 @@ fun PeopleScreen() {
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             if (manage) {
-                ActionPill(Icons.Default.PersonAdd, "Add a person", "They join by scanning a code on this phone") { nav.open("people/add") }
+                // Who's helping: say a name, tap a role, as many as needed; invites one at a time, and the Helper code.
+                ActionPill(Icons.Default.PersonAdd, "Add a person", "Say a name, tap a role. They join by scanning a code here.") { nav.open("helping") }
             }
             people.forEach { p ->
                 PersonRow(
@@ -351,13 +352,15 @@ fun PersonScreen(id: String, showInvite: Boolean = false) {
         }
         try {
             // Nobody gets in through this screen except with the invite made here.
-            val h = host ?: WifiSync.host(store, letNewPhonesIn = false) { r ->
+            // An Organiser's or a Decider's phone waits for Right on this phone before anything is sent.
+            val h = host ?: WifiSync.host(store, letNewPhonesIn = false, confirmJoins = true) { r ->
                 scope.launch {
                     if (r.listsSynced()) store.setDevice { it.copy(lastSyncAt = System.currentTimeMillis()) }
                     if (r.ok && r.joinedAs?.id == id) {
                         joined = true
                         invite = null
-                    } else if (!r.ok) problem = r.error
+                    } else if (r.error == WifiSync.UNDONE) problem = "Undone: nothing was sent to that phone. The invite still works for the right one."
+                    else if (!r.ok) problem = r.error
                 }
             }.also { host = it }
             when (val made = h.inviteFor(id, addresses)) {
@@ -416,7 +419,11 @@ fun PersonScreen(id: String, showInvite: Boolean = false) {
                 }
             }
             problem?.let { Section(tone = GlassTone.Red) { Text(it) } }
-            invite?.let { InviteCard(name, isMe, it) }
+            // A phone came with the invite: "Joined: Priya, on Priya's phone", Right or Undo, before anything is sent.
+            val waiting by waitingOn(host)
+            val request = waiting.firstOrNull()
+            if (request != null) JoinRequestCard(request, p) { right -> host?.confirm(request.id, right) }
+            else invite?.let { InviteCard(name, isMe, it) }
 
             if (!manage) {
                 Text(p.role.line(), style = MaterialTheme.typography.bodyMedium, color = Night.TextSoft, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
@@ -434,7 +441,7 @@ fun PersonScreen(id: String, showInvite: Boolean = false) {
                         invite != null -> "Make a new invite"
                         isMe -> "Move to a new phone"
                         waitingToJoin -> "Show $name's invite"
-                        else -> "New phone for this person"
+                        else -> "New phone for $name"
                     },
                     onClick = { makeInvite() }, primary = waitingToJoin && invite == null,
                 )
@@ -443,6 +450,7 @@ fun PersonScreen(id: String, showInvite: Boolean = false) {
                     IconChoice(ROLE_CHOICES, p.role, { r -> store.setRole(id, r).orSay(context) }, columns = 3)
                     Text(p.role.line(), style = MaterialTheme.typography.bodySmall, color = Night.TextDim)
                 }
+                if (p.phones.isNotEmpty() && (data.shared() || p.phones.size > 1)) PhonesOf(p)
                 // Nobody removes themselves by a slip of the finger: that is for another Organiser to do.
                 if (data.shared() && !isMe) Fold("Remove from the move", Icons.Default.PersonRemove, summary = "Their phone can no longer sync", key = "remove-$id") {
                     Text("What $name did stays, and you can add them back.", style = MaterialTheme.typography.bodyMedium)
@@ -456,6 +464,53 @@ fun PersonScreen(id: String, showInvite: Boolean = false) {
                 }
             }
         }
+    }
+}
+
+/**
+ * The phones someone uses in the move, each with its own name. Adding a phone never retires
+ * another; one that is lost or replaced is retired here ("Retire Sam's old phone"): if it turns
+ * up, its work comes in once, and nothing goes back to it. The phone in hand is not offered.
+ */
+@Composable
+private fun PhonesOf(p: Person) {
+    val store = LocalStore.current
+    val context = LocalContext.current
+    var retiring by remember { mutableStateOf<PhoneEntry?>(null) }
+    val name = p.shownName()
+    Section(if (p.phones.size == 1) "Phone" else "Phones") {
+        p.phones.forEach { ph ->
+            Row(Modifier.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    if (ph.isRetired) Icons.Default.PhonelinkErase else Icons.Default.PhoneAndroid, contentDescription = null,
+                    tint = if (ph.isRetired) Night.TextDim else Night.MintLight, modifier = Modifier.size(22.dp),
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(ph.name.ifBlank { "$name's phone" }, style = MaterialTheme.typography.bodyLarge, color = if (ph.isRetired) Night.TextDim else Night.Text)
+                    Hint(
+                        when {
+                            ph.id == store.phone.id -> "This phone"
+                            ph.isRetired -> "Retired" + if (ph.collected) ", its last work taken in" else ""
+                            ph.addedAt > 0 -> "Joined " + fmtDay(Math.floorDiv(ph.addedAt, 86_400_000L))
+                            else -> "In use"
+                        },
+                    )
+                }
+                if (!ph.isRetired && ph.id != store.phone.id) {
+                    PillButton("Retire", onClick = { retiring = ph }, icon = Icons.Default.PhonelinkErase, primary = false, tone = GlassTone.Red)
+                }
+            }
+        }
+    }
+    retiring?.let { ph ->
+        ConfirmDialog(
+            title = "Retire ${ph.name.ifBlank { "$name's phone" }}?",
+            text = "For a phone that is lost or replaced. If it turns up, its work comes in once, and nothing goes back to it. $name's other phones carry on.",
+            confirm = "Retire", danger = true,
+            onConfirm = { store.retirePhone(p.id, ph.id).orSay(context) },
+            onDismiss = { retiring = null },
+        )
     }
 }
 
