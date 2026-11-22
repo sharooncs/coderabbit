@@ -230,6 +230,10 @@ private fun ItemCard(x: Item, data: AppData, waiting: List<Proposal>, modifier: 
                 Modifier.align(Alignment.TopStart).padding(6.dp), tint = tone.onPhoto(),
             )
             if (container != null) PhotoMark(Pic.Box, container.label, Modifier.align(Alignment.BottomEnd).padding(6.dp))
+            // At the storage unit: in storage, not delivered.
+            if (data.carrierOf(x.toMovable()).stage == Stage.STORED) {
+                PhotoMark(Stage.STORED.icon(), stageText(Stage.STORED, isBox = false), Modifier.align(Alignment.BottomStart).padding(6.dp))
+            }
         }
         Column(Modifier.padding(start = 4.dp, end = 4.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Text(x.title(), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)

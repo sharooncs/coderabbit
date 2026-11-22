@@ -45,12 +45,15 @@ fun ReconcileScreen() {
     val carried = remember(data) { data.carriedCounts() }
     // What travels with the person is never "on the van", whether or not Load marked it as gone with them:
     // the Store's carriedByHand and onTheVan say so, for every screen alike.
-    val onVan = all.filter { it.onTheVan() }.sortedBy { it.title }
-    val neverLoaded = all.filter { it.stage == Stage.AT_ORIGIN && !it.carriedByHand() }.sortedBy { it.title }
-    val withMe = all.filter { it.carriedByHand() && !mdArrived(it.stage) }.sortedBy { it.title }
-    val damaged = all.filter { it.damaged }.sortedBy { it.title }
-    val arrived = all.count { mdArrived(it.stage) }
-    val allIn = onVan.isEmpty() && neverLoaded.isEmpty() && arrived > 0
+    // Where everything stands, as the Store counts it: what is at the storage unit is in storage, neither missing nor delivered.
+    val r = data.reconcile()
+    val onVan = r.onVan
+    val neverLoaded = r.atOldHome
+    val withMe = r.withSomeone
+    val stored = r.inStorage
+    val damaged = r.damaged
+    val arrived = r.arrived.size
+    val allIn = r.allIn
     val trips = data.liveTrips
     val tripIds = trips.map { it.id }.toSet()
     val left = all.filter { it.stage != Stage.AT_ORIGIN }
@@ -66,7 +69,10 @@ fun ReconcileScreen() {
                         text = "Boxes you pack and items marked Move appear here.",
                     )
                     allIn -> MdBanner(
-                        MdResult(MdTone.GOOD, "Everything is accounted for", "$arrived delivered. Nothing left on the $vehicle or at the old home."),
+                        MdResult(
+                            MdTone.GOOD, "Everything is accounted for",
+                            "$arrived delivered" + (if (stored.isNotEmpty()) ", ${stored.size} in storage" else "") + ". Nothing left on the $vehicle or at the old home.",
+                        ),
                         banner,
                     )
                     else -> MdBanner(
@@ -91,7 +97,8 @@ fun ReconcileScreen() {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Row(Modifier.fillMaxWidth()) {
                             MdRingStat(Ratio(left.size, all.size), "Left the old home", 76.dp, Modifier.weight(1f))
-                            MdRingStat(Ratio(arrived, all.size), "Delivered", 76.dp, Modifier.weight(1f))
+                            MdRingStat(Ratio(arrived, all.size - stored.size), "Delivered", 76.dp, Modifier.weight(1f))
+                            if (stored.isNotEmpty()) MdRingStat(Ratio(stored.size, all.size), "In storage", 76.dp, Modifier.weight(1f))
                         }
                         if (trips.isNotEmpty() || noTrip.isNotEmpty()) {
                             HorizontalDivider(color = Night.Hairline)
@@ -99,7 +106,7 @@ fun ReconcileScreen() {
                             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 trips.forEach { t ->
                                     val onTrip = left.filter { it.tripId == t.id }
-                                    MdRingStat(Ratio(onTrip.count { mdArrived(it.stage) }, onTrip.size), t.name, 56.dp, Modifier.widthIn(min = 72.dp, max = 96.dp))
+                                    MdRingStat(Ratio(onTrip.count { mdArrived(it.stage) || it.stage == Stage.STORED }, onTrip.size), t.name, 56.dp, Modifier.widthIn(min = 72.dp, max = 96.dp))
                                 }
                                 if (noTrip.isNotEmpty()) {
                                     MdRingStat(Ratio(noTrip.count { mdArrived(it.stage) }, noTrip.size), "With you", 56.dp, Modifier.widthIn(min = 72.dp, max = 96.dp))
@@ -114,7 +121,8 @@ fun ReconcileScreen() {
                 item(key = "hvan") { ListHeading("Still on the $vehicle", MdHeadingPadding, count = onVan.size) }
                 items(onVan, key = { "v" + it.id }) { m ->
                     MdThingRow(m, carried = carried[m.id] ?: 0) {
-                        RowButton("Delivered", onClick = { mdSetStage(store, m, Stage.DELIVERED) })
+                        // Off the van where its trip goes: delivered, or into storage.
+                        RowButton(if (data.arrivalStage(m.tripId) == Stage.STORED) "In storage" else "Delivered", onClick = { store.unload(listOf(m.id)) })
                     }
                 }
             }
@@ -124,11 +132,18 @@ fun ReconcileScreen() {
                 items(neverLoaded, key = { "n" + it.id }) { m -> MdThingRow(m, carried = carried[m.id] ?: 0) }
             }
 
+            if (stored.isNotEmpty()) {
+                item(key = "hstored") {
+                    ListHeading("In storage, not delivered", MdHeadingPadding, count = stored.size, icon = Stage.STORED.icon())
+                }
+                items(stored, key = { "s" + it.id }) { m -> MdThingRow(m, carried = carried[m.id] ?: 0, note = data.whereIs(m)) }
+            }
+
             if (withMe.isNotEmpty()) {
                 item(key = "hwithme") { ListHeading("Travelling with you, not arrived yet", MdHeadingPadding, count = withMe.size) }
                 items(withMe, key = { "w" + it.id }) { m ->
                     MdThingRow(m, carried = carried[m.id] ?: 0) {
-                        RowButton("Arrived", onClick = { mdSetStage(store, m, Stage.DELIVERED) })
+                        RowButton("Arrived", onClick = { store.unload(listOf(m.id)) })
                     }
                 }
             }

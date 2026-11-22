@@ -67,6 +67,7 @@ fun UnpackScreen() {
     // Someone who does not pack boxes with the app sees only the furniture.
     val showBoxes = data.uses(Part.BOXES) || data.liveBoxes.isNotEmpty()
     Screen("Unpack", actions = { TopActions() }) {
+        StorageNote(Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp))
         if (showBoxes) GlassTabRow(tab) {
             MdIconTab(tab == 0, { tab = 0 }, "Boxes ($boxesWaiting)", Pic.Box)
             MdIconTab(tab == 1, { tab = 1 }, "Furniture ($itemsWaiting)", Pic.Item)
@@ -364,5 +365,29 @@ private fun MdDoneHeader(title: String, count: Int, open: Boolean, onToggle: () 
             contentDescription = if (open) "Hide" else "Show",
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+/**
+ * What is at the storage unit, where it would otherwise be missed: in storage, not delivered, so not waiting
+ * to be unpacked. "Bring back" starts a trip from the storage unit to the new home and opens Load on it.
+ */
+@Composable
+internal fun StorageNote(modifier: Modifier = Modifier) {
+    val data = appData()
+    val store = LocalStore.current
+    val nav = LocalNav.current
+    val stored = data.inStorage()
+    if (stored.isEmpty()) return
+    GlassPill(modifier.fillMaxWidth().heightIn(min = 56.dp), contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 6.dp, bottom = 6.dp)) {
+        GlassOrb(Stage.STORED.icon(), null, size = 40.dp)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(countOf(stored.size, "thing") + " in storage", style = MaterialTheme.typography.titleSmall)
+            Text("Not delivered yet", style = MaterialTheme.typography.bodySmall, color = Night.TextDim)
+        }
+        if (data.uses(Part.MOVE_DAY) && data.move.kind != MoveKind.STORAGE) {
+            RowButton("Bring back", onClick = { mdStorageTrip(store, fromStorage = true); nav.open("load") }, forward = true)
+        }
     }
 }
