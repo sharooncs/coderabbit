@@ -228,12 +228,13 @@ class FlowsTest {
         start(setUp = false)
         tap("Second phone for the same move?")
         see("Scan the invite") // the scan itself, over a real connection, is in PeopleFlowsTest
-        // The first phone's data arrives (as a sync would deliver it).
+        // The first phone's data arrives (as joining with its invite delivers it).
         val first = Store(tmp.newFolder("first"))
         first.setMove { it.copy(name = "Family move", setupDone = true) }
         first.createRoom(Home.DEST, "Kitchen")
         first.createBox("L001", null)
-        rule.runOnUiThread { store.mergeIn(first.data.value) }
+        val me = first.addPerson("Sam", Role.DECIDER).valueOrNull()!!
+        rule.runOnUiThread { store.joinAs(me.id, first.data.value) }
         settle()
         assertEquals("home", route())
         see("Family move")

@@ -162,8 +162,12 @@ class DataTest {
         var hostResult: WifiSync.Result? = null
         val host = WifiSync.host(a) { hostResult = it; done.countDown() }
         try {
+            // Ben's phone comes into Asha's move with an invite; what it had on its own comes along, as when joining.
+            // (Since 2.1 two moves are never mixed by the plain code: see JoiningTest.)
+            val ben = a.addPerson("Ben", Role.ORGANISER).valueOrNull()!!
+            val first = WifiSync.Invite.parse(host.inviteFor(ben.id, listOf("127.0.0.1")).valueOrNull()!!.encode())!!
             val invite = WifiSync.Invite.parse(host.invite(listOf("127.0.0.1")).encode())!!
-            val r = WifiSync.join(b, invite)
+            val r = WifiSync.join(b, first)
             assertTrue(r.error, r.ok)
             assertEquals("Asha", r.peerName)
             assertEquals(1, r.photosSent)
