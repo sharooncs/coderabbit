@@ -103,6 +103,10 @@ class Store internal constructor(
     private val lettersElsewhere: () -> Set<String>,
     /** Where the move's photo files are kept. Android's backup does not copy them. */
     photos: File = File(dir, "photos"),
+    /** One of the moves in a phone's list of moves ([Moves]): a backup of another move belongs in a card of its own, not in this one. */
+    private val listed: Boolean = false,
+    /** The label numbers this phone prints from in its other moves, which it does not print from in this one. */
+    private val labelsElsewhere: () -> List<IntRange> = { emptyList() },
 ) {
     /** A move kept in [dir] on its own, with the phone's ID and codes beside it. */
     constructor(dir: File, clock: () -> Long = System::currentTimeMillis) : this(dir, clock, Phone.standalone(dir), dir, { emptySet() })
@@ -473,7 +477,7 @@ class Store internal constructor(
         if (c.labelsFrom == 0) {
             val block = when {
                 mine != null && mine.labelsFrom != 0 -> mine.labelsFrom..mine.labelsTo
-                c.founder -> FOUNDER_LABELS
+                c.founder -> founderBlock(labelsElsewhere())
                 else -> legacyLabels(letter.ifBlank { p.letter })
             }
             c = c.copy(labelsFrom = block.first, labelsTo = block.last)
@@ -957,6 +961,7 @@ class Store internal constructor(
      * WifiSync's `inviteFor` to bring their phone in. A blank [name] becomes "Helper 2" and the like.
      */
     fun addPerson(name: String, role: Role): Outcome<Person> = act(Action.MANAGE_PEOPLE) {
+        if (actor.open) return@act Outcome.Refused(NOBODY_TO_ADD)
         val shown = name.trim().ifBlank { role.label + " " + (d.people.count { it.role == role } + 1) }
         val p = savePerson(Person(id = newId(), name = shown, role = role, letter = allotLetter(d), grants = listOf(grantOf(role, false, t, actor.signature))))
         events.say("added $shown as ${article(role)}", p.id)
@@ -1008,6 +1013,10 @@ class Store internal constructor(
         if (l.isEmpty()) return@act Outcome.Refused("Choose a letter.")
         d.people.firstOrNull { it.id != p.id && it.letter.equals(l, ignoreCase = true) }?.let {
             return@act Outcome.Refused("${it.name.ifBlank { "Someone else" }} already uses the letter $l.")
+        }
+        // This phone writes with its person's letter: one it uses in another of its moves would give the same codes in both.
+        if (p.id == actor.id && lettersElsewhere().any { it.equals(l, ignoreCase = true) }) {
+            return@act Outcome.Refused("This phone uses the letter $l in another of its moves. Choose another, so its codes are never the same in two moves.")
         }
         Outcome.Ok(savePerson(p.copy(letter = l)))
     }
@@ -1519,16 +1528,27 @@ class Store internal constructor(
      * restores ([Action.RESTORE_BACKUP]). A phone on its own takes in any backup: that is how a move
      * comes onto a new phone, or how two phones that cannot reach each other are combined. A phone
      * that shares its move with others only takes in a backup of that same move, so that two moves
-     * are never mixed and passed on to everyone in this one.
+     * are never mixed and passed on to everyone in this one. A move in a phone's list of moves
+     * ([listed]) takes in only a backup of itself, unless nothing has been put in it yet: a backup of
+     * another move goes into a card of its own ([Moves.restore]), so the phone never holds a move
+     * twice nor loses the one it restored into.
      */
     fun whyNotRestore(backup: AppData, identity: MoveIdentity? = null): String? {
         val d = _data.value
         d.refusal(me, Action.RESTORE_BACKUP)?.let { return it }
-        if (!d.sharedHere() || isSameMove(backup, identity)) return null
+        val same = isSameMove(backup, identity)
         val name = backup.move.name.trim().let { if (it.isEmpty()) "" else " (“$it”)" }
+        if (listed && !same && !untouched()) {
+            return "That backup is of another move$name, so it was not mixed into this one. Restore it from Your moves " +
+                "(Lost your phone? Restore a backup), where it gets a card of its own."
+        }
+        if (!d.sharedHere() || same) return null
         return "That backup is of a different move$name. This phone shares its move with others, so the two are not mixed. " +
             "Restore it on a phone that is not in a move yet, or erase this phone first."
     }
+
+    /** Nothing has been put in this move but the phone's own person: a card made for a move that is to come in whole. */
+    private fun untouched(): Boolean = _data.value.copy(people = emptyList(), activity = emptyList()).bare()
 
     /**
      * Is [backup] of this move? A backup that says which move it is ([identity], from 2.1) is when
@@ -1722,7 +1742,7 @@ class Store internal constructor(
      * this phone's own blocks. A person's first phone uses the letter they were given, unless that
      * phone uses it in another move ([avoid]); another phone of theirs gets a letter of its own.
      */
-    internal fun admitPhone(personId: String, phoneId: String, deviceName: String, avoid: Set<String>): Outcome<Person> = synchronized(lock) {
+    internal fun admitPhone(personId: String, phoneId: String, deviceName: String, avoid: Set<String>, avoidLabels: List<IntRange> = emptyList()): Outcome<Person> = synchronized(lock) {
         val d = _data.value
         val p = d.person(personId)?.takeIf { !it.removed } ?: return Outcome.Refused("That person is not in the move.")
         if (phoneId.isEmpty() || p.phones.any { it.id == phoneId }) return Outcome.Ok(p)
@@ -1732,8 +1752,11 @@ class Store internal constructor(
         if (p.phones.isEmpty()) {
             if (avoid.any { it.equals(p.letter, ignoreCase = true) } || p.letter.isBlank()) person = person.copy(letter = allotLetter(d, avoid))
         } else letter = allotLetter(d, avoid)
-        val block = givenBlock(codes.labelsFrom, codes.labelsTo, codes.blocksGiven)
-        if (block != null) saveCodes(codes.copy(blocksGiven = codes.blocksGiven + 1))
+        // The next block whose numbers that phone does not print from in its other moves ([avoidLabels]); one passed over is never given.
+        var n = codes.blocksGiven
+        var block = givenBlock(codes.labelsFrom, codes.labelsTo, n)
+        while (block != null && ownLabels(block.first, block.last).let { own -> avoidLabels.any { it.overlaps(own) } }) block = givenBlock(codes.labelsFrom, codes.labelsTo, ++n)
+        if (block != null) saveCodes(codes.copy(blocksGiven = n + 1))
         val entry = PhoneEntry(id = phoneId, name = deviceName.trim(), letter = letter, labelsFrom = block?.first ?: 0, labelsTo = block?.last ?: 0, addedAt = t)
         person = person.copy(phones = person.phones + entry, updatedAt = t)
         _data.value = d.copy(people = d.people.map { if (it.id == p.id) person else it })
@@ -1746,10 +1769,13 @@ class Store internal constructor(
      * that phone remembers ([PhoneSettings.name]), made unique in the move ("Sam 2"). A phone of
      * someone removed, or a retired one, is refused; one already in the move comes in as who it is.
      */
-    internal fun admitHelper(name: String, phoneId: String, deviceName: String, avoid: Set<String>, id: String = newId()): Outcome<Person> = synchronized(lock) {
+    internal fun admitHelper(
+        name: String, phoneId: String, deviceName: String, avoid: Set<String>, id: String = newId(), avoidLabels: List<IntRange> = emptyList(),
+    ): Outcome<Person> = synchronized(lock) {
         whyNotAdmitHelper(phoneId)?.let { return Outcome.Refused(it) }
         _data.value.phoneEntry(phoneId)?.let { return Outcome.Ok(it.first) }
         val added = act(Action.MANAGE_PEOPLE) {
+            if (actor.open) return@act Outcome.Refused(NOBODY_TO_ADD)
             val base = name.trim().ifBlank { "Helper" }
             val names = d.people.filter { !it.removed }.map { it.name.trim().lowercase() }.toSet()
             var shown = base
@@ -1760,7 +1786,7 @@ class Store internal constructor(
             Outcome.Ok(p)
         }
         val p = added.valueOrNull() ?: return added
-        return admitPhone(p.id, phoneId, deviceName, avoid)
+        return admitPhone(p.id, phoneId, deviceName, avoid, avoidLabels)
     }
 
     /** Why a phone may not join with a Helper code shown here: this phone's person may not add people, or that phone is retired or its person removed. */
@@ -1856,11 +1882,20 @@ class Store internal constructor(
     /** Letters this phone uses in its other moves. */
     fun lettersElsewhereNow(): Set<String> = lettersElsewhere().map { it.uppercase() }.toSet()
 
+    /** The label numbers this phone prints from in its other moves. */
+    fun labelsElsewhereNow(): List<IntRange> = labelsElsewhere().filter { !it.isEmpty() }
+
     /** This phone's letter and label numbers as kept outside Android's backup (for tests and the move list). */
     internal val codesNow: Codes get() = codes
 
     companion object {
         const val RETIRED_PHONE = "This phone has been retired from the move. Its work was passed on; use the move on your new phone."
+
+        /**
+         * A move with no Organiser (a phone on its own in the old helper mode) has nobody who can let anyone in: a role given
+         * there would count on no phone ([Roles]), and the person would be gone again once the move is read back.
+         */
+        const val NOBODY_TO_ADD = "This move has no Organiser, so nobody can be added yet. Turn off helper mode in Settings first: you are then its Organiser."
     }
 
     // ==== 2.1: records, merges and privacy =========================================================

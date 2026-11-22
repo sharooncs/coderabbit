@@ -300,6 +300,55 @@ class MovesTest {
         assertTrue(dee.device.value.letter.startsWith(omar.device.value.letter))
     }
 
+    /**
+     * Found by the simulation with several moves per phone: a phone founding two moves printed L001 onwards in both, two
+     * moves that let it in gave it the same block, it could take in one move the letter it writes with in another, and a
+     * backup of one move restored from the Sync screen of another (on its own) turned that move into the first.
+     */
+    @Test
+    fun aPhonesMovesKeepTheirLabelNumbersLettersAndBackupsApart() {
+        val m = moves(device("Asha's phone"))
+        val maple = m.create("Maple Road", yourName = "Asha")
+        val storage = m.create("Storage")
+        // It founded both, and prints from numbers of its own in each: Maple Road's from 1, as always.
+        assertEquals(1, maple.nextLabelNumber())
+        assertFalse("${maple.labelRange()} ${storage.labelRange()}", maple.labelRange().overlaps(storage.labelRange()))
+        // The letter it writes with in Maple Road is not taken in Storage.
+        val letter = maple.device.value.letter
+        val refused = storage.setLetter(storage.me!!.id, letter)
+        assertFalse(refused.ok)
+        assertTrue(refused.reason, refused.reason!!.contains("another of its moves"))
+
+        // Let in to two moves of other phones, each of which gives it its first block: it prints from neither twice.
+        val elm = moves(device("Omar's phone")).create("Elm Street", yourName = "Omar")
+        val oak = moves(device("Dee's phone")).create("Oak Lane", yourName = "Dee")
+        val priya = moves(device("Priya's phone"))
+        assertTrue(joinThrough(priya, elm, "Priya", Role.DECIDER).ok)
+        assertTrue(joinThrough(priya, oak, "Priya", Role.HELPER).ok)
+        val inElm = priya.store(elm.moveId)!!.labelRange()
+        val inOak = priya.store(oak.moveId)!!.labelRange()
+        assertFalse(inElm.isEmpty() || inOak.isEmpty())
+        assertFalse("$inElm $inOak", inElm.overlaps(inOak))
+
+        // A backup of Maple Road chosen on Storage's Sync screen: Storage has things of its own, and stays as it is.
+        storage.createBox("S1", null)
+        maple.createBox("M1", null)
+        val zip = java.io.ByteArrayOutputStream().also { Backup.export(maple, it) }.toByteArray()
+        val before = storage.data.value
+        val e = assertThrows(IllegalArgumentException::class.java) { Backup.import(storage, java.io.ByteArrayInputStream(zip)) }
+        assertTrue(e.message, e.message!!.contains("another move"))
+        assertEquals(before, storage.data.value)
+        assertNotEquals(maple.moveId, storage.moveId)
+        // Through the list of moves it goes into Maple Road's own card; on a phone without it, into a new one.
+        assertTrue(m.restore({ java.io.ByteArrayInputStream(zip) }).ok)
+        assertEquals(2, m.cards.value.size)
+        val other = moves(device("Sam's phone"))
+        other.create("Sam's own")
+        assertTrue(other.restore({ java.io.ByteArrayInputStream(zip) }).ok)
+        assertEquals(2, other.cards.value.size)
+        assertNotNull(other.store(maple.moveId)!!.data.value.findByLabel("M1"))
+    }
+
     // ---- Android's own backup ------------------------------------------------------------
 
     @Test

@@ -177,6 +177,22 @@ class Moves(
         return out
     }
 
+    /** The label numbers this phone prints from in its moves other than the one in [folder]: no two of its moves share any. */
+    private fun labelsOutside(folder: String): List<IntRange> {
+        val out = ArrayList<IntRange>()
+        for (c in _cards.value) {
+            if (c.folder == folder) continue
+            val s = synchronized(lock) { open[c.folder] }
+            if (s != null) out += s.labelRange()
+            else try {
+                val f = File(File(codesRoot, c.folder), "codes.json")
+                if (f.isFile) AppJson.decodeFromString<Codes>(f.readText()).let { k -> out += ownLabels(k.labelsFrom, k.labelsTo) }
+            } catch (_: Exception) {
+            }
+        }
+        return out.filter { !it.isEmpty() }
+    }
+
     private fun storeIn(folder: String): Store = synchronized(lock) {
         open.getOrPut(folder) {
             Store(
@@ -186,6 +202,8 @@ class Moves(
                 codesDir = File(codesRoot, folder).apply { mkdirs() },
                 lettersElsewhere = { lettersOutside(folder) },
                 photos = File(photosDir, folder),
+                listed = true,
+                labelsElsewhere = { labelsOutside(folder) },
             )
         }
     }
@@ -379,7 +397,8 @@ class Moves(
         val dir = File(movesDir, staging)
         val s = Store(
             dir = dir.apply { mkdirs() }, clock = clock, phone = phone, codesDir = File(codesRoot, folder).apply { mkdirs() },
-            lettersElsewhere = { lettersOutside(folder) }, photos = File(photosDir, folder),
+            lettersElsewhere = { lettersOutside(folder) }, photos = File(photosDir, folder), listed = true,
+            labelsElsewhere = { labelsOutside(folder) },
         )
         val r = WifiSync.join(s, check.invite, connectTimeoutMs, letNewPhonesIn = false, holdsCard = false, onWaiting = onWaiting)
         val joined = r.joinedAs != null

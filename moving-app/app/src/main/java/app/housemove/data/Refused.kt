@@ -41,7 +41,8 @@ fun AppData.refusedChanges(): List<RefusedChange> =
 fun AppData.describe(r: RefusedChange): String {
     val who = personName(r.by).ifBlank { "Someone" }
     val name = if (r.targetId.isEmpty() || expenses.any { it.id == r.targetId }) "it" else nameOf(r.targetId).let { if (it == "something") "something" else it }
-    val tried = r.tried.replace("{}", name)
+    // A thing marked gone is called sold, donated or binned by what is decided for it now (see [outcomeVerb]).
+    val tried = (if (r.tried == GONE) item(r.targetId)?.let { goneVerb(it.disposition) } ?: GONE else r.tried).replace("{}", name)
     val now = person(r.by)
     val why = when {
         r.role == null -> if (now == null) "$who is not in the move" else "$who was not in the move then"
@@ -61,14 +62,23 @@ internal fun decideVerb(d: Disposition): String = when (d) {
     Disposition.STORE -> "decide to store {}"
 }
 
-/** What carrying a decision out is called, for a refused change. */
+private const val GONE = "mark {} gone"
+
+/**
+ * What carrying a decision out is called, for a refused change: from the part that was refused alone (listed and
+ * gone), which is the same in every copy that carries it. What is decided for the thing is not part of it, and two
+ * phones may hold different decisions then; were it in the words, the same refused change would read differently
+ * on each and the record, made with the same id everywhere, would not settle. [describe] names it from the decision.
+ */
 internal fun outcomeVerb(i: Item): String = when {
-    i.gone -> when (i.disposition) {
-        Disposition.SELL -> "mark {} sold"
-        Disposition.DONATE -> "mark {} donated"
-        Disposition.BIN -> "mark {} binned"
-        else -> "mark {} gone"
-    }
+    i.gone -> GONE
     i.listed -> "mark {} listed for sale"
     else -> "change whether {} has gone"
+}
+
+private fun goneVerb(d: Disposition): String = when (d) {
+    Disposition.SELL -> "mark {} sold"
+    Disposition.DONATE -> "mark {} donated"
+    Disposition.BIN -> "mark {} binned"
+    else -> GONE
 }
