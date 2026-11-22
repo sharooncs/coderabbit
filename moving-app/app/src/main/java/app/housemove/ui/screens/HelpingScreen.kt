@@ -143,7 +143,7 @@ fun HelpingScreen() {
         }
         BigAction(
             if (toJoin.isEmpty()) Icons.Default.Check else Icons.Default.Schedule,
-            if (toJoin.isEmpty() && !firstRun) "Done" else if (toJoin.isEmpty()) "Go to Home" else "Do this later",
+            if (toJoin.isEmpty() && !firstRun) "Done" else "Do this later",
             onClick = { leave() }, primary = toJoin.isEmpty(), modifier = Modifier.padding(16.dp),
         )
     }
@@ -264,7 +264,8 @@ private fun CodePanel(
             }
             made?.valueOrNull()?.let { ShownInvite(it.encode(), LocalTime.now().plusMinutes(WifiSync.INVITE_MINUTES.toLong()).format(CLOCK)) }
         }
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        // A chip for each code there is to choose between; with nobody waiting to join there is only the Helper code.
+        if (toJoin.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             toJoin.forEach { p ->
                 GlassChip(p.shownName(), selected = shown == p.id, onClick = { onShow(p.id) }, leading = { PersonOrb(p, size = 22.dp) })
             }

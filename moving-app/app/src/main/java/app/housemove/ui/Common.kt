@@ -204,8 +204,8 @@ private fun TopBar(title: String, subtitle: String?, back: Boolean, actions: @Co
 /**
  * The move's name at the top of Home: the move in use, this phone's role in it (once there is
  * more than one person to tell apart) and a dot when another move on the phone needs its
- * person. Tapping it opens Your moves. On a narrow screen or with large text the role goes
- * under the name, so neither is cut short.
+ * person. Tapping it opens Your moves. The role sits under the name, so the name keeps the
+ * width; on a wide screen the app's mark leads.
  */
 @Composable
 fun MoveSwitch(modifier: Modifier = Modifier) {
@@ -215,22 +215,18 @@ fun MoveSwitch(modifier: Modifier = Modifier) {
     val others = otherMovesNeedingYou()
     val name = data.move.name.ifBlank { "Your move" }
     val role = if (data.shared()) data.roleOf(device) else null
-    val tight = LocalConfiguration.current.let { it.screenWidthDp / it.fontScale < 400f }
+    val wide = LocalConfiguration.current.let { it.screenWidthDp / it.fontScale >= 480f }
     GlassPill(
         modifier, onClick = { nav.open("moves") }, sheen = true,
-        contentPadding = PaddingValues(start = if (tight) 14.dp else 8.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+        contentPadding = PaddingValues(start = if (wide) 8.dp else 14.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
     ) {
-        if (!tight) {
+        if (wide) {
             AppMark(Modifier.size(28.dp), description = null)
             Spacer(Modifier.width(6.dp))
         }
-        Column(Modifier.weight(1f, fill = false)) {
-            Text(name, style = MaterialTheme.typography.titleSmall, maxLines = if (tight) 2 else 1, overflow = TextOverflow.Ellipsis)
-            if (tight && role != null) Text(role.label, style = MaterialTheme.typography.labelMedium, color = Night.MintPale, maxLines = 1)
-        }
-        if (!tight && role != null) {
-            Spacer(Modifier.width(8.dp))
-            RoleTag(role)
+        Column(Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(name, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (role != null) RoleTag(role)
         }
         if (others.isNotEmpty()) NeedsYouDot(Modifier.padding(start = 8.dp))
         Icon(Icons.Default.ExpandMore, contentDescription = "Your moves", tint = Night.TextDim, modifier = Modifier.padding(start = 2.dp).size(22.dp))
@@ -241,9 +237,9 @@ fun MoveSwitch(modifier: Modifier = Modifier) {
 @Composable
 private fun RoleTag(role: Role) {
     Text(
-        role.label, style = MaterialTheme.typography.labelMedium, color = Night.MintPale, maxLines = 1,
+        role.label, style = MaterialTheme.typography.labelSmall, color = Night.MintPale, maxLines = 1,
         modifier = Modifier.clip(CircleShape).background(Night.Mint.copy(alpha = 0.16f)).border(1.dp, Night.Mint.copy(alpha = 0.35f), CircleShape)
-            .padding(horizontal = 8.dp, vertical = 2.dp),
+            .padding(horizontal = 8.dp, vertical = 1.dp),
     )
 }
 

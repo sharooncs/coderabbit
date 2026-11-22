@@ -439,7 +439,7 @@ class MovesFlowsTest {
         val maple = move(ashaPhone, "Maple Road")
         show(ashaPhone)
         go("helping")
-        tap("Helper code")
+        tap("Show the Helper code")
         see("Any number of Helpers")
         val code = codeOnScreen()
         assertTrue(WifiSync.Invite.parse(code)!!.helperCode)
