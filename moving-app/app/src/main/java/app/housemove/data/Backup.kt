@@ -123,9 +123,10 @@ object Backup {
      * an Organiser of its own making. Anything refused, and any file that is not a backup,
      * gives an IllegalArgumentException whose message says why in words for the screen; nothing is
      * changed then, and no photo file is left behind. A backup made before version 2.0 is brought up
-     * to date first ([migrate]), so nothing in it is lost.
+     * to date first ([migrate]), so nothing in it is lost. [newCard] says [store] is the card
+     * [Moves.restore] made for this backup, which takes it whatever move it is of.
      */
-    fun import(store: Store, input: InputStream, replace: Boolean = false): Result {
+    fun import(store: Store, input: InputStream, replace: Boolean = false, newCard: Boolean = false): Result {
         store.data.value.refusal(store.me, Action.RESTORE_BACKUP)?.let { throw IllegalArgumentException(it) }
         var json: String? = null
         var about = About()
@@ -166,7 +167,7 @@ object Backup {
                 throw IllegalArgumentException(NOT_A_BACKUP, e)
             } ?: throw IllegalArgumentException(NOT_A_BACKUP)
             if (d.version > SCHEMA) throw IllegalArgumentException(TOO_NEW)
-            store.whyNotRestore(d, about.identity)?.let { throw IllegalArgumentException(it) }
+            store.whyNotRestore(d, about.identity, newCard)?.let { throw IllegalArgumentException(it) }
             // A backup is restored by an Organiser who chose the file, so parts of it that carry no stamp
             // (anything saved before 2.0) are taken as they stand rather than turned away as a sync would.
             store.restore(migrate(d), replace, helpersShare = about.helpersShare, madeBy = about.by, identity = about.identity)
