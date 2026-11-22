@@ -72,7 +72,9 @@ fun AppData.whyNoBackup(device: DeviceInfo): String? =
  * rest), for screens, reports, the PDF and the CSV that still read those fields. On a Helper's phone there is
  * nothing to fill in. Never saved or sent: the Store ignores those fields when an item is saved.
  */
-fun AppData.filledIn(): AppData {
+fun AppData.filledIn(): AppData = shown
+
+internal fun AppData.fillHidden(): AppData {
     if (hidden.isEmpty()) return this
     val h = index.hidden
     return copy(

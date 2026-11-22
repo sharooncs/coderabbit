@@ -640,6 +640,9 @@ data class AppData(
     /** Look-ups over the records that belong to items and boxes, made once per dataset. Not saved or compared. */
     internal val index: RecordIndex by lazy { RecordIndex(this) }
 
+    /** This dataset as screens show it, with hidden details on the items ([filledIn]), made once per dataset. Not saved or compared. */
+    internal val shown: AppData by lazy { fillHidden() }
+
     val liveRooms get() = rooms.filter { !it.deleted }.sortedWith(compareBy({ it.sort }, { it.name }))
     val liveItems get() = items.filter { !it.deleted }
     val liveBoxes get() = boxes.filter { !it.deleted }
