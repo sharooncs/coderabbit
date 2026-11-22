@@ -13,6 +13,7 @@ import java.io.File
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.zip.ZipEntry
+import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
 /** Backups on a move with people in it: who may restore, and what a restore may never undo. */
@@ -25,15 +26,18 @@ class BackupRolesTest {
     private val local = listOf("127.0.0.1")
     private val open = ArrayList<WifiSync.Host>()
 
+    /** For [rewritten]: leave the backup's note of who made it as it is. */
+    private val KEEP = "\u0000keep"
+
     private fun phone(name: String = ""): Store =
         Store(tmp.newFolder("p" + folders++)) { now++ }.also { s -> if (name.isNotEmpty()) s.setDevice { it.copy(name = name) } }
 
     @After
     fun hangUp() = open.forEach { it.stop() }
 
-    private fun sync(host: Store, joiner: Store): Pair<WifiSync.Result, WifiSync.Result> {
+    private fun sync(host: Store, joiner: Store, letNewPhonesIn: Boolean = true): Pair<WifiSync.Result, WifiSync.Result> {
         val results = LinkedBlockingQueue<WifiSync.Result>()
-        val h = WifiSync.host(host, { now }) { results.add(it) }.also { open += it }
+        val h = WifiSync.host(host, { now }, letNewPhonesIn) { results.add(it) }.also { open += it }
         val r = WifiSync.join(joiner, h.invite(local))
         return (results.poll(15, TimeUnit.SECONDS) ?: throw AssertionError("the host reported nothing")) to r
     }
@@ -56,6 +60,42 @@ class BackupRolesTest {
     }
 
     private fun backupOf(s: Store) = ByteArrayOutputStream().also { Backup.export(s, it) }.toByteArray()
+
+    /**
+     * [zip] with its data changed by [data], and its note of who made it kept ([KEEP]), replaced by [about], or left
+     * out when that is null, as in a backup from before 2.0.
+     */
+    private fun rewritten(zip: ByteArray, about: String? = KEEP, data: (AppData) -> AppData = { it }): ByteArray {
+        val out = ByteArrayOutputStream()
+        ZipOutputStream(out).use { z ->
+            ZipInputStream(ByteArrayInputStream(zip)).use { zin ->
+                while (true) {
+                    val e = zin.nextEntry ?: break
+                    val bytes = zin.readBytes()
+                    if (e.name == "about.json" && about != KEEP) continue
+                    z.putNextEntry(ZipEntry(e.name))
+                    if (e.name == "data.json") {
+                        val d = data(AppJson.decodeFromString(AppData.serializer(), bytes.decodeToString()))
+                        z.write(AppJson.encodeToString(AppData.serializer(), d).toByteArray())
+                    } else {
+                        z.write(bytes)
+                    }
+                    z.closeEntry()
+                }
+            }
+            if (about != null && about != KEEP) {
+                z.putNextEntry(ZipEntry("about.json"))
+                z.write(about.toByteArray())
+                z.closeEntry()
+            }
+        }
+        return out.toByteArray()
+    }
+
+    /** Everyone who first appears in nobody's name. In a move that is the person who started it, and nobody else. */
+    private fun selfMade(s: Store) = s.data.value.people.filter { p -> p.grants.minByOrNull { it.at }?.by == "" }.map { it.id }.toSet()
+
+    private fun organisers(s: Store) = s.data.value.livePeople.filter { it.role == Role.ORGANISER }.map { it.id }.toSet()
 
     private fun refusedRestoring(s: Store, zip: ByteArray, replace: Boolean = false): String =
         try {
@@ -219,5 +259,191 @@ class BackupRolesTest {
         }.toByteArray()
         assertEquals(0, Backup.import(asha, ByteArrayInputStream(stray)).photos)
         assertTrue(asha.photoDir.list()!!.isEmpty())
+    }
+
+    // ---- who the phone is after a restore ----------------------------------------------------
+
+    @Test
+    fun aHelpersBackupRestoredOnANewPhoneMakesItThatHelperAndNobodyAnOrganiser() {
+        val asha = phone("Asha")
+        asha.setMove { it.copy(name = "Maple Road", setupDone = true) }
+        val sofa = asha.createItem("Sofa", null).id
+        val hal = invited(asha, "Hal", Role.HELPER)
+        val packed = hal.createBox("H1", null).id
+        synced(asha, hal)
+        val zip = backupOf(hal)
+        val founder = setOf(asha.me!!.id)
+        assertEquals(founder, selfMade(asha))
+
+        for (replace in listOf(false, true)) {
+            val how = "replace=$replace"
+            // Hal's phone is lost. A new phone, tried out on its own first, restores his backup: merged in, as the Sync
+            // screen does, or over what the phone holds.
+            val fresh = phone("New phone")
+            val started = fresh.me!!.id
+            val own = fresh.createBox("N1", null).id
+            val binned = fresh.createBox("N2", null)
+            assertTrue(fresh.tryDelete(binned).ok)
+            val lamp = fresh.createItem("Lamp", null).id
+            assertTrue(fresh.decide(lamp, Disposition.BIN).ok)
+            Backup.import(fresh, ByteArrayInputStream(zip), replace)
+
+            // It is Hal now, a Helper. The Organiser it made itself while on its own has stayed behind, so the move has
+            // the one Organiser it had.
+            assertEquals(how, hal.me!!.id, fresh.me!!.id)
+            assertEquals(how, hal.me!!.id, fresh.device.value.personId)
+            assertEquals(how, "Hal", fresh.device.value.name)
+            assertEquals(how, Role.HELPER, fresh.myRole)
+            assertNull(how, fresh.data.value.person(started))
+            assertEquals(how, founder, selfMade(fresh))
+            assertEquals(how, founder, organisers(fresh))
+            for (a in listOf(Action.DECIDE, Action.MANAGE_PEOPLE, Action.RESTORE_BACKUP, Action.ERASE)) assertFalse("$how $a", fresh.can(a))
+            assertNotNull(how, fresh.addPerson("Pat", Role.ORGANISER).reason)
+            assertNotNull(how, fresh.data.value.box(packed))
+            if (!replace) {
+                // What it had of its own comes along, as when a phone joins a move: its things, but not what it decided
+                // alone; and what it deleted alone stays deleted.
+                val d = fresh.data.value
+                assertNotNull(d.box(own))
+                assertTrue(d.boxes.single { it.id == binned.id }.deleted)
+                assertEquals(Disposition.UNDECIDED, d.item(lamp)!!.disposition)
+            }
+
+            // Synced with Asha's phone it is Hal there too, and nobody has gained an Organiser's rights.
+            synced(asha, fresh)
+            for (s in listOf(asha, fresh)) {
+                assertEquals(how, founder, organisers(s))
+                assertEquals(how, founder, selfMade(s))
+                assertEquals(how, Role.HELPER, s.data.value.person(hal.me!!.id)!!.role)
+            }
+            assertNotNull(how, fresh.decide(sofa, Disposition.BIN).reason)
+            assertEquals(how, Disposition.UNDECIDED, asha.data.value.item(sofa)!!.disposition)
+        }
+    }
+
+    @Test
+    fun aBackupThatDoesNotSayWhoMadeItMakesANewPhoneAHelperOfThatMove() {
+        val asha = phone("Asha")
+        asha.setMove { it.copy(name = "Maple Road", setupDone = true) }
+        val sofa = asha.createItem("Sofa", null).id
+        val dee = invited(asha, "Dee", Role.DECIDER)
+        val gus = invited(asha, "Gus", Role.HELPER)
+        assertTrue(asha.removePerson(gus.me!!.id).ok)
+        val zip = backupOf(asha)
+        val members = asha.data.value.people.map { it.id }.toSet()
+        val founder = setOf(asha.me!!.id)
+
+        // The note of who made it is missing (a backup from before 2.0 has none), names someone removed, or someone not in it.
+        for (about in listOf(null, """{"by":"${gus.me!!.id}"}""", """{"by":"nobody"}""")) {
+            val fresh = phone("New phone")
+            val started = fresh.me!!.id
+            Backup.import(fresh, ByteArrayInputStream(rewritten(zip, about)))
+            assertNotNull(about, fresh.me)
+            assertEquals(about, Role.HELPER, fresh.myRole)
+            assertNull(about, fresh.data.value.person(started))
+            assertFalse(about, fresh.me!!.id in members)
+            assertEquals(about, founder, organisers(fresh))
+            assertTrue(about, fresh.data.value.people.filter { it.id in selfMade(fresh) }.all { it.id == asha.me!!.id || it.role == Role.HELPER })
+            assertNotNull(about, fresh.decide(sofa, Disposition.BIN).reason)
+            assertEquals(about, "Maple Road", fresh.data.value.move.name)
+            // Asha's phone, which is not on its own, does not let it in with the plain code; let in all the same, it is a Helper there.
+            assertEquals(about, WifiSync.NOT_ADDED, sync(asha, fresh, letNewPhonesIn = false).second.error)
+            synced(asha, fresh)
+            assertEquals(about, founder, organisers(asha))
+            assertEquals(about, Role.HELPER, asha.data.value.person(fresh.me!!.id)!!.role)
+            assertEquals(about, Role.DECIDER, asha.data.value.person(dee.me!!.id)!!.role)
+        }
+    }
+
+    @Test
+    fun aBackupRestoredOnAPhoneWhosePersonIsInItLeavesItWhoItIsAndBringsBackNothingItDeleted() {
+        val asha = phone("Asha")
+        asha.setMove { it.copy(name = "Maple Road", setupDone = true) }
+        val kept = asha.createBox("L001", null).id
+        val doomed = asha.createBox("L002", null)
+        val chair = asha.createItem("Chair", null)
+        val omar = invited(asha, "Omar", Role.ORGANISER)
+        val hal = invited(asha, "Hal", Role.HELPER)
+        synced(asha, omar)
+        synced(asha, hal)
+        val zip = backupOf(asha)
+        assertTrue(asha.tryDelete(doomed).ok)
+        assertTrue(asha.tryDelete(chair).ok)
+        synced(asha, omar)
+        for (s in listOf(asha, omar)) {
+            val me = s.me!!.id
+            val people = s.data.value.people.toSet()
+            Backup.import(s, ByteArrayInputStream(zip))
+            val d = s.data.value
+            assertEquals(me, s.me!!.id)
+            assertEquals(Role.ORGANISER, s.myRole)
+            assertEquals(people, d.people.toSet())
+            assertNull(d.box(doomed.id))
+            assertNull(d.item(chair.id))
+            assertNotNull(d.box(kept))
+        }
+        // Restored over what it holds, it is still who it is.
+        val me = omar.me!!.id
+        Backup.import(omar, ByteArrayInputStream(zip), replace = true)
+        assertEquals(me, omar.me!!.id)
+        assertEquals(Role.ORGANISER, omar.myRole)
+
+        // The same on a phone on its own.
+        val solo = phone("Solo")
+        val a = solo.createBox("S1", null).id
+        val b = solo.createBox("S2", null)
+        val lamp = solo.createItem("Lamp", null).id
+        assertTrue(solo.decide(lamp, Disposition.SELL, 20.0).ok)
+        val own = backupOf(solo)
+        assertTrue(solo.tryDelete(b).ok)
+        val was = solo.me!!.id
+        Backup.import(solo, ByteArrayInputStream(own))
+        assertEquals(was, solo.me!!.id)
+        assertEquals(Role.ORGANISER, solo.myRole)
+        assertEquals(listOf(was), solo.data.value.people.map { it.id })
+        assertNotNull(solo.data.value.box(a))
+        assertNull(solo.data.value.box(b.id))
+        assertEquals(Disposition.SELL, solo.data.value.item(lamp)!!.disposition)
+    }
+
+    @Test
+    fun aBackupMergedIntoASharedMoveBringsInNobodyWhoGaveThemselvesTheirRole() {
+        val asha = phone("Asha")
+        asha.setMove { it.copy(name = "Maple Road", setupDone = true) }
+        val sofa = asha.createItem("Sofa", null).id
+        val omar = invited(asha, "Omar", Role.ORGANISER)
+        val hal = invited(asha, "Hal", Role.HELPER)
+        synced(asha, omar)
+        // A backup from a phone that restored this move's backup on version 2.0 while on its own, and kept the Organiser it
+        // had made itself: Mallory, who appears in nobody's name. In it she renamed the move, decided, and made Pat an Organiser.
+        val t = now
+        now += 100
+        val zip = rewritten(backupOf(asha)) { d ->
+            val mallory = Person(
+                id = "mallory", name = "Mallory", role = Role.ORGANISER, letter = "Z", joinedAt = t,
+                grants = listOf(Grant(Role.ORGANISER, false, t, "")), updatedAt = t,
+            )
+            val pat = Person(id = "pat", name = "Pat", role = Role.ORGANISER, letter = "ZA", grants = listOf(Grant(Role.ORGANISER, false, t + 1, "mallory")), updatedAt = t + 1)
+            d.copy(
+                people = d.people + mallory + pat,
+                move = d.move.copy(name = "Mallory's", updatedAt = t + 2).let { it.copy(changedBy = Stamp("mallory", t + 2, it.settingsSum())) },
+                items = d.items.map { i ->
+                    if (i.id != sofa) i else i.copy(disposition = Disposition.BIN, updatedAt = t + 3).let { it.copy(decisionBy = Stamp("mallory", t + 3, it.decisionSum())) }
+                },
+            )
+        }
+        val runIt = setOf(asha.me!!.id, omar.me!!.id)
+        for (s in listOf(omar, asha)) {
+            Backup.import(s, ByteArrayInputStream(zip))
+            val d = s.data.value
+            assertNull(d.person("mallory"))
+            assertNull(d.person("pat"))
+            assertEquals(runIt, organisers(s))
+            assertEquals("Maple Road", d.move.name)
+            assertEquals(Disposition.UNDECIDED, d.item(sofa)!!.disposition)
+        }
+        synced(asha, hal)
+        assertNull(hal.data.value.person("mallory"))
+        assertEquals(setOf(asha.me!!.id), selfMade(hal))
     }
 }
