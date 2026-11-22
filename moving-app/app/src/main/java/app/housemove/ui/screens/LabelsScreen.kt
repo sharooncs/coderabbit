@@ -143,7 +143,8 @@ fun LabelsScreen() {
         }
     }
 
-    val next = data.nextLabelNumber()
+    // This phone's own label numbers, so two phones printing at the same time never print the same code.
+    val next = data.let { store.nextLabelNumber() }
 
     Screen("Labels and door signs") {
         ScrollColumn {
@@ -169,13 +170,13 @@ fun LabelsScreen() {
                 val codes = if (s != null && n != null) (s until s + n).map { labelCode(it) } else emptyList()
                 val markPrinted: () -> Unit = {
                     fixedStart = s
-                    store.setMove { it.copy(labelsPrinted = maxOf(it.labelsPrinted, last)) }
+                    store.labelsPrinted(last)
                 }
                 PrintButtons(
                     enabled = ready && busy == null,
                     busy = busy == "labels",
-                    onPrint = { produce("labels", share = false, after = markPrinted) { Pdf.labels(context, codes, sheet, copies) } },
-                    onShare = { produce("labels", share = true, after = markPrinted) { Pdf.labels(context, codes, sheet, copies) } },
+                    onPrint = { produce("labels", share = false, after = markPrinted) { Pdf.labels(context, codes, sheet, copies, store.moveTag) } },
+                    onShare = { produce("labels", share = true, after = markPrinted) { Pdf.labels(context, codes, sheet, copies, store.moveTag) } },
                 )
                 if (s != null && s < next) {
                     GlassChip(
@@ -259,7 +260,7 @@ fun LabelsScreen() {
                 }
                 val markPrinted: () -> Unit = {
                     tagStart = first
-                    store.setMove { it.copy(labelsPrinted = maxOf(it.labelsPrinted, run.lastNumber)) }
+                    store.labelsPrinted(run.lastNumber)
                 }
                 PrintButtons(
                     enabled = codes.isNotEmpty() && busy == null,

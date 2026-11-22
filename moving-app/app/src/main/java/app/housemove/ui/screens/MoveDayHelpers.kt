@@ -68,7 +68,7 @@ import app.housemove.data.Store
 import app.housemove.data.Trip
 import app.housemove.data.carrierOf
 import app.housemove.data.findByAnyCode
-import app.housemove.data.labelFromQr
+import app.housemove.data.labelCodeOf
 import app.housemove.data.newId
 import app.housemove.data.parentOf
 import app.housemove.data.vehicle
@@ -142,7 +142,7 @@ internal class MdScanned(val thing: Movable, val carrier: Movable, private val n
 
 /** Look up a scanned or typed code: a label, a serial number, or the barcode of something scanned into a box. */
 internal fun mdFind(data: AppData, text: String): MdScanned? {
-    val code = labelFromQr(text)
+    val code = labelCodeOf(text)
     val thing = data.findByAnyCode(code) ?: return null
     // Found through the barcode of a book or product inside a box: name that, the box is what moves.
     val entry = if (!thing.isBox || thing.label.equals(code, ignoreCase = true)) null

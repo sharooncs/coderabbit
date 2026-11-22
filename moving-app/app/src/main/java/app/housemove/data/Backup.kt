@@ -30,14 +30,31 @@ object Backup {
      * absence from the backup says nothing about whether they exist.
      */
     @Serializable
-    internal data class About(val by: String = "", val helpersShare: Boolean = false, val at: Long = 0)
+    internal data class About(
+        val by: String = "",
+        val helpersShare: Boolean = false,
+        val at: Long = 0,
+        /** The move it is of (from 2.1): its ID, the others it is known by, and whether that was worked out from a move from 2.0. */
+        val moveId: String = "",
+        val aliases: List<String> = emptyList(),
+        val derived: Boolean = false,
+    ) {
+        val identity: MoveIdentity? get() = if (moveId.isEmpty()) null else MoveIdentity(moveId, aliases, derived)
+    }
+
+    /** What a backup says about itself, read without restoring it ([peek]). */
+    data class Peek(val moveId: String, val aliases: List<String>, val moveName: String, val by: String, val data: AppData)
 
     /** Write the whole move on this phone, photos included, to [out]. Throws an IOException with words for the screen when it cannot. */
     fun export(store: Store, out: OutputStream) {
         try {
             store.flush()
             val data = store.data.value
-            val about = About(by = store.device.value.personId, helpersShare = data.hasOrganiser() && data.roleOf(store.device.value) == Role.HELPER, at = System.currentTimeMillis())
+            val id = store.identity.value
+            val about = About(
+                by = store.device.value.personId, helpersShare = data.hasOrganiser() && data.roleOf(store.device.value) == Role.HELPER,
+                at = System.currentTimeMillis(), moveId = id.id, aliases = id.aliases, derived = id.derived,
+            )
             ZipOutputStream(out.buffered()).use { zip ->
                 zip.putNextEntry(ZipEntry(DATA_ENTRY))
                 zip.write(AppJson.encodeToString(data).toByteArray())
@@ -114,10 +131,10 @@ object Backup {
                 throw IllegalArgumentException(NOT_A_BACKUP, e)
             } ?: throw IllegalArgumentException(NOT_A_BACKUP)
             if (d.version > SCHEMA) throw IllegalArgumentException(TOO_NEW)
-            store.whyNotRestore(d)?.let { throw IllegalArgumentException(it) }
+            store.whyNotRestore(d, about.identity)?.let { throw IllegalArgumentException(it) }
             // A backup is restored by an Organiser who chose the file, so parts of it that carry no stamp
             // (anything saved before 2.0) are taken as they stand rather than turned away as a sync would.
-            store.restore(migrate(d), replace, helpersShare = about.helpersShare, madeBy = about.by)
+            store.restore(migrate(d), replace, helpersShare = about.helpersShare, madeBy = about.by, identity = about.identity)
             // The files of photos the move now has on record are kept; any other file in the zip is not.
             val wanted = store.data.value.photos.filter { !it.deleted }.map { it.file }.toSet()
             var photos = 0
@@ -131,6 +148,40 @@ object Backup {
             staged.forEach { if (it.exists()) it.delete() }
         }
     }
+}
+
+/**
+ * Read what a backup says about itself without restoring it: which move it is of, and the data.
+ * Gives an IllegalArgumentException in words when it is not a backup.
+ */
+fun Backup.peek(input: InputStream): Backup.Peek {
+    var json: String? = null
+    var about = Backup.About()
+    try {
+        ZipInputStream(input.buffered()).use { zip ->
+            while (true) {
+                val e = zip.nextEntry ?: break
+                when (e.name) {
+                    "data.json" -> json = zip.readBytes().decodeToString()
+                    "about.json" -> about = try {
+                        AppJson.decodeFromString<Backup.About>(zip.readBytes().decodeToString())
+                    } catch (_: Exception) {
+                        Backup.About()
+                    }
+                }
+                zip.closeEntry()
+            }
+        }
+    } catch (e: IOException) {
+        throw IllegalArgumentException(Backup.NOT_A_BACKUP, e)
+    }
+    val d = try {
+        json?.let { AppJson.decodeFromString<AppData>(it) }
+    } catch (e: Exception) {
+        throw IllegalArgumentException(Backup.NOT_A_BACKUP, e)
+    } ?: throw IllegalArgumentException(Backup.NOT_A_BACKUP)
+    if (d.version > SCHEMA) throw IllegalArgumentException(Backup.TOO_NEW)
+    return Backup.Peek(about.moveId, about.aliases, d.move.name, about.by, d)
 }
 
 fun isSafeFileName(name: String): Boolean =

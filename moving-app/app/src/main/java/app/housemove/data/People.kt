@@ -114,16 +114,28 @@ fun AppData.personName(id: String?): String = person(id)?.name?.ifBlank { null }
 // ---- roles over time -------------------------------------------------------------
 
 /**
+ * Open grants (made with nobody named as appointer) count as they did in 2.0 only when made before
+ * this moment: 1 March 2027, 00:00 UTC. It is set well after 2.1's release, at 2.0's end of life:
+ * by then no phone on 2.0 can reach a 2.1 move anyway, because the data-format version differs, so
+ * no rightful open grant is still being made. After it only the founder's open grants count.
+ */
+const val OPEN_GRANT_CUTOFF = 1_803_859_200_000L
+
+/**
  * Everyone's role at any moment, worked out from the [Grant]s on the people.
  *
  * A grant counts when it was made by someone who was an Organiser at that
  * time. An open grant ([Grant.by] blank) counts when it is how the person
  * first appears (a phone starting its own move) or when the move had no
- * Organiser at that time, so there was nobody to ask. Anything else, such as
- * a Decider's phone writing itself a promotion, is ignored. So is a grant that
- * would take the last Organiser away while other people are in the move.
- * Because past roles are kept, a decision made by an Organiser stays good
- * after they are demoted or removed.
+ * Organiser at that time, so there was nobody to ask; and then only when it
+ * is the founder's ([founder]: the person with the move's first open grant),
+ * or was made before [OPEN_GRANT_CUTOFF] by a phone from before 2.1 (one that
+ * does not put its phone ID on grants, [Grant.phone]). Anything else, such as
+ * a Decider's phone writing itself a promotion, or a phone that restored a
+ * backup making itself an Organiser, is ignored. So is a grant that would
+ * take the last Organiser away while other people are in the move. Because
+ * past roles are kept, a decision made by an Organiser stays good after they
+ * are demoted or removed.
  */
 class Roles(people: Collection<Person>) {
     private class Step(val at: Long, val role: Role, val removed: Boolean, val by: String) {
@@ -135,14 +147,20 @@ class Roles(people: Collection<Person>) {
     /** Each moment the number of Organisers changed, with the number from then on. */
     private val organisersFrom = ArrayList<Pair<Long, Int>>()
 
+    /** The person who started the move: the one with its earliest open grant. Null when nobody has one. */
+    val founder: String?
+
     init {
         val all = ArrayList<Pair<String, Grant>>()
         for (p in people) for (g in p.grants) all += p.id to g
-        all.sortWith(compareBy({ it.second.at }, { it.first }, { it.second.by }, { it.second.role.ordinal }, { it.second.removed }))
+        all.sortWith(compareBy({ it.second.at }, { it.first }, { it.second.by }, { it.second.role.ordinal }, { it.second.removed }, { it.second.phone }))
+        founder = all.firstOrNull { it.second.by.isEmpty() }?.first
         var organisers = 0
         for ((id, g) in all) {
             val mine = steps[id]
-            val ok = if (g.by.isEmpty()) mine == null || organisers == 0 else steps[g.by]?.lastOrNull()?.organiser == true
+            val ok = if (g.by.isEmpty()) {
+                (mine == null || organisers == 0) && (id == founder || (g.phone.isEmpty() && g.at < OPEN_GRANT_CUTOFF))
+            } else steps[g.by]?.lastOrNull()?.organiser == true
             if (!ok) continue
             val step = Step(g.at, g.role, g.removed, g.by)
             val wasOrganiser = mine?.lastOrNull()?.organiser == true
@@ -192,47 +210,120 @@ internal fun settlePeople(people: List<Person>): List<Person> {
 
 private val GRANT_ORDER = compareBy<Grant>({ it.at }, { it.by }, { it.role.ordinal }, { it.removed })
 
-/** Two phones' copies of the people: newest details win, and every grant either phone knows is kept. */
+/**
+ * Two phones' copies of the people: newest details win, and every grant and every phone either
+ * phone knows is kept. A phone once retired stays retired, and once its last work has been taken
+ * in, stays so. A retirement counts only when an Organiser made it.
+ */
 internal fun mergePeople(a: List<Person>, b: List<Person>): List<Person> {
     if (a.isEmpty() && b.isEmpty()) return a
     val other = HashMap<String, Person>()
     for (p in a) other[p.id] = p
-    for (p in b) other.merge(p.id, p) { x, y -> x.copy(grants = (x.grants + y.grants)) }
+    for (p in b) other.merge(p.id, p) { x, y -> x.copy(grants = (x.grants + y.grants), phones = mergePhones(x.phones, y.phones)) }
     val merged = mergeList(a, b).map { p ->
-        val grants = other.getValue(p.id).grants.distinct().sortedWith(GRANT_ORDER)
-        if (grants == p.grants) p else p.copy(grants = grants)
+        val both = other.getValue(p.id)
+        val grants = both.grants.distinct().sortedWith(GRANT_ORDER)
+        val phones = mergePhones(p.phones, both.phones)
+        if (grants == p.grants && phones == p.phones) p else p.copy(grants = grants, phones = phones)
     }
-    return settlePeople(merged)
+    return keepRetirementsToTheRule(settlePeople(merged))
 }
+
+/**
+ * Both copies of a person's list of phones. For a phone in both, the details are chosen the same
+ * way whichever copy is whose, so every phone ends up with the same list.
+ */
+internal fun mergePhones(a: List<PhoneEntry>, b: List<PhoneEntry>): List<PhoneEntry> {
+    if (b.isEmpty() || a == b) return a
+    if (a.isEmpty()) return b
+    val out = LinkedHashMap<String, PhoneEntry>()
+    for (x in a) out[x.id] = x
+    for (y in b) out.merge(y.id, y) { x, z ->
+        val retired = listOf(x.retired, z.retired).filter { it.by.isNotEmpty() }.minWithOrNull(compareBy({ it.at }, { it.by })) ?: Stamp()
+        val details = if (x.copy(retired = Stamp(), collected = false).toString() >= z.copy(retired = Stamp(), collected = false).toString()) x else z
+        details.copy(retired = retired, collected = x.collected || z.collected)
+    }
+    return out.values.sortedWith(compareBy({ it.addedAt }, { it.id }))
+}
+
+internal fun retiredSum(phoneId: String) = seal("retired", phoneId)
+
+/** A phone's retirement stands only when an Organiser of the move made it. */
+private fun keepRetirementsToTheRule(people: List<Person>): List<Person> {
+    if (people.none { p -> p.phones.any { it.retired.by.isNotEmpty() } }) return people
+    val roles = Roles(people)
+    return people.mapChanged { p ->
+        if (p.phones.none { it.retired.by.isNotEmpty() }) p
+        else p.copy(
+            phones = p.phones.mapChanged { ph ->
+                val s = ph.retired
+                if (s.by.isEmpty() || (s.sum == retiredSum(ph.id) && roles.organiserAt(s.by, s.at))) ph else ph.copy(retired = Stamp(), collected = false)
+            },
+        )
+    }
+}
+
+/** The phone with this phone ID and whose it is, or null when nobody in the move has used it. */
+fun AppData.phoneEntry(phoneId: String): Pair<Person, PhoneEntry>? {
+    if (phoneId.isEmpty()) return null
+    for (p in people) for (ph in p.phones) if (ph.id == phoneId) return p to ph
+    return null
+}
+
+/** Has an Organiser retired this phone? */
+val PhoneEntry.isRetired: Boolean get() = retired.by.isNotEmpty()
 
 // ---- letters for handwritten codes -----------------------------------------------
 
 private fun letterAt(n: Int): String = if (n < 26) ('A' + n).toString() else ('A' + (n / 26 - 1) % 26).toString() + ('A' + n % 26)
 
+/** Every letter the move knows of: its people's and their phones'. */
+fun AppData.lettersInUse(except: String? = null): Set<String> {
+    val out = HashSet<String>()
+    for (p in people) {
+        if (p.id == except) continue
+        if (p.letter.isNotBlank()) out += p.letter.trim().uppercase()
+        for (ph in p.phones) if (ph.letter.isNotBlank()) out += ph.letter.trim().uppercase()
+    }
+    return out
+}
+
 /** The next letter nobody in the move uses: A to Z, then AA, AB and so on. */
-fun AppData.freeLetter(except: String? = null): String {
-    val used = people.filter { it.id != except }.map { it.letter.uppercase() }.toSet()
+fun AppData.freeLetter(except: String? = null, avoid: Set<String> = emptySet()): String {
+    val used = lettersInUse(except) + avoid.map { it.uppercase() }
     var n = 0
     while (letterAt(n) in used) n++
     return letterAt(n)
 }
 
 /**
- * The letter for someone [by] is adding. While [by] is the only Organiser, nobody else can be
- * adding people at the same moment, so the next free letter is theirs to give. Once there are
- * several Organisers, two of them could each give out the same "next free" letter on their own
- * phones before those have synced, and two people would then write the same codes on their
- * boxes. So each Organiser hands out letters that begin with their own: Asha (A) gives AA, AB, …
- * and Omar (B) gives BA, BB, ….
+ * The next letter in a phone's own block of letters, which only that phone hands out, so two
+ * phones admitting people at the same moment before they have synced never give out the same one.
+ * The founder's phone ([founderBlock]) has the single letters A to Z, and after those its own
+ * letter with one more after it; any other phone has its own letter with one more after it: Asha
+ * (A, the founder) gives B, C, … and Omar (B) gives BA, BB, …. A letter already in the move, or in
+ * [avoid] (letters this phone has given out before, and letters the new phone uses in its other
+ * moves), is skipped. Null when the block is used up.
+ */
+internal fun AppData.nextInBlock(own: String, founderBlock: Boolean, avoid: Set<String>): String? {
+    val used = lettersInUse() + avoid.map { it.uppercase() }
+    val mine = own.trim().uppercase()
+    if (founderBlock) for (n in 0 until 26) if (letterAt(n) !in used) return letterAt(n)
+    if (mine.isEmpty()) return null
+    for (n in 0 until 26) if (mine + letterAt(n) !in used) return mine + letterAt(n)
+    return null
+}
+
+/**
+ * The letter for someone [by] is adding, when the adding phone keeps no block of its own (data
+ * handled away from a phone, as in tests). Each Organiser hands out letters that begin with their
+ * own once there are several, as [nextInBlock] does; Store uses that with the phone's block.
  */
 internal fun AppData.letterFor(by: Person?): String {
     val mine = by?.letter?.trim()?.uppercase().orEmpty()
     val alone = people.none { it.id != by?.id && it.role == Role.ORGANISER && !it.removed }
     if (by == null || mine.isEmpty() || alone) return freeLetter()
-    val used = people.map { it.letter.uppercase() }.toSet()
-    var n = 0
-    while (mine + letterAt(n) in used) n++
-    return mine + letterAt(n)
+    return nextInBlock(mine, founderBlock = false, avoid = emptySet()) ?: freeLetter()
 }
 
 /**

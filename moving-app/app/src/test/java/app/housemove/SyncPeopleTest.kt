@@ -281,7 +281,7 @@ class SyncPeopleTest {
     // ---- one move per phone ---------------------------------------------------------
 
     private fun alreadyIn(move: String) =
-        "This phone is already in $move move, and HouseMove 2.0 holds one move per phone. If this is the same move, sync with an Organiser first."
+        "This phone is already in $move move, and it joins that move only through one of its Organisers. If this is the same move, sync with an Organiser first."
 
     @Test
     fun aPhoneAlreadyInAMoveIsNotTakenIntoAnotherOneByItsInvite() {
