@@ -238,7 +238,10 @@ fun SyncScreen(code: String? = null) {
                 Text("If both phones changed the same thing, the most recent change wins.")
                 Text("A new phone joins with an invite from People. All phones must be on the same version of the app.")
                 Text("A phone with no HouseMove, or an older one, can get this phone's copy: Quick Share sends it without internet.")
-                PillButton("Share the app", onClick = { shareTheApp(context, scope) }, icon = Icons.Default.Share, primary = false)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PillButton("Share the app", onClick = { shareTheApp(context, scope) }, icon = Icons.Default.Share, primary = false)
+                    DownloadCodeButton()
+                }
             }
         }
     }
