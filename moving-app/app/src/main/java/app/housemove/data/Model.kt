@@ -140,6 +140,11 @@ data class MoveInfo(
     /** Names of the [Part]s switched off. Everything is on unless listed, so new parts appear by default. */
     val off: List<String> = emptyList(),
     val setupDone: Boolean = false,
+    /**
+     * The day (an epoch day) an Organiser marked the move done, or null while it is not. A few days after it,
+     * Helpers' phones let go of their copies once an Organiser's or a Decider's phone has all their work.
+     */
+    val doneDay: Long? = null,
     val updatedAt: Long = 0,
     /** Who last changed these settings (everything here except [labelsPrinted]). */
     val changedBy: Stamp = Stamp(),
@@ -422,7 +427,19 @@ data class Reading(
  * [phone] is the phone that made it, for grants made on version 2.1 or later; blank for older ones (see [Roles]).
  */
 @Serializable
-data class Grant(val role: Role = Role.HELPER, val removed: Boolean = false, val at: Long = 0, val by: String = "", val phone: String = "")
+data class Grant(
+    val role: Role = Role.HELPER,
+    val removed: Boolean = false,
+    val at: Long = 0,
+    val by: String = "",
+    val phone: String = "",
+    /**
+     * "Done, thanks": an Organiser has thanked this Helper for their part, with their role left as it was. Their
+     * phone lets go of its copy at the end of its next full sync with an Organiser's or a Decider's phone, and an
+     * Organiser's phone then removes them (see [Store.thank]). A later grant of any kind takes it back.
+     */
+    val thanks: Boolean = false,
+)
 
 /**
  * One phone of a person: one installed copy of the app ([id] is its phone ID). Adding a phone
@@ -444,6 +461,9 @@ data class PhoneEntry(
     val retired: Stamp = Stamp(),
     /** A retired phone whose last work has been taken in. It is refused from then on. */
     val collected: Boolean = false,
+    /** Its public key for update files (X.509, Base64; see [PhoneKeys]), and when that key was made. Empty for a phone from before. */
+    val key: String = "",
+    val keyAt: Long = 0,
 )
 
 /**

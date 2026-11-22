@@ -1,10 +1,15 @@
 package app.housemove
 
 import android.app.Application
+import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import app.housemove.data.Moves
+import app.housemove.data.Shrink
 import app.housemove.data.Store
+import app.housemove.ui.backupFolder
+import app.housemove.ui.shrinkJpeg
+import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
  * The app's one place for its moves. [moves] lists, opens, creates, archives, removes and deletes
@@ -13,9 +18,23 @@ import app.housemove.data.Store
  * did, until the "Your moves" screens are built.
  */
 class App : Application() {
-    val moves: Moves by lazy { Moves(filesDir, noBackupFilesDir, deviceName = { deviceName() }) }
+    val moves: Moves by lazy {
+        Moves(filesDir, noBackupFilesDir, deviceName = { deviceName() }).also { m ->
+            // The daily small backup goes to the folder picked for it, while the app may still write there.
+            m.backupPlace = { backupFolder(this, m.phone.settings.value.backupFolder) }
+        }
+    }
 
     val store: Store get() = moves.currentOrNew()
+
+    /** An update file another app asked this one to open ("Open with HouseMove"), until the screens have opened it. */
+    val incomingUpdate = MutableStateFlow<Uri?>(null)
+
+    override fun onCreate() {
+        super.onCreate()
+        // Small copies of photos, for update files and the daily backup, are made the phone's own way.
+        Shrink.jpeg = ::shrinkJpeg
+    }
 
     /** The name the phone has in its own settings ("Priya's phone"), or its model when it has none. */
     private fun deviceName(): String {

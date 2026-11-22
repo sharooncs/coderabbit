@@ -38,6 +38,9 @@ fun AppRoot(moves: Moves, onNav: (NavHostController) -> Unit = {}) {
             val store = current
             if (store == null) FirstOpen(onNav)
             else key(store) { AppRoot(store, onNav = onNav) }
+            // An update file opened from another app, and what the phone says after letting go of a move by itself.
+            IncomingUpdates(moves)
+            Farewells(moves)
         }
     }
 }
@@ -117,6 +120,7 @@ fun AppRoot(store: Store, startRoute: String? = null, onNav: (NavHostController)
                     composable("search") { SearchScreen() }
                     composable("scan") { ScanScreen() }
                     composable("moves") { MovesScreen() }
+                    composable("askdecisions") { AskDecisionsScreen() }
                     firstOpenRoutes(inMove = true)
 
                     composable("items") { ItemsScreen() }

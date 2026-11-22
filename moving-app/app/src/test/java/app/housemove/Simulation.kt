@@ -491,6 +491,8 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
         round++
         time += 20 + rnd.nextInt(if (rnd.nextInt(6) == 0) 40_000 else 2_500)
         if (rnd.nextInt(10) == 0) outsiderTriesOn(phones[rnd.nextInt(phones.size)])
+        // Phones that cannot meet: one sends an update file through a messaging app, another opens it (SimUpdates).
+        if (rnd.nextInt(4) == 0) SimUpdates.pass(this, phones[rnd.nextInt(phones.size)], phones[rnd.nextInt(phones.size)], rnd)
         if (rnd.nextInt(3) == 0) elsewhere()
         val free = phones.shuffled(rnd).toMutableList()
         val jobs = ArrayList<Future<*>>()
@@ -767,6 +769,20 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
 
     private data class Quad<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
 
+    /**
+     * A phone let in as it is gets a Helper's grant in the name of the person of the phone that let it in, as the sync begins
+     * ([Store.letIn]), on a copy of that person the merge of the same sync may stamp over with the other phone's newer one.
+     * That copy's grants are noted as written, so the end does not take them for grants nobody made.
+     */
+    private fun letIn(p: Phone, before: AppData) {
+        val me = p.personId
+        for (person in p.data.people) {
+            val had = before.person(person.id)?.grants?.toSet() ?: emptySet()
+            if (person.grants.none { it !in had && it.by == me && it.role == Role.HELPER && !it.removed }) continue
+            synchronized(versions) { versions.getOrPut("person:" + person.id) { ArrayList() } += person }
+        }
+    }
+
     // ---- one sync ----------------------------------------------------------------------
 
     /** What each side had and got in a sync, for checking the merge itself. */
@@ -831,6 +847,8 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
         // Joining stamps nothing in an ordinary sync, but note any new stamp all the same.
         wrote(x.hostAtStart!!, h.data, onlyNewStamps = true)
         wrote(x.joinerAtStart!!, j.data, onlyNewStamps = true)
+        letIn(h, x.hostAtStart!!)
+        letIn(j, x.joinerAtStart!!)
         h.hold(); j.hold()
         handedOver(h, x.hostAtStart!!, j)
         handedOver(j, x.joinerAtStart!!, h)

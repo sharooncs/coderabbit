@@ -191,6 +191,9 @@ fun SyncScreen(code: String? = null) {
                 )
             }
 
+            // Phones that are not together: update files, and asking family who never visit.
+            WorkingApartSection()
+
             Section("Backup") {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Icon(Icons.Default.Backup, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
@@ -231,6 +234,8 @@ fun SyncScreen(code: String? = null) {
                         modifier = Modifier.fillMaxWidth(), icon = Icons.Default.Restore, primary = false, enabled = !busy,
                     )
                 }
+                // The daily small backup of a move with a single Organiser: where it goes.
+                DailyBackupRow()
             }
 
             Fold("How syncing works", Icons.Default.HelpOutline) {

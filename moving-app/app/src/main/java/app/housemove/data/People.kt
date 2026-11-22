@@ -138,7 +138,7 @@ const val OPEN_GRANT_CUTOFF = 1_803_859_200_000L
  * are demoted or removed.
  */
 class Roles(people: Collection<Person>) {
-    private class Step(val at: Long, val role: Role, val removed: Boolean, val by: String) {
+    private class Step(val at: Long, val role: Role, val removed: Boolean, val by: String, val thanks: Boolean = false) {
         val organiser get() = role == Role.ORGANISER && !removed
     }
 
@@ -153,7 +153,7 @@ class Roles(people: Collection<Person>) {
     init {
         val all = ArrayList<Pair<String, Grant>>()
         for (p in people) for (g in p.grants) all += p.id to g
-        all.sortWith(compareBy({ it.second.at }, { it.first }, { it.second.by }, { it.second.role.ordinal }, { it.second.removed }, { it.second.phone }))
+        all.sortWith(compareBy({ it.second.at }, { it.first }, { it.second.by }, { it.second.role.ordinal }, { it.second.removed }, { it.second.phone }, { it.second.thanks }))
         founder = all.firstOrNull { it.second.by.isEmpty() }?.first
         var organisers = 0
         for ((id, g) in all) {
@@ -162,7 +162,7 @@ class Roles(people: Collection<Person>) {
                 (mine == null || organisers == 0) && (id == founder || (g.phone.isEmpty() && g.at < OPEN_GRANT_CUTOFF))
             } else steps[g.by]?.lastOrNull()?.organiser == true
             if (!ok) continue
-            val step = Step(g.at, g.role, g.removed, g.by)
+            val step = Step(g.at, g.role, g.removed, g.by, g.thanks)
             val wasOrganiser = mine?.lastOrNull()?.organiser == true
             // The last Organiser stays one while there is anyone else in the move. Each phone refuses that by itself;
             // this is for two Organisers who step down (or remove themselves) on their own phones at the same time.
@@ -194,6 +194,9 @@ class Roles(people: Collection<Person>) {
 
     /** Has an Organiser other than the person themself ever given them a role? */
     fun vouchedFor(id: String): Boolean = steps[id]?.any { it.by.isNotEmpty() && it.by != id } == true
+
+    /** When an Organiser thanked them ("Done, thanks"), while that is the last word on them; null otherwise. */
+    fun thankedAt(id: String): Long? = steps[id]?.lastOrNull()?.takeIf { it.thanks && !it.removed }?.at
 }
 
 fun AppData.roles(): Roles = Roles(people)
@@ -208,7 +211,7 @@ internal fun settlePeople(people: List<Person>): List<Person> {
     }
 }
 
-private val GRANT_ORDER = compareBy<Grant>({ it.at }, { it.by }, { it.role.ordinal }, { it.removed })
+private val GRANT_ORDER = compareBy<Grant>({ it.at }, { it.by }, { it.role.ordinal }, { it.removed }, { it.thanks }, { it.phone })
 
 /**
  * Two phones' copies of the people: newest details win, and every grant and every phone either
@@ -240,8 +243,15 @@ internal fun mergePhones(a: List<PhoneEntry>, b: List<PhoneEntry>): List<PhoneEn
     for (x in a) out[x.id] = x
     for (y in b) out.merge(y.id, y) { x, z ->
         val retired = listOf(x.retired, z.retired).filter { it.by.isNotEmpty() }.minWithOrNull(compareBy({ it.at }, { it.by })) ?: Stamp()
-        val details = if (x.copy(retired = Stamp(), collected = false).toString() >= z.copy(retired = Stamp(), collected = false).toString()) x else z
-        details.copy(retired = retired, collected = x.collected || z.collected)
+        fun rest(e: PhoneEntry) = e.copy(retired = Stamp(), collected = false, key = "", keyAt = 0).toString()
+        val details = if (rest(x) >= rest(z)) x else z
+        // The newest key the phone made: a phone that had to make a new one (its old one was lost) is reached by that one.
+        val key = when {
+            x.key.isEmpty() || z.key.isEmpty() -> if (x.key.isEmpty()) z else x
+            x.keyAt != z.keyAt -> if (x.keyAt > z.keyAt) x else z
+            else -> if (x.key >= z.key) x else z
+        }
+        details.copy(retired = retired, collected = x.collected || z.collected, key = key.key, keyAt = key.keyAt)
     }
     return out.values.sortedWith(compareBy({ it.addedAt }, { it.id }))
 }

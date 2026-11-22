@@ -125,6 +125,8 @@ fun ReportsScreen() {
             )
             // Four in a row; two rows of two on a small phone, so no number is cut short.
             TileGrid(stats, columns = if (narrowScreen()) 2 else stats.size) { stat, m -> MdStat(stat.label, m, stat.picture) }
+            // An Organiser marks the move done; Helpers' copies then expire a few days later.
+            MoveDoneRow()
 
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
 

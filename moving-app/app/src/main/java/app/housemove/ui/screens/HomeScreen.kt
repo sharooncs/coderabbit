@@ -237,6 +237,8 @@ private fun HomeHero(data: AppData, device: DeviceInfo, packing: Boolean, modifi
         }
         // News about this phone's own role: "You are now a Decider", and what a promotion still waits for.
         RoleBanner(data, device, Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp))
+        // A phone taken out of the move: it says so, and offers to send its last work to an Organiser.
+        RemovedBanner(Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp))
 
         // Three numbers that say where the move stands.
         Row(
@@ -373,6 +375,8 @@ private fun HomeDetails(data: AppData, device: DeviceInfo, next: NextStep, inPag
             RefusedSection(data)
             PeopleRow(data, device)
         }
+        // The move's only Organiser: the daily backup's folder and age, and a second Organiser before move day.
+        SafetyNudges()
         NeedsAttention(data, device)
         if (data.shared()) SyncRow(device)
     }

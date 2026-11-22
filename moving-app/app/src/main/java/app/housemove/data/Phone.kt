@@ -15,6 +15,8 @@ data class PhoneSettings(
     val name: String = "",
     /** May book titles be fetched online from their barcode? Null until the person has been asked. */
     val bookLookup: Boolean? = null,
+    /** The folder the daily small backup is written to: a tree picked once through the system's folder picker (see DailyBackup). */
+    val backupFolder: String = "",
 )
 
 /**
@@ -23,7 +25,16 @@ data class PhoneSettings(
  * [deviceName] is the name the phone has in its own settings ("Priya's phone"), shown when it
  * joins a move. [settings] are shared by every move on the phone.
  */
-class Phone internal constructor(val id: String, private val deviceNameOf: () -> String, private val settingsFile: File?) {
+class Phone internal constructor(
+    val id: String,
+    private val deviceNameOf: () -> String,
+    private val settingsFile: File?,
+    /** Where this phone's key pair for update files is kept, beside the phone ID (see [PhoneKeys]). Null: made afresh, kept in memory only. */
+    private val keysFile: File? = null,
+) {
+    /** This phone's key pair for update files: made the first time it is asked for, and kept from then on. */
+    val keys: PhoneKeys by lazy { keysFile?.let { PhoneKeys.inFile(it) } ?: PhoneKeys.make() }
+
     val deviceName: String get() = try {
         deviceNameOf().trim()
     } catch (_: Exception) {
@@ -60,7 +71,7 @@ class Phone internal constructor(val id: String, private val deviceNameOf: () ->
         }
 
         /** A phone for a move kept in a folder on its own (as 2.0 kept it, and as tests use one): its ID is kept in that folder. */
-        fun standalone(dir: File): Phone = Phone(idIn(File(dir, "phone-id")), { "" }, null)
+        fun standalone(dir: File): Phone = Phone(idIn(File(dir, "phone-id")), { "" }, null, File(dir, "phone-key.json"))
     }
 }
 
@@ -123,6 +134,8 @@ internal data class Codes(
     val founder: Boolean = false,
     /** Every letter this phone has handed out in the move. */
     val lettersGiven: List<String> = emptyList(),
+    /** Every letter this phone has written codes with in the move, its present one and any before it: none is taken in another move. */
+    val lettersUsed: List<String> = emptyList(),
     /** How many blocks of label numbers it has handed out ([givenBlock]). */
     val blocksGiven: Int = 0,
 )

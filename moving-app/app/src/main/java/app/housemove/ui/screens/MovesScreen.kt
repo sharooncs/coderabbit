@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -49,6 +50,10 @@ private class MoveSummary(
 
     /** Helpers make no backups: what Helpers are not sent is not on their phone to save (the Store's rule). */
     val mayBackUp: Boolean = store?.whyNoBackup() == null
+    val backedUp: Long = device?.lastBackupAt ?: 0L
+
+    /** This phone has been taken out of the move: the card says so, and offers to send its last work. */
+    val removed: Boolean = store?.removedFromMove() ?: card.removed
 }
 
 /**
@@ -81,6 +86,8 @@ fun MovesScreen() {
     var deleting by remember { mutableStateOf<MoveSummary?>(null) }
     var working by remember { mutableStateOf(false) }
     var said by remember { mutableStateOf<SyncReport?>(null) }
+    // Send update and Open update from a card (ApartParts).
+    val updates = rememberUpdateActions(store)
 
     // Backing up a move from its card: the file is chosen, then written away from the screen.
     var backingUp by rememberSaveable { mutableStateOf<String?>(null) }
@@ -122,6 +129,7 @@ fun MovesScreen() {
         if (working) LinearProgressIndicator(Modifier.fillMaxWidth())
         ScrollColumn {
             said?.let { SyncReportCard(it) }
+            updates.report?.let { SyncReportCard(it) }
             val (earlier, now) = summaries.partition { it.earlier && !it.here }
             now.forEach { s -> MoveCardView(s, onOpen = { open(s) }, onMore = if (moves != null || s.here) ({ acting = s }) else null) }
             if (moves != null) {
@@ -153,6 +161,17 @@ fun MovesScreen() {
             text = listOfNotNull(s.role?.takeIf { s.shared }?.let { "You are ${it.withArticle()}." }, s.days).joinToString(" ").ifBlank { null },
             buttons = { DialogCancel({ acting = null }, "Close") },
         ) {
+            // Taken out of the move: its last work goes to an Organiser as an update, and then the move goes.
+            if (s.removed && s.store != null && moves != null) {
+                MenuButton(Icons.AutoMirrored.Filled.Send, "Send my work to an Organiser") {
+                    acting = null
+                    updates.send(s.store, organisersOnly = true) { moves.remove(s.card.moveId, evenIfUnshared = true) }
+                }
+            } else if (s.shared && s.store != null) {
+                // Not together: what this phone has, as an update through any messaging app.
+                MenuButton(Icons.AutoMirrored.Filled.Send, "Send update") { acting = null; updates.send(s.store) }
+                MenuButton(Icons.Default.FileOpen, "Open update") { acting = null; updates.open() }
+            }
             // Helpers make no backups: what Helpers are not sent is not on their phone to save.
             if (mayBackUp) MenuButton(Icons.Default.SaveAlt, "Back up") { acting = null; backUp(s) }
             if (moves != null) {
@@ -197,6 +216,13 @@ fun MovesScreen() {
                         m.open(s.card.moveId)
                     }
                 }
+                // An update reaches the Organisers and Deciders when the phones cannot meet; then the move can go.
+                if (s.store != null && s.store.updateRecipients().isNotEmpty()) {
+                    MenuButton(Icons.AutoMirrored.Filled.Send, "Send update first") {
+                        close()
+                        updates.send(s.store)
+                    }
+                }
                 if (s.mayBackUp) MenuButton(Icons.Default.SaveAlt, "Back up first") { close(); backUp(s) }
                 MenuButton(Icons.Default.PhonelinkErase, "Remove anyway", danger = true) {
                     close()
@@ -205,6 +231,8 @@ fun MovesScreen() {
             }
         }
     }
+
+    UpdateDialogs(updates)
 
     deleting?.let { s ->
         ConfirmDialog(
@@ -222,7 +250,7 @@ private fun unsharedText(u: Unshared): String {
         if (u.photos > 0) countOf(u.photos, "photo") else null,
     ).joinToString(" and ")
     val some = if (u.things.isEmpty()) "" else ", such as " + u.things.take(3).joinToString(", ")
-    return "This phone has $parts that no other phone has yet$some. Sync or back up first, so nothing is lost."
+    return "This phone has $parts that no other phone has yet$some. Sync, send an update or back up first, so nothing is lost."
 }
 
 /** A row of a list of things to do with a move: a picture and the words, the full width, 48dp at least. */
@@ -249,16 +277,22 @@ private fun MoveCardView(s: MoveSummary, onOpen: () -> Unit, onMore: (() -> Unit
                 Text(s.name, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (s.here) GlassChip("Open now", Modifier.align(Alignment.CenterVertically), tone = GlassTone.Mint)
-                    if (s.shared && s.role != null) RoleChip(s.role, Modifier.align(Alignment.CenterVertically))
                     if (s.needsYou) GlassChip("Needs you", Modifier.align(Alignment.CenterVertically), tone = GlassTone.Amber)
+                    if (s.removed) GlassChip("No longer in it", Modifier.align(Alignment.CenterVertically), tone = GlassTone.Amber)
                     if (!s.setUp) GlassChip("Not set up yet", Modifier.align(Alignment.CenterVertically), tone = GlassTone.Amber)
                 }
                 Meter(s.done, Modifier.fillMaxWidth().padding(top = 2.dp), height = 6.dp)
                 Text(
+                    // "Decider · 9 days to go · 40% done · synced 2 h ago"; a move of one person says when it was last backed up.
                     listOfNotNull(
+                        s.role?.label?.takeIf { s.shared },
                         s.days,
                         "${(s.done * 100).toInt()}% done",
-                        if (!s.shared) null else if (s.synced == 0L) "not synced yet" else "synced ${agoText(s.synced)}",
+                        when {
+                            s.shared -> if (s.synced == 0L) "not synced yet" else "synced ${agoText(s.synced)}"
+                            s.backedUp == 0L -> "not backed up yet"
+                            else -> "backed up ${agoText(s.backedUp)}"
+                        },
                     ).joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall, color = Night.TextDim,
                 )

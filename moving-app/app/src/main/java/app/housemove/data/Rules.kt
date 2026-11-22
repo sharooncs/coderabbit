@@ -71,8 +71,10 @@ internal fun Expense.costSum() = seal(title, amount, category, day, deleted)
 internal fun Expense.paidSum() = seal(planned)
 internal fun Task.planSum() = seal(title, offsetDays, dueDay, category, notes, assignedTo, deleted)
 internal fun Task.doneSum() = seal(done)
+// The day the move was marked done is only part of the check value once it is set, so every check value made before it stays good.
 internal fun MoveInfo.settingsSum() =
-    seal(name, moveDay, originName, destName, vanCapacityM3, useInches, currency, kind, off.joinToString(","), setupDone)
+    if (doneDay == null) seal(name, moveDay, originName, destName, vanCapacityM3, useInches, currency, kind, off.joinToString(","), setupDone)
+    else seal(name, moveDay, originName, destName, vanCapacityM3, useInches, currency, kind, off.joinToString(","), setupDone, "done", doneDay)
 
 internal fun Proposal.stateSum(): String {
     // What a suggestion to delete something proposes is part of it too; the extra parts are only there when set,

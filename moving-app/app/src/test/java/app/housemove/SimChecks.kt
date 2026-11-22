@@ -257,7 +257,7 @@ internal class SimChecks(private val sim: Simulation) {
         const val TWICE = "A label used on two things is flagged on every phone"
         const val DISK = "The data on disk loads again into the same state, in every move on the phone"
         val ALL = listOf(
-            Simulation.RUN, SAME, LOST, MERGE, RULES, HELPERS, COUNTED, NESTING, LETTERS, CODES, TWICE, PHOTOS, DISK, Simulation.OUTSIDERS,
+            Simulation.RUN, SAME, LOST, MERGE, RULES, HELPERS, COUNTED, NESTING, LETTERS, CODES, TWICE, PHOTOS, DISK, Simulation.OUTSIDERS, SimUpdates.UPDATES,
             Simulation.MOVES_APART, Simulation.CROSS, Simulation.LETTERS_APART, Simulation.SCANNED,
         )
     }
@@ -813,6 +813,13 @@ internal class SimChecks(private val sim: Simulation) {
                 if (!mayGo) bad("dropped", k)
                 continue
             }
+            // A phone this one let in as it is (its person counts in nobody's name here) gets a Helper's grant in this phone's
+            // person's name as the sync begins (Store.letIn): a change of this phone's own, made before the data went across.
+            if (r is Person && r.updatedAt > newest) {
+                val known = listOfNotNull(a as Person?, b as Person?).flatMap { it.grants }.toSet()
+                val extra = r.grants.filter { it !in known }
+                if (extra.isNotEmpty() && extra.all { it.by == p.personId && it.role == Role.HELPER && !it.removed && it.at == r.updatedAt }) continue
+            }
             if (r.updatedAt != newest) {
                 bad("left the wrong version (${r.updatedAt}, not $newest) of", k)
                 continue
@@ -850,7 +857,10 @@ internal class SimChecks(private val sim: Simulation) {
                 }
                 is Person -> {
                     val want = ((a as Person?)?.grants.orEmpty() + (b as Person?)?.grants.orEmpty()).toSet()
-                    if (r.grants.toSet() != want) bad("lost or invented a grant on", k)
+                    // The same Helper's grant from letting a phone in (Store.letIn) on a copy the merge then stamped over with the
+                    // other phone's newer one: that copy is not among those that went in, but the grant is this phone's own.
+                    val letIn = (r.grants.toSet() - want).all { it.by == p.personId && it.role == Role.HELPER && !it.removed && it.at <= r.updatedAt }
+                    if (!r.grants.containsAll(want) || !letIn) bad("lost or invented a grant on", k)
                     val now = j.book.now(r.id)
                     if (now == null || now.first != r.role || now.second != r.removed) bad("gave the wrong role to", k)
                 }
