@@ -51,9 +51,21 @@ enum class Disposition(val label: String) {
     UNDECIDED("Undecided"), MOVE("Move"), SELL("Sell"), DONATE("Donate"), BIN("Bin"), STORE("Store")
 }
 
-/** Where a box or item is in the journey. DONE = box unpacked / item placed. */
+/**
+ * Where a box or item is in the journey. DONE = box unpacked / item placed. STORED = unloaded at the
+ * storage unit: in storage, not delivered, until a trip brings it back to the new home.
+ */
 enum class Stage(val label: String) {
-    AT_ORIGIN("At old home"), LOADED("On the van"), DELIVERED("Delivered"), DONE("Done")
+    AT_ORIGIN("At old home"), LOADED("On the van"), STORED("In storage"), DELIVERED("Delivered"), DONE("Done")
+}
+
+/**
+ * The places a thing can be: the old home, the van (or someone's hands), the storage unit, the new home.
+ * The storage unit is one place with no rooms; a trip goes from one place to another ([Trip.from], [Trip.to]).
+ * Where a thing is follows from its [Stage] (see [AppData.placeOf]).
+ */
+enum class Place(val label: String) {
+    OLD_HOME("Old home"), VAN("On the van"), STORAGE("Storage unit"), NEW_HOME("New home")
 }
 
 enum class Priority(val label: String) {
@@ -174,11 +186,13 @@ data class Item(
     val listed: Boolean = false,
     /** Sell / donate / bin: it has actually gone. */
     val gone: Boolean = false,
+    /** Moved to [Hidden.price] in 2.1. Only in data saved by 2.0 (moved out as it loads) and in [AppData.filledIn]. */
     val price: Double? = null,
     val deadlineDay: Long? = null,
     val widthCm: Double? = null,
     val depthCm: Double? = null,
     val heightCm: Double? = null,
+    /** Moved to [Hidden.value] in 2.1, like [price]. */
     val value: Double? = null,
     val fragile: Boolean = false,
     val twoPerson: Boolean = false,
@@ -195,11 +209,16 @@ data class Item(
     val stage: Stage = Stage.AT_ORIGIN,
     val tripId: String? = null,
     val reassembled: Boolean = false,
+    /**
+     * Worked out from its [Damage] reports: true while any is open, with their notes. Saving it through the
+     * Store reports damage (true), or clears the open reports (false, Organisers only).
+     */
     val damaged: Boolean = false,
     val damageNote: String = "",
     val notes: String = "",
     /** Has a make, model and serial number worth recording. Null means "judge by its name". */
     val electronic: Boolean? = null,
+    /** [make], [model], [serial], [boughtDay] and [warrantyDay] moved to [Hidden] in 2.1, like [price]. */
     val make: String = "",
     val model: String = "",
     val serial: String = "",
@@ -216,14 +235,25 @@ data class Item(
     val prepSignedOut: Boolean = false,
     /** The container it is packed in, if any. While inside it travels with that container. */
     val boxId: String? = null,
-    /** Sell: what it actually went for. [price] is the asking price. */
+    /** Moved to [Hidden.soldFor] in 2.1, like [price]. */
     val soldFor: Double? = null,
-    /** Who decided [disposition], [price] and [deadlineDay]. */
+    /** Who decided [disposition] and [deadlineDay]. (The asking price has its own stamp, [Hidden.priceBy].) */
     val decisionBy: Stamp = Stamp(),
     /** Who chose [destRoomId]. */
     val roomBy: Stamp = Stamp(),
-    /** Who carried the decision out: [listed], [gone], [soldFor]. */
+    /** Who carried the decision out: [listed], [gone]. (What it sold for has its own stamp, [Hidden.saleBy].) */
     val outcomeBy: Stamp = Stamp(),
+    /** Who last moved it on, or back: [stage] and [tripId] together. */
+    val whereBy: Stamp = Stamp(),
+    /** Sell or donate: the person who is to hand it over to the buyer or the charity. */
+    val handoverTo: String? = null,
+    /** Sell: the buyer has paid already, so nothing is to be collected. Every Helper sees "Paid" or "Not paid". */
+    val paid: Boolean = false,
+    /** Who arranged the hand-over: [handoverTo] and [paid]. */
+    val handoverBy: Stamp = Stamp(),
+    /** Sell or donate: it has been handed over (collected by the buyer or the charity). Helpers may set it. */
+    val handedOver: Boolean = false,
+    val handedOverBy: Stamp = Stamp(),
     val createdAt: Long = 0,
     /** Who added it. Blank for items from before version 2.0, or added while the move had no Organiser. */
     override val createdBy: String = "",
@@ -256,6 +286,10 @@ data class Box(
     val label: String,
     val originRoomId: String? = null,
     val destRoomId: String? = null,
+    /**
+     * Worked out from its [ContentsLine]s, joined with commas. Saving a different text through the Store
+     * adds and removes lines, so two phones changing it apart never lose or double a line.
+     */
     val contents: String = "",
     val size: BoxSize = BoxSize.M,
     val fragile: Boolean = false,
@@ -267,6 +301,7 @@ data class Box(
     val travelsWithMe: Boolean = false,
     val hazardous: Boolean = false,
     val tripId: String? = null,
+    /** Worked out from its [Damage] reports, as for [Item.damaged]. */
     val damaged: Boolean = false,
     val damageNote: String = "",
     val packedBy: String = "",
@@ -279,6 +314,8 @@ data class Box(
     val name: String = "",
     /** The container this one is inside, if any. One level only: see [parentOf]. */
     val parentId: String? = null,
+    /** Who last moved it on, or back: [stage] and [tripId] together. */
+    val whereBy: Stamp = Stamp(),
     val createdAt: Long = 0,
     /** Who added it. Blank for containers from before version 2.0, or added while the move had no Organiser. */
     override val createdBy: String = "",
@@ -356,12 +393,14 @@ data class Supply(
     override val deleted: Boolean = false,
 ) : Rec
 
-/** One vehicle run between the homes. */
+/** One vehicle run: from the old home to the new one, to the storage unit, or back from it. */
 @Serializable
 data class Trip(
     override val id: String,
     val name: String,
     val sort: Int = 0,
+    val from: Place = Place.OLD_HOME,
+    val to: Place = Place.NEW_HOME,
     override val updatedAt: Long = 0,
     override val deleted: Boolean = false,
 ) : Rec
@@ -499,6 +538,107 @@ data class Activity(
     override val deleted: Boolean = false,
 ) : Rec
 
+/**
+ * What Helpers are not sent about an item: what it is worth, its make, model, serial number and dates,
+ * its asking price and what it sold for. One per item, with the item's id. Helpers never write it (a serial
+ * number from a Helper comes in as a photo or a question). Each part has its own stamp (see Rules.kt).
+ */
+@Serializable
+data class Hidden(
+    override val id: String,
+    val value: Double? = null,
+    val make: String = "",
+    val model: String = "",
+    val serial: String = "",
+    val boughtDay: Long? = null,
+    val warrantyDay: Long? = null,
+    /** Who last set [value], [make], [model], [serial], [boughtDay] and [warrantyDay]. */
+    val detailsBy: Stamp = Stamp(),
+    /** Sell: the asking price. Set with the decision. */
+    val price: Double? = null,
+    val priceBy: Stamp = Stamp(),
+    /** Sell: what it actually went for. Set when the sale is carried out. */
+    val soldFor: Double? = null,
+    val saleBy: Stamp = Stamp(),
+    override val updatedAt: Long = 0,
+    override val deleted: Boolean = false,
+) : Rec
+
+/**
+ * The amount to collect when a sold item is handed over, with the item's id. Sent to Organisers,
+ * Deciders and [to], the person handing it over; to no other Helper.
+ */
+@Serializable
+data class Collect(
+    override val id: String,
+    val to: String = "",
+    val amount: Double? = null,
+    /** Who arranged it: [to] and [amount]. */
+    val by: Stamp = Stamp(),
+    override val updatedAt: Long = 0,
+    override val deleted: Boolean = false,
+) : Rec
+
+/**
+ * One report of damage to a box or item. Each is cleared on its own, by an Organiser, so clearing one never
+ * erases a report made meanwhile on another phone.
+ */
+@Serializable
+data class Damage(
+    override val id: String,
+    /** The box or item it is about. */
+    val thingId: String = "",
+    val note: String = "",
+    /** Who reported it, and when. Blank and 0 for damage recorded before 2.1. */
+    val by: String = "",
+    val at: Long = 0,
+    val cleared: Boolean = false,
+    /** Who cleared it, or, until then, who reported it. */
+    val clearedBy: Stamp = Stamp(),
+    override val updatedAt: Long = 0,
+    override val deleted: Boolean = false,
+) : Rec
+
+/**
+ * One line of what is in a box, e.g. "Plates". The id comes from the box and the words, so the same line
+ * added on two phones is one line; a line removed stays removed (its tombstone is newer than any copy of it).
+ */
+@Serializable
+data class ContentsLine(
+    override val id: String,
+    val boxId: String = "",
+    val text: String = "",
+    /** Order in the box: when it was added. */
+    val sort: Long = 0,
+    val by: String = "",
+    /** For a line made from a box's 2.0 contents text: when that text was saved. 0 for lines added since. */
+    val batch: Long = 0,
+    override val updatedAt: Long = 0,
+    override val deleted: Boolean = false,
+) : Rec
+
+/**
+ * A change that arrived from a phone and was not accepted, kept for the Organisers: "Sam's phone tried to
+ * mark Sofa sold; Sam is a Helper." It says nothing of amounts. Its id comes from what was tried, by whom and
+ * when, so every phone that turns the change away makes the same one. An Organiser dismisses it (deleted).
+ */
+@Serializable
+data class RefusedChange(
+    override val id: String,
+    /** Who made the change, and when they made it. */
+    val by: String = "",
+    val at: Long = 0,
+    /** Which part: "decision", "room", "outcome", "price", "sale", "details", "cost", "paid", "task", "done", and so on. */
+    val what: String = "",
+    val targetId: String = "",
+    /** What they tried, for after "tried to", with {} where the thing's name goes: "mark {} sold". */
+    val tried: String = "",
+    /** Their role when they made it, or null when they were not in the move then. */
+    val role: Role? = null,
+    override val updatedAt: Long = 0,
+    override val deleted: Boolean = false,
+) : Rec
+
 /** The whole dataset. Lists include tombstones; use the `live*` views for display. */
 @OptIn(ExperimentalSerializationApi::class)
 @Serializable
@@ -518,7 +658,18 @@ data class AppData(
     val people: List<Person> = emptyList(),
     val proposals: List<Proposal> = emptyList(),
     val activity: List<Activity> = emptyList(),
+    val hidden: List<Hidden> = emptyList(),
+    val collect: List<Collect> = emptyList(),
+    val damage: List<Damage> = emptyList(),
+    val lines: List<ContentsLine> = emptyList(),
+    val refused: List<RefusedChange> = emptyList(),
 ) {
+    /** Look-ups over the records that belong to items and boxes, made once per dataset. Not saved or compared. */
+    internal val index: RecordIndex by lazy { RecordIndex(this) }
+
+    /** This dataset as screens show it, with hidden details on the items ([filledIn]), made once per dataset. Not saved or compared. */
+    internal val shown: AppData by lazy { fillHidden() }
+
     val liveRooms get() = rooms.filter { !it.deleted }.sortedWith(compareBy({ it.sort }, { it.name }))
     val liveItems get() = items.filter { !it.deleted }
     val liveBoxes get() = boxes.filter { !it.deleted }

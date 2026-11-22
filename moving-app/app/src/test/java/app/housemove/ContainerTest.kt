@@ -157,7 +157,8 @@ class ContainerTest {
         val suitcase = s.createBox("B1", oldLounge.id, ContainerKind.SUITCASE)
         val carton = s.createBox("L001", oldLounge.id)
         val camera = s.createItem("Camera", oldLounge.id)
-        s.put(s.item(camera.id).copy(disposition = Disposition.MOVE, label = "L050", serial = "CAM-77", widthCm = 100.0, depthCm = 100.0, heightCm = 100.0))
+        s.put(s.item(camera.id).copy(disposition = Disposition.MOVE, label = "L050", widthCm = 100.0, depthCm = 100.0, heightCm = 100.0))
+        assertTrue(s.setDetails(camera.id) { it.copy(serial = "CAM-77") }.ok)
         val lamp = s.createItem("Lamp", oldLounge.id)
         s.put(s.item(lamp.id).copy(disposition = Disposition.MOVE))
         val before = s.data.value

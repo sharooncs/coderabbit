@@ -416,7 +416,7 @@ class FlowsTest {
         val wardrobe = store.createItem("Oak wardrobe", oldBedroom.id)
         val tv = store.createItem("Samsung TV", oldBedroom.id)
         store.put(data.item(tv.id)!!.copy(disposition = Disposition.MOVE))
-        fun it() = data.item(tv.id)!!
+        fun it() = data.filled(data.item(tv.id)!!)
 
         // Furniture is not asked for a serial number unless you switch it on.
         go("item/${wardrobe.id}")

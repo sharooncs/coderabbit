@@ -10,9 +10,18 @@ package app.housemove.data
  * to set it at that time. A copy whose values no longer match its check value
  * was changed without a new stamp and is not accepted.
  *
- *   Item     decision  disposition, price, deadlineDay        Organiser
+ *   Item     decision  disposition, deadlineDay               Organiser
  *            room      destRoomId                             Organiser
- *            outcome   listed, gone, soldFor                  Organiser, or a Decider with an approved suggestion
+ *            outcome   listed, gone                           Organiser, or a Decider with an approved suggestion
+ *            where     stage, tripId                          anyone in the move (the newest move wins, back or on)
+ *            handover  handoverTo, paid                       as outcome
+ *            handed    handedOver                             anyone in the move, while it is to be sold or donated
+ *   Box      where     stage, tripId                          as for an item
+ *   Hidden   details   value, make, model, serial, dates      Organiser or Decider (never a Helper)
+ *            price     price                                  Organiser (it goes with the decision)
+ *            sale      soldFor                                as outcome
+ *   Collect  collect   to, amount                             as outcome
+ *   Damage   cleared   cleared                                Organiser; the reporter's own stamp for "not cleared"
  *   Expense  cost      title, amount, category, day, deleted  Organiser (also needed to create one)
  *            paid      planned                                Organiser, or a Decider with an approved suggestion
  *   Task     plan      everything except done                 Organiser (also needed to create one)
@@ -42,9 +51,22 @@ internal fun seal(vararg parts: Any?): String {
     return java.lang.Long.toString(h and 0xFFFFFFFFFFL, 36)
 }
 
-internal fun Item.decisionSum() = seal(disposition, price, deadlineDay)
+internal fun Item.decisionSum() = seal(disposition, deadlineDay)
 internal fun Item.roomSum() = seal(destRoomId)
-internal fun Item.outcomeSum() = seal(listed, gone, soldFor)
+internal fun Item.outcomeSum() = seal(listed, gone)
+internal fun Item.whereSum() = seal(stage, tripId)
+internal fun Box.whereSum() = seal(stage, tripId)
+internal fun Item.handoverSum() = seal(handoverTo, paid)
+internal fun Item.handedOverSum() = seal(handedOver)
+internal fun Hidden.detailsSum() = seal(value, make, model, serial, boughtDay, warrantyDay)
+internal fun Hidden.priceSum() = seal(price)
+internal fun Hidden.saleSum() = seal(soldFor)
+internal fun Collect.collectSum() = seal(to, amount)
+internal fun Damage.clearedSum() = seal(cleared)
+
+/** The check values 2.0 kept over an item's decision and outcome, when the price and the sale were part of them. */
+internal fun Item.decisionSum20() = seal(disposition, price, deadlineDay)
+internal fun Item.outcomeSum20() = seal(listed, gone, soldFor)
 internal fun Expense.costSum() = seal(title, amount, category, day, deleted)
 internal fun Expense.paidSum() = seal(planned)
 internal fun Task.planSum() = seal(title, offsetDays, dueDay, category, notes, assignedTo, deleted)
@@ -73,7 +95,7 @@ internal fun Proposal.stateSum(): String {
 internal fun Proposal.withdrawnSum() = seal("withdrawn", id, by)
 
 /** A part nobody has set since version 2.0: stamped as it stands, with no author. */
-private fun Stamp.orAsIs(sum: String): Stamp = if (this.sum.isEmpty() && by.isEmpty()) Stamp(sum = sum) else this
+internal fun Stamp.orAsIs(sum: String): Stamp = if (this.sum.isEmpty() && by.isEmpty()) Stamp(sum = sum) else this
 
 internal inline fun <T> List<T>.mapChanged(f: (T) -> T): List<T> {
     var out: ArrayList<T>? = null
@@ -87,9 +109,24 @@ internal inline fun <T> List<T>.mapChanged(f: (T) -> T): List<T> {
 }
 
 internal fun Item.stamped(): Item {
-    if (decisionBy.sum.isNotEmpty() && roomBy.sum.isNotEmpty() && outcomeBy.sum.isNotEmpty()) return this
-    return copy(decisionBy = decisionBy.orAsIs(decisionSum()), roomBy = roomBy.orAsIs(roomSum()), outcomeBy = outcomeBy.orAsIs(outcomeSum()))
+    if (decisionBy.sum.isNotEmpty() && roomBy.sum.isNotEmpty() && outcomeBy.sum.isNotEmpty() && whereBy.sum.isNotEmpty() &&
+        handoverBy.sum.isNotEmpty() && handedOverBy.sum.isNotEmpty()
+    ) return this
+    return copy(
+        decisionBy = decisionBy.orAsIs(decisionSum()), roomBy = roomBy.orAsIs(roomSum()), outcomeBy = outcomeBy.orAsIs(outcomeSum()),
+        whereBy = whereBy.orAsIs(whereSum()), handoverBy = handoverBy.orAsIs(handoverSum()), handedOverBy = handedOverBy.orAsIs(handedOverSum()),
+    )
 }
+
+internal fun Box.stamped(): Box = if (whereBy.sum.isNotEmpty()) this else copy(whereBy = whereBy.orAsIs(whereSum()))
+
+internal fun Hidden.stamped(): Hidden =
+    if (detailsBy.sum.isNotEmpty() && priceBy.sum.isNotEmpty() && saleBy.sum.isNotEmpty()) this
+    else copy(detailsBy = detailsBy.orAsIs(detailsSum()), priceBy = priceBy.orAsIs(priceSum()), saleBy = saleBy.orAsIs(saleSum()))
+
+internal fun Collect.stamped(): Collect = if (by.sum.isNotEmpty()) this else copy(by = by.orAsIs(collectSum()))
+
+internal fun Damage.stamped(): Damage = if (clearedBy.sum.isNotEmpty()) this else copy(clearedBy = clearedBy.orAsIs(clearedSum()))
 
 internal fun Expense.stamped(): Expense =
     if (costBy.sum.isNotEmpty() && paidBy.sum.isNotEmpty()) this else copy(costBy = costBy.orAsIs(costSum()), paidBy = paidBy.orAsIs(paidSum()))
@@ -105,19 +142,26 @@ internal fun MoveInfo.stamped(): MoveInfo = if (changedBy.sum.isNotEmpty()) this
  * stands, with no author, which is how "from before there were roles" is told
  * apart from "changed by someone who should not have".
  */
-fun migrate(d: AppData): AppData = d.copy(
-    version = maxOf(d.version, SCHEMA),
-    move = d.move.stamped(),
-    items = d.items.mapChanged { it.stamped().let { i -> if (i.deleted && i.deletedBy.sum.isEmpty()) i.copy(deletedBy = i.deletedBy.orAsIs(deletedSum())) else i } },
-    expenses = d.expenses.mapChanged { it.stamped() },
-    tasks = d.tasks.mapChanged { it.stamped() },
-    boxes = d.boxes.mapChanged { if (it.deleted && it.deletedBy.sum.isEmpty()) it.copy(deletedBy = it.deletedBy.orAsIs(deletedSum())) else it },
-    rooms = d.rooms.mapChanged { if (it.deleted && it.deletedBy.sum.isEmpty()) it.copy(deletedBy = it.deletedBy.orAsIs(deletedSum())) else it },
-    photos = d.photos.mapChanged { if (it.deleted && it.deletedBy.sum.isEmpty()) it.copy(deletedBy = it.deletedBy.orAsIs(deletedSum())) else it },
-    people = settlePeople(d.people),
-)
+fun migrate(d: AppData): AppData = upgradeRecordsTo21(d).let { u ->
+    withCaches(
+        u.copy(
+            version = maxOf(u.version, SCHEMA),
+            move = u.move.stamped(),
+            items = u.items.mapChanged { it.stamped().let { i -> if (i.deleted && i.deletedBy.sum.isEmpty()) i.copy(deletedBy = i.deletedBy.orAsIs(deletedSum())) else i } },
+            expenses = u.expenses.mapChanged { it.stamped() },
+            tasks = u.tasks.mapChanged { it.stamped() },
+            boxes = u.boxes.mapChanged { it.stamped().let { b -> if (b.deleted && b.deletedBy.sum.isEmpty()) b.copy(deletedBy = b.deletedBy.orAsIs(deletedSum())) else b } },
+            rooms = u.rooms.mapChanged { if (it.deleted && it.deletedBy.sum.isEmpty()) it.copy(deletedBy = it.deletedBy.orAsIs(deletedSum())) else it },
+            photos = u.photos.mapChanged { if (it.deleted && it.deletedBy.sum.isEmpty()) it.copy(deletedBy = it.deletedBy.orAsIs(deletedSum())) else it },
+            hidden = u.hidden.mapChanged { it.stamped() },
+            collect = u.collect.mapChanged { it.stamped() },
+            damage = u.damage.mapChanged { it.stamped() },
+            people = settlePeople(u.people),
+        ),
+    )
+}
 
-private fun Stamp.distrusted(): Stamp = if (sum.isEmpty()) copy(sum = "?") else this
+internal fun Stamp.distrusted(): Stamp = if (sum.isEmpty()) copy(sum = "?") else this
 
 /** A deletion that arrives without its stamp is marked, as for the other protected parts. */
 private fun <T : Owned> List<T>.distrustDeletions(f: (T, Stamp) -> T): List<T> =
@@ -131,15 +175,27 @@ private fun <T : Owned> List<T>.distrustDeletions(f: (T, Stamp) -> T): List<T> =
 internal fun distrustUnstamped(d: AppData): AppData = d.copy(
     move = d.move.let { m -> if (m.changedBy.sum.isEmpty()) m.copy(changedBy = m.changedBy.distrusted()) else m },
     items = d.items.mapChanged { i ->
-        if (i.decisionBy.sum.isNotEmpty() && i.roomBy.sum.isNotEmpty() && i.outcomeBy.sum.isNotEmpty()) i
-        else i.copy(decisionBy = i.decisionBy.distrusted(), roomBy = i.roomBy.distrusted(), outcomeBy = i.outcomeBy.distrusted())
+        if (i.decisionBy.sum.isNotEmpty() && i.roomBy.sum.isNotEmpty() && i.outcomeBy.sum.isNotEmpty() && i.whereBy.sum.isNotEmpty() &&
+            i.handoverBy.sum.isNotEmpty() && i.handedOverBy.sum.isNotEmpty()
+        ) i
+        else i.copy(
+            decisionBy = i.decisionBy.distrusted(), roomBy = i.roomBy.distrusted(), outcomeBy = i.outcomeBy.distrusted(), whereBy = i.whereBy.distrusted(),
+            handoverBy = i.handoverBy.distrusted(), handedOverBy = i.handedOverBy.distrusted(),
+        )
     },
+    boxes = d.boxes.mapChanged { b -> if (b.whereBy.sum.isNotEmpty()) b else b.copy(whereBy = b.whereBy.distrusted()) },
     expenses = d.expenses.mapChanged { e ->
         if (e.costBy.sum.isNotEmpty() && e.paidBy.sum.isNotEmpty()) e else e.copy(costBy = e.costBy.distrusted(), paidBy = e.paidBy.distrusted())
     },
     tasks = d.tasks.mapChanged { t ->
         if (t.planBy.sum.isNotEmpty() && t.doneBy.sum.isNotEmpty()) t else t.copy(planBy = t.planBy.distrusted(), doneBy = t.doneBy.distrusted())
     },
+    hidden = d.hidden.mapChanged { h ->
+        if (h.detailsBy.sum.isNotEmpty() && h.priceBy.sum.isNotEmpty() && h.saleBy.sum.isNotEmpty()) h
+        else h.copy(detailsBy = h.detailsBy.distrusted(), priceBy = h.priceBy.distrusted(), saleBy = h.saleBy.distrusted())
+    },
+    collect = d.collect.mapChanged { c -> if (c.by.sum.isNotEmpty()) c else c.copy(by = c.by.distrusted()) },
+    damage = d.damage.mapChanged { x -> if (x.clearedBy.sum.isNotEmpty()) x else x.copy(clearedBy = x.clearedBy.distrusted()) },
 ).let { x ->
     x.copy(
         items = x.items.distrustDeletions { i, s -> i.copy(deletedBy = s) },
@@ -155,7 +211,9 @@ internal fun distrustUnstamped(d: AppData): AppData = d.copy(
  * the new move. The same has to hold for what was set in nobody's name there (a phone in
  * the old "helper mode", or data from before 2.0): those parts are marked so that the merge
  * does not take them for decisions made when the new move had nobody to ask.
- * The items, containers, photos and everything else it holds go in as they are.
+ * The items, containers, photos and everything else it holds go in as they are: where they are,
+ * their make, model, serial number and value, their contents and their damage go in as data from
+ * before there was anybody to ask.
  */
 internal fun leavingOwnMove(d: AppData): AppData {
     fun Stamp.left(): Stamp = if (by.isEmpty()) copy(sum = "?") else this
@@ -165,12 +223,21 @@ internal fun leavingOwnMove(d: AppData): AppData {
     return d.copy(
         people = emptyList(),
         move = d.move.copy(changedBy = d.move.changedBy.left()),
-        items = d.items.map { it.copy(decisionBy = it.decisionBy.left(), roomBy = it.roomBy.left(), outcomeBy = it.outcomeBy.left(), deletedBy = if (it.deleted) asBefore else it.deletedBy) },
+        items = d.items.map {
+            it.copy(
+                decisionBy = it.decisionBy.left(), roomBy = it.roomBy.left(), outcomeBy = it.outcomeBy.left(), deletedBy = if (it.deleted) asBefore else it.deletedBy,
+                whereBy = Stamp(sum = it.whereSum()), handoverBy = it.handoverBy.left(), handedOverBy = it.handedOverBy.left(),
+            )
+        },
+        boxes = d.boxes.map { it.copy(whereBy = Stamp(sum = it.whereSum()), deletedBy = if (it.deleted) asBefore else it.deletedBy) },
         expenses = d.expenses.map { it.copy(costBy = it.costBy.left(), paidBy = it.paidBy.left()) },
         tasks = d.tasks.map { it.copy(planBy = it.planBy.left(), doneBy = it.doneBy.left()) },
-        boxes = d.boxes.mapChanged { if (it.deleted) it.copy(deletedBy = asBefore) else it },
         rooms = d.rooms.mapChanged { if (it.deleted) it.copy(deletedBy = asBefore) else it },
         photos = d.photos.mapChanged { if (it.deleted) it.copy(deletedBy = asBefore) else it },
+        hidden = d.hidden.map { it.copy(detailsBy = Stamp(sum = it.detailsSum()), priceBy = it.priceBy.left(), saleBy = it.saleBy.left()) },
+        collect = d.collect.map { it.copy(by = it.by.left()) },
+        damage = d.damage.map { it.copy(clearedBy = Stamp(sum = it.clearedSum())) },
+        refused = emptyList(),
     )
 }
 
@@ -254,8 +321,15 @@ fun AppData.proposalCounts(personId: String?): Map<ProposalState, Int> = proposa
 fun AppData.proposalsFor(targetId: String): List<Proposal> =
     liveProposals.filter { it.targetId == targetId }.sortedWith(compareByDescending<Proposal> { it.createdAt }.thenBy { it.id })
 
-/** What a suggestion asks for, in a few words, e.g. "Sell Sofa for 50". */
-fun AppData.describe(p: Proposal): String {
+/**
+ * What a suggestion asks for, in a few words, e.g. "Sell Sofa for 50". Without [amounts] it leaves out
+ * prices and costs ("Sell Sofa", "A cost"), as for the activity log, which Helpers are sent.
+ */
+fun AppData.describe(p: Proposal, amounts: Boolean = true): String {
+    if (!amounts) {
+        if (p.kind == ProposalKind.COST) return if (p.expense?.deleted == true) "Delete a cost" else "A cost"
+        if (p.kind == ProposalKind.ITEM_DECISION && p.price != null) return describe(p.copy(price = null))
+    }
     if (p.deletes) return "Delete " + nameOf(p.targetId) + "?"
     if (p.kind == ProposalKind.COST && p.expense?.deleted == true) return "Delete the cost " + (p.expense.title.ifBlank { p.expense.category.ifBlank { "Cost" } })
     if (p.kind == ProposalKind.TASK && p.task?.deleted == true) return "Delete the task " + p.task.title
@@ -354,13 +428,15 @@ internal fun mirrorContainers(d: AppData, stamp: Long? = null): AppData {
     val boxes = d.boxes.mapChanged { b ->
         if (b.deleted || b.parentId == null) return@mapChanged b
         val t = top(b)
-        if (t === b || (b.stage == t.stage && b.tripId == t.tripId)) b
-        else b.copy(stage = t.stage, tripId = t.tripId, updatedAt = stamp ?: b.updatedAt)
+        if (t === b || (b.stage == t.stage && b.tripId == t.tripId && b.whereBy == t.whereBy)) b
+        else b.copy(stage = t.stage, tripId = t.tripId, whereBy = t.whereBy, updatedAt = stamp ?: b.updatedAt)
     }
+    // What is inside takes the outer container's place and its stamp as well: the values are the same, so the check value holds.
     val items = d.items.mapChanged { i ->
         if (i.deleted || i.boxId == null) return@mapChanged i
         val t = live[i.boxId]?.let { top(it) } ?: return@mapChanged i
-        if (i.stage == t.stage && i.tripId == t.tripId) i else i.copy(stage = t.stage, tripId = t.tripId, updatedAt = stamp ?: i.updatedAt)
+        if (i.stage == t.stage && i.tripId == t.tripId && i.whereBy == t.whereBy) i
+        else i.copy(stage = t.stage, tripId = t.tripId, whereBy = t.whereBy, updatedAt = stamp ?: i.updatedAt)
     }
     return if (boxes === d.boxes && items === d.items) d else d.copy(boxes = boxes, items = items)
 }
@@ -380,7 +456,7 @@ fun AppData.latestActivity(n: Int = 20): List<Activity> = activity.filter { !it.
 fun AppData.line(a: Activity): String = (personName(a.by).ifBlank { "Someone" } + " " + a.text).trim()
 
 /** Everything that follows from the records themselves, applied after a merge or a batch of changes. */
-internal fun settle(d: AppData): AppData = mirrorContainers(closeProposals(d)).let { s ->
+internal fun settle(d: AppData): AppData = withCaches(mirrorContainers(closeProposals(d))).let { s ->
     val log = pruneActivity(s.activity)
     if (log === s.activity) s else s.copy(activity = log)
 }

@@ -41,8 +41,11 @@ internal class Actor(val data: AppData, val me: Person?) {
  */
 internal fun Actor.guard(old: Item?, x: Item, t: Long, events: Events? = null): Item {
     val was = old?.stamped()
+    // What Helpers are not sent lives in the item's Hidden record and is never saved on the item ([Store.setDetails]).
     var r = x.copy(
+        price = null, soldFor = null, value = null, make = "", model = "", serial = "", boughtDay = null, warrantyDay = null,
         decisionBy = was?.decisionBy ?: Stamp(), roomBy = was?.roomBy ?: Stamp(), outcomeBy = was?.outcomeBy ?: Stamp(),
+        whereBy = was?.whereBy ?: Stamp(), handoverBy = was?.handoverBy ?: Stamp(), handedOverBy = was?.handedOverBy ?: Stamp(),
         createdBy = old?.createdBy ?: signature, hands = old?.hands ?: emptyList(), deletedBy = old?.deletedBy ?: Stamp(),
     )
     // Whether it may be deleted at all is asked before this (Draft.saveItems leaves it alone when not).
@@ -53,11 +56,11 @@ internal fun Actor.guard(old: Item?, x: Item, t: Long, events: Events? = null): 
     }
 
     val wasDisposition = was?.disposition ?: Disposition.UNDECIDED
-    if (r.disposition != wasDisposition || r.price != was?.price || r.deadlineDay != was?.deadlineDay) {
+    if (r.disposition != wasDisposition || r.deadlineDay != was?.deadlineDay) {
         if (may(Action.DECIDE)) {
             r = r.copy(decisionBy = stamp(t, r.decisionSum()))
             if (r.disposition != wasDisposition) events?.add(decisionVerb(r.disposition), r.title(), r.id)
-        } else r = r.copy(disposition = wasDisposition, price = was?.price, deadlineDay = was?.deadlineDay)
+        } else r = r.copy(disposition = wasDisposition, deadlineDay = was?.deadlineDay)
     }
 
     if (r.destRoomId != was?.destRoomId) {
@@ -69,13 +72,23 @@ internal fun Actor.guard(old: Item?, x: Item, t: Long, events: Events? = null): 
         }
     }
 
-    if (r.listed != (was?.listed ?: false) || r.gone != (was?.gone ?: false) || r.soldFor != was?.soldFor) {
+    if (r.listed != (was?.listed ?: false) || r.gone != (was?.gone ?: false)) {
         if (data.mayCarryOut(me, r)) {
             r = r.copy(outcomeBy = stamp(t, r.outcomeSum()))
             if (r.gone && was?.gone != true) events?.add(goneVerb(r.disposition), r.title(), r.id)
-        } else r = r.copy(listed = was?.listed ?: false, gone = was?.gone ?: false, soldFor = was?.soldFor)
+        } else r = r.copy(listed = was?.listed ?: false, gone = was?.gone ?: false)
     }
-    if (r.damaged && was?.damaged != true) events?.add("reported damage to", r.title(), r.id)
+
+    if (r.handoverTo != was?.handoverTo || r.paid != (was?.paid ?: false)) {
+        r = if (data.mayArrangeHandover(me, r)) r.copy(handoverBy = stamp(t, r.handoverSum()))
+        else r.copy(handoverTo = was?.handoverTo, paid = was?.paid ?: false)
+    }
+    if (r.handedOver != (was?.handedOver ?: false)) {
+        if (data.mayHandOver(me, r)) {
+            r = r.copy(handedOverBy = stamp(t, r.handedOverSum()))
+            if (r.handedOver) events?.add("handed over", r.title(), r.id)
+        } else r = r.copy(handedOver = was?.handedOver ?: false)
+    }
     return r.stamped()
 }
 
@@ -222,18 +235,27 @@ internal class Events {
 internal class Draft(var d: AppData, val actor: Actor, val t: Long) {
     val events = Events()
 
+    /**
+     * The stage something saved as [stage] on [tripId] really has: unloaded from a trip to the storage unit,
+     * it is in storage rather than delivered.
+     */
+    private fun arriving(stage: Stage, tripId: String?): Stage = if (stage == Stage.DELIVERED) d.arrivalStage(tripId) else stage
+
     /** Save new versions of items. Stage changes asked of an item inside a container go to the container. */
     fun saveItems(desired: List<Item>) {
         if (desired.isEmpty()) return
         val wanted = desired.associateBy { it.id }
         val known = HashSet<String>()
         val moves = LinkedHashMap<String, Pair<Stage, String?>>()
+        val damaged = ArrayList<Pair<Item?, Item>>()
         fun one(old: Item?, x: Item): Item {
             if (actor.refusesDeleting(old, x)) return old!!
             var r = actor.guard(old, x, t, events).copy(updatedAt = t, createdAt = if (x.createdAt == 0L) old?.createdAt?.takeIf { it != 0L } ?: t else x.createdAt)
+            r = r.copy(stage = arriving(r.stage, r.tripId))
             val carrier = if (old != null && r.boxId == old.boxId) d.carrierOf(old) else null
             val moved = old != null && (r.stage != old.stage || r.tripId != old.tripId)
             fun handed(r: Item) = r.copy(hands = actor.handsAfter(r.hands, old == null || r.copy(updatedAt = old.updatedAt, hands = old.hands) != old.stamped()))
+            if (r.damaged != (old?.damaged ?: false) || (r.damaged && r.damageNote != old?.damageNote)) damaged += old to r
             if (carrier != null && moved) {
                 if (r.stage == Stage.DONE) r = r.copy(boxId = null) // taken out and put in its place
                 else {
@@ -241,13 +263,20 @@ internal class Draft(var d: AppData, val actor: Actor, val t: Long) {
                     return handed(r.copy(stage = old!!.stage, tripId = old.tripId))
                 }
             }
-            if (old != null && r.stage.ordinal > old.stage.ordinal) events.add(stageVerb(r.stage, r.carriedByHand()), r.title(), r.id)
+            // Where it is has a stamp of its own: whoever moved it last, on or back, says where it is.
+            if (old == null || r.stage != old.stage || r.tripId != old.tripId) r = r.copy(whereBy = actor.stamp(t, r.whereSum()))
+            if (old != null) stageChangeVerb(old.stage, r.stage, r.carriedByHand())?.let { events.add(it, r.title(), r.id) }
             if (r.deleted && old != null && !old.deleted) events.add("deleted", r.title(), r.id)
             return handed(r)
         }
         val items = d.items.map { old -> wanted[old.id]?.let { known += old.id; one(old, it) } ?: old } +
             desired.filter { it.id !in known }.distinctBy { it.id }.map { one(null, it) }
         d = d.copy(items = items)
+        for ((old, r) in damaged) {
+            if (damageFromFields(r.id, old?.damaged ?: false, old?.damageNote.orEmpty(), r.damaged, r.damageNote) && r.damaged && old?.damaged != true) {
+                events.add("reported damage to", r.title(), r.id)
+            }
+        }
         if (moves.isNotEmpty()) saveBoxes(moves.mapNotNull { (id, m) -> d.box(id)?.copy(stage = m.first, tripId = m.second) })
     }
 
@@ -258,13 +287,16 @@ internal class Draft(var d: AppData, val actor: Actor, val t: Long) {
         val known = HashSet<String>()
         val moves = LinkedHashMap<String, Pair<Stage, String?>>()
         val deleted = HashSet<String>()
+        val contents = ArrayList<Pair<String, String>>()
+        val damaged = ArrayList<Pair<Box?, Box>>()
         fun one(old: Box?, x: Box): Box {
             if (actor.refusesDeleting(old, x)) return old!!
             var r = x.copy(
                 updatedAt = t, createdAt = if (x.createdAt == 0L) old?.createdAt?.takeIf { it != 0L } ?: t else x.createdAt,
                 createdBy = old?.createdBy ?: actor.signature, hands = old?.hands ?: emptyList(), deletedBy = actor.deletionStamp(old, x.deleted, t),
+                whereBy = old?.stamped()?.whereBy ?: Stamp(),
             )
-            fun handed(r: Box) = r.copy(hands = actor.handsAfter(r.hands, old == null || r.copy(updatedAt = old.updatedAt, hands = old.hands) != old))
+            fun handed(r: Box) = r.copy(hands = actor.handsAfter(r.hands, old == null || r.copy(updatedAt = old.updatedAt, hands = old.hands) != old.stamped()))
             if (r.deleted) {
                 if (old != null && !old.deleted) {
                     deleted += r.id
@@ -272,6 +304,10 @@ internal class Draft(var d: AppData, val actor: Actor, val t: Long) {
                 }
                 return handed(r)
             }
+            // The contents and the damage are records of their own; what the fields now say is turned into them.
+            if (r.contents != (old?.contents ?: "")) contents += r.id to r.contents
+            if (r.damaged != (old?.damaged ?: false) || (r.damaged && r.damageNote != old?.damageNote)) damaged += old to r
+            r = r.copy(stage = arriving(r.stage, r.tripId))
             // One level of nesting only: a new parent that would break that is not taken.
             if (r.parentId != old?.parentId && r.parentId != null && d.whyNotNest(r.id, r.parentId!!) != null) r = r.copy(parentId = old?.parentId)
             val parent = if (old != null && r.parentId == old.parentId) d.parentOf(old) else null
@@ -282,14 +318,20 @@ internal class Draft(var d: AppData, val actor: Actor, val t: Long) {
                     moves[parent.id] = r.stage to r.tripId
                     r = r.copy(stage = old!!.stage, tripId = old.tripId)
                 }
-            } else if (old != null && r.stage.ordinal > old.stage.ordinal) events.add(stageVerb(r.stage, r.carriedByHand()), r.logName(), r.id)
+            } else if (old != null) stageChangeVerb(old.stage, r.stage, r.carriedByHand())?.let { events.add(it, r.logName(), r.id) }
+            if (old == null || r.stage != old.stage || r.tripId != old.tripId) r = r.copy(whereBy = actor.stamp(t, r.whereSum()))
             if (old != null && r.sealed != old.sealed) events.add(if (r.sealed) "sealed" else "opened", r.logName(), r.id)
-            if (r.damaged && old?.damaged != true) events.add("reported damage to", r.logName(), r.id)
             return handed(r)
         }
         val boxes = d.boxes.map { old -> wanted[old.id]?.let { known += old.id; one(old, it) } ?: old } +
             desired.filter { it.id !in known }.distinctBy { it.id }.map { one(null, it) }
         d = d.copy(boxes = boxes)
+        for ((id, text) in contents) setLines(id, text)
+        for ((old, r) in damaged) {
+            if (damageFromFields(r.id, old?.damaged ?: false, old?.damageNote.orEmpty(), r.damaged, r.damageNote) && r.damaged && old?.damaged != true) {
+                events.add("reported damage to", r.logName(), r.id)
+            }
+        }
         if (deleted.isNotEmpty()) {
             d = d.copy(
                 boxes = d.boxes.mapChanged { if (it.parentId in deleted && !it.deleted) it.copy(parentId = null, updatedAt = t) else it },
@@ -301,8 +343,20 @@ internal class Draft(var d: AppData, val actor: Actor, val t: Long) {
         if (moves.isNotEmpty()) saveBoxes(moves.mapNotNull { (id, m) -> d.box(id)?.copy(stage = m.first, tripId = m.second) })
     }
 
+    /** Put this person's hand on an item or a box, as a change to it does: they have worked on it. */
+    fun touch(id: String) {
+        if (actor.signature.isEmpty()) return
+        d.item(id)?.let { i ->
+            if (actor.signature !in i.hands) d = d.copy(items = d.items.map { if (it.id == id) it.copy(hands = actor.handsAfter(it.hands, true), updatedAt = t) else it })
+            return
+        }
+        d.box(id)?.let { b ->
+            if (actor.signature !in b.hands) d = d.copy(boxes = d.boxes.map { if (it.id == id) it.copy(hands = actor.handsAfter(it.hands, true), updatedAt = t) else it })
+        }
+    }
+
     fun finish(): AppData {
-        var out = closeProposals(mirrorContainers(d, t))
+        var out = withCaches(closeProposals(mirrorContainers(d, t)))
         val texts = events.texts()
         if (texts.isNotEmpty()) {
             out = out.copy(
@@ -311,11 +365,4 @@ internal class Draft(var d: AppData, val actor: Actor, val t: Long) {
         }
         return out
     }
-}
-
-private fun stageVerb(s: Stage, byHand: Boolean = false) = when (s) {
-    Stage.AT_ORIGIN -> "brought back"
-    Stage.LOADED -> if (byHand) "took along" else "loaded"
-    Stage.DELIVERED -> "delivered"
-    Stage.DONE -> "unpacked"
 }
