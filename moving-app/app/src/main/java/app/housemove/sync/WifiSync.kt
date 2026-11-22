@@ -674,7 +674,8 @@ object WifiSync {
                     val them = merged.person(peerId)?.takeIf { !it.removed }
                     // Someone this move has no role for is sent no more than a Helper would be.
                     val role = them?.role ?: Role.HELPER
-                    writeData(out, merged.sentTo(role, peerId))
+                    val given = merged.sentTo(role, peerId)
+                    writeData(out, given)
 
                     // Photos: the client sends first, then we send. Its list of files is sent once it has merged, so
                     // from here on both phones have each other's data and only photos can still go missing.
@@ -691,7 +692,7 @@ object WifiSync {
                     store.noteShared(upTo, everything = role != Role.HELPER)
                     // Data and photos have gone both ways: a Helper's phone that synced with an Organiser or a Decider lets go here
                     // of what Helpers are not sent.
-                    store.fullSyncDone(peerId)
+                    store.fullSyncDone(peerId, given)
                     store.flush()
                     onResult(Result(peer, letter, sent, received, peerPersonId = peerId, joinedAs = if (joining != null) store.data.value.person(peerId) else null, peerDevice = device))
                 }
@@ -928,7 +929,8 @@ object WifiSync {
                     val role = (if (claim != null) theirPerson?.role else before.roleOfPeer(theirPerson)) ?: Role.HELPER
                     // A phone joining its first move leaves behind the person it started as and what that person decided alone.
                     val mine = if (claimed != null) store.offerFor(claimed) else store.data.value
-                    writeData(out, mine.sentTo(role, theirPerson?.id))
+                    val given = mine.sentTo(role, theirPerson?.id)
+                    writeData(out, given)
                     val merged = readData(din)
                     if (claimed != null) {
                         when (val o = store.joinAs(claimed, merged, hostMove.takeIf { it.id.isNotEmpty() })) {
@@ -948,7 +950,7 @@ object WifiSync {
                     val sent = sendFiles(out, store, wanted(store, theirFiles, role))
                     val received = receiveFiles(din, store)
                     store.noteShared(upTo, everything = role != Role.HELPER)
-                    store.fullSyncDone(theirPerson?.id)
+                    store.fullSyncDone(theirPerson?.id, given)
                     store.flush()
                     return Result(peer, letter, sent, received, peerPersonId = peerId, joinedAs = joined, peerDevice = device)
                 }
