@@ -128,6 +128,10 @@ private const val APK = "application/vnd.android.package-archive"
 @Volatile
 internal var installedApk: (Context) -> File = { File(it.applicationInfo.sourceDir) }
 
+/** What hands a file to the share sheet. Tests see what would be sent. */
+@Volatile
+internal var shareSheet: (Context, File, String) -> Unit = { context, file, type -> Share.send(context, file, type) }
+
 /**
  * Send this phone's copy of the app through the share sheet, which reaches Quick Share (no
  * internet needed), for a phone that has an older HouseMove or none. The installed file is
@@ -144,7 +148,7 @@ fun shareTheApp(context: Context, scope: CoroutineScope) {
             }
         }
         val sent = file != null && try {
-            Share.send(context, file, APK)
+            shareSheet(context, file, APK)
             true
         } catch (_: Exception) {
             false

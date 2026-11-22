@@ -36,6 +36,7 @@ import app.housemove.ui.LocalSpeech
 import app.housemove.ui.LocalSyncAddresses
 import app.housemove.ui.Speech
 import app.housemove.ui.installedApk
+import app.housemove.ui.shareSheet
 import app.housemove.ui.line
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.After
@@ -104,6 +105,7 @@ class MovesFlowsTest {
         hosts.forEach { it.stop() }
         WifiSync.confirmMs = 90_000
         installedApk = { File(it.applicationInfo.sourceDir) }
+        shareSheet = { context, file, type -> app.housemove.pdf.Share.send(context, file, type) }
     }
 
     /** A phone: its own folders and the name it has in its own settings. */
@@ -661,6 +663,8 @@ class MovesFlowsTest {
         }
         val apk = File(tmp.root, "app.apk").apply { writeBytes(ByteArray(2048) { it.toByte() }) }
         installedApk = { apk }
+        val shared = LinkedBlockingQueue<Pair<File, String>>()
+        shareSheet = { _, file, type -> shared.add(file to type) }
         try {
             val invite = WifiSync.Invite(local, server.localPort, "TOKEN123", "p1", "Priya", Role.DECIDER, "mmaple", "Maple Road").encode()
             val phone = phone("Priya's phone")
@@ -672,13 +676,12 @@ class MovesFlowsTest {
             see("older HouseMove")
             shot("different-versions")
             tap("Share the app")
-            val app = shadowOf(RuntimeEnvironment.getApplication())
-            rule.waitUntil(10_000) { app.peekNextStartedActivity() != null }
-            val chooser = app.nextStartedActivity
-            assertEquals(Intent.ACTION_CHOOSER, chooser.action)
-            @Suppress("DEPRECATION")
-            val send = chooser.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)!!
-            assertEquals("application/vnd.android.package-archive", send.type)
+            // The installed app goes to the share sheet (and so to Quick Share) from the shared cache folder.
+            rule.waitUntil(10_000) { shared.isNotEmpty() }
+            val (file, type) = shared.poll()!!
+            assertEquals("application/vnd.android.package-archive", type)
+            assertEquals("out", file.parentFile!!.name)
+            assertArrayEquals(apk.readBytes(), file.readBytes())
             assertTrue(phone.cards.value.isEmpty())
         } finally {
             server.close()
