@@ -317,11 +317,8 @@ fun LabelsScreen() {
                     Icons.Default.Badge,
                     title = if (withPeople) "Helper card" else "Card for helpers",
                     sub = (if (withPeople) "Half a page for each Helper" else "Half a page for whoever helps on the day") +
-                        ": five steps, the door colours, and what to write on a box with no label. Two to a page.",
+                        ": five steps, the door colours, and “write ${HelperCard.exampleCode(data)} on two sides” for a box with no label. Two to a page.",
                 )
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    GlassChip("Write ${HelperCard.exampleCode(data)} on two sides", icon = Icons.Default.Edit)
-                }
                 PrintButtons(
                     enabled = busy == null,
                     busy = busy == "card",

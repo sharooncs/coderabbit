@@ -70,41 +70,41 @@ internal fun HandoverCard(item: Item, modifier: Modifier = Modifier) {
                     GlassChip(m, icon = if (item.paid) Icons.Default.CheckCircle else Icons.Default.Payments, tone = if (item.paid) GlassTone.Mint else GlassTone.Amber)
                 }
             }
-            if (mayArrange) {
-                if (!arranging) {
-                    RowButton("Arrange", onClick = { arranging = true }, forward = false, icon = Icons.Default.Edit)
-                } else {
-                    // Who: the Helpers first, then everyone else in the move; tapping the chosen one again leaves it to anyone.
-                    Text("Who hands it over", style = MaterialTheme.typography.labelLarge, color = Night.TextDim)
-                    val people = data.livePeople.filter { !it.removed }.sortedWith(compareBy({ it.role != Role.HELPER }, { it.shownName() }))
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        people.forEach { p ->
-                            GlassChip(
-                                if (p.id == me?.id) "Me" else p.shownName(), icon = p.role.icon(), selected = item.handoverTo == p.id,
-                                onClick = { store.arrangeHandover(item.id, to = if (item.handoverTo == p.id) null else p.id).okOrSay(context) },
-                            )
-                        }
+            if (mayArrange && arranging) {
+                // Who: the Helpers first, then everyone else in the move; tapping the chosen one again leaves it to anyone.
+                Text("Who hands it over", style = MaterialTheme.typography.labelLarge, color = Night.TextDim)
+                val people = data.livePeople.filter { !it.removed }.sortedWith(compareBy({ it.role != Role.HELPER }, { it.shownName() }))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    people.forEach { p ->
+                        GlassChip(
+                            if (p.id == me?.id) "Me" else p.shownName(), icon = p.role.icon(), selected = item.handoverTo == p.id,
+                            onClick = { store.arrangeHandover(item.id, to = if (item.handoverTo == p.id) null else p.id).okOrSay(context) },
+                        )
                     }
-                    if (selling) {
-                        Text("Has the buyer paid?", style = MaterialTheme.typography.labelLarge, color = Night.TextDim)
-                        ChipPicker(listOf(true, false), item.paid, label = { if (it) "Paid" else "Not paid" }, onPick = { v -> store.setPaid(item.id, v).okOrSay(context) })
-                        if (!item.paid) {
-                            AmountPicker(
-                                data.handoverOf(item.id)?.amount,
-                                { v -> store.arrangeHandover(item.id, paid = false, amount = v).okOrSay(context) },
-                                "To collect", currency, presets = soldPresets(data.hiddenOf(item.id)?.price ?: item.price),
-                            )
-                        }
-                    }
-                    RowButton("Done", onClick = { arranging = false }, forward = false, icon = Icons.Default.Check)
                 }
+                if (selling) {
+                    Text("Has the buyer paid?", style = MaterialTheme.typography.labelLarge, color = Night.TextDim)
+                    ChipPicker(listOf(true, false), item.paid, label = { if (it) "Paid" else "Not paid" }, onPick = { v -> store.setPaid(item.id, v).okOrSay(context) })
+                    if (!item.paid) {
+                        AmountPicker(
+                            data.handoverOf(item.id)?.amount,
+                            { v -> store.arrangeHandover(item.id, paid = false, amount = v).okOrSay(context) },
+                            "To collect", currency, presets = soldPresets(data.hiddenOf(item.id)?.price ?: item.price),
+                        )
+                    }
+                }
+                RowButton("Done", onClick = { arranging = false }, forward = false, icon = Icons.Default.Check)
             }
-            if (data.mayHandOver(me, item)) {
-                if (item.handedOver) {
-                    RowButton("Not handed over yet", onClick = { store.handOver(item.id, false).okOrSay(context) }, forward = false, icon = Icons.Default.Undo)
-                } else {
-                    RowButton("Handed over", onClick = { store.handOver(item.id).okOrSay(context) }, icon = Icons.Default.Handshake, look = RowButtonLook.Primary)
+            // The two things to do, side by side: arranging it (for whoever may) and saying it has gone.
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (data.mayHandOver(me, item)) {
+                    if (item.handedOver) {
+                        RowButton("Not handed over yet", onClick = { store.handOver(item.id, false).okOrSay(context) }, forward = false, icon = Icons.Default.Undo)
+                    } else {
+                        RowButton("Handed over", onClick = { store.handOver(item.id).okOrSay(context) }, icon = Icons.Default.Handshake, look = RowButtonLook.Primary)
+                    }
                 }
+                if (mayArrange && !arranging) RowButton("Arrange", onClick = { arranging = true }, forward = false, icon = Icons.Default.Edit)
             }
         }
     }
