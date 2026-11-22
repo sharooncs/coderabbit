@@ -355,7 +355,7 @@ internal class SimChecks(private val sim: Simulation) {
                 if (s !== p.store) for (f in s.photoDir.listFiles() ?: emptyArray<File>()) {
                     if (f.name.endsWith(".part")) broke(PHOTOS, "${p.tag} was left with the half-received file ${f.name} in ${s.data.value.move.name}")
                     val length = sim.born[f.name]
-                    if (length != null && f.length() != length) broke(PHOTOS, "${p.tag} has ${f.name} with ${f.length()} bytes instead of $length in ${s.data.value.move.name}")
+                    if (length != null && !wholeOrSmall(f, length)) broke(PHOTOS, "${p.tag} has ${f.name} with ${f.length()} bytes instead of $length in ${s.data.value.move.name}")
                 }
                 if (s !== p.store) letters(s.data.value, " in ${s.data.value.move.name} on ${p.tag}")
             }
@@ -686,17 +686,36 @@ internal class SimChecks(private val sim: Simulation) {
         }
     }
 
+    /** Is [f] a photo file of [length] bytes as it was taken, or the small copy of it an update carries ([SimUpdates.isSmallCopyOf])? */
+    private fun wholeOrSmall(f: File, length: Long) = f.length() == length || SimUpdates.isSmallCopyOf(f, length)
+
+    /**
+     * Every file is the photo as it was taken or the small copy an update brought, and every phone in the move holds each
+     * photo it should have whole once any phone in the move does. A sync passes a photo on only whole: a small copy stays on
+     * the phone that opened the update, until a phone that has the photo whole syncs with it and replaces it. So a photo
+     * whose whole file only ever reached phones that are no longer in the move rightly stays a small copy where an update
+     * put one, and nowhere at all on the other phones.
+     */
     private fun photos(c: List<Simulation.Phone>, full: List<Simulation.Phone>) {
         for (p in sim.phones) for (f in p.store.photoDir.listFiles() ?: emptyArray<File>()) {
             if (f.name.endsWith(".part")) broke(PHOTOS, "${p.tag} was left with the half-received file ${f.name}")
             val length = sim.born[f.name]
-            if (length != null && f.length() != length) broke(PHOTOS, "${p.tag} has ${f.name} with ${f.length()} bytes instead of $length")
+            if (length != null && !wholeOrSmall(f, length)) broke(PHOTOS, "${p.tag} has ${f.name} with ${f.length()} bytes instead of $length")
         }
         for (p in c) for (ph in p.data.livePhotos) {
             if (ph.kind in HIDDEN_KINDS && p !in full) continue
-            if (sim.born[ph.file] == null) continue
-            val there = File(p.store.photoDir, ph.file).isFile
-            if (!there && c.any { File(it.store.photoDir, ph.file).isFile }) broke(PHOTOS, "${p.tag} has the photo ${ph.id.take(8)} on record but not its file, which another phone has", ph.id)
+            val length = sim.born[ph.file] ?: continue
+            fun whole(q: Simulation.Phone) = File(q.store.photoDir, ph.file).let { it.isFile && it.length() == length }
+            if (whole(p)) continue
+            val holders = c.filter { whole(it) }
+            if (holders.isEmpty()) continue
+            val small = File(p.store.photoDir, ph.file).isFile
+            broke(
+                PHOTOS,
+                "${p.tag} has the photo ${ph.id.take(8)} on record but " + (if (small) "only the small copy an update brought" else "not its file") +
+                    ", which ${holders.joinToString { it.tag }} ${if (holders.size == 1) "has" else "have"} whole",
+                ph.id,
+            )
         }
     }
 

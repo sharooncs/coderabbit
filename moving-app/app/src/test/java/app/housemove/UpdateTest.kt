@@ -161,6 +161,32 @@ class UpdateTest {
     }
 
     @Test
+    fun aSyncPassesOnOnlyTheWholePhotoNeverTheSmallCopyAnUpdateBrought() {
+        val m = move()
+        Shrink.jpeg = { f, side, quality -> "small $side $quality ".toByteArray() + f.readBytes().take(10).toByteArray() }
+        val box = m.hal.createBox("H1", null)
+        val photo = m.hal.photo(box.id, PhotoKind.CONTENTS)
+        assertTrue(m.dee.open(updateFrom(m.hal)).ok)
+        val small = File(m.dee.photoDir, photo.name)
+        assertTrue(m.dee.isSmallCopy(photo.name))
+
+        // Without the Helper's phone, the photo goes on record to the Organiser's phone, but its small copy does not:
+        // that phone waits for the whole photo, whichever way round the two phones sync.
+        sync(m.dee, m.asha)
+        sync(m.asha, m.dee)
+        assertTrue(m.asha.data.value.livePhotos.any { it.file == photo.name })
+        assertFalse(File(m.asha.photoDir, photo.name).exists())
+        assertTrue(m.dee.isSmallCopy(photo.name))
+
+        // Once a phone in the move has the whole photo, it reaches the others whole, and takes the small copy's place.
+        sync(m.asha, m.hal)
+        sync(m.asha, m.dee)
+        assertArrayEquals(photo.readBytes(), File(m.asha.photoDir, photo.name).readBytes())
+        assertArrayEquals(photo.readBytes(), small.readBytes())
+        assertFalse(m.dee.isSmallCopy(photo.name))
+    }
+
+    @Test
     fun anUpdateIsMergedWithTheRulesOfASync() {
         val m = move()
         val sofa = m.asha.createItem("Sofa")

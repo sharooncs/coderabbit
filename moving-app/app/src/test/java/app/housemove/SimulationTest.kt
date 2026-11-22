@@ -28,11 +28,17 @@ class SimulationTest {
     companion object {
         @JvmStatic
         @BeforeClass
-        fun seededIds() = SimIds.install()
+        fun install() {
+            SimIds.install()
+            SimUpdates.install()
+        }
 
         @JvmStatic
         @AfterClass
-        fun randomIds() = SimIds.uninstall()
+        fun uninstall() {
+            SimIds.uninstall()
+            SimUpdates.uninstall()
+        }
     }
 
     private fun env(name: String): String? = System.getenv(name)?.takeIf { it.isNotBlank() }
