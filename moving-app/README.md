@@ -5,14 +5,36 @@ unpacked box: list what you own, decide what happens to it, pack, load,
 unload, unpack. It works offline. There is no account and no server; phones
 share the move by syncing directly with each other.
 
-This is version 2.0. What is new in it: a dark glass look, people with roles
-and suggestions that an Organiser approves, containers of several kinds, and
-screens rebuilt so that almost nothing needs typing.
+This is version 2.1. What is new in it:
+
+- **Several moves on one phone.** First start asks "Start a new move" or "Join
+  a move". The move's name at the top opens **Your moves**: a card per move with
+  your role, days to go, progress and when it last synced.
+- **One app, shaped by role.** An Organiser's Home shows approvals and the
+  phases, a Decider's what is waiting for a decision, a Helper's the next
+  physical job. Helpers are never sent prices, values, serial numbers, receipts
+  or costs.
+- **Safer joining.** The joining phone asks "Join Maple Road as Priya,
+  Decider?" before anything is sent, and the Organiser taps Right or Undo.
+  Helpers can share one Helper code.
+- **Working apart.** Send update makes a file, encrypted to every Organiser's
+  and Decider's phone, for any messaging app. Ask for decisions sends family who
+  never visit a picture list to answer.
+- **Safety nets.** A daily small backup to a folder you pick once, "Lost your
+  phone?" on first start, Remove from this phone that first lists what no other
+  phone has, and Helpers' copies that clear themselves after the move.
+- **Storage as a stop**, hand-overs marked Paid or Not paid, damage reports and
+  box contents that merge without losing anyone's progress.
+
+Version 2.0 brought the dark glass look, roles and approvals, containers, and
+screens that need almost no typing.
 
 ## Install
 
-Build the APK (below) or download it from the "HouseMove APK" workflow run in
-GitHub Actions, copy it to the phone and open it. Android will ask to allow
+Download `releases/HouseMove-2.1.apk` from this repository (or scan the
+install code that comes with each release), or build it (below). Copy it to the
+phone and open it. A phone that already has HouseMove can pass it on without
+internet: Who's helping, Share the app. Android will ask to allow
 installing from that source. Needs Android 8.0 or newer.
 
 Every build is signed with the key in `keystore/`, so a newer APK installs over
@@ -103,13 +125,19 @@ round button at the top right) and gives them one of three roles:
 | Carry out a decision (mark sold, gone, paid, attach a receipt) | yes | once approved | no |
 | Photograph, pack, scan on and off the van, unpack, report damage, search, ask for a decision | yes | yes | yes |
 
-- **Joining.** Adding someone shows their invite, a code on the Organiser's
-  phone. The new phone opens HouseMove, taps "Second phone for the same move?"
-  and scans it. An invite works once and for ten minutes.
+- **Joining.** Who's helping (right after setup, or under People) adds each
+  person and shows their invite. The new phone taps "Join a move" and scans it,
+  then answers "Join Maple Road as Priya, Decider?" before anything is sent. The
+  Organiser then sees "Joined: Priya, on Priya's phone" and taps Right or Undo.
+  Helpers can all use one Helper code. An invite works once and for ten
+  minutes, and joining always happens once in person.
 - **What each person sees.** Screens show only what their person may do. A
-  Helper's Home is six large tiles; a Helper's list of screens leaves out
-  triage, the room plan, costs and the list of things to sell, donate or bin,
-  and a Helper's phone is not even sent the costs and receipts. Nobody is
+  Helper's Home shows the next physical job (pack, load, unload, unpack),
+  their jobs for today and their hand-overs; a Helper's list of screens leaves
+  out triage, the room plan, costs and devices, and a Helper's phone is never
+  sent costs, receipts, prices, values, serial numbers, make and model. A
+  hand-over shows every Helper "Paid" or "Not paid"; only the Helper doing it
+  sees the amount. Nobody is
   flagged something only someone else can put right: a move with no date is
   pointed out to Organisers, overdue jobs to whoever may tick them off.
 - **A move always has an Organiser.** The last one cannot be demoted or
@@ -161,14 +189,24 @@ if the same record was changed on both, the most recent change by someone
 allowed to make it wins.
 
 - Set the move up on one phone only. Other phones join with an invite.
-- Each person has their own letter; handwritten box codes start with it.
+- A phone can hold several moves. Each has its own ID, checked before any data
+  moves, so a sync code, an update file or a backup never mixes two moves.
+- Away from the others, **Send update** (on the move's card or under Sync) makes
+  a file for any messaging app; only Organisers' and Deciders' phones can open
+  it, with **Open update** on the move's card.
+- A move with one Organiser saves a small daily backup (no ordinary photos) to a
+  folder picked once. "Lost your phone?" on first start restores it.
+- Each phone has its own letter; handwritten box codes start with it.
 - Keep every phone on the same version of the app. Phones on different versions
   refuse to sync, so newer details are never lost on an older phone.
 - Sync whenever the phones are together, and the evening before move day.
 - The sync connection is not encrypted, so use a network you trust.
 
 A backup file (zip of data and photos) can be saved or shared from the same
-screen by anyone. Restoring one is for an Organiser.
+screen by an Organiser or a Decider (Helpers cannot make backups). Restoring
+one makes the phone the person whose phone made it; a phone already in the move
+merges it and stays itself. Keep backup files to yourself: they let a phone
+become you.
 
 ## Build
 
@@ -239,7 +277,11 @@ section; rarely used things folded away.
 ## Code map
 
 - `data/` – the model, the JSON store, merge, backup, move logic (fit check,
-  volume, search). `People.kt`, `Rules.kt` and `Changes.kt` hold who may do what
+  volume, search). `People.kt`, `Rules.kt` and `Changes.kt` hold who may do what.
+  `Moves.kt` holds the moves on a phone, `Phone.kt` the phone's ID, letters and
+  label ranges; `Hidden.kt`, `Records.kt` and `Where.kt` the records Helpers are
+  not sent, damage and contents lines, and where things are; `Keys.kt`,
+  `Sealed.kt` and `Update.kt` the update files; `DailyBackup.kt` the daily backup
 - `sync/` – phone-to-phone sync over a local socket, and invites
 - `pdf/` – QR label sheets, door signs, inventory and damage reports
 - `ui/` – the kit: `Theme.kt` (colours, type), `Glass.kt` (panels, pills, orbs),
