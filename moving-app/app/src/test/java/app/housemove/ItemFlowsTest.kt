@@ -9,6 +9,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasClickAction
@@ -20,12 +24,15 @@ import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextReplacement
 import androidx.navigation.NavHostController
 import app.housemove.data.*
+import app.housemove.pdf.Csv
 import app.housemove.ui.AppRoot
 import app.housemove.ui.LocalSpeech
 import app.housemove.ui.Speech
+import app.housemove.ui.shownTo
 import app.housemove.ui.screens.LocalWalkCamera
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Assert.*
@@ -423,8 +430,11 @@ class ItemFlowsTest {
         // A Helper is not offered it anywhere either.
         show(hal, "disposal")
         rule.onAllNodes(hasContentDescription("Gone", substring = true)).assertCountEquals(0)
+        // For a Helper this is the list of hand-overs: whether it is paid, never a price.
+        see("Hand-overs")
+        see("Not paid")
         dontSee("£ 80") // Helpers are not sent prices
-        tap("No price yet") // and what stands in for it is not a button for them: the tap just opens the item
+        dontSee("Asking")
         cannotTap("£ 50")
         assertNotNull(hal.carryOut(sofa, gone = true).reason)
 
@@ -796,5 +806,135 @@ class ItemFlowsTest {
         shot("disposal-decider-approved")
         show(dee, "item/$sofa")
         shot("item-decider-approved")
+    }
+
+    // ---- 2.1: hand-overs, and what Helpers are not shown ----------------------------------------
+
+    /** A sync as 2.1 does it: each phone is sent what its person is sent. */
+    private fun share(a: Store, b: Store) {
+        Sample21.sync(a, b)
+        rule.waitForIdle()
+    }
+
+    /** Every piece of text on the screen, as a screen reader finds it. */
+    private fun texts(): List<String> =
+        rule.onAllNodes(SemanticsMatcher("has text") { it.config.contains(SemanticsProperties.Text) }, useUnmergedTree = true)
+            .fetchSemanticsNodes(atLeastOneRootRequired = false)
+            .flatMap { n -> n.config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text } }
+
+    @Test
+    fun aHandOverIsPaidOrNotForEveryHelperAndItsAmountOnlyForTheOneHandingItOver() {
+        team()
+        val sam = joined("Sam", Role.HELPER)
+        assertTrue(asha.decide(sofa, Disposition.SELL, 80.0).ok)
+        for (p in listOf(dee, hal, sam)) share(asha, p)
+
+        // The Organiser arranges it on the sofa's page: Hal hands it over, not paid yet, with £ 72 to collect.
+        show(asha, "item/$sofa")
+        tap("Arrange")
+        tap("Hal")
+        tap("Not paid")
+        // A chip in a row that scrolls sideways, further down than the screen shows: tapped as a person would after scrolling.
+        rule.onAllNodes(hasText("£ 72") and hasClickAction()).onFirst().performSemanticsAction(SemanticsActions.OnClick)
+        settle()
+        tap("Done")
+        assertEquals(hal.me!!.id, asha.item(sofa).handoverTo)
+        assertEquals(72.0, asha.data.value.handoverOf(sofa)!!.amount!!, 0.0)
+        noKeyboardNeeded()
+        for (p in listOf(dee, hal, sam)) share(asha, p)
+
+        // Every Helper sees whether it is paid; only Hal, who hands it over, sees how much.
+        show(hal, "item/$sofa")
+        see("You hand it over")
+        see("Not paid · collect £ 72")
+        show(hal, "home")
+        see("Your hand-overs")
+        see("Not paid · collect £ 72")
+        show(sam, "item/$sofa")
+        see("Hal hands it over")
+        see("Not paid")
+        dontSee("72")
+        dontSee("collect")
+        dontSee("Arrange") // arranging it is not a Helper's
+        assertNull(sam.data.value.handoverOf(sofa)!!.amount)
+        assertTrue(sam.data.value.collect.isEmpty())
+
+        // Paid: every Helper sees it, and nobody is to collect anything.
+        assertTrue(asha.setPaid(sofa, true).ok)
+        for (p in listOf(hal, sam)) share(asha, p)
+        for (p in listOf(hal, sam)) {
+            show(p, "item/$sofa")
+            see("Paid")
+            dontSee("Not paid")
+            dontSee("collect")
+        }
+
+        // Anyone in the move taps Handed over: here Sam, though it was given to Hal.
+        show(sam, "item/$sofa")
+        tap("Handed over")
+        assertTrue(sam.data.value.item(sofa)!!.handedOver)
+        share(asha, sam)
+        assertTrue(asha.data.value.item(sofa)!!.handedOver)
+        show(asha, "item/$sofa")
+        see("Handed over")
+        share(asha, hal)
+        show(hal, "home")
+        dontSee("Your hand-overs")
+    }
+
+    @Test
+    @Config(sdk = [34], qualifiers = "w411dp-h1800dp-mdpi")
+    fun aHelperNeverSeesAValueOrSerialNumberAnywhere() {
+        team()
+        val tv = asha.createItem("Television", oldLounge.id).id
+        asha.put(asha.data.value.item(tv)!!.copy(electronic = true, destRoomId = newLiving.id))
+        assertTrue(asha.decide(tv, Disposition.MOVE).ok)
+        assertTrue(asha.setDetails(tv) { it.copy(value = 1299.0, make = "Sony", model = "Bravia", serial = "SN-77821", warrantyDay = today() + 300) }.ok)
+        assertTrue(asha.setDetails(table) { it.copy(value = 650.0) }.ok)
+        assertTrue(asha.decide(sofa, Disposition.SELL, 85.0).ok)
+        assertTrue(asha.arrangeHandover(sofa, to = hal.me!!.id, paid = true).ok)
+        share(asha, hal)
+        share(asha, dee)
+        assertTrue(hal.data.value.hidden.isEmpty())
+        // A Helper's phone that still holds such details from before (2.0 sent them) shows none of them either.
+        hal.update { it.copy(hidden = asha.data.value.hidden) }
+        val secret = listOf("SN-77821", "Sony", "Bravia", "1299", "1,299", "650", "85", "Worth", "Asking", "Warranty")
+
+        fun clean(where: String) {
+            val leaked = texts().filter { t -> secret.any { t.contains(it) } }
+            assertTrue("$where shows ${leaked.joinToString()}", leaked.isEmpty())
+        }
+        // The Decider sees them, so the words looked for are the ones on screen.
+        show(dee, "item/$tv")
+        tap("Make, model and serial number")
+        see("SN-77821")
+        see("Sony Bravia")
+
+        for (route in listOf(
+            "home", "items", "item/$tv", "item/$sofa", "item/$table", "electronics", "disposal", "boxes", "reports", "budget",
+            "more", "load", "unload", "reconcile", "unpack", "triage", "plan", "tasks", "lists", "labels", "moveday", "overview",
+        )) {
+            show(hal, route)
+            clean(route)
+        }
+        // The folds of the television's page, opened.
+        show(hal, "item/$tv")
+        tap("Serial label and accessories")
+        see("kept by the Organisers")
+        tap("Size and handling")
+        clean("the television's page, opened")
+        // Find: neither the serial number nor the make finds it, and what is found says nothing of them.
+        show(hal, "search")
+        for (q in listOf("SN-77821", "Sony")) {
+            type("What are you looking for?", q)
+            see("Nothing matches")
+        }
+        type("What are you looking for?", "Television")
+        see("Television")
+        clean("Find, looking for Television")
+        // The inventory a Helper's phone writes holds none of them.
+        val shown = hal.data.value.shownTo(hal.device.value)
+        val csv = Csv.inventory(RuntimeEnvironment.getApplication(), shown).readText()
+        assertTrue(secret.take(4).none { csv.contains(it) })
     }
 }

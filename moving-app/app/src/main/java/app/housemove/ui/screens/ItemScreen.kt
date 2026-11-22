@@ -44,7 +44,7 @@ fun ItemScreen(id: String) {
     val nav = LocalNav.current
     val context = LocalContext.current
     val data = appData()
-    deviceInfo() // whose phone this is decides what is offered below
+    val device = deviceInfo() // whose phone this is decides what is offered below
     val item = data.item(id)
 
     if (item == null) {
@@ -58,6 +58,8 @@ fun ItemScreen(id: String) {
     val mayDecide = store.can(Action.DECIDE)
     val maySuggest = store.can(Action.SUGGEST)
     val mayCarryOut = data.mayCarryOut(me, item)
+    // Values, prices, make, model and serial numbers are for Organisers and Deciders: a Helper is shown none of them.
+    val seesHidden = data.seesHidden(device)
     val waitingDecision = data.waitingFor(id, ProposalKind.ITEM_DECISION, ProposalKind.QUESTION)
     val waitingRoom = data.waitingFor(id, ProposalKind.ITEM_ROOM)
 
@@ -192,9 +194,11 @@ fun ItemScreen(id: String) {
                             mayDecide && !item.gone -> AmountPicker(item.price, { v -> store.decide(id, Disposition.SELL, v).okOrSay(context) }, "Asking price", currency)
                         }
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            if (!mayDecide || item.gone) GlassChip(item.price?.let { "Asking " + money(currency, it) } ?: "No price yet", icon = Icons.Default.Sell)
+                            if (seesHidden && (!mayDecide || item.gone)) GlassChip(item.price?.let { "Asking " + money(currency, it) } ?: "No price yet", icon = Icons.Default.Sell)
                             if (!mayCarryOut && item.listed && !item.gone) GlassChip("Listed", icon = Icons.Default.Campaign)
-                            if (!mayCarryOut && item.gone) GlassChip("Sold" + (item.soldFor?.let { " for " + money(currency, it) } ?: ""), icon = Icons.Default.Check, tone = GlassTone.Mint)
+                            if (!mayCarryOut && item.gone) {
+                                GlassChip("Sold" + (item.soldFor?.takeIf { seesHidden }?.let { " for " + money(currency, it) } ?: ""), icon = Icons.Default.Check, tone = GlassTone.Mint)
+                            }
                             if (mayDecide && !item.gone) DateChip(item.deadlineDay, "Sell by") { d -> edit { it.copy(deadlineDay = d) } }
                         }
                     }
@@ -209,6 +213,8 @@ fun ItemScreen(id: String) {
                     Disposition.STORE -> Hint("Going into storage, so it is not counted in the $vehicle load.")
                     Disposition.MOVE, Disposition.UNDECIDED -> Unit
                 }
+                // Handing it over to the buyer or the charity: arranged by whoever may, "Handed over" for anyone.
+                if (item.disposition == Disposition.SELL || item.disposition == Disposition.DONATE) HandoverCard(item)
                 // Why a Decider finds no "sold" or "gone" here yet.
                 if (leaving && !item.gone && !mayCarryOut && maySuggest) {
                     Hint("You can mark it ${if (item.disposition == Disposition.SELL) "sold" else "gone"} once an Organiser approves a suggestion of yours for it.")
@@ -261,7 +267,9 @@ fun ItemScreen(id: String) {
 
             // ---- everything else, closed until wanted ----------------------------------
 
-            if (electronic) {
+            if (electronic && !seesHidden) {
+                HelperDeviceFold(item, ACCESSORY_CHIPS, onEdit = { f -> edit(f) })
+            } else if (electronic) {
                 Fold(
                     "Make, model and serial number", Pic.Device,
                     summary = listOf(
@@ -335,7 +343,7 @@ fun ItemScreen(id: String) {
                     "Travels with me".takeIf { item.travelsWithMe },
                     "First night".takeIf { item.firstNight },
                     "Hazardous".takeIf { item.hazardous },
-                    item.value?.let { "Worth " + money(currency, it) },
+                    item.value?.takeIf { seesHidden }?.let { "Worth " + money(currency, it) },
                 ).joinToString(" · ").ifBlank { "No size yet" },
             ) {
                 val unit = if (inches) "in" else "cm"
@@ -377,7 +385,7 @@ fun ItemScreen(id: String) {
                 ).filter { (moving && movesHouse) || it.on }
                 ToggleTiles(handling + journey, columns = 2)
                 if (item.hazardous) Hint("Gas bottles, paint and fuel cannot go in the $vehicle.")
-                AmountPicker(item.value, { v -> details { it.copy(value = v) } }, "What it is worth", currency, presets = WORTH_PRESETS)
+                if (seesHidden) AmountPicker(item.value, { v -> details { it.copy(value = v) } }, "What it is worth", currency, presets = WORTH_PRESETS)
             }
 
             // Where it is now and any damage. Until it leaves the old home this is rarely wanted, so it
@@ -387,7 +395,8 @@ fun ItemScreen(id: String) {
             val onTheMove: @Composable ColumnScope.() -> Unit = {
                 Text("Where it is now", style = MaterialTheme.typography.labelLarge, color = Night.TextDim)
                 IconChoice(
-                    options = Stage.entries.map { Choice(it, stageText(it, isBox = false, vehicle), it.icon()) },
+                    options = Stage.entries.filter { it != Stage.STORED || data.offersStorage() || item.stage == Stage.STORED }
+                        .map { Choice(it, stageText(it, isBox = false, vehicle), it.icon()) },
                     selected = item.stage,
                     onPick = { s -> edit { it.copy(stage = s) } },
                     columns = 2,
@@ -397,11 +406,7 @@ fun ItemScreen(id: String) {
                     CheckRow("Put back together", item.reassembled, { v -> edit { it.copy(reassembled = v) } })
                 }
                 HorizontalDivider(color = Night.Hairline)
-                SwitchRow("Damaged in the move", item.damaged, { v -> edit { it.copy(damaged = v) } })
-                if (item.damaged) {
-                    DamageText(item.damageNote, { v -> edit { it.copy(damageNote = v) } }, key = "$id-damage")
-                    PhotoStrip(item.id, PhotoKind.DAMAGE, label = "Damage photos")
-                }
+                DamageSection(item.id, item.title())
             }
 
             if (moving) {
@@ -742,4 +747,37 @@ private fun FitLine(item: Item, dest: Room?, fit: Fit, inches: Boolean, onTakeAp
             }
         }
     }
+}
+
+/**
+ * A device as a Helper sees it: make, model and serial numbers are kept by Organisers and Deciders (a Helper's
+ * phone is not sent them), so what a Helper can do is photograph the serial label, which goes to them at the
+ * next sync, and see to what travels with it.
+ */
+@Composable
+private fun HelperDeviceFold(item: Item, chips: List<String>, onEdit: ((Item) -> Item) -> Unit) {
+    val store = LocalStore.current
+    // The labels this phone photographed are on their way to an Organiser; the screens do not show them to a Helper.
+    val raw by store.data.collectAsState()
+    val taken = raw.photosOf(item.id, PhotoKind.SERIAL).size
+    var camera by remember { mutableStateOf(false) }
+    Fold(
+        "Serial label and accessories", Pic.Device,
+        summary = listOfNotNull(
+            if (taken > 0) "Serial label photographed" else null,
+            item.accessories.lineSequence().firstOrNull { it.isNotBlank() },
+        ).joinToString(" · ").ifBlank { "Nothing recorded yet" },
+        key = "device-helper",
+    ) {
+        Hint("Make, model and serial number are kept by the Organisers and Deciders. A photo of the serial label reaches them at the next sync.")
+        BigAction(Icons.Default.PhotoCamera, if (taken > 0) "Photograph it again" else "Photograph the serial label", onClick = { camera = true }, primary = taken == 0)
+        if (taken > 0) Text(countOf(taken, "photo") + " of the label taken on this phone", style = MaterialTheme.typography.bodySmall, color = Night.TextDim)
+        HorizontalDivider(color = Night.Hairline)
+        QuickText(
+            item.accessories, { v -> onEdit { it.copy(accessories = v) } }, label = "What travels with it", prompt = "What travels with it?",
+            key = "${item.id}-acc", chips = chips, empty = "Nothing listed",
+        )
+        CheckRow("Bagged and marked with this item's name", item.accessoriesPacked, { v -> onEdit { it.copy(accessoriesPacked = v) } })
+    }
+    if (camera) PhotoCamera("Serial label", onPhoto = { store.addPhoto(item.id, PhotoKind.SERIAL, it) }, onClose = { camera = false })
 }

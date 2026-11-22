@@ -28,6 +28,8 @@ import androidx.compose.material.icons.filled.Luggage
 import androidx.compose.material.icons.filled.PriorityHigh
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.ShoppingBag
+import androidx.compose.material.icons.filled.Undo
+import androidx.compose.material.icons.filled.Warehouse
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LeadingIconTab
 import androidx.compose.material3.MaterialTheme
@@ -118,6 +120,34 @@ internal fun mdEnsureTrip(store: Store): String {
     val trip = data.liveTrips.firstOrNull() ?: Trip(id = newId(), name = "Trip 1", sort = 1).also { store.put(it) }
     store.setDevice { it.copy(currentTripId = trip.id) }
     return trip.id
+}
+
+/**
+ * A trip to the storage unit, or one bringing things back from it ([fromStorage]): this phone's current
+ * trip when it is that kind, otherwise the latest of that kind, otherwise a new one. It becomes this
+ * phone's current trip, so Load and Unload start on it.
+ */
+internal fun mdStorageTrip(store: Store, fromStorage: Boolean): String? {
+    val data = store.data.value
+    fun fits(t: Trip) = if (fromStorage) t.from == Place.STORAGE else t.to == Place.STORAGE
+    val trip = data.trip(store.device.value.currentTripId)?.takeIf { fits(it) }
+        ?: data.liveTrips.lastOrNull { fits(it) }
+        ?: (if (fromStorage) store.addTrip(Place.STORAGE, Place.NEW_HOME) else store.addTrip(Place.OLD_HOME, Place.STORAGE)).valueOrNull()
+        ?: return null
+    store.setDevice { it.copy(currentTripId = trip.id) }
+    return trip.id
+}
+
+/** Does this move have a storage unit in it: a trip to or from it, something in it, or something decided Store? */
+internal fun AppData.offersStorage(): Boolean =
+    move.kind != MoveKind.STORAGE && move.kind != MoveKind.INVENTORY &&
+        (usesStorage() || liveItems.any { it.disposition == Disposition.STORE })
+
+/** A trip's name with where it goes, for a chip: "To storage", "Bring back from storage", "Trip 2". */
+internal fun Trip.chipIcon(): ImageVector? = when {
+    to == Place.STORAGE -> Icons.Default.Warehouse
+    from == Place.STORAGE -> Icons.Default.Undo
+    else -> null
 }
 
 // ---- what is inside what ----------------------------------------------------------------

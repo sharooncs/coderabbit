@@ -178,20 +178,20 @@ internal fun MyLastAnswer(itemId: String, data: AppData, modifier: Modifier = Mo
     if (last.state == ProposalState.WAITING) return
     // Turned down: the same note, in the same words, as on the lists, and kept here as the item's record.
     if (last.state == ProposalState.DECLINED) {
-        DeclinedNote(last, data, modifier, what = data.proposalText(last).takeIf { !last.isQuestion })
+        DeclinedNote(last, data, modifier, what = data.proposalWords(last).takeIf { !last.isQuestion })
         return
     }
     val by = data.personName(last.decidedBy)
     val (text, tone, icon) = when (last.state) {
         ProposalState.APPROVED -> Triple(
-            if (last.isQuestion) "Answered" + (if (by.isBlank()) "" else " by $by") else "Approved" + (if (by.isBlank()) "" else " by $by") + ": " + data.proposalText(last),
+            if (last.isQuestion) "Answered" + (if (by.isBlank()) "" else " by $by") else "Approved" + (if (by.isBlank()) "" else " by $by") + ": " + data.proposalWords(last),
             GlassTone.Mint, Icons.Default.CheckCircle,
         )
         ProposalState.DECLINED -> Triple(
             "Declined" + (if (by.isBlank()) "" else " by $by") + (if (last.reason.isBlank()) "" else ": " + last.reason),
             GlassTone.Red, Icons.Default.Block,
         )
-        else -> Triple(last.state.label + ": " + data.proposalText(last), GlassTone.Plain, Icons.Default.Info)
+        else -> Triple(last.state.label + ": " + data.proposalWords(last), GlassTone.Plain, Icons.Default.Info)
     }
     Row(
         modifier.fillMaxWidth().glass(RoundedCornerShape(16.dp), tone, shadow = 0.dp).padding(horizontal = 12.dp, vertical = 8.dp),

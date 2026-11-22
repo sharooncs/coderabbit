@@ -24,6 +24,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import androidx.navigation.NavHostController
@@ -758,4 +759,60 @@ class ContainerFlowsTest {
     @Test
     @Config(sdk = [34], qualifiers = "w360dp-h740dp-xhdpi")
     fun picturesOnA360dpPhone() = shots("c-360")
+
+    // ---- 2.1: contents lines ---------------------------------------------------------------------
+
+    @Test
+    fun aContentsLineTakenOutStaysOutAndHalfTypedWordsAreNeverSaved() {
+        start()
+        val box = store.createBox("L001", oldKitchen.id)
+        store.put(data.box(box.id)!!.copy(contents = "Plates, Mugs, Tea towels"))
+        // A second phone with the same box on it.
+        val p = store.addPerson("Hal", Role.HELPER).valueOrNull()!!
+        val hal = Store(tmp.newFolder())
+        assertTrue(hal.joinAs(p.id, store.data.value).ok)
+        store.mergeIn(hal.data.value)
+        fun lines(s: Store = store) = s.data.value.linesOf(box.id).map { it.text }
+        fun syncBothWays() = repeat(2) {
+            rule.runOnUiThread { hal.mergeIn(store.mergeIn(hal.data.value)) }
+            settle()
+        }
+
+        go("box/${box.id}")
+        tap("Mugs") // a line of what is inside, as a chip: tapping it takes it out
+        assertEquals(listOf("Plates", "Tea towels"), lines())
+        // Meanwhile Hal's phone, which still has Mugs, adds a line of its own.
+        assertTrue(hal.addLines(box.id, "Cutlery").ok)
+        syncBothWays()
+        // Mugs does not come back on either phone, Cutlery arrives on both, and nothing is there twice.
+        for (s in listOf(store, hal)) assertEquals(listOf("Plates", "Tea towels", "Cutlery"), lines(s))
+        assertEquals("Plates, Tea towels, Cutlery", data.box(box.id)!!.contents)
+
+        // Typed letter by letter, a word is saved once, when the field is left: no line is left behind for each half word.
+        tapDesc("Edit what's inside")
+        val field = rule.onAllNodes(hasSetTextAction() and hasText("What's inside")).onFirst()
+        for (t in listOf("G", "Gl", "Gla", "Glas", "Glasses")) {
+            field.performTextReplacement("Plates, Tea towels, Cutlery, $t")
+            settle()
+        }
+        assertEquals(3, lines().size) // nothing saved while typing
+        field.performImeAction()
+        settle()
+        assertEquals(listOf("Plates", "Tea towels", "Cutlery", "Glasses"), lines())
+        assertTrue(data.lines.filter { it.boxId == box.id }.none { it.text.length < 5 && it.text.startsWith("G") })
+        assertEquals(4, data.lines.count { it.boxId == box.id && !it.deleted })
+        assertEquals(1, data.lines.count { it.boxId == box.id && it.deleted }) // Mugs, and only Mugs
+
+        // Taken out by typing, and the field closed with the pencil: it stays out too, on both phones.
+        field.performTextReplacement("Plates, Cutlery, Glasses")
+        settle()
+        tapDesc("Edit what's inside")
+        assertEquals(listOf("Plates", "Cutlery", "Glasses"), lines())
+        syncBothWays()
+        assertEquals(listOf("Plates", "Cutlery", "Glasses"), lines(hal))
+        // A line said on the other phone meanwhile is kept.
+        assertTrue(hal.addLines(box.id, "Teapot").ok)
+        syncBothWays()
+        for (s in listOf(store, hal)) assertEquals(listOf("Plates", "Cutlery", "Glasses", "Teapot"), lines(s))
+    }
 }

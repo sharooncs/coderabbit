@@ -33,6 +33,19 @@ fun ElectronicsScreen() {
     val store = LocalStore.current
     val context = LocalContext.current
     val data = appData()
+    // Make, model and serial numbers are not sent to Helpers: the list is not theirs.
+    if (!data.seesHidden(deviceInfo())) {
+        Screen("Devices") {
+            ScrollColumn {
+                EmptyState(
+                    Pic.Device, "Kept by the Organisers",
+                    text = "Make, model and serial numbers are kept by the Organisers and Deciders. Photograph a serial label from the item's own page.",
+                    action = "Items", onAction = { nav.goTab("items") },
+                )
+            }
+        }
+        return
+    }
     // Those still to do come first.
     val devices = data.liveItems.filter { it.isElectronic() }
         .sortedWith(compareBy({ it.serial.isNotBlank() || data.photosOf(it.id, PhotoKind.SERIAL).isNotEmpty() }, { it.title().lowercase() }))

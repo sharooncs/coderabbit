@@ -35,7 +35,12 @@ fun DisposalScreen() {
     val nav = LocalNav.current
     val context = LocalContext.current
     val data = appData()
-    deviceInfo() // whose phone this is decides what is offered below
+    val device = deviceInfo() // whose phone this is decides what is offered below
+    // A Helper is shown no prices: for them this is the list of things to hand over.
+    if (!data.seesHidden(device)) {
+        HandoverList()
+        return
+    }
     val me = store.me
     val mayDecide = store.can(Action.DECIDE)
     val maySuggest = store.can(Action.SUGGEST)
@@ -177,9 +182,17 @@ private fun DisposalRow(
                             color = if (late) Night.RedPale else Night.TextDim,
                         )
                     }
+                    // Who hands it over, and how, once it is arranged or done.
+                    if (x.forHandover() && (x.handoverTo != null || x.handedOver || x.paid)) {
+                        Text(
+                            if (x.handedOver) "Handed over" else listOfNotNull(data.handoverWho(x.id, data.person(LocalStore.current.me?.id)), data.handoverMoney(x.id)).joinToString(" · "),
+                            style = MaterialTheme.typography.bodySmall, color = if (x.handedOver) Night.MintLight else Night.TextDim,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                     if (selling) {
                         val text = if (x.gone) (if (narrow) "" else "Sold for ") + (x.soldFor?.let { money(currency, it) } ?: "?")
-                        else x.price?.let { (if (narrow) "" else "Asking ") + money(currency, it) } ?: if (mayPrice) "Set a price" else "No price yet"
+                        else x.price?.let { (if (narrow) "" else "Asking ") + money(currency, it) } ?: if (mayPrice) (if (narrow) "Price" else "Set a price") else "No price yet"
                         val icon = if (x.gone) Icons.Default.Payments else Icons.Default.Sell
                         if (mayPrice) GlassChip(text, icon = icon, selected = pricing, onClick = { pricing = !pricing })
                         else GlassChip(text, Modifier.padding(top = 6.dp), icon = icon, tone = if (x.gone) GlassTone.Mint else GlassTone.Plain)
@@ -220,6 +233,36 @@ private fun DisposalRow(
         // What this person suggested for it was turned down: they are told why, once.
         if (declined != null) {
             DeclinedNote(declined, data, Modifier.padding(start = 10.dp, end = 10.dp, bottom = 10.dp), what = data.proposalText(declined), onSeen = onSeen)
+        }
+    }
+}
+
+/**
+ * The things decided Sell or Donate as a Helper sees them: each to be handed over, with "Paid" or "Not paid"
+ * (and the amount only for the one handing it over), and "Handed over" for anyone. No prices.
+ */
+@Composable
+private fun HandoverList() {
+    val nav = LocalNav.current
+    val data = appData()
+    val me = LocalStore.current.me
+    val all = data.liveItems.filter { it.forHandover() && !it.gone }
+        .sortedWith(compareBy({ it.handedOver }, { it.handoverTo != me?.id }, { it.title().lowercase() }))
+    Screen("Hand-overs") {
+        if (all.isEmpty()) {
+            ScrollColumn {
+                EmptyState(Icons.Default.Handshake, "Nothing to hand over", text = "Things the Organisers decide to sell or donate appear here, to be handed over.")
+            }
+        } else LazyColumn(
+            Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            item(key = "totals") {
+                val done = all.count { it.handedOver }
+                ProgressCard(Ratio(done, all.size), if (done == all.size) "All handed over" else "$done of ${all.size} handed over")
+            }
+            items(all, key = { it.id }) { x -> HandoverRow(x) }
         }
     }
 }

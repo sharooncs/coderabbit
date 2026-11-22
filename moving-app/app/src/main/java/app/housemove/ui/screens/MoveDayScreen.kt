@@ -2,6 +2,9 @@ package app.housemove.ui.screens
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material.icons.filled.Undo
+import androidx.compose.material.icons.filled.Warehouse
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -72,7 +75,9 @@ private fun mdStepRatio(route: String, data: AppData): Ratio? = when (route) {
  */
 private fun mdAllIn(data: AppData): Boolean {
     val all = data.movables()
-    return all.isNotEmpty() && all.all { mdArrived(it.stage) || it.carriedByHand() } && all.any { mdArrived(it.stage) }
+    // What is at the storage unit is accounted for too: in storage, neither missing nor delivered.
+    return all.isNotEmpty() && all.all { mdArrived(it.stage) || it.stage == Stage.STORED || it.carriedByHand() } &&
+        all.any { mdArrived(it.stage) || it.stage == Stage.STORED }
 }
 
 /**
@@ -158,6 +163,8 @@ fun MoveDayScreen() {
                     }
                 }
 
+                StorageTrips()
+
                 val vehicle = data.vehicle()
                 val tips = listOfNotNull(
                     Icons.Default.Sync to "Sync all phones the evening before, so everyone has the same list.",
@@ -181,5 +188,33 @@ private fun MdTip(icon: ImageVector, text: String) {
         Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(12.dp))
         Text(text, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+/**
+ * The storage unit on Move day, where the move uses one: how many things are in it, a trip to it for what is
+ * still at the old home, and "Bring back from storage" to the new home once anything is there.
+ */
+@Composable
+private fun StorageTrips() {
+    val data = appData()
+    val store = LocalStore.current
+    val nav = LocalNav.current
+    if (!data.offersStorage() || !data.uses(Part.MOVE_DAY)) return
+    val stored = data.inStorage()
+    val atOld = data.movables().count { it.stage == Stage.AT_ORIGIN && !it.carriedByHand() }
+    val going = data.liveItems.count { it.disposition == Disposition.STORE && data.carrierOf(it.toMovable()).stage == Stage.AT_ORIGIN }
+    Section(Place.STORAGE.label) {
+        Text(
+            listOfNotNull(
+                if (stored.isEmpty()) "Nothing in storage yet" else countOf(stored.size, "thing") + " in storage",
+                if (going > 0) "$going decided Store, still at the old home" else null,
+            ).joinToString(" · "),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (atOld > 0) RowButton("Trip to storage", onClick = { mdStorageTrip(store, fromStorage = false); nav.open("load") }, forward = false, icon = Icons.Default.Warehouse)
+            if (stored.isNotEmpty()) RowButton(BRING_BACK_TRIP_NAME, onClick = { mdStorageTrip(store, fromStorage = true); nav.open("load") }, icon = Icons.Default.Undo)
+        }
     }
 }

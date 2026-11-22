@@ -171,6 +171,7 @@ fun OverviewScreen() {
                 }
             }
 
+            StorageNote(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp))
             if (packing) {
                 val sealed = data.progress().sealed
                 Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).padding(start = 16.dp, end = 16.dp, top = 14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {

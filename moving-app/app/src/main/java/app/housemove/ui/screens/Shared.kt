@@ -691,14 +691,21 @@ internal fun reasonsToDecline(p: Proposal): List<String> = when {
     }
 }
 
-/** What a suggestion asks for, short enough for a callout on the thing itself: "Sell for £ 80", "To Kitchen", "Delete it". */
-internal fun AppData.proposalText(p: Proposal): String = when {
+/**
+ * What a suggestion asks for, short enough for a callout on the thing itself: "Sell for £ 80", "To Kitchen", "Delete it".
+ * Without [amounts] (for a Helper, who is shown no prices or costs) it says "Sell" and "A cost".
+ */
+internal fun AppData.proposalText(p: Proposal, amounts: Boolean = true): String = when {
     p.asksToDelete -> "Delete it"
-    p.kind == ProposalKind.ITEM_DECISION -> (p.disposition ?: Disposition.UNDECIDED).label + (p.price?.let { " for " + money(move.currency, it) } ?: "")
+    p.kind == ProposalKind.ITEM_DECISION -> (p.disposition ?: Disposition.UNDECIDED).label + (p.price?.takeIf { amounts }?.let { " for " + money(move.currency, it) } ?: "")
     p.kind == ProposalKind.ITEM_ROOM -> "To " + (room(p.roomId)?.name ?: "no room")
     p.kind == ProposalKind.QUESTION -> p.note.ifBlank { "What should happen to it?" }
-    else -> describe(p)
+    else -> describe(p, amounts)
 }
+
+/** [proposalText] as this phone's person may be shown it: a Helper is shown no amounts. */
+@Composable
+internal fun AppData.proposalWords(p: Proposal): String = proposalText(p, amounts = seesHidden(deviceInfo()))
 
 /**
  * A waiting suggestion as an Organiser sees it, on the thing it is about: who asks for
@@ -761,7 +768,7 @@ internal fun ProposalReview(p: Proposal, data: AppData, modifier: Modifier = Mod
 
 /** A waiting suggestion on its target, as whoever is holding the phone sees it: to settle for an Organiser, to wait on for the rest. */
 @Composable
-internal fun Suggestion(p: Proposal, data: AppData, modifier: Modifier = Modifier, what: String? = data.proposalText(p)) {
+internal fun Suggestion(p: Proposal, data: AppData, modifier: Modifier = Modifier, what: String? = data.proposalWords(p)) {
     if (allowed(Action.APPROVE)) ProposalReview(p, data, modifier, what) else WaitingTag(p, modifier, what = what)
 }
 

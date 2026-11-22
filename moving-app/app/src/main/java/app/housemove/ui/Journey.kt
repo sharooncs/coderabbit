@@ -65,6 +65,12 @@ private fun decidesOrSuggests(d: AppData, device: DeviceInfo) = d.can(device, Ac
 
 private fun AppData.overdue(t: Task) = !t.done && (dueDay(t) ?: Long.MAX_VALUE) < today()
 
+/** Things decided Sell or Donate that are still to be handed over to the buyer or the charity. */
+private fun AppData.toHandOver(): List<Item> = liveItems.filter { it.forHandover() && !it.handedOver && !it.gone }
+
+/** A Helper on a move with an Organiser: shown only what a Helper can act on. */
+private fun helperHere(d: AppData, device: DeviceInfo) = d.hasOrganiser() && d.roleOf(device) == app.housemove.data.Role.HELPER
+
 data class JourneyPhase(
     val name: String,
     val short: String,
@@ -152,6 +158,8 @@ val JOURNEY: List<JourneyPhase> = listOf(
             ),
             JourneyStep(
                 "Devices", Icons.Default.Tv, "electronics", part = Part.DEVICES,
+                // Make, model and serial numbers are not sent to Helpers: nothing here is theirs to act on.
+                who = { d, dev -> d.seesHidden(dev) },
                 status = { d, _ ->
                     val devices = d.liveItems.filter { it.isElectronic() }
                     val missing = devices.count { it.serial.isBlank() && d.photosOf(it.id, PhotoKind.SERIAL).isEmpty() }
@@ -181,11 +189,18 @@ val JOURNEY: List<JourneyPhase> = listOf(
             ),
             JourneyStep(
                 "Sell, donate, bin", Icons.Default.Sell, "disposal", part = Part.TRIAGE,
-                who = { d, dev -> decidesOrSuggests(d, dev) || d.can(dev, Action.CARRY_OUT) },
-                status = { d, _ ->
+                // A Helper may hand over what is sold or donated: for them it is the list of hand-overs, once there are any.
+                who = { d, dev -> decidesOrSuggests(d, dev) || d.can(dev, Action.CARRY_OUT) || (helperHere(d, dev) && d.toHandOver().isNotEmpty()) },
+                titleBy = { d, dev -> if (helperHere(d, dev)) "Hand-overs" else "Sell, donate, bin" },
+                status = { d, dev ->
                     val going = d.liveItems.filter { it.disposition in listOf(Disposition.SELL, Disposition.DONATE, Disposition.BIN) }
                     val left = going.count { !it.gone }
-                    if (going.isEmpty()) null else if (left > 0) "$left still to go" else "All gone"
+                    when {
+                        helperHere(d, dev) -> d.toHandOver().size.let { if (it == 0) "All handed over" else "$it to hand over" }
+                        going.isEmpty() -> null
+                        left > 0 -> "$left still to go"
+                        else -> "All gone"
+                    }
                 },
                 done = { d ->
                     val going = d.liveItems.filter { it.disposition in listOf(Disposition.SELL, Disposition.DONATE, Disposition.BIN) }
@@ -200,6 +215,8 @@ val JOURNEY: List<JourneyPhase> = listOf(
         listOf(
             JourneyStep(
                 "Timeline", Icons.Default.Checklist, "tasks", part = Part.TIMELINE,
+                // A Helper may only tick off a job given to them: the timeline is theirs once one is.
+                who = { d, dev -> !helperHere(d, dev) || d.liveTasks.any { d.mayTick(d.me(dev), it) } },
                 status = { d, _ ->
                     val overdue = d.liveTasks.count { d.overdue(it) }
                     val p = d.progress().tasks
