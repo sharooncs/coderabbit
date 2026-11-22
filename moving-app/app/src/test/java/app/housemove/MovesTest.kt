@@ -318,6 +318,11 @@ class MovesTest {
         val refused = storage.setLetter(storage.me!!.id, letter)
         assertFalse(refused.ok)
         assertTrue(refused.reason, refused.reason!!.contains("another of its moves"))
+        // Nor is one it wrote codes with in Maple Road before it took another there.
+        val written = maple.nextHandCode()
+        assertTrue(maple.setLetter(maple.me!!.id, "QX").ok)
+        assertEquals("QX", maple.device.value.letter)
+        assertFalse(storage.setLetter(storage.me!!.id, written.takeWhile { it.isLetter() }).ok)
 
         // Let in to two moves of other phones, each of which gives it its first block: it prints from neither twice.
         val elm = moves(device("Omar's phone")).create("Elm Street", yourName = "Omar")
@@ -347,6 +352,33 @@ class MovesTest {
         assertTrue(other.restore({ java.io.ByteArrayInputStream(zip) }).ok)
         assertEquals(2, other.cards.value.size)
         assertNotNull(other.store(maple.moveId)!!.data.value.findByLabel("M1"))
+    }
+
+    /**
+     * Also found by the simulation: in a move with no Organiser (a phone on its own in helper mode) a person seemed to be
+     * added and was gone once the move was read back; and a refused carry-out was worded from the decision, which two
+     * phones may hold differently.
+     */
+    @Test
+    fun nobodyIsAddedToAMoveWithNoOrganiserAndARefusedChangeReadsTheSameEverywhere() {
+        val d = device("Hana's phone")
+        val m = moves(d)
+        val own = m.create("Trying it out", yourName = "Hana")
+        own.setDevice { it.copy(helper = true) }
+        val refused = own.addPerson("Asha", Role.ORGANISER)
+        assertFalse(refused.ok)
+        assertEquals(Store.NOBODY_TO_ADD, refused.reason)
+        own.setDevice { it.copy(helper = false) }
+        val asha = own.addPerson("Asha", Role.ORGANISER).valueOrNull()!!
+        m.flush()
+        assertNotNull(moves(d).store(own.moveId)!!.data.value.person(asha.id))
+
+        val sold = Item(id = "sofa", name = "Sofa", gone = true, disposition = Disposition.SELL)
+        assertEquals(outcomeVerb(sold), outcomeVerb(sold.copy(disposition = Disposition.UNDECIDED)))
+        val r = RefusedChange("refused/x", by = asha.id, at = 5, what = "outcome", targetId = "sofa", tried = outcomeVerb(sold), role = Role.HELPER)
+        val data = own.data.value.copy(items = listOf(sold))
+        assertTrue(data.describe(r), data.describe(r).contains("tried to mark Sofa sold"))
+        assertTrue(data.copy(items = listOf(sold.copy(disposition = Disposition.DONATE))).describe(r).contains("tried to mark Sofa donated"))
     }
 
     // ---- Android's own backup ------------------------------------------------------------
