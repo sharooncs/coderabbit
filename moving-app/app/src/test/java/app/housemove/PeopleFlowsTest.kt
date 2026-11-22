@@ -353,7 +353,8 @@ class PeopleFlowsTest {
         assertEquals(Role.HELPER, store.myRole)
         rule.waitUntil(5_000) { asha.data.value.person(sam.id)!!.joinedAt > 0 } // the other phone knows too
         see("Maple Road")
-        see("Sam · Helper")
+        // The move's name at the top says the role.
+        rule.onAllNodes(hasContentDescription("Your moves") and hasText("Maple Road") and hasText("Helper")).assertCountEquals(1)
         dontSee("Show everything") // the role is an Organiser's to change, not a switch on this phone
 
         // The same invite again, from the sync screen: it asks first, then says it has been used.
@@ -594,7 +595,7 @@ class PeopleFlowsTest {
 
         // The Helper: the simple Home, their questions, the list of people.
         show(hal)
-        see("Hal · Helper")
+        rule.onAllNodes(hasContentDescription("Your moves") and hasText("Helper")).assertCountEquals(1) // the role, by the move's name
         see("Sync with the other phones")
         dontSee("Show everything")
         see("1 question waiting")
