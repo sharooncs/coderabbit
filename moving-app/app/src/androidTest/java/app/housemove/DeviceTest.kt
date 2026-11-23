@@ -120,6 +120,27 @@ class DeviceTest {
         click(rule.onAllNodes(hasContentDescription(description) and hasClickAction()).onFirst())
     }
 
+    /** Open a folded section by tapping its title, until the field [showing] is there (a tap can be lost while the keyboard goes). */
+    private fun openFold(title: String, showing: String) {
+        rule.runOnUiThread {
+            val activity = rule.activity
+            activity.currentFocus?.let { v ->
+                activity.getSystemService(android.view.inputmethod.InputMethodManager::class.java)?.hideSoftInputFromWindow(v.windowToken, 0)
+            }
+        }
+        rule.waitForIdle()
+        val field = hasSetTextAction() and hasText(showing)
+        repeat(3) {
+            if (rule.onAllNodes(field).fetchSemanticsNodes().isNotEmpty()) return
+            tap(title)
+            try {
+                rule.waitUntil(3_000) { rule.onAllNodes(field).fetchSemanticsNodes().isNotEmpty() }
+            } catch (_: Throwable) {
+                // not open yet: tap the title again
+            }
+        }
+    }
+
     /** Each step goes to the log, so a run cut short (the emulator gone) still shows how far it got. */
     private fun step(what: String) = Log.i("DeviceTest", "step: $what")
 
@@ -345,7 +366,9 @@ class DeviceTest {
         tap("Add a cost") // opens in the page; a cost is normally tapped in, and the keyboard sits behind these two
         tap("Other amount")
         type("Amount", "180")
-        tap("Details")
+        // With the keyboard still up, the tap on "Details" has been lost on Android 14; put it away first, and
+        // tap again if the section did not open.
+        openFold("Details", showing = "Name")
         type("Name", "Van hire")
         tap("Add cost", sub = true)
         assertEquals(180.0, data.liveExpenses.single().amount, 0.001)
