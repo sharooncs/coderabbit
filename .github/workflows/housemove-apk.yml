@@ -80,6 +80,11 @@ jobs:
           free -m || true
           # The file names have spaces in them ("emulator-5554 - 14"), so they are read one per line.
           find . -name '*.xml' -path '*androidTest-results*' -print0 | xargs -0 -r grep -h -A40 '<failure' | head -300 || true
+          # The last steps each test reached, so a run cut short shows where.
+          find . -name 'logcat-*.txt' -print0 | while IFS= read -r -d '' f; do
+            echo "== last steps: $(basename "$f")"
+            grep -h 'DeviceTest.*step:' "$f" | tail -4 || true
+          done
           find . -name 'logcat-*.txt' -print0 | while IFS= read -r -d '' f; do
             if grep -q 'FATAL EXCEPTION\|Process crashed\|ANR in' "$f"; then
               echo "== $f"

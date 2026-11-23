@@ -110,11 +110,18 @@ class DeviceTest {
         rule.waitForIdle()
     }
 
-    private fun tap(text: String, sub: Boolean = false) =
+    private fun tap(text: String, sub: Boolean = false) {
+        step("tap $text")
         click(rule.onAllNodes(hasText(text, substring = sub) and hasClickAction()).onFirst())
+    }
 
-    private fun tapDesc(description: String) =
+    private fun tapDesc(description: String) {
+        step("tap [$description]")
         click(rule.onAllNodes(hasContentDescription(description) and hasClickAction()).onFirst())
+    }
+
+    /** Each step goes to the log, so a run cut short (the emulator gone) still shows how far it got. */
+    private fun step(what: String) = Log.i("DeviceTest", "step: $what")
 
     /** Tap a row of a lazy list that may be below the visible part. */
     private fun tapInList(text: String) {
