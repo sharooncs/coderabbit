@@ -833,14 +833,29 @@ class Store internal constructor(
     /** Add a room with the next free colour and a unique short code. */
     fun createRoom(home: Home, name: String): Room {
         val existing = _data.value.roomsOf(home)
-        var code = suggestRoomCode(name)
-        var n = 2
-        while (existing.any { it.code == code }) code = suggestRoomCode(name) + n++
+        val code = freeRoomCode(name, existing)
         val usedColors = existing.map { it.color }.toSet()
         val color = ROOM_COLORS.indices.firstOrNull { it !in usedColors } ?: existing.size
         val room = Room(id = newId(), home = home, name = name.trim(), code = code, color = color, sort = (existing.maxOfOrNull { it.sort } ?: 0) + 1)
         put(room)
         return room
+    }
+
+    /**
+     * Rename a room, for instance "Bedroom 2" to "Ava's room". A name another room of the same home already has is
+     * refused. The short code on door signs and labels follows the new name while nothing is marked with the old
+     * one ([roomCodeFollowsName]); after that it stays, so codes already written on boxes still match their sign.
+     */
+    fun renameRoom(roomId: String, name: String): Outcome<Room> {
+        val n = name.trim().replace(Regex("\\s+"), " ")
+        val d = _data.value
+        val room = d.room(roomId) ?: return Outcome.Refused("That room is no longer there.")
+        if (n.isEmpty()) return Outcome.Refused("A room needs a name.")
+        if (n == room.name) return Outcome.Ok(room)
+        d.roomNameTaken(room, n)?.let { return Outcome.Refused(it) }
+        val others = d.roomsOf(room.home).filter { it.id != room.id }
+        put(room.copy(name = n, code = if (d.roomCodeFollowsName(room)) freeRoomCode(n, others) else room.code))
+        return _data.value.room(roomId)?.let { Outcome.Ok(it) } ?: Outcome.Refused("That room is no longer there.")
     }
 
     /**

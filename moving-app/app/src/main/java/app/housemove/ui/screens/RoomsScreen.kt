@@ -98,6 +98,54 @@ private fun AddRoom(home: Home) {
     Section("Add a room") { RoomAdder(home) }
 }
 
+/**
+ * A room's name: other usual names by a tap, a new one said or typed. Each change goes through [Store.renameRoom];
+ * a name another room of this home has is not saved, and says so under the field. For a new-home room it says
+ * whether the code on its door sign follows the name.
+ */
+@Composable
+internal fun RoomNameEditor(room: Room, modifier: Modifier = Modifier) {
+    val store = LocalStore.current
+    val context = LocalContext.current
+    val data = appData()
+    // Suggestions come from the name the room had when the editor opened, so they stay put while it changes.
+    val first = remember(room.id) { room.name }
+    var typed by remember(room.id) { mutableStateOf(room.name) }
+    // Bumped when a name is tapped or said, so the field shows it.
+    var picked by remember(room.id) { mutableIntStateOf(0) }
+    fun choose(name: String) {
+        typed = name
+        if (store.renameRoom(room.id, name).okOrSay(context)) picked++
+    }
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextInput(
+                room.name,
+                { v -> typed = v; if (v.isNotBlank()) store.renameRoom(room.id, v) },
+                "Name", Modifier.weight(1f), key = "${room.id}-name-$picked",
+            )
+            Spacer(Modifier.width(6.dp))
+            SpeakButton("What is the room called?", contentDescription = "Say a new name for ${room.name}") { said ->
+                choose(said.replaceFirstChar { it.uppercase() })
+            }
+        }
+        data.roomNameTaken(room, typed)?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+        val others = roomRenames(first).filter { it != room.name && data.roomNameTaken(room, it) == null }
+        if (others.isNotEmpty()) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                others.forEach { name -> GlassChip(name, onClick = { choose(name) }) }
+            }
+        }
+        if (room.home == Home.DEST) {
+            val code = room.code.ifBlank { suggestRoomCode(room.name) }
+            Hint(
+                if (data.roomCodeFollowsName(room)) "Its door sign and labels show $code; the code follows the name."
+                else "Its door sign and labels keep $code, so boxes already marked still match. Change it under Label code.",
+            )
+        }
+    }
+}
+
 /** Common widths of a doorway in cm, offered as one-tap choices; any other is typed behind "Other". */
 private val DOOR_WIDTHS = listOf(60.0, 70.0, 76.0, 80.0, 90.0)
 
@@ -122,7 +170,7 @@ private fun RoomDialog(room: Room, onClose: () -> Unit) {
     ) {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             DeleteRequests(room.id)
-            TextInput(room.name, { v -> store.put(room.copy(name = v)) }, "Name", key = room.id)
+            RoomNameEditor(room)
             if (room.home == Home.ORIGIN) {
                 Text("Most things from here go to", style = MaterialTheme.typography.labelLarge)
                 RoomPicker(Home.DEST, room.mapsTo, { id -> store.put(room.copy(mapsTo = id)) })

@@ -63,6 +63,55 @@ fun suggestRoomCode(name: String): String {
     return (letters + digits).ifBlank { "RM" }
 }
 
+/** A short code for a room called [name] that none of [others] uses: "BED", then "BED2", "BED3"… */
+fun freeRoomCode(name: String, others: List<Room>): String {
+    val base = suggestRoomCode(name)
+    var code = base
+    var n = 2
+    while (others.any { it.code == code }) code = base + n++
+    return code
+}
+
+/**
+ * Whether renaming [room] would give it a new short code: its code is still the one made from its name (not one
+ * typed in), and nothing is marked with it yet, no box from or bound for the room and no item with a label.
+ */
+fun AppData.roomCodeFollowsName(room: Room): Boolean {
+    val base = suggestRoomCode(room.name)
+    val made = room.code.isBlank() || (room.code.startsWith(base) && room.code.drop(base.length).all { it.isDigit() })
+    if (!made) return false
+    fun here(origin: String?, dest: String?) = origin == room.id || dest == room.id
+    return liveBoxes.none { here(it.originRoomId, it.destRoomId) } &&
+        liveItems.none { !it.label.isNullOrBlank() && here(it.originRoomId, it.destRoomId) }
+}
+
+/** Why [room] cannot be called [name], or null when it can: another room of the same home has that name. */
+fun AppData.roomNameTaken(room: Room, name: String): String? {
+    val n = name.trim()
+    if (roomsOf(room.home).none { it.id != room.id && it.name.trim().equals(n, ignoreCase = true) }) return null
+    val home = if (room.home == Home.ORIGIN) move.originName else move.destName
+    return "There is already a room called $n in the ${home.lowercase()}."
+}
+
+/** Other names people often give a room like [name], offered as one-tap choices when renaming it. */
+fun roomRenames(name: String): List<String> {
+    val n = name.lowercase()
+    return when {
+        "bed" in n -> listOf("Guest room", "Kids' room", "Nursery", "Spare room")
+        "bath" in n -> listOf("En suite", "Shower room", "Cloakroom", "WC")
+        "living" in n || "lounge" in n -> listOf("Lounge", "Sitting room", "Family room", "Snug")
+        "office" in n || "study" in n -> listOf("Study", "Den", "Library", "Playroom")
+        "kitchen" in n -> listOf("Kitchen-diner", "Pantry")
+        "dining" in n -> listOf("Breakfast room", "Conservatory")
+        "hall" in n -> listOf("Landing", "Porch", "Entrance")
+        "utility" in n -> listOf("Laundry", "Boot room", "Pantry")
+        "loft" in n || "attic" in n -> listOf("Attic", "Eaves")
+        "garage" in n -> listOf("Workshop", "Carport")
+        "garden" in n || "shed" in n -> listOf("Shed", "Greenhouse", "Summer house")
+        else -> listOf("Store room", "Playroom", "Study")
+    }
+}
+
 // ---- what is being moved ---------------------------------------------------
 
 /** Something that physically travels: a box, or an item marked Move. */

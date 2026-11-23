@@ -272,8 +272,19 @@ class MovesFlowsTest {
         see("Skip")
         tap("Kitchen")
         tap("Living room")
+        // A room's usual name can be changed right there: Bedroom 2 becomes Ava's room, said rather than typed.
+        tap("Bedroom 2")
+        tapDesc("Rename Bedroom 2")
+        see("Guest room") // usual other names, a tap each
+        said = "ava's room"
+        tapDesc("Say a new name for Bedroom 2")
+        tap("Done")
+        assertEquals(
+            listOf("Ava's room", "Kitchen", "Living room"),
+            asha.current.value!!.data.value.roomsOf(Home.ORIGIN).map { it.name }.sorted(),
+        )
         tap("Next")
-        tap("Same as old home (2)")
+        tap("Same as old home (3)")
         tap("Finish")
         val store = asha.current.value!!
         assertTrue(store.data.value.move.setupDone)

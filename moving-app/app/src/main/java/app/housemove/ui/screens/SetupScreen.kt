@@ -328,23 +328,34 @@ private fun RoomSetup(home: Home) {
     val data = appData()
     val me = myPerson()
     val rooms = data.roomsOf(home)
+    // The room being renamed: "Bedroom 2" can become "Ava's room" right here.
+    var renaming by rememberSaveable(home) { mutableStateOf<String?>(null) }
     Text(
         if (home == Home.ORIGIN) "Tap every room and storage space with things in it."
         else "Tap the rooms things will go into. Each gets a colour for its boxes and door sign.",
     )
     RoomAdder(home)
     if (rooms.isNotEmpty()) {
-        Text("${rooms.size} added", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("${rooms.size} added · tap a name to change it", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         rooms.forEach { r ->
-            GlassCard(Modifier.fillMaxWidth()) {
+            val editing = renaming == r.id
+            // The name is changed in the room's own card, not in a pop-up, so the list stays in view.
+            GlassCard(Modifier.fillMaxWidth(), onClick = if (editing) null else ({ renaming = r.id })) {
                 Row(Modifier.padding(start = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (home == Home.DEST) ColorDot(r.color) else Icon(Pic.Room, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(12.dp))
                     Text(r.name, modifier = Modifier.weight(1f))
                     if (home == Home.DEST) Hint(roomColor(r.color).name)
+                    if (!editing) GlassOrb(Icons.Default.Edit, "Rename ${r.name}", Modifier.padding(4.dp), size = 36.dp, onClick = { renaming = r.id })
                     // By the Store's rule, like every delete: hidden from whoever may not take it off.
                     if (data.canDelete(me, r)) GlassOrb(Icons.Default.Close, "Remove ${r.name}", Modifier.padding(4.dp), size = 36.dp, onClick = { store.tryDelete(r).okOrSay(context) })
                     else Spacer(Modifier.width(12.dp))
+                }
+                if (editing) {
+                    Column(Modifier.padding(start = 14.dp, end = 14.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        RoomNameEditor(r)
+                        PillButton("Done", onClick = { renaming = null }, icon = Icons.Default.Check)
+                    }
                 }
             }
         }
