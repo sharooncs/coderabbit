@@ -68,12 +68,16 @@ jobs:
           disable-animations: true
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back emulated -camera-front emulated
           working-directory: moving-app
-          script: ./gradlew :app:connectedDebugAndroidTest
+          # Less heap for Gradle here than in the build job, so the emulator on the same runner keeps its memory.
+          script: ./gradlew :app:connectedDebugAndroidTest -Dorg.gradle.jvmargs="-Xmx2g -XX:MaxMetaspaceSize=640m -Dfile.encoding=UTF-8"
       - name: Show why the device tests failed
         if: failure()
         working-directory: moving-app/app/build/outputs
         run: |
           # The test results and each test's logcat, printed here so they can be read from the log alone.
+          # Whether the system stopped a process for lack of memory (the emulator, when it vanishes mid-run).
+          sudo dmesg 2>/dev/null | grep -i -E 'out of memory|killed process|oom' | tail -20 || true
+          free -m || true
           # The file names have spaces in them ("emulator-5554 - 14"), so they are read one per line.
           find . -name '*.xml' -path '*androidTest-results*' -print0 | xargs -0 -r grep -h -A40 '<failure' | head -300 || true
           find . -name 'logcat-*.txt' -print0 | while IFS= read -r -d '' f; do
