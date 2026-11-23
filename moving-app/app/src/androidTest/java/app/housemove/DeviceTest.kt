@@ -174,8 +174,15 @@ class DeviceTest {
         }
     }
 
-    /** Save a screenshot where the build collects it; never fails the test. */
+    /**
+     * Save a screenshot where the build collects it; never fails the test. Only when asked for
+     * (`-Pandroid.testInstrumentationRunnerArguments.screenshots=on`): on the Android 14 emulator in CI, copying the
+     * screen through its software graphics has taken the whole emulator down, and the audit pictures come from the
+     * JVM tests anyway.
+     */
     private fun shot(name: String) {
+        if (InstrumentationRegistry.getArguments().getString("screenshots") != "on") return
+        step("screenshot $name")
         val dir = InstrumentationRegistry.getArguments().getString("additionalTestOutputDir") ?: return
         try {
             val roots = rule.onAllNodes(isRoot())
