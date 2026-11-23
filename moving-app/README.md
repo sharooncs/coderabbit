@@ -5,7 +5,12 @@ unpacked box: list what you own, decide what happens to it, pack, load,
 unload, unpack. It works offline. There is no account and no server; phones
 share the move by syncing directly with each other.
 
-This is version 2.1. What is new in it:
+This is version 2.1.1. It adds renaming rooms where they are added: each room
+in setup has a pencil, and a new name is a tap (Guest room, Kids' room...), said
+or typed. More, Rooms does the same. A room's door-sign code follows its new
+name until a box or labelled item is marked with it.
+
+What is new in 2.1:
 
 - **Several moves on one phone.** First start asks "Start a new move" or "Join
   a move". The move's name at the top opens **Your moves**: a card per move with
@@ -31,7 +36,7 @@ screens that need almost no typing.
 
 ## Install
 
-Download `releases/HouseMove-2.1.apk` from this repository (or scan the
+Download `releases/HouseMove-2.1.1.apk` from this repository (or scan the
 install code that comes with each release), or build it (below). Copy it to the
 phone and open it. A phone that already has HouseMove can pass it on without
 internet: Who's helping, Share the app. Android will ask to allow
