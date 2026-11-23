@@ -276,6 +276,7 @@ class MovesFlowsTest {
         tap("Bedroom 2")
         tapDesc("Rename Bedroom 2")
         see("Guest room") // usual other names, a tap each
+        shot("rename-room")
         said = "ava's room"
         tapDesc("Say a new name for Bedroom 2")
         tap("Done")
