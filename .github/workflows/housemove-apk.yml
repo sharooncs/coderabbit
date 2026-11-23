@@ -45,7 +45,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        api-level: [26, 34]
+        include:
+          - api-level: 26
+            gpu: swiftshader_indirect
+          # On Android 14 the older SwiftShader mode has taken the emulator down mid-run (graphics errors,
+          # nothing in the app's log); the ANGLE-on-SwiftShader mode is the one meant for machines with no GPU.
+          - api-level: 34
+            gpu: swangle_indirect
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -66,7 +72,7 @@ jobs:
           target: default
           profile: pixel_6
           disable-animations: true
-          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back emulated -camera-front emulated
+          emulator-options: -no-snapshot-save -no-window -gpu ${{ matrix.gpu }} -noaudio -no-boot-anim -camera-back emulated -camera-front emulated
           working-directory: moving-app
           # Less heap for Gradle here than in the build job, so the emulator on the same runner keeps its memory.
           script: ./gradlew :app:connectedDebugAndroidTest -Dorg.gradle.jvmargs="-Xmx2g -XX:MaxMetaspaceSize=640m -Dfile.encoding=UTF-8"
