@@ -1,5 +1,5 @@
 {
-  "about": "Doubles as 2.1.1 writes them: Double.toString (in record text, which merges compare), doubleToLongBits (what seal() hashes), AppJson (kotlinx.serialization, as the Store saves and the sync sends), and fmtNum (what the screens show). numberInput: what a number field makes of typed or pasted text (text.replace(',', '.').trim().toDoubleOrNull()).",
+  "about": "Doubles as 2.1.1 writes them: Double.toString (in record text, which merges compare), doubleToLongBits (what seal() hashes), AppJson (kotlinx.serialization, as the Store saves and the sync sends), and fmtNum (what the screens show). numberInput: what a number field makes of typed or pasted text (parseNum: plain decimal text only, never NaN or an infinity).",
   "doubles": [
     {
       "name": "0.1",
@@ -330,13 +330,11 @@
     },
     {
       "typed": "1e7",
-      "value": "1.0E7",
-      "rawBits": "416312d000000000"
+      "value": "null"
     },
     {
       "typed": "1E-4",
-      "value": "1.0E-4",
-      "rawBits": "3f1a36e2eb1c432d"
+      "value": "null"
     },
     {
       "typed": "-0",
@@ -368,8 +366,7 @@
     },
     {
       "typed": "NaN",
-      "value": "NaN",
-      "rawBits": "7ff8000000000000"
+      "value": "null"
     },
     {
       "typed": "nan",
@@ -377,18 +374,15 @@
     },
     {
       "typed": "Infinity",
-      "value": "Infinity",
-      "rawBits": "7ff0000000000000"
+      "value": "null"
     },
     {
       "typed": "-Infinity",
-      "value": "-Infinity",
-      "rawBits": "fff0000000000000"
+      "value": "null"
     },
     {
       "typed": "1000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
-      "value": "Infinity",
-      "rawBits": "7ff0000000000000"
+      "value": "null"
     },
     {
       "typed": "0x10",
@@ -396,18 +390,15 @@
     },
     {
       "typed": "0x1p4",
-      "value": "16.0",
-      "rawBits": "4030000000000000"
+      "value": "null"
     },
     {
       "typed": "5d",
-      "value": "5.0",
-      "rawBits": "4014000000000000"
+      "value": "null"
     },
     {
       "typed": "5f",
-      "value": "5.0",
-      "rawBits": "4014000000000000"
+      "value": "null"
     },
     {
       "typed": "5L",
@@ -435,6 +426,11 @@
     {
       "typed": "-",
       "value": "null"
+    },
+    {
+      "typed": "100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "value": "1.0E308",
+      "rawBits": "7fe1ccf385ebc8a0"
     }
   ]
 }

@@ -456,7 +456,7 @@ class GoldenFixturesTest {
             "about",
             "Doubles as 2.1.1 writes them: Double.toString (in record text, which merges compare), doubleToLongBits (what seal() hashes), " +
                 "AppJson (kotlinx.serialization, as the Store saves and the sync sends), and fmtNum (what the screens show). " +
-                "numberInput: what a number field makes of typed or pasted text (text.replace(',', '.').trim().toDoubleOrNull()).",
+                "numberInput: what a number field makes of typed or pasted text (parseNum: plain decimal text only, never NaN or an infinity).",
         )
         putJsonArray("doubles") {
             for ((name, d) in DOUBLES) addJsonObject {
@@ -470,15 +470,16 @@ class GoldenFixturesTest {
                 put("expenseToString", Expense(id = "e", amount = d).toString())
             }
         }
-        // What the number fields (ui/Common.kt, NumberInput) make of what is typed or pasted. NaN and infinities get in this way.
+        // What the number fields (ui/Common.kt, NumberInput, through parseNum) make of what is typed or pasted. Until 2.1.1 they
+        // took anything toDoubleOrNull did, NaN and the infinities included; now only plain decimal text, and never a non-finite value.
         putJsonArray("numberInput") {
             val typed = listOf(
                 "12.5", "12,5", " 7 ", "1e7", "1E-4", "-0", ".5", "5.", "+5", "1,000.5", "1 000", "NaN", "nan", "Infinity", "-Infinity", "1" + "0".repeat(309),
-                "0x10", "0x1p4", "5d", "5f", "5L", "١٢", "12٫5", "１２", "", "-",
+                "0x10", "0x1p4", "5d", "5f", "5L", "١٢", "12٫5", "１２", "", "-", "1" + "0".repeat(308),
             )
             for (t in typed) addJsonObject {
                 text("typed", t)
-                val v = t.replace(',', '.').trim().toDoubleOrNull()
+                val v = parseNum(t)
                 put("value", v?.toString() ?: "null")
                 if (v != null) put("rawBits", java.lang.Long.toHexString(v.toRawBits()).padStart(16, '0'))
             }

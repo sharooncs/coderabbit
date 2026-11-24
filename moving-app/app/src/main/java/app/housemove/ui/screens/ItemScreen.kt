@@ -348,7 +348,7 @@ fun ItemScreen(id: String) {
             ) {
                 val unit = if (inches) "in" else "cm"
                 fun shown(cm: Double?): Double? = cm?.let { if (inches) (it / 2.54 * 100).roundToLong() / 100.0 else it }
-                fun toCm(v: Double?): Double? = v?.takeIf { it > 0 }?.let { if (inches) it * 2.54 else it }
+                fun toCm(v: Double?): Double? = v?.takeIf { it > 0 }?.let { if (inches) it * 2.54 else it }?.takeIf { it.isFinite() }
                 // All three can be said at once ("200 by 90 by 85"), so measuring needs no keyboard either.
                 if (canSpeak()) Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Width, depth and height in $unit", style = MaterialTheme.typography.labelLarge, color = Night.TextDim, modifier = Modifier.weight(1f))
@@ -605,9 +605,12 @@ fun ItemScreen(id: String) {
 
 }
 
-/** The numbers in what was said, in order: "200 by 90 by 85" gives 200, 90 and 85. A decimal comma counts as a point. */
-internal fun spokenNumbers(said: String): List<Double> =
-    Regex("\\d+(?:[.,]\\d+)?").findAll(said).map { it.value.replace(',', '.').toDouble() }.toList()
+/**
+ * The numbers in what was said, in order: "200 by 90 by 85" gives 200, 90 and 85. A decimal comma counts as a point.
+ * One too long to be a Double is null in its place ([parseNum]), so the others keep their places.
+ */
+internal fun spokenNumbers(said: String): List<Double?> =
+    Regex("\\d+(?:[.,]\\d+)?").findAll(said).map { parseNum(it.value) }.toList()
 
 /** An empty circle until it has gone, then a tick: the same picture as on the Sell, donate, bin list. */
 private fun goneIcon(gone: Boolean) = if (gone) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked
