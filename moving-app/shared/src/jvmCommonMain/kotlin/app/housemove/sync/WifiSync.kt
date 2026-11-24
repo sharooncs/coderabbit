@@ -146,11 +146,11 @@ object WifiSync {
 
     /** How long the hosting phone's person has to say whether a phone that joined is the right one. Tests shorten it. */
     @Volatile
-    internal var confirmMs = 90_000
+    var confirmMs = 90_000
 
     /** This phone's addresses on the local network. Tests stand in a phone with no Wi-Fi. */
     @Volatile
-    internal var addresses: () -> List<String> = { localAddresses() }
+    var addresses: () -> List<String> = { localAddresses() }
 
     /** At most this many phones are served at once; one more is turned away, so a flood of connections cannot use the phone up. */
     private const val MAX_PEERS = 8

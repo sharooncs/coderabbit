@@ -157,7 +157,7 @@ internal fun founderBlock(elsewhere: List<IntRange>): IntRange {
     }
 }
 
-internal fun IntRange.overlaps(other: IntRange): Boolean = !isEmpty() && !other.isEmpty() && first <= other.last && other.first <= last
+fun IntRange.overlaps(other: IntRange): Boolean = !isEmpty() && !other.isEmpty() && first <= other.last && other.first <= last
 
 /** The numbers a phone prints from its block [from]..[to]: see [FOUNDER_LABELS]; half of a block of a thousand or more; a smaller block whole. */
 internal fun ownLabels(from: Int, to: Int): IntRange = when {

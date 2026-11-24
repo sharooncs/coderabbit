@@ -89,9 +89,9 @@ dependencies {
     implementation("androidx.camera:camera-view:$camerax")
 
     implementation("io.coil-kt:coil-compose:2.7.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1")
-    implementation("com.google.zxing:core:3.5.3")
+    // The move's data and sync (they bring kotlinx-serialization, kotlinx-coroutines-core and ZXing with them).
+    implementation(project(":shared"))
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.14.1")

@@ -14,3 +14,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "HouseMove"
 include(":app")
+include(":shared")
