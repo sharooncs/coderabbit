@@ -29,7 +29,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
 /*
- * The fixed move the golden fixtures are made from (see GoldenFixturesTest and src/test/resources/golden/README.md).
+ * The fixed move the golden fixtures are made from (see GoldenFixturesTest and src/jvmTest/resources/golden/README.md).
  *
  * Two phones, each a Store in a folder of its own with its phone ID, its key pair for update files and its settings
  * written in beforehand, a clock that stands still (Store.now() then counts up by one from the last stamp), and ids

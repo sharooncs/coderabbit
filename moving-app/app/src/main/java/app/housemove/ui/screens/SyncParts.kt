@@ -99,14 +99,14 @@ private fun titleFor(error: String?): String = when {
  */
 fun syncReport(r: WifiSync.Result, store: Store?): SyncReport {
     if (r.error == WifiSync.PHOTOS_CUT) {
-        return SyncReport(true, "Synced with ${r.peerName.ifBlank { "the other phone" }}, all but some photos", r.error)
+        return SyncReport(true, "Synced with ${r.peerName.ifBlank { "the other phone" }}, all but some photos", r.error!!)
     }
     if (!r.ok && r.joinedAs == null) {
         val text = when {
             r.error != WifiSync.VERSION_MISMATCH -> r.error ?: ""
             r.shareApp -> OLDER_THERE
             r.peerSchema > SCHEMA -> NEWER_THERE
-            else -> r.error
+            else -> r.error!!
         }
         return SyncReport(false, titleFor(r.error), text, shareApp = r.shareApp)
     }

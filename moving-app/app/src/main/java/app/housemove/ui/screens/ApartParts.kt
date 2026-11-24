@@ -281,7 +281,7 @@ fun SafetyNudges() {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
                         when {
-                            n.backupDays != null -> "The last backup is ${countOf(n.backupDays.toInt(), "day")} old"
+                            n.backupDays != null -> "The last backup is ${countOf(n.backupDays!!.toInt(), "day")} old"
                             hasPlace -> "No backup yet"
                             else -> "Keep a small backup each day"
                         },

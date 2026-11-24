@@ -643,6 +643,6 @@ class Moves(
     companion object {
         /** Tests stop the move from 2.0 at a given step, as a crash would. */
         @Volatile
-        internal var crashAt: ((Int) -> Boolean)? = null
+        var crashAt: ((Int) -> Boolean)? = null
     }
 }
