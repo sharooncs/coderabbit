@@ -99,8 +99,12 @@ For each Double, including 0.1, 1e7, 1e-3, 1e-4, -0.0, 1e21 and NaN, it gives:
   1e21 as "2.147483647E7" (because `roundToInt` clamps), and NaN throws.
 - `expenseToString`: the record's `toString` with that Double in it.
 
-`numberInput` shows what the number fields (`ui/Common.kt`, `NumberInput`) make of typed or pasted text. "NaN",
-"Infinity", "0x1p4", "5d" and a 310-digit number are all accepted. Arabic-Indic and full-width digits are not.
+`numberInput` shows what the number fields (`ui/Common.kt`, `NumberInput`, through `parseNum` in `data/Logic.kt`) make
+of typed or pasted text. Only plain decimal text is a number: digits, at most one point or comma (a comma is a decimal
+point), and an optional sign; "7." and ".5" count. "NaN", "Infinity", "1e7", "0x1p4", "5d" and a 310-digit number (which
+would be Infinity) are not, so a number field never gives NaN or an infinity. A long run of digits is taken while it fits a
+Double: 1 followed by 308 zeros is, 1 followed by 309 is not. Arabic-Indic and full-width digits are not. (2.1.1 itself took whatever `toDoubleOrNull` took, NaN
+and the infinities included; such a value could then not be saved. A port follows the rule recorded here.)
 
 ### seal.json: check values
 
