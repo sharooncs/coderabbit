@@ -177,7 +177,11 @@ class DeviceTest {
         tap("Open")
     }
 
-    private fun see(text: String) = rule.onAllNodes(hasText(text, substring = true)).onFirst().assertExists()
+    /** Wait (up to 10 s) for [text] to be on screen: after a tap the next screen can take a moment on a slow emulator.
+     *  On a timeout the failure lists what was on screen instead. */
+    private fun see(text: String) = waitFor("\"$text\" on screen", 10_000) {
+        rule.onAllNodes(hasText(text, substring = true)).fetchSemanticsNodes().isNotEmpty()
+    }
 
     private fun waitFor(what: String, timeoutMs: Long = 20_000, condition: () -> Boolean) {
         try {
