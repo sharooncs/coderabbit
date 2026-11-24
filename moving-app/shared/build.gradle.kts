@@ -15,7 +15,8 @@ plugins {
 kotlin {
     android {
         namespace = "app.housemove.shared"
-        compileSdk = 35
+        // The same as the app, which Compose 1.12 needs to compile against.
+        compileSdk = 37
         minSdk = 26
         // The same bytecode level as the app (its compileOptions).
         compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
