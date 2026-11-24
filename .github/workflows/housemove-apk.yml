@@ -34,7 +34,8 @@ jobs:
           # do not fetch every library again and get turned away by Maven Central (HTTP 429).
           cache-read-only: false
       - name: Test
-        run: ./gradlew :app:testDebugUnitTest
+        # The data and sync tests (plain JVM) and the app's tests (simulated Android); --continue runs both even if one fails.
+        run: ./gradlew --continue :shared:jvmTest :app:testDebugUnitTest
       - name: Build APK
         run: ./gradlew :app:assembleRelease
       - uses: actions/upload-artifact@v4
