@@ -24,12 +24,12 @@ jobs:
     defaults:
       run:
         working-directory: moving-app
-    env:
-      HM_TOOLS: ${{ runner.temp }}/tools
     steps:
       - uses: actions/checkout@v4
       - name: XcodeGen
-        run: tools/ios.sh setup
+        run: |
+          echo "HM_TOOLS=$RUNNER_TEMP/tools" >> "$GITHUB_ENV"
+          HM_TOOLS="$RUNNER_TEMP/tools" tools/ios.sh setup
       - name: Build and test in the simulator
         run: tools/ios.sh sim
       - name: Keep screenshots
