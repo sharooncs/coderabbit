@@ -215,7 +215,8 @@ become you.
 
 ## Build
 
-Requires JDK 17 and the Android SDK (platform 35).
+Requires JDK 21 and the Android SDK (platform 35; the build downloads build tools 36
+when they are missing). `./gradlew` fetches Gradle 9.7.0 the first time.
 
 ```
 ./gradlew :app:testDebugUnitTest          # simulated Android on the JVM, about 6 minutes
@@ -256,7 +257,8 @@ to each other; a phone hotspot avoids that).
 
 ## Audit tools
 
-Run from this folder. They use the system `gradle` when there is one.
+Run from this folder. They use the system `gradle` when it is the version the wrapper
+names, and `./gradlew` otherwise.
 
 | Tool | What it does | Where the result is |
 | --- | --- | --- |
