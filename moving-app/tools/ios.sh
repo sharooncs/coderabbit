@@ -7,7 +7,7 @@
 #   tools/ios.sh setup      install XcodeGen into ~/Developer/tools (no admin rights needed)
 #   tools/ios.sh generate   make iosApp/HouseMove.xcodeproj from iosApp/project.yml
 #   tools/ios.sh sim        build and run the UI tests in an iPhone simulator; screenshots in iosApp/build/shots
-#   tools/ios.sh archive    signed Release archive (the first one also registers the bundle ID app.housemove.ios)
+#   tools/ios.sh archive    signed Release archive, then a local App Store export (registers app.housemove.ios)
 #   tools/ios.sh upload     sign for App Store Connect and upload the archive to TestFlight
 #   tools/ios.sh phone      build for the paired iPhone, install and open it (no TestFlight needed)
 set -euo pipefail
@@ -129,7 +129,17 @@ for test in json.load(open(os.path.join(d, "manifest.json"))):
     xcodebuild archive -project "$PROJECT" -scheme HouseMove -configuration Release \
       -destination 'generic/platform=iOS' -archivePath build/HouseMove.xcarchive \
       -allowProvisioningUpdates CURRENT_PROJECT_VERSION="$build" | tail -25
-    codesign -dv build/HouseMove.xcarchive/Products/Applications/HouseMove.app 2>&1 | grep -E 'Identifier|TeamIdentifier|Authority' || true
+    codesign -dvv build/HouseMove.xcarchive/Products/Applications/HouseMove.app 2>&1 | grep -E 'Identifier|TeamIdentifier|Authority' || true
+    # The archive itself may be signed with Xcode's wildcard team profile, which registers nothing. Signing it for
+    # App Store Connect (kept on this Mac, nothing uploaded) registers the bundle ID app.housemove.ios and makes the
+    # distribution certificate, so the app can be created in App Store Connect and `upload` works.
+    say "Registering app.housemove.ios and preparing App Store signing (local export, nothing is uploaded)"
+    cp ExportOptions.plist build/ExportOptions-local.plist
+    plutil -replace destination -string export build/ExportOptions-local.plist
+    rm -rf build/export-local
+    xcodebuild -exportArchive -archivePath build/HouseMove.xcarchive -exportOptionsPlist build/ExportOptions-local.plist \
+      -exportPath build/export-local -allowProvisioningUpdates | tail -15
+    ls build/export-local/*.ipa
     ;;
   upload)
     [ -d build/HouseMove.xcarchive ] || { echo "No archive: run tools/ios.sh archive first"; exit 1; }

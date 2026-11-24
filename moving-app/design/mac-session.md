@@ -6,7 +6,7 @@ You are running on the owner's Mac, in `~/Developer`. A cloud session works on t
 - Never ask for, type, read or store passwords, 2FA codes, or any .p8/.p12 file or its contents. When macOS or Xcode asks for a password, the owner types it into the system dialog.
 - No `sudo`. Install tools only under `~/Developer/tools`; `tools/ios.sh setup` does this.
 - Let automatic signing create certificates and profiles. Don't revoke anything or change Xcode account settings unless the owner asks.
-- Don't push to `claude/intelligent-brown-mk8754`: the cloud session works on it. If a file in the repo must change for the Mac build to work, commit it on a new branch `mac/<short-topic>`, push that branch, and give the owner the branch name.
+- Don't push: this Mac has no GitHub sign-in for the repo, and the cloud session works on `claude/intelligent-brown-mk8754`. If a file in the repo must change for the Mac build to work, make the change locally and put the whole diff in your report; the cloud session commits it. Before each run, `git checkout claude/intelligent-brown-mk8754 && git pull` (and drop any local `mac/…` branch whose change the cloud session has taken in).
 - In summaries, describe the iPhone by its name, model and iOS version. Leave out its serial number, IMEI or UDID; it's fine to use them in commands.
 
 ## Steps
@@ -23,8 +23,8 @@ You are running on the owner's Mac, in `~/Developer`. A cloud session works on t
    - If it says "Untrusted Developer": Settings → General → VPN & Device Management → trust the developer.
    - If Developer Mode is off: Settings → Privacy & Security → Developer Mode → On, then restart.
    - Ask the owner to confirm what the phone shows: the house mark, "HouseMove", the explanation line and "Test build 0.1 (1)".
-6. `moving-app/tools/ios.sh archive`: a signed Release archive. Report the `Authority=` and `TeamIdentifier=` lines it prints. Then tell the owner: **"bundle ID registered"**.
-7. The owner creates the app record in App Store Connect:
+6. `moving-app/tools/ios.sh archive`: a signed Release archive, then a local App Store export that registers the bundle ID and makes the distribution certificate (the archive alone may be signed with Xcode's wildcard profile, which registers nothing). Report the `Authority=` and `TeamIdentifier=` lines it prints. Then tell the owner: **"bundle ID registered"**.
+7. Done once already (2026-11-24: app record "HouseMove - Moving Planner", Apple ID 6838661243, internal group "Me" with automatic distribution). Skip this step from now on. For the record, the owner created the app record in App Store Connect (after accepting the App Store Connect Terms of Service):
    - Apps → + → New App: iOS, name "HouseMove - Moving Planner", primary language, bundle ID `app.housemove.ios`, SKU `housemove-ios`, Full Access → Create.
    - Then TestFlight → Internal Testing → + → group "Me" → tick "Enable automatic distribution" → Create → invite themselves.
 
@@ -40,5 +40,6 @@ You are running on the owner's Mac, in `~/Developer`. A cloud session works on t
 - "No Account for Team USW8537DGX" or "No signing certificate": in Xcode → Settings → Accounts, check that the account lists the team. Manage Certificates → + → Apple Development; the owner clicks this.
 - A signing error about the certificate name or text encoding: the certificate name may have non-ASCII letters. Report the exact error text.
 - An upload error saying no app record was found: step 7 isn't done yet.
+- "Invalid bundle … orientations … iPad multitasking": `UISupportedInterfaceOrientations~ipad` must list all four orientations (it does since 2026-11-24).
 - `devicectl` can't see the phone: unlock it, connect the cable (or use the same Wi-Fi), and tap Trust on the phone.
 - A test failed in `sim`: run it once more. If it fails again, report the test name and its failure text.
