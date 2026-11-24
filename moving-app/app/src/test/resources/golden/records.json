@@ -1,0 +1,279 @@
+{
+  "about": "Kotlin data-class toString() of each record (Model.kt), as 2.1.1 compares copies of a record with the same updatedAt: Merge.kt newer() compares ownPart() (the record with what the merge settles itself blanked out) and then toString(), the greater text winning; mergeMove compares MoveInfo.toString(); mergePhones compares a PhoneEntry without its retirement and key. Strings compare by UTF-16 code units. Each record is also given as AppJson, so a port can decode the same one.",
+  "records": [
+    {
+      "type": "Room",
+      "json": "{\"id\":\"r1\",\"home\":\"DEST\",\"name\":\"Zoë's room\",\"code\":\"ZOE\",\"color\":3,\"floor\":\"1\",\"doorWidthCm\":1.0E-4,\"packed\":true,\"createdBy\":\"u1\",\"hands\":[\"u1\",\"u2\"],\"deletedBy\":{\"by\":\"u1\",\"at\":9,\"sum\":\"e0syhnkc\"},\"updatedAt\":9,\"deleted\":true}",
+      "toString": "Room(id=r1, home=DEST, name=Zoë's room, code=ZOE, color=3, floor=1, mapsTo=null, doorWidthCm=1.0E-4, packed=true, swept=false, sort=0, createdBy=u1, hands=[u1, u2], deletedBy=Stamp(by=u1, at=9, sum=e0syhnkc), updatedAt=9, deleted=true)",
+      "ownPart": "Room(id=r1, home=DEST, name=Zoë's room, code=ZOE, color=3, floor=1, mapsTo=null, doorWidthCm=1.0E-4, packed=true, swept=false, sort=0, createdBy=u1, hands=[], deletedBy=Stamp(by=, at=0, sum=), updatedAt=9, deleted=false)"
+    },
+    {
+      "type": "Item",
+      "json": "{\"id\":\"i1\",\"name\":\"Sofa\",\"label\":\"L042\",\"originRoomId\":\"r1\",\"destRoomId\":\"r2\",\"disposition\":\"SELL\",\"listed\":true,\"price\":1.0E7,\"deadlineDay\":20590,\"widthCm\":0.1,\"depthCm\":1.0E-4,\"heightCm\":-0.0,\"value\":0.001,\"fragile\":true,\"stage\":\"LOADED\",\"tripId\":\"t1\",\"notes\":\"a\\u0000b\",\"soldFor\":1.0E21,\"whereBy\":{\"by\":\"u2\",\"at\":5,\"sum\":\"6004oncd\"},\"handoverTo\":\"u2\",\"paid\":true,\"hands\":[\"u1\"],\"updatedAt\":5}",
+      "toString": "Item(id=i1, name=Sofa, label=L042, originRoomId=r1, destRoomId=r2, disposition=SELL, listed=true, gone=false, price=1.0E7, deadlineDay=20590, widthCm=0.1, depthCm=1.0E-4, heightCm=-0.0, value=0.001, fragile=true, twoPerson=false, needsDisassembly=false, prepEmptied=false, prepPhotos=false, prepDisassembled=false, prepHardware=false, prepCables=false, prepWrapped=false, travelsWithMe=false, firstNight=false, hazardous=false, stage=LOADED, tripId=t1, reassembled=false, damaged=false, damageNote=, notes=a\u0000b, electronic=null, make=, model=, serial=, boughtDay=null, warrantyDay=null, accessories=, accessoriesPacked=false, accessoryBox=, keepUpright=false, prepCablesLabelled=false, prepSignedOut=false, boxId=null, soldFor=1.0E21, decisionBy=Stamp(by=, at=0, sum=), roomBy=Stamp(by=, at=0, sum=), outcomeBy=Stamp(by=, at=0, sum=), whereBy=Stamp(by=u2, at=5, sum=6004oncd), handoverTo=u2, paid=true, handoverBy=Stamp(by=, at=0, sum=), handedOver=false, handedOverBy=Stamp(by=, at=0, sum=), createdAt=0, createdBy=, hands=[u1], deletedBy=Stamp(by=, at=0, sum=), updatedAt=5, deleted=false)",
+      "ownPart": "Item(id=i1, name=Sofa, label=L042, originRoomId=r1, destRoomId=null, disposition=UNDECIDED, listed=false, gone=false, price=1.0E7, deadlineDay=null, widthCm=0.1, depthCm=1.0E-4, heightCm=-0.0, value=0.001, fragile=true, twoPerson=false, needsDisassembly=false, prepEmptied=false, prepPhotos=false, prepDisassembled=false, prepHardware=false, prepCables=false, prepWrapped=false, travelsWithMe=false, firstNight=false, hazardous=false, stage=AT_ORIGIN, tripId=null, reassembled=false, damaged=false, damageNote=, notes=a\u0000b, electronic=null, make=, model=, serial=, boughtDay=null, warrantyDay=null, accessories=, accessoriesPacked=false, accessoryBox=, keepUpright=false, prepCablesLabelled=false, prepSignedOut=false, boxId=null, soldFor=1.0E21, decisionBy=Stamp(by=, at=0, sum=), roomBy=Stamp(by=, at=0, sum=), outcomeBy=Stamp(by=, at=0, sum=), whereBy=Stamp(by=, at=0, sum=), handoverTo=null, paid=false, handoverBy=Stamp(by=, at=0, sum=), handedOver=false, handedOverBy=Stamp(by=, at=0, sum=), createdAt=0, createdBy=, hands=[], deletedBy=Stamp(by=, at=0, sum=), updatedAt=5, deleted=false)"
+    },
+    {
+      "type": "Box",
+      "json": "{\"id\":\"b1\",\"label\":\"L001\",\"contents\":\"Plates, Mugs\",\"size\":\"L\",\"priority\":\"FIRST_NIGHT\",\"stage\":\"DELIVERED\",\"damaged\":true,\"damageNote\":\"Corner crushed\",\"parentId\":\"b0\",\"whereBy\":{\"by\":\"u3\",\"at\":6,\"sum\":\"48zmuy2n\"},\"hands\":[\"u3\"],\"updatedAt\":6}",
+      "toString": "Box(id=b1, label=L001, originRoomId=null, destRoomId=null, contents=Plates, Mugs, size=L, fragile=false, heavy=false, thisWayUp=false, priority=FIRST_NIGHT, sealed=false, stage=DELIVERED, travelsWithMe=false, hazardous=false, tripId=null, damaged=true, damageNote=Corner crushed, packedBy=, notes=, kind=CARTON, category=, name=, parentId=b0, whereBy=Stamp(by=u3, at=6, sum=48zmuy2n), createdAt=0, createdBy=, hands=[u3], deletedBy=Stamp(by=, at=0, sum=), updatedAt=6, deleted=false)",
+      "ownPart": "Box(id=b1, label=L001, originRoomId=null, destRoomId=null, contents=, size=L, fragile=false, heavy=false, thisWayUp=false, priority=FIRST_NIGHT, sealed=false, stage=AT_ORIGIN, travelsWithMe=false, hazardous=false, tripId=null, damaged=false, damageNote=, packedBy=, notes=, kind=CARTON, category=, name=, parentId=b0, whereBy=Stamp(by=, at=0, sum=), createdAt=0, createdBy=, hands=[], deletedBy=Stamp(by=, at=0, sum=), updatedAt=6, deleted=false)"
+    },
+    {
+      "type": "Photo",
+      "json": "{\"id\":\"ph1\",\"ownerId\":\"b1\",\"kind\":\"CONTENTS\",\"file\":\"ph1.jpg\",\"by\":\"u2\",\"createdAt\":3,\"hands\":[\"u2\"],\"updatedAt\":3}",
+      "toString": "Photo(id=ph1, ownerId=b1, kind=CONTENTS, file=ph1.jpg, note=, by=u2, createdAt=3, hands=[u2], deletedBy=Stamp(by=, at=0, sum=), updatedAt=3, deleted=false)",
+      "ownPart": "Photo(id=ph1, ownerId=b1, kind=CONTENTS, file=ph1.jpg, note=, by=u2, createdAt=3, hands=[], deletedBy=Stamp(by=, at=0, sum=), updatedAt=3, deleted=false)"
+    },
+    {
+      "type": "BoxEntry",
+      "json": "{\"id\":\"be1\",\"boxId\":\"b1\",\"code\":\"9780141439518\",\"title\":\"Pride and Prejudice\",\"author\":\"Austen\",\"createdAt\":4,\"hands\":[\"u3\"],\"updatedAt\":4}",
+      "toString": "BoxEntry(id=be1, boxId=b1, code=9780141439518, title=Pride and Prejudice, author=Austen, createdAt=4, hands=[u3], updatedAt=4, deleted=false)",
+      "ownPart": "BoxEntry(id=be1, boxId=b1, code=9780141439518, title=Pride and Prejudice, author=Austen, createdAt=4, hands=[], updatedAt=4, deleted=false)"
+    },
+    {
+      "type": "Damage",
+      "json": "{\"id\":\"d1\",\"thingId\":\"b1\",\"note\":\"Corner crushed\",\"by\":\"u3\",\"at\":1767225600000,\"cleared\":true,\"clearedBy\":{\"by\":\"u1\",\"at\":8,\"sum\":\"e0syhnkc\"},\"updatedAt\":8}",
+      "toString": "Damage(id=d1, thingId=b1, note=Corner crushed, by=u3, at=1767225600000, cleared=true, clearedBy=Stamp(by=u1, at=8, sum=e0syhnkc), updatedAt=8, deleted=false)",
+      "ownPart": "Damage(id=d1, thingId=b1, note=Corner crushed, by=u3, at=1767225600000, cleared=false, clearedBy=Stamp(by=, at=0, sum=), updatedAt=8, deleted=false)"
+    },
+    {
+      "type": "Person",
+      "json": "{\"id\":\"u2\",\"name\":\"Priya 🏠\",\"role\":\"DECIDER\",\"letter\":\"B\",\"joinedAt\":1767312000000,\"grants\":[{\"role\":\"DECIDER\",\"at\":1767225600000,\"by\":\"u1\",\"phone\":\"pashaphone23456789ab\"},{\"removed\":true,\"at\":1767312000000,\"by\":\"u1\",\"thanks\":true}],\"phones\":[{\"id\":\"ppriyaphone2345678ab\",\"name\":\"Priya's phone\",\"letter\":\"BA\",\"labelsFrom\":1000,\"labelsTo\":1999,\"addedAt\":1767312000000,\"retired\":{\"by\":\"u1\",\"at\":1767312000005,\"sum\":\"e03zg3kt\"},\"collected\":true,\"key\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEay0G0qqU14TY9r0UogFeqHX0Mov3QcTNEALy2ygSOdyJYCZRXqRRjQsu9mPtU9ANyBKH6yoQfXjgeBLAxWhD5A==\",\"keyAt\":7}],\"updatedAt\":1767312000000}",
+      "toString": "Person(id=u2, name=Priya 🏠, role=DECIDER, letter=B, joinedAt=1767312000000, removed=false, grants=[Grant(role=DECIDER, removed=false, at=1767225600000, by=u1, phone=pashaphone23456789ab, thanks=false), Grant(role=HELPER, removed=true, at=1767312000000, by=u1, phone=, thanks=true)], phones=[PhoneEntry(id=ppriyaphone2345678ab, name=Priya's phone, letter=BA, labelsFrom=1000, labelsTo=1999, addedAt=1767312000000, retired=Stamp(by=u1, at=1767312000005, sum=e03zg3kt), collected=true, key=MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEay0G0qqU14TY9r0UogFeqHX0Mov3QcTNEALy2ygSOdyJYCZRXqRRjQsu9mPtU9ANyBKH6yoQfXjgeBLAxWhD5A==, keyAt=7)], updatedAt=1767312000000, deleted=false)",
+      "ownPart": "Person(id=u2, name=Priya 🏠, role=HELPER, letter=B, joinedAt=1767312000000, removed=false, grants=[], phones=[], updatedAt=1767312000000, deleted=false)"
+    },
+    {
+      "type": "Task",
+      "json": "{\"id\":\"t1\",\"title\":\"Book the van\",\"offsetDays\":-28,\"category\":\"Admin\",\"done\":true,\"notes\":\"Ring 3 firms\",\"assignedTo\":\"u2\",\"planBy\":{\"by\":\"u1\",\"at\":2,\"sum\":\"bg38yjdb\"},\"updatedAt\":2}",
+      "toString": "Task(id=t1, title=Book the van, offsetDays=-28, dueDay=null, category=Admin, done=true, notes=Ring 3 firms, assignedTo=u2, planBy=Stamp(by=u1, at=2, sum=bg38yjdb), doneBy=Stamp(by=, at=0, sum=), updatedAt=2, deleted=false)",
+      "ownPart": ""
+    },
+    {
+      "type": "Expense",
+      "json": "{\"id\":\"e1\",\"title\":\"Van hire\",\"amount\":1.0E21,\"category\":\"Van\",\"day\":20599,\"planned\":true,\"costBy\":{\"by\":\"u1\",\"at\":2,\"sum\":\"1zrwswe0\"},\"updatedAt\":2}",
+      "toString": "Expense(id=e1, title=Van hire, amount=1.0E21, category=Van, day=20599, planned=true, costBy=Stamp(by=u1, at=2, sum=1zrwswe0), paidBy=Stamp(by=, at=0, sum=), updatedAt=2, deleted=false)",
+      "ownPart": ""
+    },
+    {
+      "type": "Supply",
+      "json": "{\"id\":\"s1\",\"name\":\"Tape\",\"need\":6,\"have\":2,\"updatedAt\":1}",
+      "toString": "Supply(id=s1, name=Tape, need=6, have=2, updatedAt=1, deleted=false)",
+      "ownPart": ""
+    },
+    {
+      "type": "Trip",
+      "json": "{\"id\":\"t9\",\"name\":\"Trip 1\",\"sort\":1,\"to\":\"STORAGE\",\"updatedAt\":1}",
+      "toString": "Trip(id=t9, name=Trip 1, sort=1, from=OLD_HOME, to=STORAGE, updatedAt=1, deleted=false)",
+      "ownPart": ""
+    },
+    {
+      "type": "Reading",
+      "json": "{\"id\":\"m1\",\"home\":\"ORIGIN\",\"value\":\"01234.5\",\"day\":20600,\"updatedAt\":1}",
+      "toString": "Reading(id=m1, home=ORIGIN, kind=Electricity, value=01234.5, day=20600, updatedAt=1, deleted=false)",
+      "ownPart": ""
+    },
+    {
+      "type": "Proposal",
+      "json": "{\"id\":\"q2\",\"kind\":\"COST\",\"targetId\":\"e2\",\"by\":\"u2\",\"expense\":{\"id\":\"e2\",\"title\":\"Boxes\",\"amount\":0.001,\"planned\":true},\"decided\":{\"by\":\"u1\",\"at\":7,\"sum\":\"55o0kav1\"},\"createdAt\":6,\"updatedAt\":7}",
+      "toString": "Proposal(id=q2, kind=COST, targetId=e2, by=u2, note=, disposition=null, price=null, roomId=null, expense=Expense(id=e2, title=Boxes, amount=0.001, category=, day=0, planned=true, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=0, deleted=false), task=null, answers=null, state=WAITING, reason=, decided=Stamp(by=u1, at=7, sum=55o0kav1), createdAt=6, deletes=false, withdrawn=Stamp(by=, at=0, sum=), updatedAt=7, deleted=false)",
+      "ownPart": ""
+    },
+    {
+      "type": "Activity",
+      "json": "{\"id\":\"a1\",\"by\":\"u2\",\"at\":5,\"text\":\"sealed L001 ✔\",\"refId\":\"b1\",\"updatedAt\":5}",
+      "toString": "Activity(id=a1, by=u2, at=5, text=sealed L001 ✔, refId=b1, updatedAt=5, deleted=false)",
+      "ownPart": ""
+    },
+    {
+      "type": "Hidden",
+      "json": "{\"id\":\"i1\",\"value\":0.001,\"make\":\"Sony\",\"model\":\"X90\",\"serial\":\"SN-0042\",\"boughtDay\":19000,\"detailsBy\":{\"by\":\"u1\",\"at\":3,\"sum\":\"bx3xgqag\"},\"price\":1.0E-4,\"soldFor\":-0.0,\"updatedAt\":3}",
+      "toString": "Hidden(id=i1, value=0.001, make=Sony, model=X90, serial=SN-0042, boughtDay=19000, warrantyDay=null, detailsBy=Stamp(by=u1, at=3, sum=bx3xgqag), price=1.0E-4, priceBy=Stamp(by=, at=0, sum=), soldFor=-0.0, saleBy=Stamp(by=, at=0, sum=), updatedAt=3, deleted=false)",
+      "ownPart": ""
+    },
+    {
+      "type": "Collect",
+      "json": "{\"id\":\"i1\",\"to\":\"u2\",\"amount\":0.1,\"by\":{\"by\":\"u1\",\"at\":3,\"sum\":\"48mff5k1\"},\"updatedAt\":3}",
+      "toString": "Collect(id=i1, to=u2, amount=0.1, by=Stamp(by=u1, at=3, sum=48mff5k1), updatedAt=3, deleted=false)",
+      "ownPart": ""
+    },
+    {
+      "type": "ContentsLine",
+      "json": "{\"id\":\"b1/5uz9hmal\",\"boxId\":\"b1\",\"text\":\"Plates\",\"sort\":2,\"by\":\"u3\",\"updatedAt\":2}",
+      "toString": "ContentsLine(id=b1/5uz9hmal, boxId=b1, text=Plates, sort=2, by=u3, batch=0, updatedAt=2, deleted=false)",
+      "ownPart": ""
+    },
+    {
+      "type": "RefusedChange",
+      "json": "{\"id\":\"refused/x\",\"by\":\"u3\",\"at\":4,\"what\":\"outcome\",\"targetId\":\"i1\",\"tried\":\"mark {} gone\",\"role\":\"HELPER\",\"updatedAt\":4}",
+      "toString": "RefusedChange(id=refused/x, by=u3, at=4, what=outcome, targetId=i1, tried=mark {} gone, role=HELPER, updatedAt=4, deleted=false)",
+      "ownPart": ""
+    },
+    {
+      "type": "MoveInfo",
+      "json": "{\"name\":\"Maple Road\",\"moveDay\":20600,\"vanCapacityM3\":12.5,\"currency\":\"£\",\"labelsPrinted\":99,\"kind\":\"MOVERS\",\"off\":[\"BUDGET\",\"PLAN\"],\"setupDone\":true,\"doneDay\":20610,\"updatedAt\":1,\"changedBy\":{\"by\":\"u1\",\"at\":1,\"sum\":\"717gj3np\"}}",
+      "toString": "MoveInfo(name=Maple Road, moveDay=20600, originName=Old home, destName=New home, vanCapacityM3=12.5, useInches=false, currency=£, labelsPrinted=99, kind=MOVERS, off=[BUDGET, PLAN], setupDone=true, doneDay=20610, updatedAt=1, changedBy=Stamp(by=u1, at=1, sum=717gj3np))"
+    },
+    {
+      "type": "Stamp",
+      "json": "{\"by\":\"u1\",\"at\":-1,\"sum\":\"zz\"}",
+      "toString": "Stamp(by=u1, at=-1, sum=zz)"
+    },
+    {
+      "type": "Grant",
+      "json": "{\"removed\":true,\"at\":1767312000000,\"by\":\"u1\",\"thanks\":true}",
+      "toString": "Grant(role=HELPER, removed=true, at=1767312000000, by=u1, phone=, thanks=true)"
+    },
+    {
+      "type": "PhoneEntry, as mergePhones compares it",
+      "json": "{\"id\":\"ppriyaphone2345678ab\",\"name\":\"Priya's phone\",\"letter\":\"BA\",\"labelsFrom\":1000,\"labelsTo\":1999,\"addedAt\":1767312000000,\"retired\":{\"by\":\"u1\",\"at\":1767312000005,\"sum\":\"e03zg3kt\"},\"collected\":true,\"key\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEay0G0qqU14TY9r0UogFeqHX0Mov3QcTNEALy2ygSOdyJYCZRXqRRjQsu9mPtU9ANyBKH6yoQfXjgeBLAxWhD5A==\",\"keyAt\":7}",
+      "toString": "PhoneEntry(id=ppriyaphone2345678ab, name=Priya's phone, letter=BA, labelsFrom=1000, labelsTo=1999, addedAt=1767312000000, retired=Stamp(by=, at=0, sum=), collected=false, key=, keyAt=0)"
+    }
+  ],
+  "tieBreaks": [
+    {
+      "name": "Expense amount 1e-3 against 1e-4",
+      "a": "{\"id\":\"e\",\"amount\":0.001,\"updatedAt\":5}",
+      "b": "{\"id\":\"e\",\"amount\":1.0E-4,\"updatedAt\":5}",
+      "ownPartA": "",
+      "ownPartB": "",
+      "toStringA": "Expense(id=e, title=, amount=0.001, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=5, deleted=false)",
+      "toStringB": "Expense(id=e, title=, amount=1.0E-4, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=5, deleted=false)",
+      "winner": "b"
+    },
+    {
+      "name": "Expense amount -0.0 against 0.0",
+      "a": "{\"id\":\"e\",\"amount\":-0.0,\"updatedAt\":5}",
+      "b": "{\"id\":\"e\",\"updatedAt\":5}",
+      "ownPartA": "",
+      "ownPartB": "",
+      "toStringA": "Expense(id=e, title=, amount=-0.0, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=5, deleted=false)",
+      "toStringB": "Expense(id=e, title=, amount=0.0, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=5, deleted=false)",
+      "winner": "b"
+    },
+    {
+      "name": "Expense amount 1e7 against 9999999.0",
+      "a": "{\"id\":\"e\",\"amount\":1.0E7,\"updatedAt\":5}",
+      "b": "{\"id\":\"e\",\"amount\":9999999.0,\"updatedAt\":5}",
+      "ownPartA": "",
+      "ownPartB": "",
+      "toStringA": "Expense(id=e, title=, amount=1.0E7, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=5, deleted=false)",
+      "toStringB": "Expense(id=e, title=, amount=9999999.0, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=5, deleted=false)",
+      "winner": "b"
+    },
+    {
+      "name": "Expense amount NaN against 1e21",
+      "a": "error: JsonEncodingException",
+      "b": "{\"id\":\"e\",\"amount\":1.0E21,\"updatedAt\":5}",
+      "ownPartA": "",
+      "ownPartB": "",
+      "toStringA": "Expense(id=e, title=, amount=NaN, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=5, deleted=false)",
+      "toStringB": "Expense(id=e, title=, amount=1.0E21, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=5, deleted=false)",
+      "winner": "a"
+    },
+    {
+      "name": "Expense amount 0.1 against 0.1 + 0.2",
+      "a": "{\"id\":\"e\",\"amount\":0.1,\"updatedAt\":5}",
+      "b": "{\"id\":\"e\",\"amount\":0.30000000000000004,\"updatedAt\":5}",
+      "ownPartA": "",
+      "ownPartB": "",
+      "toStringA": "Expense(id=e, title=, amount=0.1, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=5, deleted=false)",
+      "toStringB": "Expense(id=e, title=, amount=0.30000000000000004, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=5, deleted=false)",
+      "winner": "b"
+    },
+    {
+      "name": "Item width 0.1 against 1e-4 (by ownPart)",
+      "a": "{\"id\":\"i\",\"name\":\"Sofa\",\"widthCm\":0.1,\"updatedAt\":5}",
+      "b": "{\"id\":\"i\",\"name\":\"Sofa\",\"widthCm\":1.0E-4,\"updatedAt\":5}",
+      "ownPartA": "Item(id=i, name=Sofa, label=null, originRoomId=null, destRoomId=null, disposition=UNDECIDED, listed=false, gone=false, price=null, deadlineDay=null, widthCm=0.1, depthCm=null, heightCm=null, value=null, fragile=false, twoPerson=false, needsDisassembly=false, prepEmptied=false, prepPhotos=false, prepDisassembled=false, prepHardware=false, prepCables=false, prepWrapped=false, travelsWithMe=false, firstNight=false, hazardous=false, stage=AT_ORIGIN, tripId=null, reassembled=false, damaged=false, damageNote=, notes=, electronic=null, make=, model=, serial=, boughtDay=null, warrantyDay=null, accessories=, accessoriesPacked=false, accessoryBox=, keepUpright=false, prepCablesLabelled=false, prepSignedOut=false, boxId=null, soldFor=null, decisionBy=Stamp(by=, at=0, sum=), roomBy=Stamp(by=, at=0, sum=), outcomeBy=Stamp(by=, at=0, sum=), whereBy=Stamp(by=, at=0, sum=), handoverTo=null, paid=false, handoverBy=Stamp(by=, at=0, sum=), handedOver=false, handedOverBy=Stamp(by=, at=0, sum=), createdAt=0, createdBy=, hands=[], deletedBy=Stamp(by=, at=0, sum=), updatedAt=5, deleted=false)",
+      "ownPartB": "Item(id=i, name=Sofa, label=null, originRoomId=null, destRoomId=null, disposition=UNDECIDED, listed=false, gone=false, price=null, deadlineDay=null, widthCm=1.0E-4, depthCm=null, heightCm=null, value=null, fragile=false, twoPerson=false, needsDisassembly=false, prepEmptied=false, prepPhotos=false, prepDisassembled=false, prepHardware=false, prepCables=false, prepWrapped=false, travelsWithMe=false, firstNight=false, hazardous=false, stage=AT_ORIGIN, tripId=null, reassembled=false, damaged=false, damageNote=, notes=, electronic=null, make=, model=, serial=, boughtDay=null, warrantyDay=null, accessories=, accessoriesPacked=false, accessoryBox=, keepUpright=false, prepCablesLabelled=false, prepSignedOut=false, boxId=null, soldFor=null, decisionBy=Stamp(by=, at=0, sum=), roomBy=Stamp(by=, at=0, sum=), outcomeBy=Stamp(by=, at=0, sum=), whereBy=Stamp(by=, at=0, sum=), handoverTo=null, paid=false, handoverBy=Stamp(by=, at=0, sum=), handedOver=false, handedOverBy=Stamp(by=, at=0, sum=), createdAt=0, createdBy=, hands=[], deletedBy=Stamp(by=, at=0, sum=), updatedAt=5, deleted=false)",
+      "toStringA": "Item(id=i, name=Sofa, label=null, originRoomId=null, destRoomId=null, disposition=UNDECIDED, listed=false, gone=false, price=null, deadlineDay=null, widthCm=0.1, depthCm=null, heightCm=null, value=null, fragile=false, twoPerson=false, needsDisassembly=false, prepEmptied=false, prepPhotos=false, prepDisassembled=false, prepHardware=false, prepCables=false, prepWrapped=false, travelsWithMe=false, firstNight=false, hazardous=false, stage=AT_ORIGIN, tripId=null, reassembled=false, damaged=false, damageNote=, notes=, electronic=null, make=, model=, serial=, boughtDay=null, warrantyDay=null, accessories=, accessoriesPacked=false, accessoryBox=, keepUpright=false, prepCablesLabelled=false, prepSignedOut=false, boxId=null, soldFor=null, decisionBy=Stamp(by=, at=0, sum=), roomBy=Stamp(by=, at=0, sum=), outcomeBy=Stamp(by=, at=0, sum=), whereBy=Stamp(by=, at=0, sum=), handoverTo=null, paid=false, handoverBy=Stamp(by=, at=0, sum=), handedOver=false, handedOverBy=Stamp(by=, at=0, sum=), createdAt=0, createdBy=, hands=[], deletedBy=Stamp(by=, at=0, sum=), updatedAt=5, deleted=false)",
+      "toStringB": "Item(id=i, name=Sofa, label=null, originRoomId=null, destRoomId=null, disposition=UNDECIDED, listed=false, gone=false, price=null, deadlineDay=null, widthCm=1.0E-4, depthCm=null, heightCm=null, value=null, fragile=false, twoPerson=false, needsDisassembly=false, prepEmptied=false, prepPhotos=false, prepDisassembled=false, prepHardware=false, prepCables=false, prepWrapped=false, travelsWithMe=false, firstNight=false, hazardous=false, stage=AT_ORIGIN, tripId=null, reassembled=false, damaged=false, damageNote=, notes=, electronic=null, make=, model=, serial=, boughtDay=null, warrantyDay=null, accessories=, accessoriesPacked=false, accessoryBox=, keepUpright=false, prepCablesLabelled=false, prepSignedOut=false, boxId=null, soldFor=null, decisionBy=Stamp(by=, at=0, sum=), roomBy=Stamp(by=, at=0, sum=), outcomeBy=Stamp(by=, at=0, sum=), whereBy=Stamp(by=, at=0, sum=), handoverTo=null, paid=false, handoverBy=Stamp(by=, at=0, sum=), handedOver=false, handedOverBy=Stamp(by=, at=0, sum=), createdAt=0, createdBy=, hands=[], deletedBy=Stamp(by=, at=0, sum=), updatedAt=5, deleted=false)",
+      "winner": "b"
+    },
+    {
+      "name": "Item: only a protected part differs (ownPart equal; toString decides)",
+      "a": "{\"id\":\"i\",\"stage\":\"LOADED\",\"updatedAt\":5}",
+      "b": "{\"id\":\"i\",\"stage\":\"DELIVERED\",\"updatedAt\":5}",
+      "ownPartA": "Item(id=i, name=, label=null, originRoomId=null, destRoomId=null, disposition=UNDECIDED, listed=false, gone=false, price=null, deadlineDay=null, widthCm=null, depthCm=null, heightCm=null, value=null, fragile=false, twoPerson=false, needsDisassembly=false, prepEmptied=false, prepPhotos=false, prepDisassembled=false, prepHardware=false, prepCables=false, prepWrapped=false, travelsWithMe=false, firstNight=false, hazardous=false, stage=AT_ORIGIN, tripId=null, reassembled=false, damaged=false, damageNote=, notes=, electronic=null, make=, model=, serial=, boughtDay=null, warrantyDay=null, accessories=, accessoriesPacked=false, accessoryBox=, keepUpright=false, prepCablesLabelled=false, prepSignedOut=false, boxId=null, soldFor=null, decisionBy=Stamp(by=, at=0, sum=), roomBy=Stamp(by=, at=0, sum=), outcomeBy=Stamp(by=, at=0, sum=), whereBy=Stamp(by=, at=0, sum=), handoverTo=null, paid=false, handoverBy=Stamp(by=, at=0, sum=), handedOver=false, handedOverBy=Stamp(by=, at=0, sum=), createdAt=0, createdBy=, hands=[], deletedBy=Stamp(by=, at=0, sum=), updatedAt=5, deleted=false)",
+      "ownPartB": "Item(id=i, name=, label=null, originRoomId=null, destRoomId=null, disposition=UNDECIDED, listed=false, gone=false, price=null, deadlineDay=null, widthCm=null, depthCm=null, heightCm=null, value=null, fragile=false, twoPerson=false, needsDisassembly=false, prepEmptied=false, prepPhotos=false, prepDisassembled=false, prepHardware=false, prepCables=false, prepWrapped=false, travelsWithMe=false, firstNight=false, hazardous=false, stage=AT_ORIGIN, tripId=null, reassembled=false, damaged=false, damageNote=, notes=, electronic=null, make=, model=, serial=, boughtDay=null, warrantyDay=null, accessories=, accessoriesPacked=false, accessoryBox=, keepUpright=false, prepCablesLabelled=false, prepSignedOut=false, boxId=null, soldFor=null, decisionBy=Stamp(by=, at=0, sum=), roomBy=Stamp(by=, at=0, sum=), outcomeBy=Stamp(by=, at=0, sum=), whereBy=Stamp(by=, at=0, sum=), handoverTo=null, paid=false, handoverBy=Stamp(by=, at=0, sum=), handedOver=false, handedOverBy=Stamp(by=, at=0, sum=), createdAt=0, createdBy=, hands=[], deletedBy=Stamp(by=, at=0, sum=), updatedAt=5, deleted=false)",
+      "toStringA": "Item(id=i, name=, label=null, originRoomId=null, destRoomId=null, disposition=UNDECIDED, listed=false, gone=false, price=null, deadlineDay=null, widthCm=null, depthCm=null, heightCm=null, value=null, fragile=false, twoPerson=false, needsDisassembly=false, prepEmptied=false, prepPhotos=false, prepDisassembled=false, prepHardware=false, prepCables=false, prepWrapped=false, travelsWithMe=false, firstNight=false, hazardous=false, stage=LOADED, tripId=null, reassembled=false, damaged=false, damageNote=, notes=, electronic=null, make=, model=, serial=, boughtDay=null, warrantyDay=null, accessories=, accessoriesPacked=false, accessoryBox=, keepUpright=false, prepCablesLabelled=false, prepSignedOut=false, boxId=null, soldFor=null, decisionBy=Stamp(by=, at=0, sum=), roomBy=Stamp(by=, at=0, sum=), outcomeBy=Stamp(by=, at=0, sum=), whereBy=Stamp(by=, at=0, sum=), handoverTo=null, paid=false, handoverBy=Stamp(by=, at=0, sum=), handedOver=false, handedOverBy=Stamp(by=, at=0, sum=), createdAt=0, createdBy=, hands=[], deletedBy=Stamp(by=, at=0, sum=), updatedAt=5, deleted=false)",
+      "toStringB": "Item(id=i, name=, label=null, originRoomId=null, destRoomId=null, disposition=UNDECIDED, listed=false, gone=false, price=null, deadlineDay=null, widthCm=null, depthCm=null, heightCm=null, value=null, fragile=false, twoPerson=false, needsDisassembly=false, prepEmptied=false, prepPhotos=false, prepDisassembled=false, prepHardware=false, prepCables=false, prepWrapped=false, travelsWithMe=false, firstNight=false, hazardous=false, stage=DELIVERED, tripId=null, reassembled=false, damaged=false, damageNote=, notes=, electronic=null, make=, model=, serial=, boughtDay=null, warrantyDay=null, accessories=, accessoriesPacked=false, accessoryBox=, keepUpright=false, prepCablesLabelled=false, prepSignedOut=false, boxId=null, soldFor=null, decisionBy=Stamp(by=, at=0, sum=), roomBy=Stamp(by=, at=0, sum=), outcomeBy=Stamp(by=, at=0, sum=), whereBy=Stamp(by=, at=0, sum=), handoverTo=null, paid=false, handoverBy=Stamp(by=, at=0, sum=), handedOver=false, handedOverBy=Stamp(by=, at=0, sum=), createdAt=0, createdBy=, hands=[], deletedBy=Stamp(by=, at=0, sum=), updatedAt=5, deleted=false)",
+      "winner": "a"
+    },
+    {
+      "name": "Room door 1e21 against 1e20",
+      "a": "{\"id\":\"r\",\"home\":\"DEST\",\"name\":\"Hall\",\"doorWidthCm\":1.0E21,\"updatedAt\":5}",
+      "b": "{\"id\":\"r\",\"home\":\"DEST\",\"name\":\"Hall\",\"doorWidthCm\":1.0E20,\"updatedAt\":5}",
+      "ownPartA": "Room(id=r, home=DEST, name=Hall, code=, color=0, floor=, mapsTo=null, doorWidthCm=1.0E21, packed=false, swept=false, sort=0, createdBy=, hands=[], deletedBy=Stamp(by=, at=0, sum=), updatedAt=5, deleted=false)",
+      "ownPartB": "Room(id=r, home=DEST, name=Hall, code=, color=0, floor=, mapsTo=null, doorWidthCm=1.0E20, packed=false, swept=false, sort=0, createdBy=, hands=[], deletedBy=Stamp(by=, at=0, sum=), updatedAt=5, deleted=false)",
+      "toStringA": "Room(id=r, home=DEST, name=Hall, code=, color=0, floor=, mapsTo=null, doorWidthCm=1.0E21, packed=false, swept=false, sort=0, createdBy=, hands=[], deletedBy=Stamp(by=, at=0, sum=), updatedAt=5, deleted=false)",
+      "toStringB": "Room(id=r, home=DEST, name=Hall, code=, color=0, floor=, mapsTo=null, doorWidthCm=1.0E20, packed=false, swept=false, sort=0, createdBy=, hands=[], deletedBy=Stamp(by=, at=0, sum=), updatedAt=5, deleted=false)",
+      "winner": "a"
+    },
+    {
+      "name": "Hidden value 1e-3 against 0.001 + 1 ulp",
+      "a": "{\"id\":\"h\",\"value\":0.001,\"updatedAt\":5}",
+      "b": "{\"id\":\"h\",\"value\":0.0010000000000000002,\"updatedAt\":5}",
+      "ownPartA": "",
+      "ownPartB": "",
+      "toStringA": "Hidden(id=h, value=0.001, make=, model=, serial=, boughtDay=null, warrantyDay=null, detailsBy=Stamp(by=, at=0, sum=), price=null, priceBy=Stamp(by=, at=0, sum=), soldFor=null, saleBy=Stamp(by=, at=0, sum=), updatedAt=5, deleted=false)",
+      "toStringB": "Hidden(id=h, value=0.0010000000000000002, make=, model=, serial=, boughtDay=null, warrantyDay=null, detailsBy=Stamp(by=, at=0, sum=), price=null, priceBy=Stamp(by=, at=0, sum=), soldFor=null, saleBy=Stamp(by=, at=0, sum=), updatedAt=5, deleted=false)",
+      "winner": "b"
+    },
+    {
+      "name": "Person name emoji against plain",
+      "a": "{\"id\":\"u2\",\"name\":\"Priya 🏠\",\"role\":\"DECIDER\",\"letter\":\"B\",\"joinedAt\":1767312000000,\"grants\":[{\"role\":\"DECIDER\",\"at\":1767225600000,\"by\":\"u1\",\"phone\":\"pashaphone23456789ab\"},{\"removed\":true,\"at\":1767312000000,\"by\":\"u1\",\"thanks\":true}],\"phones\":[{\"id\":\"ppriyaphone2345678ab\",\"name\":\"Priya's phone\",\"letter\":\"BA\",\"labelsFrom\":1000,\"labelsTo\":1999,\"addedAt\":1767312000000,\"retired\":{\"by\":\"u1\",\"at\":1767312000005,\"sum\":\"e03zg3kt\"},\"collected\":true,\"key\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEay0G0qqU14TY9r0UogFeqHX0Mov3QcTNEALy2ygSOdyJYCZRXqRRjQsu9mPtU9ANyBKH6yoQfXjgeBLAxWhD5A==\",\"keyAt\":7}],\"updatedAt\":1767312000000}",
+      "b": "{\"id\":\"u2\",\"name\":\"Priya\",\"role\":\"DECIDER\",\"letter\":\"B\",\"joinedAt\":1767312000000,\"grants\":[{\"role\":\"DECIDER\",\"at\":1767225600000,\"by\":\"u1\",\"phone\":\"pashaphone23456789ab\"},{\"removed\":true,\"at\":1767312000000,\"by\":\"u1\",\"thanks\":true}],\"phones\":[{\"id\":\"ppriyaphone2345678ab\",\"name\":\"Priya's phone\",\"letter\":\"BA\",\"labelsFrom\":1000,\"labelsTo\":1999,\"addedAt\":1767312000000,\"retired\":{\"by\":\"u1\",\"at\":1767312000005,\"sum\":\"e03zg3kt\"},\"collected\":true,\"key\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEay0G0qqU14TY9r0UogFeqHX0Mov3QcTNEALy2ygSOdyJYCZRXqRRjQsu9mPtU9ANyBKH6yoQfXjgeBLAxWhD5A==\",\"keyAt\":7}],\"updatedAt\":1767312000000}",
+      "ownPartA": "Person(id=u2, name=Priya 🏠, role=HELPER, letter=B, joinedAt=1767312000000, removed=false, grants=[], phones=[], updatedAt=1767312000000, deleted=false)",
+      "ownPartB": "Person(id=u2, name=Priya, role=HELPER, letter=B, joinedAt=1767312000000, removed=false, grants=[], phones=[], updatedAt=1767312000000, deleted=false)",
+      "toStringA": "Person(id=u2, name=Priya 🏠, role=DECIDER, letter=B, joinedAt=1767312000000, removed=false, grants=[Grant(role=DECIDER, removed=false, at=1767225600000, by=u1, phone=pashaphone23456789ab, thanks=false), Grant(role=HELPER, removed=true, at=1767312000000, by=u1, phone=, thanks=true)], phones=[PhoneEntry(id=ppriyaphone2345678ab, name=Priya's phone, letter=BA, labelsFrom=1000, labelsTo=1999, addedAt=1767312000000, retired=Stamp(by=u1, at=1767312000005, sum=e03zg3kt), collected=true, key=MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEay0G0qqU14TY9r0UogFeqHX0Mov3QcTNEALy2ygSOdyJYCZRXqRRjQsu9mPtU9ANyBKH6yoQfXjgeBLAxWhD5A==, keyAt=7)], updatedAt=1767312000000, deleted=false)",
+      "toStringB": "Person(id=u2, name=Priya, role=DECIDER, letter=B, joinedAt=1767312000000, removed=false, grants=[Grant(role=DECIDER, removed=false, at=1767225600000, by=u1, phone=pashaphone23456789ab, thanks=false), Grant(role=HELPER, removed=true, at=1767312000000, by=u1, phone=, thanks=true)], phones=[PhoneEntry(id=ppriyaphone2345678ab, name=Priya's phone, letter=BA, labelsFrom=1000, labelsTo=1999, addedAt=1767312000000, retired=Stamp(by=u1, at=1767312000005, sum=e03zg3kt), collected=true, key=MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEay0G0qqU14TY9r0UogFeqHX0Mov3QcTNEALy2ygSOdyJYCZRXqRRjQsu9mPtU9ANyBKH6yoQfXjgeBLAxWhD5A==, keyAt=7)], updatedAt=1767312000000, deleted=false)",
+      "winner": "b"
+    },
+    {
+      "name": "Task title Zoë precomposed against decomposed",
+      "a": "{\"id\":\"t\",\"title\":\"Zoë\",\"updatedAt\":5}",
+      "b": "{\"id\":\"t\",\"title\":\"Zoë\",\"updatedAt\":5}",
+      "ownPartA": "",
+      "ownPartB": "",
+      "toStringA": "Task(id=t, title=Zoë, offsetDays=null, dueDay=null, category=, done=false, notes=, assignedTo=null, planBy=Stamp(by=, at=0, sum=), doneBy=Stamp(by=, at=0, sum=), updatedAt=5, deleted=false)",
+      "toStringB": "Task(id=t, title=Zoë, offsetDays=null, dueDay=null, category=, done=false, notes=, assignedTo=null, planBy=Stamp(by=, at=0, sum=), doneBy=Stamp(by=, at=0, sum=), updatedAt=5, deleted=false)",
+      "winner": "a"
+    },
+    {
+      "name": "Activity text emoji against U+FF01",
+      "a": "{\"id\":\"a\",\"text\":\"😀\",\"updatedAt\":5}",
+      "b": "{\"id\":\"a\",\"text\":\"！\",\"updatedAt\":5}",
+      "ownPartA": "",
+      "ownPartB": "",
+      "toStringA": "Activity(id=a, by=, at=0, text=😀, refId=null, updatedAt=5, deleted=false)",
+      "toStringB": "Activity(id=a, by=, at=0, text=！, refId=null, updatedAt=5, deleted=false)",
+      "winner": "b"
+    },
+    {
+      "name": "a deletion against a live copy",
+      "a": "{\"id\":\"s\",\"name\":\"Tape\",\"updatedAt\":5,\"deleted\":true}",
+      "b": "{\"id\":\"s\",\"name\":\"Tape!\",\"updatedAt\":5}",
+      "ownPartA": "",
+      "ownPartB": "",
+      "toStringA": "Supply(id=s, name=Tape, need=0, have=0, updatedAt=5, deleted=true)",
+      "toStringB": "Supply(id=s, name=Tape!, need=0, have=0, updatedAt=5, deleted=false)",
+      "winner": "a"
+    },
+    {
+      "name": "MoveInfo van 1e-3 against 1e-4 (whole merge, no stamps)",
+      "a": "{\"name\":\"Maple Road\",\"moveDay\":20600,\"vanCapacityM3\":0.001,\"currency\":\"£\",\"kind\":\"MOVERS\",\"off\":[\"BUDGET\",\"PLAN\"],\"setupDone\":true,\"updatedAt\":5}",
+      "b": "{\"name\":\"Maple Road\",\"moveDay\":20600,\"vanCapacityM3\":1.0E-4,\"currency\":\"£\",\"kind\":\"MOVERS\",\"off\":[\"BUDGET\",\"PLAN\"],\"setupDone\":true,\"updatedAt\":5}",
+      "toStringA": "MoveInfo(name=Maple Road, moveDay=20600, originName=Old home, destName=New home, vanCapacityM3=0.001, useInches=false, currency=£, labelsPrinted=0, kind=MOVERS, off=[BUDGET, PLAN], setupDone=true, doneDay=null, updatedAt=5, changedBy=Stamp(by=, at=0, sum=))",
+      "toStringB": "MoveInfo(name=Maple Road, moveDay=20600, originName=Old home, destName=New home, vanCapacityM3=1.0E-4, useInches=false, currency=£, labelsPrinted=0, kind=MOVERS, off=[BUDGET, PLAN], setupDone=true, doneDay=null, updatedAt=5, changedBy=Stamp(by=, at=0, sum=))",
+      "winner": "b"
+    },
+    {
+      "name": "PhoneEntry name, and a key made at the same time",
+      "a": "{\"id\":\"ppriyaphone2345678ab\",\"name\":\"Priya's phone\",\"letter\":\"BA\",\"labelsFrom\":1000,\"labelsTo\":1999,\"addedAt\":1767312000000,\"key\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEay0G0qqU14TY9r0UogFeqHX0Mov3QcTNEALy2ygSOdyJYCZRXqRRjQsu9mPtU9ANyBKH6yoQfXjgeBLAxWhD5A==\",\"keyAt\":7}",
+      "b": "{\"id\":\"ppriyaphone2345678ab\",\"name\":\"Priya 🏠's phone\",\"letter\":\"BA\",\"labelsFrom\":1000,\"labelsTo\":1999,\"addedAt\":1767312000000,\"key\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEtZeJYt7fkoLA9xt5p2FaHuA/dSrcQr0TzbtIN8R0qNNRMgwA9KqG0QLi7W3ON2u7ovAhOVft0PmW/Ez54L30hQ==\",\"keyAt\":7}",
+      "merged": "{\"id\":\"ppriyaphone2345678ab\",\"name\":\"Priya's phone\",\"letter\":\"BA\",\"labelsFrom\":1000,\"labelsTo\":1999,\"addedAt\":1767312000000,\"key\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEtZeJYt7fkoLA9xt5p2FaHuA/dSrcQr0TzbtIN8R0qNNRMgwA9KqG0QLi7W3ON2u7ovAhOVft0PmW/Ez54L30hQ==\",\"keyAt\":7}"
+    }
+  ]
+}
