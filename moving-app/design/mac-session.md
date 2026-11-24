@@ -13,16 +13,22 @@ You are running on the owner's Mac, in `~/Developer`. A cloud session works on t
 1. Clone and check out:
    `git clone https://github.com/sharooncs/coderabbit.git && cd coderabbit && git checkout claude/intelligent-brown-mk8754`
    If git complains about the Xcode licence, ask the owner to open Xcode once and agree.
-2. `moving-app/tools/ios.sh doctor`: report each section. That is: the Xcode version, whether first launch and the licence are done, whether team USW8537DGX is signed in, the certificate names, and the paired iPhone with its Developer Mode state. (Detecting the team is a heuristic. If it says "not seen" but Xcode → Settings → Accounts shows the team, carry on.)
-3. `moving-app/tools/ios.sh setup`: installs XcodeGen 2.48.0 into `~/Developer/tools`.
-4. `moving-app/tools/ios.sh sim`: builds the app and runs its 3 UI tests in an iPhone 17 Pro simulator. All 3 must pass; screenshots are in `moving-app/iosApp/build/shots`.
+2. `moving-app/tools/ios.sh doctor`: report each section. That is: the Xcode version, whether first launch and the licence are done, whether team USW8537DGX is signed in, the certificate names, the paired iPhone with its Developer Mode state, and the Java and Android SDK that Gradle will use. (Detecting the team is a heuristic. If it says "not seen" but Xcode → Settings → Accounts shows the team, carry on.)
+3. `moving-app/tools/ios.sh setup`: installs into `~/Developer/tools`, skipping whatever is there already, so it is safe to run again:
+   - XcodeGen 2.48.0;
+   - a JDK 21 (Temurin, for Apple silicon, checksum-checked) in `tools/jdk`. The app's screens are Kotlin, and every Xcode build runs Gradle first, which needs it. A `java` already on the PATH is left alone; ios.sh and the Xcode build use this JDK unless `JAVA_HOME` names another;
+   - the Android command-line tools, then Android platform 37 and build tools 36, in `tools/android-sdk`. The Android Gradle plugin needs them even for the iPhone build. ios.sh and the Xcode build use this SDK unless `ANDROID_HOME` names another.
+
+   Google's SDK licences must be accepted first, by the owner. The first time, setup stops and prints a command. Ask the owner to run it in Terminal on the Mac, read each licence and type `y` to accept it; never answer for them or pipe `yes` into it. Then run setup again.
+4. `moving-app/tools/ios.sh sim`: builds the app (Gradle builds the Kotlin screens first: a few minutes the first time, while it downloads the Kotlin/Native toolchain into `~/.konan`) and runs its 4 UI tests in an iPhone 17 Pro simulator. All 4 must pass; screenshots are in `moving-app/iosApp/build/shots`.
+   - Optional, when the cloud session asks for it: `moving-app/tools/ios.sh measure` times compiling and linking the Kotlin framework, gives its memory and the Release app's size, and lists the privacy APIs in the app. Paste its output into the report.
 5. `moving-app/tools/ios.sh phone`: a development build installed straight onto the paired iPhone, then opened.
    - The first time, automatic signing makes an Apple Development certificate and registers the App ID `app.housemove.ios` and the phone.
    - macOS may ask for the login password so codesign can use the key. The owner chooses "Always Allow".
    - The iPhone must be unlocked.
    - If it says "Untrusted Developer": Settings → General → VPN & Device Management → trust the developer.
    - If Developer Mode is off: Settings → Privacy & Security → Developer Mode → On, then restart.
-   - Ask the owner to confirm what the phone shows: the house mark, "HouseMove", the explanation line and "Test build 0.1 (1)".
+   - Ask the owner to confirm what the phone shows: the trial screen of the shared Kotlin screens. That is the house mark, "HouseMove" in the app's rounded font, the explanation line and "Test build 0.1 (1)", then a long list of rooms and things that scrolls smoothly, and a grid of icons at the end. Nothing should sit under the Dynamic Island or the home bar.
 6. `moving-app/tools/ios.sh archive`: a signed Release archive, then a local App Store export that registers the bundle ID and makes the distribution certificate (the archive alone may be signed with Xcode's wildcard profile, which registers nothing). Report the `Authority=` and `TeamIdentifier=` lines it prints. Then tell the owner: **"bundle ID registered"**.
 7. Done once already (2026-11-24: app record "HouseMove - Moving Planner", Apple ID 6838661243, internal group "Me" with automatic distribution). Skip this step from now on. For the record, the owner created the app record in App Store Connect (after accepting the App Store Connect Terms of Service):
    - Apps → + → New App: iOS, name "HouseMove - Moving Planner", primary language, bundle ID `app.housemove.ios`, SKU `housemove-ios`, Full Access → Create.
@@ -42,4 +48,6 @@ You are running on the owner's Mac, in `~/Developer`. A cloud session works on t
 - An upload error saying no app record was found: step 7 isn't done yet.
 - "Invalid bundle … orientations … iPad multitasking": `UISupportedInterfaceOrientations~ipad` must list all four orientations (it does since 2026-11-24).
 - `devicectl` can't see the phone: unlock it, connect the cable (or use the same Wi-Fi), and tap Trust on the phone.
-- A test failed in `sim`: run it once more. If it fails again, report the test name and its failure text.
+- A test failed in `sim`: run it once more. If it fails again, report the test name and its failure text. For the accessibility audit, also report the "Accessibility issue:" lines it prints.
+- The Xcode build fails in "Build the Kotlin screens (HouseMoveKit)": report the lines after "What went wrong" or starting with `e:`. "Unable to locate a Java Runtime", or Gradle saying the SDK location is not found: run `tools/ios.sh setup` (and `doctor`) again. If Xcode itself was opened from the Dock, it uses `~/Developer/tools` too.
+- Gradle stuck or out of memory after many builds: `cd moving-app && ./gradlew --stop`, then try again.
