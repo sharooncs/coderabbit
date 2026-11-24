@@ -215,8 +215,10 @@ become you.
 
 ## Build
 
-Requires JDK 21 and the Android SDK (platform 35; the build downloads build tools 36
-when they are missing). `./gradlew` fetches Gradle 9.7.0 the first time.
+Requires JDK 21 and the Android SDK (platform 37, which Compose 1.12 is compiled
+against; the app still targets Android 15, API 35). The build downloads platform 37
+and build tools 36 when they are missing and the SDK licence is accepted. `./gradlew`
+fetches Gradle 9.7.0 the first time.
 
 ```
 ./gradlew :app:testDebugUnitTest          # simulated Android on the JVM, about 6 minutes
