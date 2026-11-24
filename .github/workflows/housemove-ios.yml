@@ -1,11 +1,20 @@
 name: HouseMove iPhone
 
-# Builds the iPhone app on GitHub's macOS runner and tests it in a simulator. Needs no secrets:
-# signing and TestFlight uploads happen on the owner's Mac (moving-app/tools/ios.sh, design/ios-plan.md).
+# Builds the iPhone app on GitHub's macOS runner and tests it in a simulator. Needs no secrets: signing and
+# TestFlight uploads happen on the owner's Mac (moving-app/tools/ios.sh, design/ios-plan.md). The app's screens are
+# Kotlin (moving-app/sharedUi, on top of moving-app/shared), built by Gradle inside the Xcode build, so changes there
+# and to the Gradle setup run this too.
 on:
   push:
     paths:
       - "moving-app/iosApp/**"
+      - "moving-app/sharedUi/**"
+      - "moving-app/shared/**"
+      - "moving-app/build.gradle.kts"
+      - "moving-app/settings.gradle.kts"
+      - "moving-app/gradle.properties"
+      - "moving-app/gradle/**"
+      - "moving-app/gradlew"
       - "moving-app/tools/ios.sh"
       - ".github/workflows/housemove-ios.yml"
   workflow_dispatch:
@@ -20,16 +29,57 @@ concurrency:
 jobs:
   simulator:
     runs-on: xcode-27
-    timeout-minutes: 40
+    # The first run also downloads the Kotlin/Native toolchain and links the framework from scratch.
+    timeout-minutes: 75
     defaults:
       run:
         working-directory: moving-app
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          # Save the Gradle cache from this branch too (by default only the default branch writes it), so runs
+          # do not fetch every library again and get turned away by Maven Central (HTTP 429).
+          cache-read-only: false
+      - name: Keep the Kotlin/Native toolchain between runs
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('moving-app/build.gradle.kts', 'moving-app/gradle.properties') }}
+      - name: Look for the Android SDK (platform 37, build tools 36)
+        id: sdk
+        # The Android plugin needs them even for the iPhone build. The image's own SDK is used if it has both.
+        run: |
+          for d in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}" "$HOME/Library/Android/sdk"; do
+            if [ -n "$d" ] && [ -d "$d/platforms/android-37.0" ] && [ -d "$d/build-tools/36.0.0" ]; then
+              echo "On the image: $d"
+              echo "ANDROID_HOME=$d" >> "$GITHUB_ENV"
+              echo "found=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+          echo "Not on the image (ANDROID_HOME=${ANDROID_HOME:-unset}, ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-unset})"
+          ls "${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/nonexistent}}/platforms" 2>/dev/null || true
+          echo "found=false" >> "$GITHUB_OUTPUT"
+      - name: Install the Android SDK packages
+        if: steps.sdk.outputs.found != 'true'
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
+        with:
+          packages: "platforms;android-37.0 build-tools;36.0.0"
+          log-accepted-android-sdk-licenses: false
       - name: XcodeGen
         run: |
           echo "HM_TOOLS=$RUNNER_TEMP/tools" >> "$GITHUB_ENV"
-          HM_TOOLS="$RUNNER_TEMP/tools" tools/ios.sh setup
+          HM_TOOLS="$RUNNER_TEMP/tools" tools/ios.sh setup xcodegen
+      # The numbers the cloud session reads from this log: wall time and peak memory of compiling the Kotlin klibs,
+      # linking the debug framework for the simulator and the release framework for the iPhone (each with
+      # /usr/bin/time -l), the size of the Release app for the iPhone, and the required-reason APIs in it.
+      - name: Measure the Kotlin build
+        run: tools/ios.sh measure
       - name: Build and test in the simulator
         run: tools/ios.sh sim
       - name: Keep screenshots

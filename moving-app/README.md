@@ -225,7 +225,10 @@ fetches Gradle 9.7.0 the first time.
 ./gradlew :app:testDebugUnitTest          # the screens and PDFs on simulated Android, about 5 minutes
 ./gradlew :app:assembleRelease            # app/build/outputs/apk/release/app-release.apk
 ./gradlew :app:connectedDebugAndroidTest  # on a connected phone or running emulator
+./gradlew :sharedUi:desktopTest           # the screens shared with the iPhone, rendered to sharedUi/build/trial/*.png
 ```
+
+The iPhone app (`iosApp/`) is built on a Mac with `tools/ios.sh`; see `design/ios-plan.md`.
 
 ## How it is tested
 
@@ -267,7 +270,7 @@ names, and `./gradlew` otherwise.
 
 | Tool | What it does | Where the result is |
 | --- | --- | --- |
-| `tools/test.sh` | The whole JVM suite (`shared/` and `app/`), with a short summary. Arguments go to Gradle, e.g. `--tests 'app.housemove.FlowsTest'`; with `--tests`, only the module holding those tests runs | the terminal |
+| `tools/test.sh` | The whole JVM suite (`shared/`, `app/` and `sharedUi/`), with a short summary. Arguments go to Gradle, e.g. `--tests 'app.housemove.FlowsTest'`; with `--tests`, only the module holding those tests runs | the terminal |
 | `tools/checks.sh` | Automated checks over every screen: touch targets under 48dp, controls a screen reader cannot name, low-contrast text, text cut off on a small phone, a tall narrow phone and with large text, text fields on show, and speed with a large move. Findings never fail it | `app/build/audit/report.md` |
 | `tools/audit.sh` | Pictures of every screen with realistic data, as contact sheets to look at: whole screens, first view, with no data, dialogs and camera views | `app/build/audit/sheets/` |
 | `tools/roles.sh` | Every screen as an Organiser, a Decider, a Helper and someone alone see it, what can be tapped on each, and what was found; plus a contact sheet per role | `app/build/audit/roles/<who>/` |
@@ -288,11 +291,14 @@ section; rarely used things folded away.
 
 ## Code map
 
-Two Gradle modules. `shared/` is a Kotlin Multiplatform module with the move's
+Three Gradle modules. `shared/` is a Kotlin Multiplatform module with the move's
 data and sync (`src/jvmCommonMain/kotlin/app/housemove/`), built for Android and
-for a plain JVM, where its tests run (`src/jvmTest/`). `app/` is the Android app
-(`src/main/java/app/housemove/`): the screens, the PDFs and the activity, with
-the tests that need simulated Android (`src/test/`) or a device (`src/androidTest/`).
+for a plain JVM, where its tests run (`src/jvmTest/`), and (still empty) for the iPhone.
+`app/` is the Android app (`src/main/java/app/housemove/`): the screens, the PDFs and
+the activity, with the tests that need simulated Android (`src/test/`) or a device
+(`src/androidTest/`). `sharedUi/` (Compose Multiplatform) holds what the iPhone app
+shows: the shared theme, fonts and icons and, for now, a trial screen; the app's
+screens move there later. The app does not use it yet.
 
 - `data/` (in `shared/`) – the model, the JSON store, merge, backup, move logic (fit check,
   volume, search). `People.kt`, `Rules.kt` and `Changes.kt` hold who may do what.

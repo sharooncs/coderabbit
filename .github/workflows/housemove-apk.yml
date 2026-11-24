@@ -4,8 +4,10 @@ on:
   push:
     paths:
       - "moving-app/**"
+      # Changes only to the iPhone app skip this workflow; the shared screens (sharedUi) are the Android app's too.
       - "!moving-app/iosApp/**"
       - "!moving-app/tools/ios.sh"
+      - "moving-app/sharedUi/**"
       - ".github/workflows/housemove-apk.yml"
   workflow_dispatch:
 
@@ -34,8 +36,9 @@ jobs:
           # do not fetch every library again and get turned away by Maven Central (HTTP 429).
           cache-read-only: false
       - name: Test
-        # The data and sync tests (plain JVM) and the app's tests (simulated Android); --continue runs both even if one fails.
-        run: ./gradlew --continue :shared:jvmTest :app:testDebugUnitTest
+        # The data and sync tests (plain JVM), the app's tests (simulated Android) and the shared screens rendered on a
+        # plain JVM; --continue runs them all even if one fails.
+        run: ./gradlew --continue :shared:jvmTest :app:testDebugUnitTest :sharedUi:desktopTest
       - name: Build APK
         run: ./gradlew :app:assembleRelease
       - uses: actions/upload-artifact@v4
