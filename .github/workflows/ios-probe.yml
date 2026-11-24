@@ -1,0 +1,24 @@
+name: iOS runner probe
+# Temporary: reports what GitHub's Xcode 27 macOS runner provides, for planning the iPhone build. Read-only.
+on:
+  push:
+    paths:
+      - ".github/workflows/ios-probe.yml"
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - name: What the runner has
+        run: |
+          sw_vers || true
+          echo "== Xcode"; xcodebuild -version || true
+          ls /Applications | grep -i xcode || true
+          echo "== CPU and memory"; sysctl -n hw.ncpu hw.memsize machdep.cpu.brand_string || true
+          echo "== Tools"; for t in xcodegen kotlin java gradle swift ruby fastlane python3; do printf '%s: ' "$t"; (command -v $t && $t --version 2>&1 | head -1) || echo missing; done
+          echo "== iOS runtimes"; xcrun simctl list runtimes | grep -i ios || true
+          echo "== iPhone device types (last 8)"; xcrun simctl list devicetypes | grep -i iphone | tail -8 || true
+          echo "== Existing iPhone simulators (first 8)"; xcrun simctl list devices available | grep -i iphone | head -8 || true
+          echo "== Disk"; df -h / | tail -1
