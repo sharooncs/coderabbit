@@ -4,6 +4,8 @@ on:
   push:
     paths:
       - "moving-app/**"
+      - "!moving-app/iosApp/**"
+      - "!moving-app/tools/ios.sh"
       - ".github/workflows/housemove-apk.yml"
   workflow_dispatch:
 
@@ -27,6 +29,10 @@ jobs:
           distribution: temurin
           java-version: "21"
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          # Save the Gradle cache from this branch too (by default only the default branch writes it), so runs
+          # do not fetch every library again and get turned away by Maven Central (HTTP 429).
+          cache-read-only: false
       - name: Test
         run: ./gradlew :app:testDebugUnitTest
       - name: Build APK
@@ -59,6 +65,10 @@ jobs:
           distribution: temurin
           java-version: "21"
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          # Save the Gradle cache from this branch too (by default only the default branch writes it), so runs
+          # do not fetch every library again and get turned away by Maven Central (HTTP 429).
+          cache-read-only: false
       - name: Enable hardware acceleration for the emulator
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
