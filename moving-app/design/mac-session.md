@@ -40,7 +40,8 @@ You are running on the owner's Mac, in `~/Developer`. A cloud session works on t
    - the doctor summary;
    - each step as pass or fail, with the exact error text;
    - the version and build number uploaded;
-   - any `mac/…` branch you pushed.
+   - the output of `tools/ios.sh measure`, if the cloud session asked for it;
+   - the whole diff of any change you made to the repo (nothing is pushed from this Mac).
 
 ## If something goes wrong
 - "No Account for Team USW8537DGX" or "No signing certificate": in Xcode → Settings → Accounts, check that the account lists the team. Manage Certificates → + → Apple Development; the owner clicks this.
