@@ -1,5 +1,5 @@
 {
-  "about": "Doubles as 2.1.1 writes them: Double.toString (in record text, which merges compare), doubleToLongBits (what seal() hashes), AppJson (kotlinx.serialization, as the Store saves and the sync sends), and fmtNum (what the screens show).",
+  "about": "Doubles as 2.1.1 writes them: Double.toString (in record text, which merges compare), doubleToLongBits (what seal() hashes), AppJson (kotlinx.serialization, as the Store saves and the sync sends), and fmtNum (what the screens show). numberInput: what a number field makes of typed or pasted text (text.replace(',', '.').trim().toDoubleOrNull()).",
   "doubles": [
     {
       "name": "0.1",
@@ -310,6 +310,131 @@
       "json": "{\"id\":\"e\",\"amount\":0.0010000000000000002}",
       "fmtNum": "0.0",
       "expenseToString": "Expense(id=e, title=, amount=0.0010000000000000002, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=0, deleted=false)"
+    }
+  ],
+  "numberInput": [
+    {
+      "typed": "12.5",
+      "value": "12.5",
+      "rawBits": "4029000000000000"
+    },
+    {
+      "typed": "12,5",
+      "value": "12.5",
+      "rawBits": "4029000000000000"
+    },
+    {
+      "typed": " 7 ",
+      "value": "7.0",
+      "rawBits": "401c000000000000"
+    },
+    {
+      "typed": "1e7",
+      "value": "1.0E7",
+      "rawBits": "416312d000000000"
+    },
+    {
+      "typed": "1E-4",
+      "value": "1.0E-4",
+      "rawBits": "3f1a36e2eb1c432d"
+    },
+    {
+      "typed": "-0",
+      "value": "-0.0",
+      "rawBits": "8000000000000000"
+    },
+    {
+      "typed": ".5",
+      "value": "0.5",
+      "rawBits": "3fe0000000000000"
+    },
+    {
+      "typed": "5.",
+      "value": "5.0",
+      "rawBits": "4014000000000000"
+    },
+    {
+      "typed": "+5",
+      "value": "5.0",
+      "rawBits": "4014000000000000"
+    },
+    {
+      "typed": "1,000.5",
+      "value": "null"
+    },
+    {
+      "typed": "1 000",
+      "value": "null"
+    },
+    {
+      "typed": "NaN",
+      "value": "NaN",
+      "rawBits": "7ff8000000000000"
+    },
+    {
+      "typed": "nan",
+      "value": "null"
+    },
+    {
+      "typed": "Infinity",
+      "value": "Infinity",
+      "rawBits": "7ff0000000000000"
+    },
+    {
+      "typed": "-Infinity",
+      "value": "-Infinity",
+      "rawBits": "fff0000000000000"
+    },
+    {
+      "typed": "1000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "value": "Infinity",
+      "rawBits": "7ff0000000000000"
+    },
+    {
+      "typed": "0x10",
+      "value": "null"
+    },
+    {
+      "typed": "0x1p4",
+      "value": "16.0",
+      "rawBits": "4030000000000000"
+    },
+    {
+      "typed": "5d",
+      "value": "5.0",
+      "rawBits": "4014000000000000"
+    },
+    {
+      "typed": "5f",
+      "value": "5.0",
+      "rawBits": "4014000000000000"
+    },
+    {
+      "typed": "5L",
+      "value": "null"
+    },
+    {
+      "typed": "١٢",
+      "typedUtf16": "0661 0662",
+      "value": "null"
+    },
+    {
+      "typed": "12٫5",
+      "typedUtf16": "0031 0032 066b 0035",
+      "value": "null"
+    },
+    {
+      "typed": "１２",
+      "typedUtf16": "ff11 ff12",
+      "value": "null"
+    },
+    {
+      "typed": "",
+      "value": "null"
+    },
+    {
+      "typed": "-",
+      "value": "null"
     }
   ]
 }

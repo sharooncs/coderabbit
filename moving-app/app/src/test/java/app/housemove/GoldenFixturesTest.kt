@@ -62,7 +62,7 @@ import javax.crypto.spec.SecretKeySpec
  * Record mode rewrites the files. Only do this on purpose, when a change to what 2.1.1 makes is intended and every
  * port is going to follow it:
  *
- *     -Dgolden.record=true          on the test JVM (an IDE run, or JAVA_TOOL_OPTIONS="-Dgolden.record=true" for Gradle)
+ *     -Dgolden.record=true          on the test JVM (an IDE run, or JAVA_TOOL_OPTIONS="$JAVA_TOOL_OPTIONS -Dgolden.record=true" for Gradle)
  *     GOLDEN_RECORD=true            in the environment, e.g.  GOLDEN_RECORD=true tools/test.sh --tests app.housemove.GoldenFixturesTest
  *
  * (app/build.gradle.kts does not pass -D options through to the test JVM, hence the two ways.) Recording plays the
@@ -455,7 +455,8 @@ class GoldenFixturesTest {
         put(
             "about",
             "Doubles as 2.1.1 writes them: Double.toString (in record text, which merges compare), doubleToLongBits (what seal() hashes), " +
-                "AppJson (kotlinx.serialization, as the Store saves and the sync sends), and fmtNum (what the screens show).",
+                "AppJson (kotlinx.serialization, as the Store saves and the sync sends), and fmtNum (what the screens show). " +
+                "numberInput: what a number field makes of typed or pasted text (text.replace(',', '.').trim().toDoubleOrNull()).",
         )
         putJsonArray("doubles") {
             for ((name, d) in DOUBLES) addJsonObject {
@@ -467,6 +468,19 @@ class GoldenFixturesTest {
                 put("json", try { AppJson.encodeToString(Expense.serializer(), Expense(id = "e", amount = d)) } catch (e: Exception) { errorName(e) })
                 put("fmtNum", try { fmtNum(d) } catch (e: Exception) { errorName(e) })
                 put("expenseToString", Expense(id = "e", amount = d).toString())
+            }
+        }
+        // What the number fields (ui/Common.kt, NumberInput) make of what is typed or pasted. NaN and infinities get in this way.
+        putJsonArray("numberInput") {
+            val typed = listOf(
+                "12.5", "12,5", " 7 ", "1e7", "1E-4", "-0", ".5", "5.", "+5", "1,000.5", "1 000", "NaN", "nan", "Infinity", "-Infinity", "1" + "0".repeat(309),
+                "0x10", "0x1p4", "5d", "5f", "5L", "١٢", "12٫5", "１２", "", "-",
+            )
+            for (t in typed) addJsonObject {
+                text("typed", t)
+                val v = t.replace(',', '.').trim().toDoubleOrNull()
+                put("value", v?.toString() ?: "null")
+                if (v != null) put("rawBits", java.lang.Long.toHexString(v.toRawBits()).padStart(16, '0'))
             }
         }
     }
