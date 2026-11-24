@@ -1,0 +1,315 @@
+{
+  "about": "Doubles as 2.1.1 writes them: Double.toString (in record text, which merges compare), doubleToLongBits (what seal() hashes), AppJson (kotlinx.serialization, as the Store saves and the sync sends), and fmtNum (what the screens show).",
+  "doubles": [
+    {
+      "name": "0.1",
+      "rawBits": "3fb999999999999a",
+      "toString": "0.1",
+      "doubleToLongBits": "4591870180066957722",
+      "seal": "tdyzgq1",
+      "json": "{\"id\":\"e\",\"amount\":0.1}",
+      "fmtNum": "0.1",
+      "expenseToString": "Expense(id=e, title=, amount=0.1, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=0, deleted=false)"
+    },
+    {
+      "name": "1e7",
+      "rawBits": "416312d000000000",
+      "toString": "1.0E7",
+      "doubleToLongBits": "4711630319722168320",
+      "seal": "2n1ssyze",
+      "json": "{\"id\":\"e\",\"amount\":1.0E7}",
+      "fmtNum": "10000000",
+      "expenseToString": "Expense(id=e, title=, amount=1.0E7, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=0, deleted=false)"
+    },
+    {
+      "name": "1e-3",
+      "rawBits": "3f50624dd2f1a9fc",
+      "toString": "0.001",
+      "doubleToLongBits": "4562254508917369340",
+      "seal": "3wz8d0ad",
+      "json": "{\"id\":\"e\",\"amount\":0.001}",
+      "fmtNum": "0.0",
+      "expenseToString": "Expense(id=e, title=, amount=0.001, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=0, deleted=false)"
+    },
+    {
+      "name": "1e-4",
+      "rawBits": "3f1a36e2eb1c432d",
+      "toString": "1.0E-4",
+      "doubleToLongBits": "4547007122018943789",
+      "seal": "d6jf5163",
+      "json": "{\"id\":\"e\",\"amount\":1.0E-4}",
+      "fmtNum": "0.0",
+      "expenseToString": "Expense(id=e, title=, amount=1.0E-4, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=0, deleted=false)"
+    },
+    {
+      "name": "-0.0",
+      "rawBits": "8000000000000000",
+      "toString": "-0.0",
+      "doubleToLongBits": "-9223372036854775808",
+      "seal": "6x242hj8",
+      "json": "{\"id\":\"e\",\"amount\":-0.0}",
+      "fmtNum": "0",
+      "expenseToString": "Expense(id=e, title=, amount=-0.0, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=0, deleted=false)"
+    },
+    {
+      "name": "1e21",
+      "rawBits": "444b1ae4d6e2ef50",
+      "toString": "1.0E21",
+      "doubleToLongBits": "4921056587992461136",
+      "seal": "2m7mgoic",
+      "json": "{\"id\":\"e\",\"amount\":1.0E21}",
+      "fmtNum": "2.147483647E7",
+      "expenseToString": "Expense(id=e, title=, amount=1.0E21, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=0, deleted=false)"
+    },
+    {
+      "name": "NaN",
+      "rawBits": "7ff8000000000000",
+      "toString": "NaN",
+      "doubleToLongBits": "9221120237041090560",
+      "seal": "5q9o7q4u",
+      "json": "error: JsonEncodingException",
+      "fmtNum": "error: IllegalArgumentException",
+      "expenseToString": "Expense(id=e, title=, amount=NaN, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=0, deleted=false)"
+    },
+    {
+      "name": "0.0",
+      "rawBits": "0000000000000000",
+      "toString": "0.0",
+      "doubleToLongBits": "0",
+      "seal": "e13wtitw",
+      "json": "{\"id\":\"e\"}",
+      "fmtNum": "0",
+      "expenseToString": "Expense(id=e, title=, amount=0.0, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=0, deleted=false)"
+    },
+    {
+      "name": "1.0",
+      "rawBits": "3ff0000000000000",
+      "toString": "1.0",
+      "doubleToLongBits": "4607182418800017408",
+      "seal": "bnoc65q7",
+      "json": "{\"id\":\"e\",\"amount\":1.0}",
+      "fmtNum": "1",
+      "expenseToString": "Expense(id=e, title=, amount=1.0, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=0, deleted=false)"
+    },
+    {
+      "name": "12.5",
+      "rawBits": "4029000000000000",
+      "toString": "12.5",
+      "doubleToLongBits": "4623226492472524800",
+      "seal": "co0lyrla",
+      "json": "{\"id\":\"e\",\"amount\":12.5}",
+      "fmtNum": "12.5",
+      "expenseToString": "Expense(id=e, title=, amount=12.5, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=0, deleted=false)"
+    },
+    {
+      "name": "9999999.0",
+      "rawBits": "416312cfe0000000",
+      "toString": "9999999.0",
+      "doubleToLongBits": "4711630319185297408",
+      "seal": "8yc32dth",
+      "json": "{\"id\":\"e\",\"amount\":9999999.0}",
+      "fmtNum": "9999999",
+      "expenseToString": "Expense(id=e, title=, amount=9999999.0, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=0, deleted=false)"
+    },
+    {
+      "name": "12345678.9",
+      "rawBits": "41678c29dccccccd",
+      "toString": "1.23456789E7",
+      "doubleToLongBits": "4712889646492470477",
+      "seal": "d3di3g9f",
+      "json": "{\"id\":\"e\",\"amount\":1.23456789E7}",
+      "fmtNum": "1.23456789E7",
+      "expenseToString": "Expense(id=e, title=, amount=1.23456789E7, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=0, deleted=false)"
+    },
+    {
+      "name": "0.1 + 0.2",
+      "rawBits": "3fd3333333333334",
+      "toString": "0.30000000000000004",
+      "doubleToLongBits": "4599075939470750516",
+      "seal": "8te6hm0x",
+      "json": "{\"id\":\"e\",\"amount\":0.30000000000000004}",
+      "fmtNum": "0.3",
+      "expenseToString": "Expense(id=e, title=, amount=0.30000000000000004, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=0, deleted=false)"
+    },
+    {
+      "name": "1e-5",
+      "rawBits": "3ee4f8b588e368f1",
+      "toString": "1.0E-5",
+      "doubleToLongBits": "4532020583610935537",
+      "seal": "as0b9v2r",
+      "json": "{\"id\":\"e\",\"amount\":1.0E-5}",
+      "fmtNum": "0.0",
+      "expenseToString": "Expense(id=e, title=, amount=1.0E-5, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=0, deleted=false)"
+    },
+    {
+      "name": "2.5e-7",
+      "rawBits": "3e90c6f7a0b5ed8d",
+      "toString": "2.5E-7",
+      "doubleToLongBits": "4508321993853365645",
+      "seal": "cder899v",
+      "json": "{\"id\":\"e\",\"amount\":2.5E-7}",
+      "fmtNum": "0.0",
+      "expenseToString": "Expense(id=e, title=, amount=2.5E-7, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=0, deleted=false)"
+    },
+    {
+      "name": "1e20",
+      "rawBits": "4415af1d78b58c40",
+      "toString": "1.0E20",
+      "doubleToLongBits": "4906019910204099648",
+      "seal": "cl01fkhb",
+      "json": "{\"id\":\"e\",\"amount\":1.0E20}",
+      "fmtNum": "2.147483647E7",
+      "expenseToString": "Expense(id=e, title=, amount=1.0E20, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=0, deleted=false)"
+    },
+    {
+      "name": "1e22",
+      "rawBits": "4480f0cf064dd592",
+      "toString": "1.0E22",
+      "doubleToLongBits": "4936209963552724370",
+      "seal": "1kbof2ua",
+      "json": "{\"id\":\"e\",\"amount\":1.0E22}",
+      "fmtNum": "2.147483647E7",
+      "expenseToString": "Expense(id=e, title=, amount=1.0E22, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=0, deleted=false)"
+    },
+    {
+      "name": "1/3",
+      "rawBits": "3fd5555555555555",
+      "toString": "0.3333333333333333",
+      "doubleToLongBits": "4599676419421066581",
+      "seal": "1zse4q7v",
+      "json": "{\"id\":\"e\",\"amount\":0.3333333333333333}",
+      "fmtNum": "0.33",
+      "expenseToString": "Expense(id=e, title=, amount=0.3333333333333333, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=0, deleted=false)"
+    },
+    {
+      "name": "2/3",
+      "rawBits": "3fe5555555555555",
+      "toString": "0.6666666666666666",
+      "doubleToLongBits": "4604180019048437077",
+      "seal": "265vb0ml",
+      "json": "{\"id\":\"e\",\"amount\":0.6666666666666666}",
+      "fmtNum": "0.67",
+      "expenseToString": "Expense(id=e, title=, amount=0.6666666666666666, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=0, deleted=false)"
+    },
+    {
+      "name": "-1.5",
+      "rawBits": "bff8000000000000",
+      "toString": "-1.5",
+      "doubleToLongBits": "-4613937818241073152",
+      "seal": "dv92ylrw",
+      "json": "{\"id\":\"e\",\"amount\":-1.5}",
+      "fmtNum": "-1.5",
+      "expenseToString": "Expense(id=e, title=, amount=-1.5, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=0, deleted=false)"
+    },
+    {
+      "name": "1e16",
+      "rawBits": "4341c37937e08000",
+      "toString": "1.0E16",
+      "doubleToLongBits": "4846369599423283200",
+      "seal": "xomf0jz",
+      "json": "{\"id\":\"e\",\"amount\":1.0E16}",
+      "fmtNum": "10000000000000000",
+      "expenseToString": "Expense(id=e, title=, amount=1.0E16, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=0, deleted=false)"
+    },
+    {
+      "name": "123456789012345680",
+      "rawBits": "437b69b4ba630f35",
+      "toString": "1.2345678901234568E17",
+      "doubleToLongBits": "4862596447618666293",
+      "seal": "7t1t9hg6",
+      "json": "{\"id\":\"e\",\"amount\":1.2345678901234568E17}",
+      "fmtNum": "123456789012345680",
+      "expenseToString": "Expense(id=e, title=, amount=1.2345678901234568E17, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=0, deleted=false)"
+    },
+    {
+      "name": "MAX_VALUE",
+      "rawBits": "7fefffffffffffff",
+      "toString": "1.7976931348623157E308",
+      "doubleToLongBits": "9218868437227405311",
+      "seal": "46sk4v81",
+      "json": "{\"id\":\"e\",\"amount\":1.7976931348623157E308}",
+      "fmtNum": "2.147483647E7",
+      "expenseToString": "Expense(id=e, title=, amount=1.7976931348623157E308, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=0, deleted=false)"
+    },
+    {
+      "name": "MIN_VALUE",
+      "rawBits": "0000000000000001",
+      "toString": "4.9E-324",
+      "doubleToLongBits": "1",
+      "seal": "e13wtiur",
+      "json": "{\"id\":\"e\",\"amount\":4.9E-324}",
+      "fmtNum": "0.0",
+      "expenseToString": "Expense(id=e, title=, amount=4.9E-324, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=0, deleted=false)"
+    },
+    {
+      "name": "smallest normal",
+      "rawBits": "0010000000000000",
+      "toString": "2.2250738585072014E-308",
+      "doubleToLongBits": "4503599627370496",
+      "seal": "aj5kijl7",
+      "json": "{\"id\":\"e\",\"amount\":2.2250738585072014E-308}",
+      "fmtNum": "0.0",
+      "expenseToString": "Expense(id=e, title=, amount=2.2250738585072014E-308, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=0, deleted=false)"
+    },
+    {
+      "name": "Infinity",
+      "rawBits": "7ff0000000000000",
+      "toString": "Infinity",
+      "doubleToLongBits": "9218868437227405312",
+      "seal": "46sk4v8w",
+      "json": "error: JsonEncodingException",
+      "fmtNum": "2.147483647E7",
+      "expenseToString": "Expense(id=e, title=, amount=Infinity, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=0, deleted=false)"
+    },
+    {
+      "name": "-Infinity",
+      "rawBits": "fff0000000000000",
+      "toString": "-Infinity",
+      "doubleToLongBits": "-4503599627370496",
+      "seal": "e0mphr7s",
+      "json": "error: JsonEncodingException",
+      "fmtNum": "-2.147483648E7",
+      "expenseToString": "Expense(id=e, title=, amount=-Infinity, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=0, deleted=false)"
+    },
+    {
+      "name": "a NaN with other bits",
+      "rawBits": "7ff8000000000001",
+      "toString": "NaN",
+      "doubleToLongBits": "9221120237041090560",
+      "seal": "5q9o7q4u",
+      "json": "error: JsonEncodingException",
+      "fmtNum": "error: IllegalArgumentException",
+      "expenseToString": "Expense(id=e, title=, amount=NaN, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=0, deleted=false)"
+    },
+    {
+      "name": "2^53 + 2",
+      "rawBits": "4340000000000001",
+      "toString": "9.007199254740994E15",
+      "doubleToLongBits": "4845873199050653697",
+      "seal": "8jt099qz",
+      "json": "{\"id\":\"e\",\"amount\":9.007199254740994E15}",
+      "fmtNum": "9007199254740994",
+      "expenseToString": "Expense(id=e, title=, amount=9.007199254740994E15, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=0, deleted=false)"
+    },
+    {
+      "name": "100.0",
+      "rawBits": "4059000000000000",
+      "toString": "100.0",
+      "doubleToLongBits": "4636737291354636288",
+      "seal": "28rxoeml",
+      "json": "{\"id\":\"e\",\"amount\":100.0}",
+      "fmtNum": "100",
+      "expenseToString": "Expense(id=e, title=, amount=100.0, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=0, deleted=false)"
+    },
+    {
+      "name": "1e-3 + 1e-19",
+      "rawBits": "3f50624dd2f1a9fd",
+      "toString": "0.0010000000000000002",
+      "doubleToLongBits": "4562254508917369341",
+      "seal": "3wz8d0b8",
+      "json": "{\"id\":\"e\",\"amount\":0.0010000000000000002}",
+      "fmtNum": "0.0",
+      "expenseToString": "Expense(id=e, title=, amount=0.0010000000000000002, category=, day=0, planned=false, costBy=Stamp(by=, at=0, sum=), paidBy=Stamp(by=, at=0, sum=), updatedAt=0, deleted=false)"
+    }
+  ]
+}

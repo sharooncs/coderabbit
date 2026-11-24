@@ -1,0 +1,514 @@
+{
+  "about": "seal() (data/Rules.kt): h = 1125899906842597 (a Long); for each part, the text hashed (null: one NUL character; a Double: doubleToLongBits as a decimal Long; anything else: toString()), for each UTF-16 code unit c of it h = 31*h + c, then h = 31*h + 31; all with Long overflow. The value is (h and 0xFFFFFFFFFF) in base 36, lower case.",
+  "cases": [
+    {
+      "name": "nothing",
+      "parts": [],
+      "seal": "e13wu1np"
+    },
+    {
+      "name": "null",
+      "parts": [
+        {
+          "type": "null",
+          "hashed": "\u0000",
+          "hashedUtf16": "0000"
+        }
+      ],
+      "seal": "e13wthok"
+    },
+    {
+      "name": "empty string",
+      "parts": [
+        {
+          "type": "string",
+          "value": "",
+          "hashed": ""
+        }
+      ],
+      "seal": "e13wu122"
+    },
+    {
+      "name": "a NUL character (the same as null)",
+      "parts": [
+        {
+          "type": "string",
+          "value": "\u0000",
+          "valueUtf16": "0000",
+          "hashed": "\u0000",
+          "hashedUtf16": "0000"
+        }
+      ],
+      "seal": "e13wthok"
+    },
+    {
+      "name": "two nulls",
+      "parts": [
+        {
+          "type": "null",
+          "hashed": "\u0000",
+          "hashedUtf16": "0000"
+        },
+        {
+          "type": "null",
+          "hashed": "\u0000",
+          "hashedUtf16": "0000"
+        }
+      ],
+      "seal": "e13i08o3"
+    },
+    {
+      "name": "two empty strings",
+      "parts": [
+        {
+          "type": "string",
+          "value": "",
+          "hashed": ""
+        },
+        {
+          "type": "string",
+          "value": "",
+          "hashed": ""
+        }
+      ],
+      "seal": "e13wtif9"
+    },
+    {
+      "name": "Asha",
+      "parts": [
+        {
+          "type": "string",
+          "value": "Asha",
+          "hashed": "Asha"
+        }
+      ],
+      "seal": "e0s6gijz"
+    },
+    {
+      "name": "emoji",
+      "parts": [
+        {
+          "type": "string",
+          "value": "Priya 🏠",
+          "valueUtf16": "0050 0072 0069 0079 0061 0020 d83c dfe0",
+          "hashed": "Priya 🏠",
+          "hashedUtf16": "0050 0072 0069 0079 0061 0020 d83c dfe0"
+        }
+      ],
+      "seal": "abnr2jqd"
+    },
+    {
+      "name": "NUL inside",
+      "parts": [
+        {
+          "type": "string",
+          "value": "a\u0000b",
+          "valueUtf16": "0061 0000 0062",
+          "hashed": "a\u0000b",
+          "hashedUtf16": "0061 0000 0062"
+        }
+      ],
+      "seal": "e13jplr5"
+    },
+    {
+      "name": "lone surrogate",
+      "parts": [
+        {
+          "type": "string",
+          "value": "x\ud83cy",
+          "valueUtf16": "0078 d83c 0079",
+          "hashed": "x\ud83cy",
+          "hashedUtf16": "0078 d83c 0079"
+        }
+      ],
+      "seal": "iyghb"
+    },
+    {
+      "name": "true",
+      "parts": [
+        {
+          "type": "boolean",
+          "value": true,
+          "hashed": "true"
+        }
+      ],
+      "seal": "e0syhnkc"
+    },
+    {
+      "name": "false",
+      "parts": [
+        {
+          "type": "boolean",
+          "value": false,
+          "hashed": "false"
+        }
+      ],
+      "seal": "drhg19q9"
+    },
+    {
+      "name": "Int 5",
+      "parts": [
+        {
+          "type": "int",
+          "value": 5,
+          "hashed": "5"
+        }
+      ],
+      "seal": "e13wtiy7"
+    },
+    {
+      "name": "Long 5 (the same)",
+      "parts": [
+        {
+          "type": "long",
+          "value": "5",
+          "hashed": "5"
+        }
+      ],
+      "seal": "e13wtiy7"
+    },
+    {
+      "name": "String 5 (the same)",
+      "parts": [
+        {
+          "type": "string",
+          "value": "5",
+          "hashed": "5"
+        }
+      ],
+      "seal": "e13wtiy7"
+    },
+    {
+      "name": "-1",
+      "parts": [
+        {
+          "type": "long",
+          "value": "-1",
+          "hashed": "-1"
+        }
+      ],
+      "seal": "e13wdrli"
+    },
+    {
+      "name": "Long.MAX_VALUE",
+      "parts": [
+        {
+          "type": "long",
+          "value": "9223372036854775807",
+          "hashed": "9223372036854775807"
+        }
+      ],
+      "seal": "dwwucujm"
+    },
+    {
+      "name": "Long.MIN_VALUE",
+      "parts": [
+        {
+          "type": "long",
+          "value": "-9223372036854775808",
+          "hashed": "-9223372036854775808"
+        }
+      ],
+      "seal": "6x242hj8"
+    },
+    {
+      "name": "a decision",
+      "parts": [
+        {
+          "type": "enum",
+          "value": "SELL",
+          "hashed": "SELL"
+        },
+        {
+          "type": "long",
+          "value": "20600",
+          "hashed": "20600"
+        }
+      ],
+      "seal": "8rinf44v"
+    },
+    {
+      "name": "where",
+      "parts": [
+        {
+          "type": "enum",
+          "value": "LOADED",
+          "hashed": "LOADED"
+        },
+        {
+          "type": "null",
+          "hashed": "\u0000",
+          "hashedUtf16": "0000"
+        }
+      ],
+      "seal": "a5fjytck"
+    },
+    {
+      "name": "0.1",
+      "parts": [
+        {
+          "type": "double",
+          "value": "0.1",
+          "rawBits": "3fb999999999999a",
+          "hashed": "4591870180066957722"
+        }
+      ],
+      "seal": "tdyzgq1"
+    },
+    {
+      "name": "-0.0",
+      "parts": [
+        {
+          "type": "double",
+          "value": "-0.0",
+          "rawBits": "8000000000000000",
+          "hashed": "-9223372036854775808"
+        }
+      ],
+      "seal": "6x242hj8"
+    },
+    {
+      "name": "0.0",
+      "parts": [
+        {
+          "type": "double",
+          "value": "0.0",
+          "rawBits": "0000000000000000",
+          "hashed": "0"
+        }
+      ],
+      "seal": "e13wtitw"
+    },
+    {
+      "name": "NaN",
+      "parts": [
+        {
+          "type": "double",
+          "value": "NaN",
+          "rawBits": "7ff8000000000000",
+          "hashed": "9221120237041090560"
+        }
+      ],
+      "seal": "5q9o7q4u"
+    },
+    {
+      "name": "1e21",
+      "parts": [
+        {
+          "type": "double",
+          "value": "1.0E21",
+          "rawBits": "444b1ae4d6e2ef50",
+          "hashed": "4921056587992461136"
+        }
+      ],
+      "seal": "2m7mgoic"
+    },
+    {
+      "name": "a withdrawal",
+      "parts": [
+        {
+          "type": "string",
+          "value": "withdrawn",
+          "hashed": "withdrawn"
+        },
+        {
+          "type": "string",
+          "value": "00000000-0000-4000-8000-000000000031",
+          "hashed": "00000000-0000-4000-8000-000000000031"
+        },
+        {
+          "type": "string",
+          "value": "00000000-0000-4000-8000-000000000020",
+          "hashed": "00000000-0000-4000-8000-000000000020"
+        }
+      ],
+      "seal": "6k8pck4g"
+    },
+    {
+      "name": "İ",
+      "parts": [
+        {
+          "type": "string",
+          "value": "İ",
+          "valueUtf16": "0130",
+          "hashed": "İ",
+          "hashedUtf16": "0130"
+        }
+      ],
+      "seal": "e13wtoyc"
+    },
+    {
+      "name": "ß",
+      "parts": [
+        {
+          "type": "string",
+          "value": "ß",
+          "valueUtf16": "00df",
+          "hashed": "ß",
+          "hashedUtf16": "00df"
+        }
+      ],
+      "seal": "e13wtn0l"
+    },
+    {
+      "name": "1000 letters",
+      "parts": [
+        {
+          "type": "string",
+          "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "hashed": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "seal": "puhr5ui"
+    },
+    {
+      "name": "a seal inside a seal",
+      "parts": [
+        {
+          "type": "string",
+          "value": "Boxes",
+          "hashed": "Boxes"
+        },
+        {
+          "type": "string",
+          "value": "367g1123",
+          "hashed": "367g1123"
+        },
+        {
+          "type": "null",
+          "hashed": "\u0000",
+          "hashedUtf16": "0000"
+        }
+      ],
+      "seal": "5q5ewvy7"
+    }
+  ],
+  "records": [
+    {
+      "type": "Item",
+      "json": "{\"id\":\"i1\",\"name\":\"Sofa\",\"destRoomId\":\"r2\",\"disposition\":\"SELL\",\"listed\":true,\"price\":1.0E7,\"deadlineDay\":20590,\"widthCm\":0.1,\"depthCm\":1.0E-4,\"heightCm\":-0.0,\"value\":0.001,\"stage\":\"LOADED\",\"tripId\":\"t1\",\"soldFor\":1.0E21,\"handoverTo\":\"u2\",\"paid\":true}",
+      "sums": {
+        "decisionSum": "8rinentl",
+        "roomSum": "e13wf6sa",
+        "outcomeSum": "d076pe5k",
+        "whereSum": "6004oncd",
+        "handoverSum": "cmt2gwk",
+        "handedOverSum": "drhg19q9",
+        "decisionSum20": "u03z4em",
+        "outcomeSum20": "94al67iv"
+      }
+    },
+    {
+      "type": "Box",
+      "json": "{\"id\":\"b1\",\"label\":\"L001\",\"contents\":\"Plates, Mugs\",\"size\":\"L\",\"priority\":\"FIRST_NIGHT\",\"stage\":\"DELIVERED\"}",
+      "sums": {
+        "whereSum": "48zmuy2n"
+      }
+    },
+    {
+      "type": "Hidden",
+      "json": "{\"id\":\"i1\",\"value\":0.001,\"make\":\"Sony\",\"model\":\"X90\",\"serial\":\"SN-0042\",\"boughtDay\":19000,\"price\":1.0E-4,\"soldFor\":-0.0}",
+      "sums": {
+        "detailsSum": "bx3xgqag",
+        "priceSum": "d6jf5163",
+        "saleSum": "6x242hj8"
+      }
+    },
+    {
+      "type": "Collect",
+      "json": "{\"id\":\"i1\",\"to\":\"u2\",\"amount\":0.1}",
+      "sums": {
+        "collectSum": "48mff5k1"
+      }
+    },
+    {
+      "type": "Damage",
+      "json": "{\"id\":\"d1\",\"thingId\":\"b1\",\"note\":\"Corner crushed\",\"by\":\"u3\",\"at\":1767225600000,\"cleared\":true}",
+      "sums": {
+        "clearedSum": "e0syhnkc"
+      }
+    },
+    {
+      "type": "Expense",
+      "json": "{\"id\":\"e1\",\"title\":\"Van hire\",\"amount\":1.0E21,\"category\":\"Van\",\"day\":20599,\"planned\":true}",
+      "sums": {
+        "costSum": "1zrwswe0",
+        "paidSum": "e0syhnkc"
+      }
+    },
+    {
+      "type": "Task",
+      "json": "{\"id\":\"t1\",\"title\":\"Book the van\",\"offsetDays\":-28,\"category\":\"Admin\",\"done\":true,\"notes\":\"Ring 3 firms\",\"assignedTo\":\"u2\"}",
+      "sums": {
+        "planSum": "bg38yjdb",
+        "doneSum": "e0syhnkc"
+      }
+    },
+    {
+      "type": "MoveInfo",
+      "json": "{\"name\":\"Maple Road\",\"moveDay\":20600,\"vanCapacityM3\":12.5,\"currency\":\"£\",\"kind\":\"MOVERS\",\"off\":[\"BUDGET\",\"PLAN\"],\"setupDone\":true}",
+      "sums": {
+        "settingsSum": "717gj3np"
+      }
+    },
+    {
+      "type": "MoveInfo",
+      "json": "{\"name\":\"Maple Road\",\"moveDay\":20600,\"vanCapacityM3\":12.5,\"currency\":\"£\",\"kind\":\"MOVERS\",\"off\":[\"BUDGET\",\"PLAN\"],\"setupDone\":true,\"doneDay\":20610}",
+      "sums": {
+        "settingsSum": "3ch4s5b4"
+      }
+    },
+    {
+      "type": "Proposal",
+      "json": "{\"id\":\"q1\",\"kind\":\"ITEM_DECISION\",\"targetId\":\"i1\",\"by\":\"u2\",\"disposition\":\"SELL\",\"price\":0.1,\"state\":\"APPROVED\",\"reason\":\"ok\"}",
+      "sums": {
+        "stateSum": "38xw1423",
+        "withdrawnSum": "97k5uijn"
+      }
+    },
+    {
+      "type": "Proposal",
+      "json": "{\"id\":\"q2\",\"kind\":\"COST\",\"targetId\":\"e2\",\"by\":\"u2\",\"expense\":{\"id\":\"e2\",\"title\":\"Boxes\",\"amount\":0.001,\"planned\":true}}",
+      "sums": {
+        "stateSum": "55o0kav1",
+        "withdrawnSum": "97k6eb50"
+      }
+    },
+    {
+      "type": "Proposal",
+      "json": "{\"id\":\"q3\",\"kind\":\"TASK\",\"targetId\":\"t2\",\"by\":\"u2\",\"task\":{\"id\":\"t2\",\"title\":\"Pack books\",\"offsetDays\":-3}}",
+      "sums": {
+        "stateSum": "b4djd97y",
+        "withdrawnSum": "97k6y3qd"
+      }
+    },
+    {
+      "type": "Proposal",
+      "json": "{\"id\":\"q4\",\"targetId\":\"b1\",\"by\":\"u2\",\"deletes\":true}",
+      "sums": {
+        "stateSum": "23erc9p3",
+        "withdrawnSum": "97k7hwbq"
+      }
+    },
+    {
+      "type": "Proposal",
+      "json": "{\"id\":\"q5\",\"kind\":\"COST\",\"targetId\":\"e1\",\"by\":\"u2\",\"expense\":{\"id\":\"e1\",\"title\":\"Van hire\",\"amount\":1.0E21,\"category\":\"Van\",\"day\":20599,\"planned\":true,\"deleted\":true}}",
+      "sums": {
+        "stateSum": "2uqg4yh1",
+        "withdrawnSum": "97k81ox3"
+      }
+    },
+    {
+      "type": "Proposal",
+      "json": "{\"id\":\"q6\",\"kind\":\"ITEM_ROOM\",\"targetId\":\"i1\",\"by\":\"u2\",\"roomId\":\"r2\",\"answers\":\"q7\",\"state\":\"OVERTAKEN\"}",
+      "sums": {
+        "stateSum": "59qhhn6z",
+        "withdrawnSum": "97k8lhig"
+      }
+    }
+  ],
+  "fixed": {
+    "deletedSum": "e0syhnkc",
+    "retiredSum(pashaphone23456789ab)": "2l9ivnqk"
+  }
+}
