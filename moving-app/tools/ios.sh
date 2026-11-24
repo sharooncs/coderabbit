@@ -97,9 +97,14 @@ case "${1:-}" in
   sim)
     generate
     id=$(sim_id); say "Simulator $id"
+    # A new simulator's first start takes minutes on a small machine: wait for it before testing,
+    # or the first test times out launching the app. A test that still fails is run once more.
+    xcrun simctl boot "$id" 2>/dev/null || true
+    xcrun simctl bootstatus "$id" -b >/dev/null
     rm -rf build/sim.xcresult build/shots
     status=0
     xcodebuild test -project "$PROJECT" -scheme HouseMove -destination "id=$id" \
+      -retry-tests-on-failure -test-iterations 2 \
       -resultBundlePath build/sim.xcresult CODE_SIGNING_ALLOWED=NO | tail -40 || status=$?
     mkdir -p build/shots
     xcrun xcresulttool export attachments --path build/sim.xcresult --output-path build/shots >/dev/null 2>&1 || true

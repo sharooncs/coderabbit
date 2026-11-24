@@ -3,7 +3,11 @@
 # e.g.  tools/test.sh --tests 'app.housemove.FlowsTest'
 cd "$(dirname "$0")/.." || exit 1
 export ANDROID_HOME="${ANDROID_HOME:-/opt/android-sdk}"
-GRADLE=./gradlew; command -v gradle >/dev/null 2>&1 && GRADLE=gradle
+# The system gradle is used only when it is the version the wrapper names (the Android plugin
+# needs a recent one); otherwise the wrapper, which downloads that version once.
+GRADLE=./gradlew
+want=$(sed -n 's/^distributionUrl=.*gradle-\([0-9.]*\)-.*\.zip$/\1/p' gradle/wrapper/gradle-wrapper.properties)
+command -v gradle >/dev/null 2>&1 && gradle --version 2>/dev/null | grep -qx "Gradle $want" && GRADLE=gradle
 mkdir -p build
 for i in 1 2 3 4; do
   $GRADLE :app:testDebugUnitTest "$@" -q > build/test.log 2>&1; rc=$?

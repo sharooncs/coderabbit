@@ -1,6 +1,5 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
 }
@@ -43,14 +42,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-        freeCompilerArgs += listOf(
-            "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api",
-            "-opt-in=androidx.compose.foundation.layout.ExperimentalLayoutApi",
-            "-opt-in=androidx.compose.foundation.ExperimentalFoundationApi",
-        )
-    }
     buildFeatures {
         compose = true
     }
@@ -63,6 +54,17 @@ android {
                 it.maxHeapSize = "1536m"
             }
         }
+    }
+}
+
+// Kotlin is compiled by the Android plugin itself; its JVM target follows compileOptions above (17).
+kotlin {
+    compilerOptions {
+        optIn.addAll(
+            "androidx.compose.material3.ExperimentalMaterial3Api",
+            "androidx.compose.foundation.layout.ExperimentalLayoutApi",
+            "androidx.compose.foundation.ExperimentalFoundationApi",
+        )
     }
 }
 
