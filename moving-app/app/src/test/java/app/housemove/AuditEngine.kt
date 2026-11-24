@@ -58,6 +58,12 @@ internal class AuditNode(val node: SemanticsNode, val parent: AuditNode?, val or
     val disabled: Boolean = config.contains(SemanticsProperties.Disabled) || parent?.disabled == true
     val hidden: Boolean = config.any { it.key.name in HIDDEN_KEYS } || parent?.hidden == true
 
+    /**
+     * Only the outline of a rounded or clipped layer, with nothing of its own to show or read. Compose adds
+     * these to the tree from 1.9 on: a text field has one round its frame and one round the typing.
+     */
+    val shapeOnly: Boolean = config.all { it.key.name == "Shape" }
+
     val text: String get() = config.getOrNull(SemanticsProperties.Text)?.joinToString(" ") { it.text }.orEmpty()
     val typed: String get() = config.getOrNull(SemanticsProperties.EditableText)?.text.orEmpty()
 

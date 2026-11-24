@@ -345,8 +345,9 @@ internal fun contrast(tree: AuditTree, px: Pixels, screen: String, view: Int, in
         var holes = emptyList<IntBox>()
         if (editable || layout == null) {
             box(n.rect)?.let { patches += it }
-            // In a text field only the typed text is wanted: leave out its label, icons and helper text.
-            if (editable) holes = tree.nodes.subList(n.order + 1, n.last + 1).filter { it.placed }.mapNotNull { box(it.rect) }
+            // In a text field only the typed text is wanted: leave out its label, icons and helper text
+            // (not the outlines of its frame and of the typing, which would leave nothing to read).
+            if (editable) holes = tree.nodes.subList(n.order + 1, n.last + 1).filter { it.placed && !it.shapeOnly }.mapNotNull { box(it.rect) }
         } else {
             // For plain texts Compose rebuilds the layout at the full width on offer, so a centred or
             // right-aligned line has to be put back where it sits in the real, narrower text.
