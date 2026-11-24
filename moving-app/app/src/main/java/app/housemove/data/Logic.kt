@@ -34,6 +34,21 @@ fun fmtNum(v: Double?): String = when {
     else -> ((v * 100).roundToInt() / 100.0).toString()
 }
 
+/** Plain decimal text: digits with at most one point or comma, and perhaps a sign ("12", "12,5", ".5", "-3", "7."). */
+private val PLAIN_NUMBER = Regex("[+-]?(?:[0-9]+[.,]?[0-9]*|[.,][0-9]+)")
+
+/**
+ * The number typed or pasted into a number field, or null when the text is not one. Only plain decimal
+ * text counts: "NaN", "Infinity", "1e5", "0x1p4" and "5d", which Kotlin's toDoubleOrNull would take,
+ * are not numbers here, and nor is a run of digits too long for a Double (it would come out as Infinity).
+ * So a number field never gives NaN or an infinity, which could not be saved (see [finite]).
+ */
+fun parseNum(text: String): Double? {
+    val t = text.trim()
+    if (!PLAIN_NUMBER.matches(t)) return null
+    return t.replace(',', '.').toDoubleOrNull()?.takeIf { it.isFinite() }
+}
+
 // ---- room colours ----------------------------------------------------------
 
 /** Colour per destination room. Names are shown so they can be matched to coloured tape. */

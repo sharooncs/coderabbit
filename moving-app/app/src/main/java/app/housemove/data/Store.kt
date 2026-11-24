@@ -18,6 +18,20 @@ val AppJson = Json {
     coerceInputValues = true
 }
 
+/**
+ * The data a [Store] holds. Everything set here is made [finite] first: whatever the change (typed, said,
+ * worked out, merged or restored), the Store never holds NaN or an infinity, which could not be saved,
+ * backed up or synced.
+ */
+private class Held(first: AppData) {
+    val flow = MutableStateFlow(first.finite())
+    var value: AppData
+        get() = flow.value
+        set(next) {
+            flow.value = next.finite()
+        }
+}
+
 /** Where new ids come from. A test that has to repeat a run exactly swaps in a seeded source; the app never does. */
 @Volatile
 internal var idSource: () -> String = { UUID.randomUUID().toString() }
@@ -156,8 +170,8 @@ class Store internal constructor(
     /** Data from before 2.0, with nobody in it: the person this phone is given is made as 2.0 would have made it. */
     private val fromBefore20 = loaded.people.isEmpty() && !loaded.bare()
 
-    private val _data = MutableStateFlow(migrate(loaded))
-    val data: StateFlow<AppData> = _data
+    private val _data = Held(migrate(loaded))
+    val data: StateFlow<AppData> = _data.flow
 
     /** This phone's letter, counter and label numbers in the move. Changed only under [lock] (or while the store is being made). */
     @Volatile

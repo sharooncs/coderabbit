@@ -477,6 +477,10 @@ fun glassFieldColors(): TextFieldColors = OutlinedTextFieldDefaults.colors(
     unfocusedTrailingIconColor = Night.TextDim,
 )
 
+/**
+ * A field for a number. [onChange] gets null while the text is not a plain number ([parseNum]):
+ * the decimal keyboard is only a hint, and pasting or a hardware keyboard can still bring letters.
+ */
 @Composable
 fun NumberInput(
     value: Double?,
@@ -490,7 +494,7 @@ fun NumberInput(
         value = text,
         onValueChange = {
             text = it
-            onChange(it.replace(',', '.').trim().toDoubleOrNull())
+            onChange(parseNum(it))
         },
         label = { Text(label, maxLines = 1) },
         singleLine = true,
