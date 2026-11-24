@@ -15,3 +15,5 @@ dependencyResolutionManagement {
 rootProject.name = "HouseMove"
 include(":app")
 include(":shared")
+// The screens shared with the iPhone app (Compose Multiplatform); the iPhone links them as HouseMoveKit.
+include(":sharedUi")
