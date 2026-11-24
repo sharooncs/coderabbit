@@ -219,7 +219,8 @@ Requires JDK 21 and the Android SDK (platform 35; the build downloads build tool
 when they are missing). `./gradlew` fetches Gradle 9.7.0 the first time.
 
 ```
-./gradlew :app:testDebugUnitTest          # simulated Android on the JVM, about 6 minutes
+./gradlew :shared:jvmTest                 # the data and sync tests on a plain JVM, under a minute
+./gradlew :app:testDebugUnitTest          # the screens and PDFs on simulated Android, about 5 minutes
 ./gradlew :app:assembleRelease            # app/build/outputs/apk/release/app-release.apk
 ./gradlew :app:connectedDebugAndroidTest  # on a connected phone or running emulator
 ```
@@ -234,6 +235,8 @@ Four layers, all free to run:
    phones with clocks that disagree, the same box edited on two phones, a
    changed copy of the app trying to overrule an Organiser, containers inside
    containers, damaged or newer-version data files, and a 600-box move staying fast.
+   These, and every other test of the data and sync code alone, are in `shared/`
+   and run on a plain JVM.
 2. **Every screen and flow on simulated Android** (`ScreensTest`, `FlowsTest`,
    `JourneyTest`, `PeopleFlowsTest`, `ItemFlowsTest`, `ContainerFlowsTest`,
    `MoveDayFlowsTest`, `NoTypingTest`, `PdfTest`). Each screen opens with data,
@@ -262,7 +265,7 @@ names, and `./gradlew` otherwise.
 
 | Tool | What it does | Where the result is |
 | --- | --- | --- |
-| `tools/test.sh` | The whole JVM suite, with a short summary. Arguments go to Gradle, e.g. `--tests 'app.housemove.FlowsTest'` | the terminal |
+| `tools/test.sh` | The whole JVM suite (`shared/` and `app/`), with a short summary. Arguments go to Gradle, e.g. `--tests 'app.housemove.FlowsTest'`; with `--tests`, only the module holding those tests runs | the terminal |
 | `tools/checks.sh` | Automated checks over every screen: touch targets under 48dp, controls a screen reader cannot name, low-contrast text, text cut off on a small phone, a tall narrow phone and with large text, text fields on show, and speed with a large move. Findings never fail it | `app/build/audit/report.md` |
 | `tools/audit.sh` | Pictures of every screen with realistic data, as contact sheets to look at: whole screens, first view, with no data, dialogs and camera views | `app/build/audit/sheets/` |
 | `tools/roles.sh` | Every screen as an Organiser, a Decider, a Helper and someone alone see it, what can be tapped on each, and what was found; plus a contact sheet per role | `app/build/audit/roles/<who>/` |
@@ -283,13 +286,19 @@ section; rarely used things folded away.
 
 ## Code map
 
-- `data/` – the model, the JSON store, merge, backup, move logic (fit check,
+Two Gradle modules. `shared/` is a Kotlin Multiplatform module with the move's
+data and sync (`src/jvmCommonMain/kotlin/app/housemove/`), built for Android and
+for a plain JVM, where its tests run (`src/jvmTest/`). `app/` is the Android app
+(`src/main/java/app/housemove/`): the screens, the PDFs and the activity, with
+the tests that need simulated Android (`src/test/`) or a device (`src/androidTest/`).
+
+- `data/` (in `shared/`) – the model, the JSON store, merge, backup, move logic (fit check,
   volume, search). `People.kt`, `Rules.kt` and `Changes.kt` hold who may do what.
   `Moves.kt` holds the moves on a phone, `Phone.kt` the phone's ID, letters and
   label ranges; `Hidden.kt`, `Records.kt` and `Where.kt` the records Helpers are
   not sent, damage and contents lines, and where things are; `Keys.kt`,
   `Sealed.kt` and `Update.kt` the update files; `DailyBackup.kt` the daily backup
-- `sync/` – phone-to-phone sync over a local socket, and invites
+- `sync/` (in `shared/`) – phone-to-phone sync over a local socket, and invites
 - `pdf/` – QR label sheets, door signs, inventory and damage reports
 - `ui/` – the kit: `Theme.kt` (colours, type), `Glass.kt` (panels, pills, orbs),
   `Visual.kt` and `Common.kt` (tiles, buttons, inputs), `Dock.kt` (the dome at

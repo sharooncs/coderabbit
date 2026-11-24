@@ -155,8 +155,8 @@ internal fun Trip.chipIcon(): ImageVector? = when {
 /** A few words for a thing in the middle of a sentence: "L012", "suitcase B2", "Floor lamp". */
 internal fun mdShort(m: Movable): String = when {
     !m.isBox || m.label.isNullOrBlank() -> m.title
-    m.kind == null || m.kind == ContainerKind.CARTON -> m.label
-    else -> m.kind.noun.lowercase() + " " + m.label
+    m.kind == null || m.kind == ContainerKind.CARTON -> m.label!!
+    else -> m.kind!!.noun.lowercase() + " " + m.label
 }
 
 /**

@@ -53,7 +53,7 @@ internal fun seal(vararg parts: Any?): String {
 
 internal fun Item.decisionSum() = seal(disposition, deadlineDay)
 internal fun Item.roomSum() = seal(destRoomId)
-internal fun Item.outcomeSum() = seal(listed, gone)
+fun Item.outcomeSum() = seal(listed, gone)
 internal fun Item.whereSum() = seal(stage, tripId)
 internal fun Box.whereSum() = seal(stage, tripId)
 internal fun Item.handoverSum() = seal(handoverTo, paid)

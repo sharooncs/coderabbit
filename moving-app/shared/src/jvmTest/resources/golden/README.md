@@ -5,7 +5,7 @@ These files record values and bytes that the released Android app, 2.1.1, makes.
 out the same check values, ids, merge winners and bytes. So every later version, and the Kotlin Multiplatform port on the
 JVM and on iOS, must reproduce these files. This is step 0a of `design/ios-plan.md`.
 
-`GoldenFixturesTest` (`app/src/test/java/app/housemove/`) makes every file again from today's code and compares it with
+`GoldenFixturesTest` (`shared/src/jvmTest/kotlin/app/housemove/`) makes every file again from today's code and compares it with
 the recorded file, character for character. `GoldenMove.kt` beside it plays the fixed move described below.
 
 ## Checking and recording
@@ -14,7 +14,7 @@ the recorded file, character for character. `GoldenMove.kt` beside it plays the 
 - Record: only on purpose, when a change to what 2.1.1 makes is intended and every port will follow it.
   - In an IDE run, put `-Dgolden.record=true` on the test JVM.
   - Through Gradle, use `GOLDEN_RECORD=true tools/test.sh --tests app.housemove.GoldenFixturesTest`, or
-    `JAVA_TOOL_OPTIONS="$JAVA_TOOL_OPTIONS -Dgolden.record=true"`. `app/build.gradle.kts` does not pass `-D` options
+    `JAVA_TOOL_OPTIONS="$JAVA_TOOL_OPTIONS -Dgolden.record=true"`. `shared/build.gradle.kts` does not pass `-D` options
     on to the test JVM, which is why there are two ways.
   - Recording plays the fixed move twice and writes nothing if the second run differs. The key pairs are constants in
     `GoldenMove.kt`, so they never change. Commit the diff, and say in the commit message what changed and why.

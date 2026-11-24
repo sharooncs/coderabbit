@@ -77,7 +77,7 @@ private const val GONE = "mark {} gone"
  * phones may hold different decisions then; were it in the words, the same refused change would read differently
  * on each and the record, made with the same id everywhere, would not settle. [describe] names it from the decision.
  */
-internal fun outcomeVerb(i: Item): String = when {
+fun outcomeVerb(i: Item): String = when {
     i.gone -> GONE
     i.listed -> "mark {} listed for sale"
     else -> "change whether {} has gone"
