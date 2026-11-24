@@ -25,7 +25,6 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.LocalShipping
 import androidx.compose.material3.*
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -344,16 +343,14 @@ fun ScrollColumn(modifier: Modifier = Modifier, content: @Composable ColumnScope
  */
 @Composable
 fun GlassTabRow(selected: Int, modifier: Modifier = Modifier, tabs: @Composable () -> Unit) {
-    TabRow(
+    SecondaryTabRow(
         selectedTabIndex = selected,
         modifier = modifier.padding(horizontal = 16.dp, vertical = 4.dp).glass(CircleShape, shadow = 4.dp),
         containerColor = Color.Transparent,
         contentColor = Night.Text,
         // The chosen tab: mint glass behind its words (which Material itself announces as selected).
-        indicator = { positions ->
-            if (selected < positions.size) {
-                Box(Modifier.tabIndicatorOffset(positions[selected]).fillMaxHeight().zIndex(-1f).padding(4.dp).glass(CircleShape, GlassTone.Mint, shadow = 0.dp))
-            }
+        indicator = {
+            Box(Modifier.tabIndicatorOffset(selected).fillMaxHeight().zIndex(-1f).padding(4.dp).glass(CircleShape, GlassTone.Mint, shadow = 0.dp))
         },
         divider = {},
         tabs = tabs,
