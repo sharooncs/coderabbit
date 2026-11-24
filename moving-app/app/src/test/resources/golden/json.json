@@ -1,0 +1,118 @@
+{
+  "about": "AppJson (data/Store.kt): kotlinx.serialization Json { ignoreUnknownKeys = true; encodeDefaults = false; coerceInputValues = true }, everything else as kotlinx-serialization-json 1.8.1 has it: fields in declaration order, defaults left out (AppData.version is always written), no spaces, non-ASCII written as is, Doubles as Double.toString, NaN and Infinity refused.",
+  "encode": [
+    {
+      "name": "an empty AppData",
+      "json": "{\"version\":5}"
+    },
+    {
+      "name": "an empty MoveInfo",
+      "json": "{}"
+    },
+    {
+      "name": "a bare item",
+      "json": "{\"id\":\"i1\"}"
+    },
+    {
+      "name": "a stamp",
+      "json": "{\"by\":\"u1\",\"at\":5,\"sum\":\"abc\"}"
+    },
+    {
+      "name": "an item with Doubles",
+      "json": "{\"id\":\"i1\",\"price\":1.0E7,\"widthCm\":0.1,\"depthCm\":1.0E-4,\"heightCm\":-0.0,\"value\":0.001,\"soldFor\":1.0E21}"
+    },
+    {
+      "name": "a person",
+      "json": "{\"id\":\"u2\",\"name\":\"Priya 🏠\",\"role\":\"DECIDER\",\"letter\":\"B\",\"joinedAt\":1767312000000,\"grants\":[{\"role\":\"DECIDER\",\"at\":1767225600000,\"by\":\"u1\",\"phone\":\"pashaphone23456789ab\"},{\"removed\":true,\"at\":1767312000000,\"by\":\"u1\",\"thanks\":true}],\"phones\":[{\"id\":\"ppriyaphone2345678ab\",\"name\":\"Priya's phone\",\"letter\":\"BA\",\"labelsFrom\":1000,\"labelsTo\":1999,\"addedAt\":1767312000000,\"retired\":{\"by\":\"u1\",\"at\":1767312000005,\"sum\":\"e03zg3kt\"},\"collected\":true,\"key\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEay0G0qqU14TY9r0UogFeqHX0Mov3QcTNEALy2ygSOdyJYCZRXqRRjQsu9mPtU9ANyBKH6yoQfXjgeBLAxWhD5A==\",\"keyAt\":7}],\"updatedAt\":1767312000000}"
+    },
+    {
+      "name": "a suggestion with a cost",
+      "json": "{\"id\":\"q2\",\"kind\":\"COST\",\"targetId\":\"e2\",\"by\":\"u2\",\"expense\":{\"id\":\"e2\",\"title\":\"Boxes\",\"amount\":0.001,\"planned\":true}}"
+    },
+    {
+      "name": "text that needs escaping",
+      "json": "{\"id\":\"a1\",\"text\":\"\\\"quoted\\\" back\\\\slash /slash \\u0000\\u0001\\u001f\\b\\t\\n\\f\\r    Zoë 日本 🏠 x\ud800y\"}"
+    },
+    {
+      "name": "an AppData with one of each list",
+      "json": "{\"version\":5,\"move\":{\"name\":\"Maple Road\",\"moveDay\":20600,\"vanCapacityM3\":12.5,\"currency\":\"£\",\"kind\":\"MOVERS\",\"off\":[\"BUDGET\",\"PLAN\"],\"setupDone\":true},\"rooms\":[{\"id\":\"r1\",\"home\":\"DEST\",\"name\":\"Zoë's room\",\"code\":\"ZOE\",\"color\":3,\"floor\":\"1\",\"doorWidthCm\":1.0E-4,\"packed\":true,\"createdBy\":\"u1\",\"hands\":[\"u1\",\"u2\"],\"deletedBy\":{\"by\":\"u1\",\"at\":9,\"sum\":\"e0syhnkc\"},\"updatedAt\":9,\"deleted\":true}],\"items\":[{\"id\":\"i1\"}],\"boxes\":[{\"id\":\"b1\",\"label\":\"L001\",\"contents\":\"Plates, Mugs\",\"size\":\"L\",\"priority\":\"FIRST_NIGHT\",\"stage\":\"DELIVERED\"}]}"
+    }
+  ],
+  "decode": [
+    {
+      "name": "unknown keys are ignored",
+      "input": "{\"version\":5,\"surprise\":{\"a\":[1,2]}}",
+      "reencoded": "{\"version\":5}"
+    },
+    {
+      "name": "an unknown enum value takes the default",
+      "input": "{\"move\":{\"kind\":\"SPACESHIP\",\"name\":\"x\"}}",
+      "reencoded": "{\"version\":5,\"move\":{\"name\":\"x\"}}"
+    },
+    {
+      "name": "null for a field that cannot be null takes the default",
+      "input": "{\"items\":[{\"id\":\"i\",\"disposition\":null,\"fragile\":null}]}",
+      "reencoded": "{\"version\":5,\"items\":[{\"id\":\"i\"}]}"
+    },
+    {
+      "name": "an unknown enum value where null is allowed",
+      "input": "{\"proposals\":[{\"id\":\"q\",\"disposition\":\"SWAP\"}]}",
+      "reencoded": "{\"version\":5,\"proposals\":[{\"id\":\"q\"}]}"
+    },
+    {
+      "name": "numbers in other forms",
+      "input": "{\"items\":[{\"id\":\"i\",\"price\":1e21,\"widthCm\":1E-4,\"depthCm\":-0,\"heightCm\":5,\"value\":0.10}]}",
+      "reencoded": "{\"version\":5,\"items\":[{\"id\":\"i\",\"price\":1.0E21,\"widthCm\":1.0E-4,\"depthCm\":-0.0,\"heightCm\":5.0,\"value\":0.1}]}"
+    },
+    {
+      "name": "a number in quotes",
+      "input": "{\"items\":[{\"id\":\"i\",\"price\":\"5\"}]}",
+      "reencoded": "{\"version\":5,\"items\":[{\"id\":\"i\",\"price\":5.0}]}"
+    },
+    {
+      "name": "an integer in quotes",
+      "input": "{\"move\":{\"moveDay\":\"20600\"}}",
+      "reencoded": "{\"version\":5,\"move\":{\"moveDay\":20600}}"
+    },
+    {
+      "name": "a number too large for a Double",
+      "input": "{\"items\":[{\"id\":\"i\",\"price\":1e400}]}",
+      "decoded": "error: JsonDecodingException"
+    },
+    {
+      "name": "NaN",
+      "input": "{\"items\":[{\"id\":\"i\",\"price\":NaN}]}",
+      "decoded": "error: JsonDecodingException"
+    },
+    {
+      "name": "a field that must be there is missing",
+      "input": "{\"rooms\":[{\"id\":\"r\"}]}",
+      "decoded": "error: MissingFieldException"
+    },
+    {
+      "name": "a version from the future",
+      "input": "{\"version\":6}",
+      "reencoded": "{\"version\":6}"
+    },
+    {
+      "name": "a Long beyond Long",
+      "input": "{\"move\":{\"moveDay\":9223372036854775808}}",
+      "decoded": "error: JsonDecodingException"
+    },
+    {
+      "name": "a lone surrogate escaped",
+      "input": "{\"activity\":[{\"id\":\"a\",\"text\":\"x\\ud800y\"}]}",
+      "reencoded": "{\"version\":5,\"activity\":[{\"id\":\"a\",\"text\":\"x\ud800y\"}]}"
+    },
+    {
+      "name": "duplicate keys: the last wins",
+      "input": "{\"move\":{\"name\":\"a\",\"name\":\"b\"}}",
+      "reencoded": "{\"version\":5,\"move\":{\"name\":\"b\"}}"
+    },
+    {
+      "name": "trailing comma",
+      "input": "{\"version\":5,}",
+      "decoded": "error: JsonDecodingException"
+    }
+  ]
+}

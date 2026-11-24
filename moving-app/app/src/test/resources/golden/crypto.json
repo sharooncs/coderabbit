@@ -1,0 +1,74 @@
+{
+  "about": "The building blocks of update files (data/Sealed.kt) on fixed inputs: HKDF-SHA256 (one block, at most 32 bytes; an empty salt is 32 zero bytes), AES-256-GCM chunks with a 12-byte nonce of an 8-byte prefix and the chunk number (big-endian), bound by AAD = SHA-256(header) + chunk number (4 bytes, big-endian) + 1 for the last chunk or 0, each chunk written as its length (4 bytes, big-endian) and the sealed bytes (ciphertext and 16-byte tag).",
+  "hkdf": [
+    {
+      "name": "RFC 5869 case 1 (its first 32 bytes)",
+      "ikm": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+      "salt": "000102030405060708090a0b0c",
+      "info": "f0f1f2f3f4f5f6f7f8f9",
+      "okm32": "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf",
+      "okm16": "3cb25f25faacd57a90434f64d0362f2a"
+    },
+    {
+      "name": "an empty salt",
+      "ikm": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+      "salt": "",
+      "info": "f0f1f2f3f4f5f6f7f8f9",
+      "okm32": "abbafb13f5c1bc489d4203135817956dd521b39e3bd61d1cc85cef884d1f8e2e",
+      "okm16": "abbafb13f5c1bc489d4203135817956d"
+    },
+    {
+      "name": "as for a phone",
+      "ikm": "1111111111111111111111111111111111111111111111111111111111111111",
+      "salt": "22222222222222222222222222222222",
+      "info": "486f7573654d6f766520757064617465206b657920317c6d33393036633436636664343466343037346365377c706173686170686f6e6532333435363738396162",
+      "okm32": "9122db3d473504542bdb90c28885f7d2e77c853a8e1236ad5104fdda37a8e975",
+      "okm16": "9122db3d473504542bdb90c28885f7d2"
+    }
+  ],
+  "chunks": {
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "prefix": "a1a2a3a4a5a6a7a8",
+    "headerHash": "3f0a99256beeb89a6b9f2793885291a6454928fd74903159ab2e51452b13df6f",
+    "one": [
+      {
+        "plaintext": "68656c6c6f",
+        "index": 0,
+        "last": true,
+        "sealed": "1301b0d7bb3f890c11ff2ac53638be9d3768c93eb8"
+      },
+      {
+        "plaintext": "68656c6c6f",
+        "index": 0,
+        "last": false,
+        "sealed": "1301b0d7bb7ae62cecb8b6f650816d83cefd93cf9c"
+      },
+      {
+        "plaintext": "",
+        "index": 3,
+        "last": true,
+        "sealed": "2b11d82f9576a0910bffe67906bcc7de"
+      }
+    ],
+    "stream": {
+      "plaintext": "150000 bytes, byte i = i mod 251",
+      "sealedLength": 150060,
+      "sha256": "c4476ef43d4f65e19a4b8b48a330474dd2ef99e8f0a88d7bcb9a036fbdd198fb",
+      "chunks": [
+        {
+          "length": 65552,
+          "tag": "bf2f41705054387955746a41ed0a95b9"
+        },
+        {
+          "length": 65552,
+          "tag": "f433f373dbacba5ff13679d0e224be59"
+        },
+        {
+          "length": 18944,
+          "tag": "617a0479190d7d81eca520b750b00419"
+        }
+      ],
+      "opensBack": true
+    }
+  }
+}

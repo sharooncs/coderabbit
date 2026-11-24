@@ -1,0 +1,119 @@
+{
+  "about": "What a hosting phone on 2.1.1 answers to hellos it turns down (sent straight to it, read until it hangs up), and every word either phone says, as writeUTF writes it. VERSION from 2.1 is followed by its data layout (an int); from 2.0 it is not.",
+  "cases": [
+    {
+      "name": "wrong code",
+      "sent": "0007484d53594e433300085a5a5a5a5a5a5a5a000c507269796120eda0bcedbfa000014200000005000000027b7d",
+      "answer": "00024e4f",
+      "word": "NO",
+      "answerReadToItsEnd": true
+    },
+    {
+      "name": "other data layout (4)",
+      "sent": "0007484d53594e43330008484d34525438575a000c507269796120eda0bcedbfa000014200000004000000027b7d",
+      "answer": "000756455253494f4e00000005",
+      "word": "VERSION",
+      "layout": 5,
+      "answerReadToItsEnd": true
+    },
+    {
+      "name": "version 1.3's hello",
+      "sent": "0007484d53594e43320008484d34525438575a000c507269796120eda0bcedbfa000014200000003",
+      "answer": "000756455253494f4e",
+      "word": "VERSION",
+      "answerReadToItsEnd": true
+    },
+    {
+      "name": "version 1.3's hello from a phone on this layout (a dropped connection)",
+      "sent": "0007484d53594e43320008484d34525438575a000c507269796120eda0bcedbfa000014200000005",
+      "answer": "0005414741494e",
+      "word": "AGAIN",
+      "answerReadToItsEnd": true
+    },
+    {
+      "name": "version 1.2's hello (only its first line is read)",
+      "sent": "0007484d53594e4331",
+      "answer": "00024e4f",
+      "word": "NO",
+      "answerReadToItsEnd": true
+    }
+  ],
+  "words": [
+    {
+      "word": "OK",
+      "writeUTF": "00024f4b"
+    },
+    {
+      "word": "ONEWAY",
+      "writeUTF": "00064f4e45574159"
+    },
+    {
+      "word": "NO",
+      "writeUTF": "00024e4f"
+    },
+    {
+      "word": "VERSION",
+      "writeUTF": "000756455253494f4e"
+    },
+    {
+      "word": "REMOVED",
+      "writeUTF": "000752454d4f564544"
+    },
+    {
+      "word": "STRANGER",
+      "writeUTF": "0008535452414e474552"
+    },
+    {
+      "word": "EXPIRED",
+      "writeUTF": "000745585049524544"
+    },
+    {
+      "word": "WRONGMOVE",
+      "writeUTF": "000957524f4e474d4f5645"
+    },
+    {
+      "word": "RETIRED",
+      "writeUTF": "000752455449524544"
+    },
+    {
+      "word": "UNDONE",
+      "writeUTF": "0006554e444f4e45"
+    },
+    {
+      "word": "UNCONFIRMED",
+      "writeUTF": "000b554e434f4e4649524d4544"
+    },
+    {
+      "word": "WAIT",
+      "writeUTF": "000457414954"
+    },
+    {
+      "word": "AGAIN",
+      "writeUTF": "0005414741494e"
+    },
+    {
+      "word": "GO",
+      "writeUTF": "0002474f"
+    },
+    {
+      "word": "TAKE",
+      "writeUTF": "000454414b45"
+    },
+    {
+      "word": "DONE",
+      "writeUTF": "0004444f4e45"
+    },
+    {
+      "word": "HMSYNC3",
+      "writeUTF": "0007484d53594e4333"
+    },
+    {
+      "word": "HMSYNC2",
+      "writeUTF": "0007484d53594e4332"
+    },
+    {
+      "word": "HMSYNC1",
+      "writeUTF": "0007484d53594e4331"
+    }
+  ]
+}

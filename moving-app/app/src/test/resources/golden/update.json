@@ -1,0 +1,105 @@
+{
+  "about": "An update file Priya's phone made for Asha's (Update.write), and Asha's folder just before it arrived. Opening it with today's code must say what 'opened' says. Random in it: the header's time ('at'), the 8-byte nonce prefix, the content key, each recipient's ephemeral key, salt and IV, and so every byte after the header; and the inner zip's DOS times.",
+  "recipient": {
+    "phoneId": "pashaphone23456789ab",
+    "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEtZeJYt7fkoLA9xt5p2FaHuA/dSrcQr0TzbtIN8R0qNNRMgwA9KqG0QLi7W3ON2u7ovAhOVft0PmW/Ez54L30hQ==",
+    "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgUUSEJ2b0AW/COagdMHllSWYXyv712X78/d+DXGQJGj2hRANCAAS1l4li3t+SgsD3G3mnYVoe4D91KtxCvRPNu0g3xHSo01EyDAD0qobRAuLtbc43a7ui8CE5V+3Q+Zb8TPngvfSF",
+    "moveId": "m3906c46cfd44f4074ce7",
+    "files": {
+      "codes.json": "{\"letter\":\"A\",\"labelsFrom\":1,\"labelsTo\":99999,\"nextLabel\":1,\"founder\":true,\"lettersGiven\":[\"B\"],\"blocksGiven\":1}",
+      "data.json": "{\"version\":5,\"move\":{\"name\":\"Maple Road\",\"moveDay\":20600,\"vanCapacityM3\":12.5,\"currency\":\"£\",\"setupDone\":true,\"updatedAt\":1767225600003,\"changedBy\":{\"by\":\"00000000-0000-4000-8000-000000000001\",\"at\":1767225600003,\"sum\":\"cmdr69f9\"}},\"rooms\":[{\"id\":\"00000000-0000-4000-8000-000000000002\",\"home\":\"DEST\",\"name\":\"Kitchen\",\"code\":\"KIT\",\"sort\":1,\"createdBy\":\"00000000-0000-4000-8000-000000000001\",\"hands\":[\"00000000-0000-4000-8000-000000000001\"],\"updatedAt\":1767225600004},{\"id\":\"00000000-0000-4000-8000-000000000003\",\"home\":\"ORIGIN\",\"name\":\"Kitchen\",\"code\":\"KIT\",\"mapsTo\":\"00000000-0000-4000-8000-000000000002\",\"sort\":1,\"createdBy\":\"00000000-0000-4000-8000-000000000001\",\"hands\":[\"00000000-0000-4000-8000-000000000001\"],\"updatedAt\":1767225600006},{\"id\":\"00000000-0000-4000-8000-000000000004\",\"home\":\"ORIGIN\",\"name\":\"Zoë's room\",\"code\":\"ZOË\",\"color\":1,\"sort\":2,\"createdBy\":\"00000000-0000-4000-8000-000000000001\",\"hands\":[\"00000000-0000-4000-8000-000000000001\"],\"updatedAt\":1767225600007}],\"items\":[{\"id\":\"00000000-0000-4000-8000-000000000005\",\"name\":\"Sofa\",\"originRoomId\":\"00000000-0000-4000-8000-000000000003\",\"destRoomId\":\"00000000-0000-4000-8000-000000000002\",\"disposition\":\"SELL\",\"widthCm\":210.0,\"depthCm\":0.1,\"heightCm\":1.0E-4,\"fragile\":true,\"decisionBy\":{\"by\":\"00000000-0000-4000-8000-000000000001\",\"at\":1767225600010,\"sum\":\"5imsxduv\"},\"roomBy\":{\"by\":\"00000000-0000-4000-8000-000000000001\",\"at\":1767225600008,\"sum\":\"4mfkbdjo\"},\"outcomeBy\":{\"sum\":\"43sj6zh\"},\"whereBy\":{\"by\":\"00000000-0000-4000-8000-000000000001\",\"at\":1767225600008,\"sum\":\"bq26aui9\"},\"handoverBy\":{\"sum\":\"16d0kg80\"},\"handedOverBy\":{\"sum\":\"drhg19q9\"},\"createdAt\":1767225600008,\"createdBy\":\"00000000-0000-4000-8000-000000000001\",\"hands\":[\"00000000-0000-4000-8000-000000000001\"],\"updatedAt\":1767225600010},{\"id\":\"00000000-0000-4000-8000-000000000007\",\"name\":\"TV 日本\",\"originRoomId\":\"00000000-0000-4000-8000-000000000004\",\"widthCm\":-0.0,\"decisionBy\":{\"sum\":\"3mxdtmn4\"},\"roomBy\":{\"sum\":\"e13wthok\"},\"outcomeBy\":{\"sum\":\"43sj6zh\"},\"whereBy\":{\"by\":\"00000000-0000-4000-8000-000000000001\",\"at\":1767225600011,\"sum\":\"bq26aui9\"},\"handoverBy\":{\"sum\":\"16d0kg80\"},\"handedOverBy\":{\"sum\":\"drhg19q9\"},\"createdAt\":1767225600011,\"createdBy\":\"00000000-0000-4000-8000-000000000001\",\"hands\":[\"00000000-0000-4000-8000-000000000001\"],\"updatedAt\":1767225600012},{\"id\":\"00000000-0000-4000-8000-000000000019\",\"name\":\"Lamp\",\"decisionBy\":{\"sum\":\"3mxdtmn4\"},\"roomBy\":{\"sum\":\"e13wthok\"},\"outcomeBy\":{\"sum\":\"43sj6zh\"},\"whereBy\":{\"by\":\"00000000-0000-4000-8000-000000000016\",\"at\":1767312000004,\"sum\":\"bq26aui9\"},\"handoverBy\":{\"sum\":\"16d0kg80\"},\"handedOverBy\":{\"sum\":\"drhg19q9\"},\"createdAt\":1767312000004,\"createdBy\":\"00000000-0000-4000-8000-000000000016\",\"hands\":[\"00000000-0000-4000-8000-000000000016\"],\"updatedAt\":1767312000004}],\"boxes\":[{\"id\":\"00000000-0000-4000-8000-000000000008\",\"label\":\"L001\",\"originRoomId\":\"00000000-0000-4000-8000-000000000003\",\"destRoomId\":\"00000000-0000-4000-8000-000000000002\",\"contents\":\"Plates, Mugs, ΟΔΟΣ cups, Straße\",\"damaged\":true,\"damageNote\":\"Corner crushed\",\"packedBy\":\"Asha\",\"whereBy\":{\"by\":\"00000000-0000-4000-8000-000000000001\",\"at\":1767225600014,\"sum\":\"bq26aui9\"},\"createdAt\":1767225600014,\"createdBy\":\"00000000-0000-4000-8000-000000000001\",\"hands\":[\"00000000-0000-4000-8000-000000000001\"],\"updatedAt\":1767225600015},{\"id\":\"00000000-0000-4000-8000-000000000022\",\"label\":\"L002\",\"originRoomId\":\"00000000-0000-4000-8000-000000000003\",\"destRoomId\":\"00000000-0000-4000-8000-000000000002\",\"packedBy\":\"Asha\",\"whereBy\":{\"by\":\"00000000-0000-4000-8000-000000000001\",\"at\":1767225600024,\"sum\":\"bq26aui9\"},\"createdAt\":1767225600024,\"createdBy\":\"00000000-0000-4000-8000-000000000001\",\"hands\":[\"00000000-0000-4000-8000-000000000001\"],\"updatedAt\":1767225600024}],\"photos\":[{\"id\":\"00000000-0000-4000-8000-000000000012\",\"ownerId\":\"00000000-0000-4000-8000-000000000008\",\"kind\":\"CONTENTS\",\"file\":\"00000000-0000-4000-8000-000000000011.jpg\",\"by\":\"00000000-0000-4000-8000-000000000001\",\"createdAt\":1767225600017,\"hands\":[\"00000000-0000-4000-8000-000000000001\"],\"updatedAt\":1767225600017},{\"id\":\"00000000-0000-4000-8000-000000000024\",\"ownerId\":\"00000000-0000-4000-8000-000000000022\",\"file\":\"00000000-0000-4000-8000-000000000023.jpg\",\"by\":\"00000000-0000-4000-8000-000000000001\",\"createdAt\":1767225600025,\"hands\":[\"00000000-0000-4000-8000-000000000001\"],\"updatedAt\":1767225600025},{\"id\":\"00000000-0000-4000-8000-000000000021\",\"ownerId\":\"00000000-0000-4000-8000-000000000019\",\"kind\":\"CONDITION\",\"file\":\"00000000-0000-4000-8000-000000000020.jpg\",\"by\":\"00000000-0000-4000-8000-000000000016\",\"createdAt\":1767312000005,\"hands\":[\"00000000-0000-4000-8000-000000000016\"],\"updatedAt\":1767312000005}],\"tasks\":[{\"id\":\"00000000-0000-4000-8000-000000000013\",\"title\":\"Book the van\",\"offsetDays\":-28,\"planBy\":{\"by\":\"00000000-0000-4000-8000-000000000001\",\"at\":1767225600018,\"sum\":\"cq6jml7n\"},\"doneBy\":{\"sum\":\"drhg19q9\"},\"updatedAt\":1767225600018}],\"expenses\":[{\"id\":\"00000000-0000-4000-8000-000000000014\",\"title\":\"Van hire\",\"amount\":1.0E21,\"planned\":true,\"costBy\":{\"by\":\"00000000-0000-4000-8000-000000000001\",\"at\":1767225600019,\"sum\":\"ct73chrm\"},\"paidBy\":{\"by\":\"00000000-0000-4000-8000-000000000001\",\"at\":1767225600019,\"sum\":\"e0syhnkc\"},\"updatedAt\":1767225600019}],\"supplies\":[{\"id\":\"00000000-0000-4000-8000-000000000015\",\"name\":\"Tape\",\"need\":6,\"have\":2,\"updatedAt\":1767225600020}],\"people\":[{\"id\":\"00000000-0000-4000-8000-000000000001\",\"name\":\"Asha\",\"role\":\"ORGANISER\",\"letter\":\"A\",\"joinedAt\":1767225600000,\"grants\":[{\"role\":\"ORGANISER\",\"at\":1767225600000,\"phone\":\"pashaphone23456789ab\"}],\"phones\":[{\"id\":\"pashaphone23456789ab\",\"labelsFrom\":1,\"labelsTo\":99999,\"addedAt\":1767225600001,\"key\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEtZeJYt7fkoLA9xt5p2FaHuA/dSrcQr0TzbtIN8R0qNNRMgwA9KqG0QLi7W3ON2u7ovAhOVft0PmW/Ez54L30hQ==\",\"keyAt\":1767225540000}],\"updatedAt\":1767225600002},{\"id\":\"00000000-0000-4000-8000-000000000016\",\"name\":\"Priya 🏠\",\"role\":\"DECIDER\",\"letter\":\"B\",\"joinedAt\":1767312000003,\"grants\":[{\"role\":\"DECIDER\",\"at\":1767225600021,\"by\":\"00000000-0000-4000-8000-000000000001\",\"phone\":\"pashaphone23456789ab\"}],\"phones\":[{\"id\":\"ppriyaphone2345678ab\",\"labelsFrom\":1000,\"labelsTo\":1999,\"addedAt\":1767225600022,\"key\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEay0G0qqU14TY9r0UogFeqHX0Mov3QcTNEALy2ygSOdyJYCZRXqRRjQsu9mPtU9ANyBKH6yoQfXjgeBLAxWhD5A==\",\"keyAt\":1767311940000}],\"updatedAt\":1767312000003}],\"activity\":[{\"id\":\"00000000-0000-4000-8000-000000000006\",\"by\":\"00000000-0000-4000-8000-000000000001\",\"at\":1767225600010,\"text\":\"decided to sell Sofa\",\"refId\":\"00000000-0000-4000-8000-000000000005\",\"updatedAt\":1767225600010},{\"id\":\"00000000-0000-4000-8000-000000000010\",\"by\":\"00000000-0000-4000-8000-000000000001\",\"at\":1767225600016,\"text\":\"reported damage to L001\",\"refId\":\"00000000-0000-4000-8000-000000000008\",\"updatedAt\":1767225600016},{\"id\":\"00000000-0000-4000-8000-000000000017\",\"by\":\"00000000-0000-4000-8000-000000000001\",\"at\":1767225600021,\"text\":\"added Priya 🏠 as a Decider\",\"refId\":\"00000000-0000-4000-8000-000000000016\",\"updatedAt\":1767225600021}],\"hidden\":[{\"id\":\"00000000-0000-4000-8000-000000000005\",\"detailsBy\":{\"sum\":\"7l52dlvd\"},\"price\":1.0E7,\"priceBy\":{\"by\":\"00000000-0000-4000-8000-000000000001\",\"at\":1767225600010,\"sum\":\"2n1ssyze\"},\"saleBy\":{\"sum\":\"e13wthok\"},\"updatedAt\":1767225600010},{\"id\":\"00000000-0000-4000-8000-000000000007\",\"value\":0.001,\"make\":\"Sony\",\"model\":\"X90\",\"serial\":\"SN-0042\",\"detailsBy\":{\"by\":\"00000000-0000-4000-8000-000000000001\",\"at\":1767225600013,\"sum\":\"bn5r7rq8\"},\"priceBy\":{\"sum\":\"e13wthok\"},\"saleBy\":{\"sum\":\"e13wthok\"},\"updatedAt\":1767225600013}],\"damage\":[{\"id\":\"00000000-0000-4000-8000-000000000009\",\"thingId\":\"00000000-0000-4000-8000-000000000008\",\"note\":\"Corner crushed\",\"by\":\"00000000-0000-4000-8000-000000000001\",\"at\":1767225600016,\"clearedBy\":{\"by\":\"00000000-0000-4000-8000-000000000001\",\"at\":1767225600016,\"sum\":\"drhg19q9\"},\"updatedAt\":1767225600016}],\"lines\":[{\"id\":\"00000000-0000-4000-8000-000000000008/5uz9hmal\",\"boxId\":\"00000000-0000-4000-8000-000000000008\",\"text\":\"Plates\",\"sort\":1767225600015000,\"by\":\"00000000-0000-4000-8000-000000000001\",\"updatedAt\":1767225600015},{\"id\":\"00000000-0000-4000-8000-000000000008/e0suoqbq\",\"boxId\":\"00000000-0000-4000-8000-000000000008\",\"text\":\"Mugs\",\"sort\":1767225600015001,\"by\":\"00000000-0000-4000-8000-000000000001\",\"updatedAt\":1767225600015},{\"id\":\"00000000-0000-4000-8000-000000000008/bpimz93b\",\"boxId\":\"00000000-0000-4000-8000-000000000008\",\"text\":\"ΟΔΟΣ cups\",\"sort\":1767225600015002,\"by\":\"00000000-0000-4000-8000-000000000001\",\"updatedAt\":1767225600015},{\"id\":\"00000000-0000-4000-8000-000000000008/5wbc4bl0\",\"boxId\":\"00000000-0000-4000-8000-000000000008\",\"text\":\"Straße\",\"sort\":1767225600015003,\"by\":\"00000000-0000-4000-8000-000000000001\",\"updatedAt\":1767225600015}]}",
+      "device.json": "{\"name\":\"Asha\",\"personId\":\"00000000-0000-4000-8000-000000000001\",\"phoneId\":\"pashaphone23456789ab\",\"sharedUpTo\":1767312000005,\"sharedAllUpTo\":1767312000005}",
+      "move.json": "{\"id\":\"m3906c46cfd44f4074ce7\"}",
+      "phone-id": "pashaphone23456789ab",
+      "phone-key.json": "{\"public\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEtZeJYt7fkoLA9xt5p2FaHuA/dSrcQr0TzbtIN8R0qNNRMgwA9KqG0QLi7W3ON2u7ovAhOVft0PmW/Ez54L30hQ==\",\"private\":\"MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgUUSEJ2b0AW/COagdMHllSWYXyv712X78/d+DXGQJGj2hRANCAAS1l4li3t+SgsD3G3mnYVoe4D91KtxCvRPNu0g3xHSo01EyDAD0qobRAuLtbc43a7ui8CE5V+3Q+Zb8TPngvfSF\",\"at\":1767225540000}"
+    }
+  },
+  "sender": {
+    "phoneId": "ppriyaphone2345678ab",
+    "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEay0G0qqU14TY9r0UogFeqHX0Mov3QcTNEALy2ygSOdyJYCZRXqRRjQsu9mPtU9ANyBKH6yoQfXjgeBLAxWhD5A==",
+    "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg7vTzQRDK7yPvjrvwkSo/A2T4/xyMwe4L9oPJSLqPMm2hRANCAARrLQbSqpTXhNj2vRSiAV6odfQyi/dBxM0QAvLbKBI53IlgJlFepFGNCy72Y+1T0A3IEofrKhB9eOB4EsDFaEPk"
+  },
+  "sample": {
+    "hex": "484d55504441544500000001000001a57b22736368656d61223a352c226d6f76654964223a226d3339303663343663666434346634303734636537222c2266726f6d223a2270707269796170686f6e65323334353637386162222c226174223a313739353530353539353531332c226e6f6e6365223a223131314f68426d3377494d3d222c22746f223a5b7b2270686f6e65223a22706173686170686f6e6532333435363738396162222c2265706b223a224d466b77457759484b6f5a497a6a3043415159494b6f5a497a6a304441516344516741456c6b6a617a36677631544754544e5172484a4374524b484f423476332b42644e42743563376368315871364661663450582b4e365779786278484e386c61476979737672653465456a68686f556c4d69766637464d673d3d222c2273616c74223a227a7038417868756472514d2b6a307a54345973634f773d3d222c226976223a223030775255596550634c614e5837466a222c226b6579223a2251677733527066573239643448537a637653793744325748796a58455664596c4d306544774748554658506d4d48456b496c5732724656506f686f726b777668227d5d7d0000077ba13c01ed5b1d9760dea3567b31f1f2b07b5a929b49735488545d93671e7a604940ff7b943ebe819b8ca217e02e9cac6ecf90ec1bf6972981e4e87c54582191718f72a6d15ea81c6b8a417dbb32128799c6a505f2402d0a343ee4b07104025cbecffe4afb12a15b3fe4c1456231e0295e26402bf69f00bee5672bf74ca407d69a5799f22d631645d34bb8ae986fe4816e928cd257c96e7ab41ff1cac7bc0e4966be9de3fd5cd8bd33dae4dd97874609dfdedde636416dcfd4ce0300708352f8c86e3152e2135672f7e7529c93642a808fb085715f76079d6d590e6412e56c455b37c968ebe73fc88a416f87c8749cdd7a267ef00de5f8bb1056cb497d1b1df9508654b49b50cf369c631fabcad4f333e5e83dfbba66e9729c15522e683e39d31c1b6ce75049b9bed95589a618d2799836548219465634f5f461e1059bbc89d9db11dd347fc20278d865e8b9ae34ee80a8e09967a0b699a0e86e3a425bf6bc2dde1b7480a10df692d7329dbe1c315f95964a107f4d0bec164afcc7400a55c580d929366270c5a8f83c54aed32c0092a4f8d77a53eb736884df94147fb9a2d2b1e614abfb3c0fc0314703adbdd17861793794d54a55ac3a474a657de648000702c1e1d545275554f30f6e560d82b3009ada0578afb10fea4d172ed835d52b5ec79cd9f9f782956bee4c758d0cd79732e53c468f09cc53c98b577185bcf0ecae7b5d1d4e9f57f15953b4496340fccf07cdc3a2b183e1248288e325e89c37d3ec2c9244db1ad843f7ff4bd930399b21be767b654de211d9f3d3b796d6e47b2882f53968ece9f757492593947240b83e78bb1b63495c8d61ac1a5d6fe150352d7c995886f717eebabe972106d31bc16d15ffc3e1fa924555f8d0e8c7a4b8d4ce45073b085f4573479a4875932aca68a712e04ccd94e05f1304e0534157a46dd58a3d856ee51a535ab1db3bb8065ef0fa64fc242c4e6c7c5a4288f010f6ad7b6d86331d0e49581883ef6df7dea7e81c6de5c9857519759a27b8dc2e816cd2aca753de8cdeae2df5bd0cd1e19625974ae3c5b2622041c22a4c64b4e18b38cfbde2333ce73fccad0b8f4acadf5b2586131204f893ffea3ab56b791eaee05d30135fca8ae72439e3c7e749f2584558049d4e8ed5e937d7e1175af0fb652395602684614125b7e65609e0c097c1e7a45632cd82e5603e9987fbcc9d4e5e7655121aacb50f191b6876542462d1722ee44ff2ebc7012a0d411a2f884e89c2d7a909ebab7912b01ddf851b98e17c19b3921b14755eb8cc7c85583da5d68dcd61396876fa9f54f775206e553e3b8ee864c6500b90733111231d38ca8b188a00d717edc5ed3f1e3a2d1481b39a249677f2804cff18792ba870c430aba1d8ead70e4f01776eb66e8a2eab1736a152df4a749ea751a2652f4f006cbdc06badb121f79bb8b2f2cb844ad32da9ad059426481685e470f766044596e0ba2aa1b187fe8d49f727e062e9a56e56906de14dcc289c7fbcfb9f1d8d48fd5f8cec2d2c76b1270a6185ac87af2455cdc2655be7c1ec59957e5ed8d8dc676e230205bec0580d9c4ae81370b75dbc618c02a7d3c5096cfb2d5f11ded140a03fde4769ea2e12575010c90053c6da1f94a992e5dcf148493595d50c3294e53a3cb466f635c252c40fa4a53b42300f6c79b5b91331f3934fe344861f64935592bd88528346a903e12fed7ceecfbac6a624c425746bbd7a8b52a97e20a74f12e9decafe3a2205ded7128b8d6c4883b68b9a80aeab26fd10552f26efc23d13630f1f282b1cd2b871027f7004d72edb1eab016e8a48f85e953c21f3773289fbf79a653ec39f673a27b661558385080ab11f2ba1c9af2525413b5b3296ac2fc3a6705c4a54129cf174cae65911f86a63ffc62606ec811a2e8cf12dbda5055660f18dbab145c139ddf798d959ae301c85a1acb2eb3aea7adcfe42605db56cb3cdf3ee1abc9fc078464ce31abd5a22ea2ad88f8da9bdac4333504bd5bd095d5c5a8fb4775ce6c9afb78558fb941492f6c6c0daf3b240979ed79b681ee30f7f948dd1a3a57603ed804757d45df8275224cc7077e6acf7bba7c46a580dd5393bf0bfd22b9167b658bc178606bac0fb9c21afa848640a3f757044f6f8cedf6ff5dfadbe4c9be45a9e3009bea251c5afe44f7bda5fe726f08b85f9656321b80caefb55c3ecda7d2b6566c026c87e4703ab5a136207d7b8ef1e5fc97b90f34b7f55a185bcd208a6f90b7a95982035b868ae4cf7059f43b33568a546cbe1f214de6de9d76e920575d2814a7dbc2e013933d3ee3df2ac03e5ccad387fe6f5935a37bf76f20ab63ac30ad04af72909d46b4cea44d3bae48957169566de9a81c0d6117fa0d8ac156b83669e01528474fe931177600ce3dbc09022bd36cc9fcb62c725842c17892f29c4fd63631c1fd0de4fb48761fef14ff7673b76b1708dae5e050daefffa3f3551e347a5619f6e29423421f3ea2f532e8c6678bd6a866dca4bdac7e732168aad5da7e27f6fdd0de82c0e25709193ef73ad45b4b3ccccdf97bde8a89125694e65065a49de35070c50263ecbd401aa536f8a5d7bcd6dd7381fa0e8b9c5ba0e2245cf98eb86e923a89592123c47984bbfbe22d0b7b0d7da51eb51021705b22dbd211d215404be8b60aeb616c9bb7da4b626d8d6835898e1d6110effb0fa3d970bec9e6f6b17e529598d0372e2"
+  },
+  "intermediate": {
+    "header": "{\"schema\":5,\"moveId\":\"m3906c46cfd44f4074ce7\",\"from\":\"ppriyaphone2345678ab\",\"at\":1795505595513,\"nonce\":\"111OhBm3wIM=\",\"to\":[{\"phone\":\"pashaphone23456789ab\",\"epk\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAElkjaz6gv1TGTTNQrHJCtRKHOB4v3+BdNBt5c7ch1Xq6Faf4PX+N6WyxbxHN8laGiysvre4eEjhhoUlMivf7FMg==\",\"salt\":\"zp8AxhudrQM+j0zT4YscOw==\",\"iv\":\"00wRUYePcLaNX7Fj\",\"key\":\"Qgw3RpfW29d4HSzcvSy7D2WHyjXEVdYlM0eDwGHUFXPmMHEkIlW2rFVPohorkwvh\"}]}",
+    "headerSha256": "83c17f7dd2a86dbc757edef7b69575738de1983ca957fc716ac5d776889a99b1",
+    "ecdhSecret": "632e8092e3f4d80f4c7904c42e48196bd6a349eeb718c0c387cfed9604ac3b35",
+    "kek": "c72398ab6124efd8343ea98bfa2ab9cdbc546de925c9b6c6a00bb7ed5b1aecf5",
+    "contentKey": "b50a8afc41c0ec95628092c7cacda5617a47179b6663a83b575799ca06cb2a93",
+    "prefix": "d75d4e8419b7c083",
+    "chunks": [
+      {
+        "index": 0,
+        "last": true,
+        "length": 1915,
+        "nonce": "d75d4e8419b7c08300000000",
+        "aad": "83c17f7dd2a86dbc757edef7b69575738de1983ca957fc716ac5d776889a99b10000000001",
+        "plaintextLength": 1899
+      }
+    ],
+    "zipLength": 1899,
+    "zipSha256": "4eb2f68261f487120bc4f889f7cd79f4a00a9f684fe7252423ff27ac22ab820f",
+    "zipEntries": [
+      {
+        "name": "data.json",
+        "dosTime": "0x3c27",
+        "dosDate": "0x5d78",
+        "compressedSize": "1767"
+      }
+    ]
+  },
+  "deterministic": {
+    "magic": "HMUPDATE",
+    "format": 1,
+    "header": {
+      "schema": 5,
+      "moveId": "m3906c46cfd44f4074ce7",
+      "from": "ppriyaphone2345678ab",
+      "to": [
+        "pashaphone23456789ab"
+      ],
+      "keys": [
+        "schema",
+        "moveId",
+        "from",
+        "at",
+        "nonce",
+        "to"
+      ],
+      "toKeys": [
+        "phone",
+        "epk",
+        "salt",
+        "iv",
+        "key"
+      ]
+    },
+    "chunks": 1,
+    "entries": [
+      {
+        "name": "data.json",
+        "versionMadeBy": 20,
+        "versionNeeded": 20,
+        "flags": "0x0808",
+        "method": 8,
+        "extraLength": 0,
+        "localExtraLength": 0,
+        "dataDescriptorWithSignature": true,
+        "size": "9182",
+        "crc32": "53966b2c",
+        "sha256": "88b37d729b568c7e0d7b570b78fc8e6ef146211159c25d440634bd46c0d43a9b"
+      }
+    ]
+  },
+  "opened": {
+    "ok": true,
+    "message": "Taken in from Priya 🏠: 1 change.",
+    "fromName": "Priya 🏠",
+    "changes": 1,
+    "photos": 0,
+    "fromRemoved": "",
+    "mayTakeIn": false
+  }
+}
