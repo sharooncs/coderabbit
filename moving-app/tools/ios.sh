@@ -15,7 +15,8 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 IOS="$HERE/iosApp"
 TOOLS="${HM_TOOLS:-$HOME/Developer/tools}"
-export PATH="$TOOLS/bin:$PATH"
+# XcodeGen runs from its own folder: it finds its default build settings next to itself (not through a symlink).
+export PATH="$TOOLS/xcodegen/bin:$TOOLS/bin:$PATH"
 PROJECT="$IOS/HouseMove.xcodeproj"
 TEAM=USW8537DGX
 cd "$IOS"
@@ -81,13 +82,13 @@ case "${1:-}" in
     ;;
   setup)
     mkdir -p "$TOOLS/bin"
+    rm -f "$TOOLS/bin/xcodegen"
     if ! command -v xcodegen >/dev/null; then
       say "Installing XcodeGen into $TOOLS"
       tmp=$(mktemp -d)
-      curl -fsSL -o "$tmp/xcodegen.zip" https://github.com/yonaskolb/XcodeGen/releases/latest/download/xcodegen.zip
+      curl -fsSL -o "$tmp/xcodegen.zip" https://github.com/yonaskolb/XcodeGen/releases/download/${XCODEGEN_VERSION:-2.48.0}/xcodegen.zip
       unzip -q "$tmp/xcodegen.zip" -d "$tmp"
       rm -rf "$TOOLS/xcodegen"; mv "$tmp/xcodegen" "$TOOLS/xcodegen"
-      ln -sf "$TOOLS/xcodegen/bin/xcodegen" "$TOOLS/bin/xcodegen"
       rm -rf "$tmp"
     fi
     xcodegen --version
