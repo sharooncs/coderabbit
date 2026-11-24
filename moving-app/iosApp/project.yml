@@ -25,10 +25,30 @@ targets:
     platform: iOS
     sources:
       - path: HouseMove
-      # The same Outfit font files the Android app uses (one copy in the repo).
-      - path: ../app/src/main/res/font
-        name: Fonts
-        buildPhase: resources
+    # The screens are Kotlin (moving-app/sharedUi, Compose Multiplatform). Before Xcode compiles the Swift, Gradle
+    # builds them as the static framework HouseMoveKit for this build's configuration and platform (Debug or Release,
+    # simulator or iPhone) into sharedUi/build/xcode-frameworks, and copies their resources (the Outfit fonts) into the
+    # app as compose-resources. JetBrains' "direct integration": kotlinlang.org/docs/multiplatform/multiplatform-direct-integration.html
+    preBuildScripts:
+      - name: Build the Kotlin screens (HouseMoveKit)
+        # Every build: Gradle itself works out whether anything changed.
+        basedOnDependencyAnalysis: false
+        script: |
+          if [ "YES" = "${OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED:-}" ]; then
+            echo "Skipping Gradle: the IDE built the Kotlin framework already"
+            exit 0
+          fi
+          # Xcode passes on no shell settings: unless JAVA_HOME and ANDROID_HOME are set, use the JDK 21 and the
+          # Android SDK that tools/ios.sh setup installs (the Android plugin needs the SDK even for the iPhone build).
+          TOOLS="${HM_TOOLS:-$HOME/Developer/tools}"
+          if [ -z "${JAVA_HOME:-}" ] && [ -x "$TOOLS/jdk/Contents/Home/bin/java" ]; then
+            export JAVA_HOME="$TOOLS/jdk/Contents/Home"
+          fi
+          if [ -z "${ANDROID_HOME:-}" ] && [ -d "$TOOLS/android-sdk/platforms" ]; then
+            export ANDROID_HOME="$TOOLS/android-sdk"
+          fi
+          cd "$SRCROOT/.."
+          ./gradlew :sharedUi:embedAndSignAppleFrameworkForXcode
     settings:
       base:
         PRODUCT_NAME: HouseMove
@@ -38,6 +58,16 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         ENABLE_PREVIEWS: YES
+        # Where Gradle puts HouseMoveKit, and linking it (static: its code becomes part of the app's own binary).
+        FRAMEWORK_SEARCH_PATHS:
+          - "$(inherited)"
+          - "$(SRCROOT)/../sharedUi/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)"
+        OTHER_LDFLAGS:
+          - "$(inherited)"
+          - "-framework"
+          - "HouseMoveKit"
+        # The Gradle step writes outside what a sandboxed script may (the Gradle cache, sharedUi/build, the app bundle).
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
   HouseMoveUITests:
     type: bundle.ui-testing
     platform: iOS
