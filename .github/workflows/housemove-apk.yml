@@ -4,6 +4,8 @@ on:
   push:
     paths:
       - "moving-app/**"
+      - "!moving-app/iosApp/**"
+      - "!moving-app/tools/ios.sh"
       - ".github/workflows/housemove-apk.yml"
   workflow_dispatch:
 
