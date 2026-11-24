@@ -50,7 +50,7 @@ import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
 /**
- * Golden fixtures: values and bytes that HouseMove 2.1.1 makes, kept in src/test/resources/golden/ so that every later
+ * Golden fixtures: values and bytes that HouseMove 2.1.1 makes, kept in src/jvmTest/resources/golden/ so that every later
  * version, and the Kotlin Multiplatform port for the iPhone (on the JVM and on iOS), can be checked against them. An
  * iPhone has to sync with phones on 2.1.1 and work out the same check values, ids, tie-breaks and bytes, so these files
  * are the yardstick. golden/README.md says how each was made and what a port must do with it.
@@ -65,7 +65,7 @@ import javax.crypto.spec.SecretKeySpec
  *     -Dgolden.record=true          on the test JVM (an IDE run, or JAVA_TOOL_OPTIONS="$JAVA_TOOL_OPTIONS -Dgolden.record=true" for Gradle)
  *     GOLDEN_RECORD=true            in the environment, e.g.  GOLDEN_RECORD=true tools/test.sh --tests app.housemove.GoldenFixturesTest
  *
- * (app/build.gradle.kts does not pass -D options through to the test JVM, hence the two ways.) Recording plays the
+ * (shared/build.gradle.kts does not pass -D options through to the test JVM, hence the two ways.) Recording plays the
  * fixed move twice and refuses to write anything that did not come out the same both times.
  */
 class GoldenFixturesTest {
@@ -188,9 +188,9 @@ class GoldenFixturesTest {
         /** Rewrite the fixtures instead of checking them. See the class comment. */
         val RECORD: Boolean = System.getProperty("golden.record") == "true" || System.getenv("GOLDEN_RECORD") == "true"
 
-        /** The fixtures in the source tree: the tests run in app/, or in the project folder. */
-        val SOURCE: File? = listOf(".", "app", "moving-app/app").map { File(it).absoluteFile }
-            .firstOrNull { File(it, "src/test/java/app/housemove").isDirectory }?.let { File(it, "src/test/resources/golden") }
+        /** The fixtures in the source tree: the tests run in shared/, or in the project folder. */
+        val SOURCE: File? = listOf(".", "shared", "moving-app/shared").map { File(it).absoluteFile }
+            .firstOrNull { File(it, "src/jvmTest/kotlin/app/housemove").isDirectory }?.let { File(it, "src/jvmTest/resources/golden") }
 
         /** Default locales and time zones tried: other digits, other case rules, odd offsets. */
         val LOCALES = listOf(
@@ -216,7 +216,7 @@ class GoldenFixturesTest {
     /** Compare [made] with the fixture [name], or write it in record mode. */
     private fun golden(name: String, made: String) {
         if (RECORD) {
-            val dir = SOURCE ?: throw AssertionError("cannot find src/test/resources from ${File(".").absolutePath}")
+            val dir = SOURCE ?: throw AssertionError("cannot find src/jvmTest/resources from ${File(".").absolutePath}")
             dir.mkdirs()
             File(dir, name).writeText(made)
             println("recorded golden/$name (${made.length} characters)")

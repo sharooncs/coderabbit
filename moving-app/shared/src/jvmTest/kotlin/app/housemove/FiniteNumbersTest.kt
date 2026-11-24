@@ -1,7 +1,6 @@
 package app.housemove
 
 import app.housemove.data.*
-import app.housemove.ui.screens.spokenNumbers
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.descriptors.PolymorphicKind
@@ -19,7 +18,8 @@ import java.io.File
 
 /**
  * NaN and the infinities cannot be written as JSON, so data holding one could not be saved, backed up or synced.
- * A number field never gives one ([parseNum]), and the Store never holds one ([finite]).
+ * A number field never gives one ([parseNum]), and the Store never holds one ([finite]). Spoken sizes are
+ * checked with the screens, in the app's SpokenNumbersTest.
  */
 class FiniteNumbersTest {
     @get:Rule
@@ -56,12 +56,6 @@ class FiniteNumbersTest {
         for ((text, v) in plain) assertEquals(text, v, parseNum(text)!!, 0.0)
         // The longest run of digits that still fits is taken.
         assertEquals(1e308, parseNum("1" + "0".repeat(308))!!, 0.0)
-    }
-
-    @Test
-    fun aSpokenNumberTooLongForADoubleIsLeftOutInItsPlace() {
-        assertEquals(listOf(200.0, null, 85.0), spokenNumbers("200 by $digits310 by 85"))
-        assertEquals(listOf(200.0, 90.5, 85.0), spokenNumbers("200 by 90,5 by 85"))
     }
 
     // ---- the data ------------------------------------------------------------------------
