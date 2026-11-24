@@ -69,6 +69,12 @@ kotlin {
     }
 }
 
+
+// Keeps Compose's view of the shared module's data classes as it was before the split (see the file).
+composeCompiler {
+    stabilityConfigurationFiles.add(layout.projectDirectory.file("compose-stability.conf"))
+}
+
 dependencies {
     // Compose 1.12.1 and Material 3 1.4.0: what Compose Multiplatform 1.12.2 resolves to on Android.
     val composeBom = platform("androidx.compose:compose-bom:2026.09.00")
