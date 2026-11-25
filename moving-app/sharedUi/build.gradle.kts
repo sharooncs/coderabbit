@@ -1,8 +1,9 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 // The screens shared by the Android app and the iPhone app (Compose Multiplatform), step 0e of design/ios-plan.md.
-// For now it holds the shared look (theme, Outfit fonts, the app's Material icons as source) and a trial screen that
-// the iPhone app shows; the app's screens move here in step 2. The app does not depend on it yet.
+// It holds the shared look (theme, Outfit fonts, the app's Material icons as source) and the first iPhone build's
+// screens (ui/iphone: join a move from an Android phone, look at it read-only, get fresh data, leave it); the Android
+// app's screens move here in step 2. The Android app does not depend on it yet.
 //   android    the Android library the app will use (step 2); the same androidx Compose as the app's BOM
 //   desktop    a plain JVM, to render the screens to PNG on Linux (desktopTest)
 //   iosArm64, iosSimulatorArm64   a static framework, HouseMoveKit, that Xcode links into the iPhone app
@@ -48,6 +49,8 @@ kotlin {
             // Material 3 1.9.0 asks for ripple 1.9.1; this keeps it at the Compose version (androidx 1.12.1 on Android).
             implementation("org.jetbrains.compose.material:material-ripple:$composeVersion")
             implementation("org.jetbrains.compose.components:components-resources:$composeVersion")
+            // BackHandler: on the iPhone, the swipe from the left edge goes back, as the Back button does.
+            implementation("org.jetbrains.compose.ui:ui-backhandler:$composeVersion")
         }
         named("desktopTest").dependencies {
             implementation(kotlin("test"))
@@ -63,7 +66,7 @@ compose.resources {
 }
 
 tasks.named<Test>("desktopTest") {
-    // The rendered screens go to build/trial (see TrialScreenRenderTest).
-    systemProperty("trial.out", layout.buildDirectory.dir("trial").get().asFile.path)
+    // The rendered screens go to build/screens (see ScreensRenderTest).
+    systemProperty("screens.out", layout.buildDirectory.dir("screens").get().asFile.path)
     maxHeapSize = "1536m"
 }
