@@ -27,10 +27,3 @@ fun labelQrText(code: String, moveTag: String): String = if (moveTag.isBlank()) 
 class QrPixels(val size: Int, private val dark: BooleanArray) {
     operator fun get(x: Int, y: Int): Boolean = dark[y * size + x]
 }
-
-/**
- * The QR code for [text], [sizePx] pixels square, as label sheets and screens draw it: on Android and the JVM through
- * [Qr.matrix] (zxing 3.5.3, error correction M, a quiet zone of one module, the modules scaled by a whole number and
- * centred). The iPhone's encoder comes in step 1b; it must make the same modules (golden/README.md, qr.json).
- */
-expect fun qrPixels(text: String, sizePx: Int): QrPixels

@@ -84,9 +84,3 @@ object Qr {
         }
     }
 }
-
-/** Android and the JVM: [Qr.matrix], as label sheets and screens draw it. */
-actual fun qrPixels(text: String, sizePx: Int): QrPixels {
-    val m = Qr.matrix(text, sizePx)
-    return QrPixels(m.width, BooleanArray(m.width * m.height) { m.get(it % m.width, it / m.width) })
-}
