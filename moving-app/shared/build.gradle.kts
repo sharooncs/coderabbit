@@ -3,10 +3,12 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.plugin.KotlinPlatformType
 
 // The move's data and its phone-to-phone sync (packages app.housemove.data and app.housemove.sync), shared by the
-// Android app and, later, the iPhone app (step 0c of design/ios-plan.md). For now the code still uses java.io,
-// java.net, javax.crypto and other JDK APIs, so it sits in jvmCommonMain, below commonMain, which the Android target
-// and a plain JVM target both build on. The JVM target runs the data and sync tests without Android or Robolectric.
-// The iPhone targets have only commonMain (empty) until step 1 moves code there.
+// Android app and the iPhone app (steps 0c and 1 of design/ios-plan.md; design/ios-step1.md is the checklist).
+// Nearly all of it is in commonMain. What it asks of the platform is behind small expect/actual seams (Files.kt,
+// Threads.kt, Platform.kt, sync/Net.kt): on Android and the JVM, in jvmCommonMain, each is the java.* call the code
+// made before (Android runs what it ran); on the iPhone, in iosMain, the small ones are Apple's, and the files,
+// sockets, zips and QR codes come in step 1b. The update-file crypto (Keys.kt, Sealed.kt, Update.kt) and zxing stay
+// in jvmCommonMain only. The JVM target runs the data and sync tests without Android or Robolectric.
 plugins {
     id("org.jetbrains.kotlin.multiplatform")
     id("com.android.kotlin.multiplatform.library")
@@ -25,13 +27,12 @@ kotlin {
     jvm {
         compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
     }
-    // The iPhone (device and Apple-silicon simulator), so that sharedUi can depend on this module there. They build
-    // on commonMain alone: nothing in jvmCommonMain (java.*, javax.crypto, Keys.kt, Sealed.kt) reaches the iPhone.
+    // The iPhone (device and Apple-silicon simulator). Nothing in jvmCommonMain (java.*, javax.crypto, Keys.kt,
+    // Sealed.kt, Update.kt, zxing) reaches it.
     iosArm64()
     iosSimulatorArm64()
 
-    // commonMain stays empty until code moves there (step 1); jvmCommonMain holds what the Android and JVM targets
-    // share, and iosMain what the two iPhone targets will share.
+    // jvmCommonMain holds what the Android and JVM targets share, and iosMain what the two iPhone targets share.
     @OptIn(ExperimentalKotlinGradlePluginApi::class)
     applyDefaultHierarchyTemplate {
         common {
@@ -45,12 +46,19 @@ kotlin {
         }
     }
 
+    // expect/actual classes (File, Lock and the other seams in commonMain) are Beta in Kotlin 2.4; this only silences
+    // the warning that says so.
+    compilerOptions { freeCompilerArgs.add("-Xexpect-actual-classes") }
+
     sourceSets {
+        commonMain.dependencies {
+            // api: their types are part of what this module offers (StateFlow, the serializers).
+            api("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
+            api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.1")
+        }
         named("jvmCommonMain") {
             dependencies {
-                // api: their types are part of what this module offers (StateFlow, the serializers, Qr's BitMatrix).
-                api("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
-                api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.1")
+                // QR codes and barcodes on Android and the JVM (Qr.kt); api: Qr.matrix gives zxing's BitMatrix.
                 api("com.google.zxing:core:3.5.3")
             }
         }

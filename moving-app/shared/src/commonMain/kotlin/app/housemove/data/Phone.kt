@@ -4,9 +4,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
-import java.io.File
-import java.security.MessageDigest
-import java.security.SecureRandom
 
 /** Settings that belong to the phone and are the same in every move on it. */
 @Serializable
@@ -29,11 +26,14 @@ class Phone internal constructor(
     val id: String,
     private val deviceNameOf: () -> String,
     private val settingsFile: File?,
-    /** Where this phone's key pair for update files is kept, beside the phone ID (see [PhoneKeys]). Null: made afresh, kept in memory only. */
+    /** Where this phone's key pair for update files is kept, beside the phone ID (see PhoneKeys). Null: made afresh, kept in memory only. */
     private val keysFile: File? = null,
 ) {
-    /** This phone's key pair for update files: made the first time it is asked for, and kept from then on. */
-    val keys: PhoneKeys by lazy { keysFile?.let { PhoneKeys.inFile(it) } ?: PhoneKeys.make() }
+    /**
+     * This phone's key pair for update files: made the first time it is asked for, and kept from then on. None on a
+     * phone without update files (the iPhone v1, see [updateCrypto]).
+     */
+    val keys: UpdateKeyPair by lazy { updateCrypto?.keysIn(keysFile) ?: NoUpdateKeys }
 
     val deviceName: String get() = try {
         deviceNameOf().trim()
@@ -50,7 +50,10 @@ class Phone internal constructor(
         PhoneSettings()
     }
 
-    fun updateSettings(f: (PhoneSettings) -> PhoneSettings) = synchronized(this) {
+    /** Taken while the settings change. */
+    private val settingsLock = Lock()
+
+    fun updateSettings(f: (PhoneSettings) -> PhoneSettings) = synchronized(settingsLock) {
         val next = f(_settings.value)
         if (next == _settings.value) return@synchronized
         _settings.value = next
@@ -186,7 +189,7 @@ internal fun legacyLabels(letter: String): IntRange {
     val rank = when {
         l.length == 1 && l[0] in 'A'..'Z' -> l[0] - 'A'
         l.length == 2 && l.all { it in 'A'..'Z' } -> (l[0] - 'A' + 1) * 26 + (l[1] - 'A')
-        else -> 702 + Math.floorMod(l.hashCode(), 5000)
+        else -> 702 + l.hashCode().mod(5000)
     }
     val start = 100_000 + rank * 1000
     return start until start + 1000
@@ -213,7 +216,7 @@ internal fun AppData.bare(): Boolean =
 
 // ---- small helpers -----------------------------------------------------------------
 
-private val random = SecureRandom()
+private val random = secureRandom()
 
 /** Random letters and digits that cannot be mistaken for each other. */
 internal fun randomCode(n: Int): String {
@@ -221,8 +224,7 @@ internal fun randomCode(n: Int): String {
     return (1..n).map { chars[random.nextInt(chars.length)] }.joinToString("")
 }
 
-internal fun digest(text: String): String =
-    MessageDigest.getInstance("SHA-256").digest(text.toByteArray()).joinToString("") { "%02x".format(it) }
+internal fun digest(text: String): String = sha256(text.toUtf8()).toHex()
 
 /** Write [text] to [file] whole or not at all: a temporary file is written and then renamed over it. */
 internal fun writeWhole(file: File, text: String) {

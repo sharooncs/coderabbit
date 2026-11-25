@@ -116,7 +116,7 @@ internal val Actor.isOrganiser: Boolean get() = open || (me != null && !me.remov
  */
 internal fun Draft.setLines(boxId: String, text: String): Boolean {
     val want = LinkedHashMap<String, String>()
-    for (w in storedLines(text)) want.putIfAbsent(lineId(boxId, w), w)
+    for (w in storedLines(text)) want.getOrPut(lineId(boxId, w)) { w }
     val have = HashSet<String>()
     var changed = false
     val kept = d.lines.mapChanged { l ->

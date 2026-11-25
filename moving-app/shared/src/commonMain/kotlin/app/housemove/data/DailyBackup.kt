@@ -1,10 +1,5 @@
 package app.housemove.data
 
-import java.io.File
-import java.io.InputStream
-import java.io.OutputStream
-import java.time.LocalDate
-
 /**
  * A folder backups are written to and read from: on a phone, one picked once through the system's folder picker
  * (a Drive folder, Documents, a USB stick); in tests, a folder of files ([FolderPlace]).
@@ -81,7 +76,7 @@ object DailyBackup {
     /** The name of [store]'s daily backup written on [today]. */
     fun fileName(store: Store, today: Long): String {
         val slug = store.data.value.move.name.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').take(24).trim('-')
-        return PREFIX + moveKey(store.moveId) + "-" + LocalDate.ofEpochDay(today) + (if (slug.isEmpty()) "" else "-$slug") + ".zip"
+        return PREFIX + moveKey(store.moveId) + "-" + isoDate(today) + (if (slug.isEmpty()) "" else "-$slug") + ".zip"
     }
 
     /**
@@ -113,7 +108,7 @@ object DailyBackup {
     fun found(place: BackupPlace): List<Found> = place.names().mapNotNull { n ->
         val m = NAME.matchEntire(n) ?: return@mapNotNull null
         val day = try {
-            LocalDate.parse(m.groupValues[2]).toEpochDay()
+            parseIsoDate(m.groupValues[2])
         } catch (_: Exception) {
             return@mapNotNull null
         }

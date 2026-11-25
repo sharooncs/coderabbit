@@ -2,13 +2,6 @@ package app.housemove.data
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
-import java.io.File
-import java.io.IOException
-import java.io.InputStream
-import java.io.OutputStream
-import java.util.zip.ZipEntry
-import java.util.zip.ZipInputStream
-import java.util.zip.ZipOutputStream
 
 /**
  * A backup is a zip holding data.json plus every photo file. Importing one
@@ -68,41 +61,29 @@ object Backup {
             val id = store.identity.value
             val about = About(
                 by = store.device.value.personId, helpersShare = data.hasOrganiser() && data.roleOf(store.device.value) == Role.HELPER,
-                at = System.currentTimeMillis(), moveId = id.id, aliases = id.aliases, derived = id.derived, small = small,
+                at = currentTimeMillis(), moveId = id.id, aliases = id.aliases, derived = id.derived, small = small,
             )
             if (small) {
-                ZipOutputStream(out.buffered()).use { zip ->
-                    zip.putNextEntry(ZipEntry(DATA_ENTRY))
-                    zip.write(AppJson.encodeToString(data).toByteArray())
-                    zip.closeEntry()
-                    zip.putNextEntry(ZipEntry(ABOUT_ENTRY))
-                    zip.write(AppJson.encodeToString(about).toByteArray())
-                    zip.closeEntry()
+                ZipWriter(out).use { zip ->
+                    zip.put(DATA_ENTRY) { AppJson.encodeToString(data).toUtf8() }
+                    zip.put(ABOUT_ENTRY) { AppJson.encodeToString(about).toUtf8() }
                     for (p in data.livePhotos) {
                         if (p.kind !in HIDDEN_FROM_HELPERS) continue
                         val f = File(store.photoDir, p.file)
                         if (!f.isFile) continue
                         val bytes = Shrink.copyOf(f) ?: continue
-                        zip.putNextEntry(ZipEntry(PHOTO_PREFIX + p.file))
-                        zip.write(bytes)
-                        zip.closeEntry()
+                        zip.put(PHOTO_PREFIX + p.file) { bytes }
                     }
                 }
                 return
             }
-            ZipOutputStream(out.buffered()).use { zip ->
-                zip.putNextEntry(ZipEntry(DATA_ENTRY))
-                zip.write(AppJson.encodeToString(data).toByteArray())
-                zip.closeEntry()
-                zip.putNextEntry(ZipEntry(ABOUT_ENTRY))
-                zip.write(AppJson.encodeToString(about).toByteArray())
-                zip.closeEntry()
+            ZipWriter(out).use { zip ->
+                zip.put(DATA_ENTRY) { AppJson.encodeToString(data).toUtf8() }
+                zip.put(ABOUT_ENTRY) { AppJson.encodeToString(about).toUtf8() }
                 for (p in data.livePhotos) {
                     val f = File(store.photoDir, p.file)
                     if (!f.isFile) continue
-                    zip.putNextEntry(ZipEntry(PHOTO_PREFIX + p.file))
-                    f.inputStream().use { it.copyTo(zip) }
-                    zip.closeEntry()
+                    zip.putFile(PHOTO_PREFIX + p.file, f)
                 }
             }
         } catch (e: IOException) {
@@ -134,14 +115,14 @@ object Backup {
         val staged = ArrayList<File>()
         try {
             try {
-                ZipInputStream(input.buffered()).use { zip ->
+                ZipReader(input).use { zip ->
                     while (true) {
-                        val e = zip.nextEntry ?: break
+                        val e = zip.nextEntry() ?: break
                         val name = e.name
                         when {
-                            name == DATA_ENTRY -> json = zip.readBytes().decodeToString()
+                            name == DATA_ENTRY -> json = zip.readBytes().decodeUtf8()
                             name == ABOUT_ENTRY -> about = try {
-                                AppJson.decodeFromString<About>(zip.readBytes().decodeToString())
+                                AppJson.decodeFromString<About>(zip.readBytes().decodeUtf8())
                             } catch (_: Exception) {
                                 About()
                             }
@@ -151,7 +132,7 @@ object Backup {
                                 if (isSafeFileName(fileName) && !File(store.photoDir, fileName).exists()) {
                                     val tmp = File(store.photoDir, "$fileName.import")
                                     staged += tmp
-                                    tmp.outputStream().use { zip.copyTo(it) }
+                                    zip.copyTo(tmp)
                                 }
                             }
                         }
@@ -200,13 +181,13 @@ fun Backup.peek(input: InputStream): Backup.Peek {
     var json: String? = null
     var about = Backup.About()
     try {
-        ZipInputStream(input.buffered()).use { zip ->
+        ZipReader(input).use { zip ->
             while (true) {
-                val e = zip.nextEntry ?: break
+                val e = zip.nextEntry() ?: break
                 when (e.name) {
-                    "data.json" -> json = zip.readBytes().decodeToString()
+                    "data.json" -> json = zip.readBytes().decodeUtf8()
                     "about.json" -> about = try {
-                        AppJson.decodeFromString<Backup.About>(zip.readBytes().decodeToString())
+                        AppJson.decodeFromString<Backup.About>(zip.readBytes().decodeUtf8())
                     } catch (_: Exception) {
                         Backup.About()
                     }
