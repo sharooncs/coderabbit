@@ -27,10 +27,19 @@ internal object MailboxCode {
 
     fun encode(access: MailboxAccess): String = PREFIX + access.token + ":" + access.url
 
-    /** The access in a scanned or pasted code (as the QR holds it, or as iOS hands over an `hmbox:` link), or null. */
+    /**
+     * The access in a scanned or pasted code (as the QR holds it, or as iOS hands over an `hmbox:` link), or in pasted text
+     * that holds the address and the token apart (in either order, with spaces or lines between), or null.
+     */
     fun parse(text: String, at: Long): MailboxAccess? {
         val t = text.trim()
-        if (!t.startsWith(PREFIX, ignoreCase = true)) return null
+        if (!t.startsWith(PREFIX, ignoreCase = true)) {
+            val parts = t.split(Regex("\\s+")).filter { it.isNotEmpty() }
+            if (parts.size != 2) return null
+            val token = parts.firstOrNull { isToken(it.lowercase()) }?.lowercase() ?: return null
+            val url = parts.firstNotNullOfOrNull { p -> cleanUrl(p) } ?: return null
+            return MailboxAccess(url, token, at)
+        }
         val rest = t.substring(PREFIX.length)
         val colon = rest.indexOf(':')
         if (colon < 0) return null

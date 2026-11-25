@@ -139,6 +139,9 @@ class MailboxSync(
     private val _status = MutableStateFlow(Status(State.NOT_SET_UP))
     val status: StateFlow<Status> = _status
 
+    /** The screens' tests (Android and the iPhone's): show [s] as if the engine had come to it. The app never calls it. */
+    fun showForTests(s: Status) = publish(s)
+
     /** Called after a message was taken in, on the engine's thread. */
     @Volatile
     var onTookIn: (Store, Update.Opened) -> Unit = { _, _ -> }
@@ -176,6 +179,9 @@ class MailboxSync(
     private var lastChange = 0L
     private var lastOk = 0L
     private val peerWait = HashMap<String, Long>()
+
+    /** Phones the last message to which left photos out (it was full): another goes soon, with the next. */
+    private val morePhotos = HashSet<String>()
 
     /** HouseMove came to the front: read the mailbox now, and send what is due. */
     fun resume() {
@@ -268,6 +274,7 @@ class MailboxSync(
             lastData = null
             lastOk = 0
             peerWait.clear()
+            morePhotos.clear()
         }
         val me = store.phone.id
         val d = store.data.value
@@ -305,11 +312,12 @@ class MailboxSync(
             pollNow = false
             if (!poll(store, client, url, id, secret, now)) return
             nextPoll = now + pollMs
+            // "Up to date … 2 min ago" is the last time the mailbox was read.
+            lastOk = now
         }
         // Send what is due.
         val peers = sendDue(store, client, url, now, crypto, mine) ?: return
         failures = 0
-        lastOk = now
         publish(Status(if (peers == 0) State.ALONE else State.UP_TO_DATE, lastOk))
     }
 
@@ -503,7 +511,10 @@ class MailboxSync(
         for (p in peers) {
             if (now < (peerWait[p.phone] ?: 0L)) continue
             val pb = store.mailboxState.peer(p.phone)
-            val photos = if (quiet) photosFor(store, d, p, pb, now) else emptyList()
+            // Photos are looked for only when they may be due: something changed, some were left out, or some were not
+            // acknowledged in time.
+            val look = quiet && (stamp > pb.sentStamp || p.phone in morePhotos || pb.pending.values.any { now - it.at >= resendMs })
+            val photos = if (look) photosFor(store, d, p, pb, now) else emptyList()
             val due = (quiet && (stamp > pb.sentStamp || photos.isNotEmpty())) || (pb.owes && now - pb.heardAt >= ackMs)
             if (!due) continue
             if (!send(store, client, url, p, pb, photos, stamp, now, crypto, mine)) return null
@@ -534,13 +545,18 @@ class MailboxSync(
         val included = ArrayList<String>()
         val w = ZipWriter(zip.stream)
         w.put("data.json") { AppJson.encodeToString(data).toUtf8() }
+        var full = false
         for (ph in photos) {
             val bytes = Shrink.copyOf(File(store.photoDir, ph.file)) ?: continue
-            if (zip.size + bytes.size > PHOTO_BUDGET) break
+            if (zip.size + bytes.size > PHOTO_BUDGET) {
+                full = true
+                break
+            }
             w.put("photos/" + ph.file) { bytes }
             included += ph.file
         }
         w.close()
+        if (full && included.isNotEmpty()) morePhotos += p.phone else morePhotos -= p.phone
         val body = zip.bytes()
         val head = Envelope.Head(store.phone.id, seq, now, pb.heard, SCHEMA, store.mailboxState.access(url))
         val sealed = Envelope.seal(crypto, mine, p.point, AutoSession.advertisedMove(store.identity.value), p.phone, head, body)
@@ -583,8 +599,8 @@ class MailboxSync(
         /** Said to someone who may not set up the mailbox for the move. */
         const val ONLY_ORGANISERS = "Only an Organiser can set up the internet mailbox for this move."
 
-        /** Is [text] an internet mailbox's code (`HMBOX:…`)? */
-        fun isCode(text: String): Boolean = text.trim().startsWith(MailboxCode.PREFIX, ignoreCase = true) || text.trim().startsWith("hmbox:", ignoreCase = true)
+        /** Is [text] an internet mailbox's code (`HMBOX:…`, or its address and token pasted apart)? */
+        fun isCode(text: String): Boolean = text.trim().startsWith("hmbox:", ignoreCase = true) || MailboxCode.parse(text, 0) != null
 
         /**
          * The mailbox's code, scanned or pasted, on this phone's move [store]: an Organiser sets the move's mailbox to its
