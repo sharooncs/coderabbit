@@ -5,6 +5,10 @@ import app.housemove.data.AppFolders
 import app.housemove.ui.iphone.AppModel
 import app.housemove.ui.iphone.HouseMoveApp
 import kotlinx.coroutines.MainScope
+import platform.Foundation.NSNotificationCenter
+import platform.Foundation.NSOperationQueue
+import platform.UIKit.UIApplicationDidBecomeActiveNotification
+import platform.UIKit.UIApplicationDidEnterBackgroundNotification
 import platform.UIKit.UIViewController
 
 /** The app's one model, once the screen has been made; a link that comes before it waits in [waitingLink]. */
@@ -21,19 +25,32 @@ fun MainViewController(buildLabel: String): UIViewController {
         val demo = demoRequested()
         val hooks = if (demo) {
             val (data, noBackup) = demoFolders()
-            IosHooks(data, noBackup)
+            IosHooks(data, noBackup, demo = true)
         } else {
             // Photos and the phone's own codes are kept out of iCloud backups, as Android keeps them out of its backup.
             AppFolders.prepare()
             IosHooks(AppFolders.data, AppFolders.noBackup)
         }
-        AppModel(hooks, buildLabel, MainScope(), demo = if (demo) startDemoHost() else null).also { model = it }
+        AppModel(hooks, buildLabel, MainScope(), demo = if (demo) startDemoHost() else null).also {
+            model = it
+            followTheApp(it)
+        }
     }
     waitingLink?.let {
         waitingLink = null
         m.use(it)
     }
     return ComposeUIViewController { HouseMoveApp(m) }
+}
+
+/**
+ * Syncing by itself runs only while the app is at the front: iOS lets an app in the background neither listen nor keep
+ * connections. UIKit says when the app becomes active and when it goes to the background.
+ */
+private fun followTheApp(m: AppModel) {
+    val center = NSNotificationCenter.defaultCenter
+    center.addObserverForName(UIApplicationDidBecomeActiveNotification, null, NSOperationQueue.mainQueue) { _ -> m.foreground() }
+    center.addObserverForName(UIApplicationDidEnterBackgroundNotification, null, NSOperationQueue.mainQueue) { _ -> m.background() }
 }
 
 /**

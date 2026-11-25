@@ -9,6 +9,7 @@ import app.housemove.data.Moves
 import app.housemove.data.Outcome
 import app.housemove.data.Role
 import app.housemove.data.Store
+import app.housemove.sync.AutoSync
 import app.housemove.sync.WifiSync
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
@@ -125,6 +126,38 @@ class AppModel(
 
     private fun openMoves() = Moves(hooks.dataDir, hooks.noBackupDir, deviceName = { hooks.deviceName() })
 
+    /**
+     * Syncing by itself on the same Wi-Fi (design/auto-sync.md): the phones of the move find each other and sync while the
+     * app is at the front ([foreground], [background]), with no code. Null where the phone cannot look for others.
+     */
+    val autoSync: AutoSync? = hooks.discovery()?.let { d ->
+        AutoSync(d, { moves.current.value }, { moves.phone.settings.value.autoSync }, loopbackOnly = hooks.loopbackOnly).also { engine ->
+            // A sync by itself may have let go of a Helper's copy: the screens follow the move.
+            engine.onSynced = { _, _ -> scope.launch { followMove() } }
+            engine.resume()
+        }
+    }
+
+    /** "Sync by itself on Wi-Fi", as the phone's settings say. */
+    var autoSyncOn: Boolean by mutableStateOf(moves.phone.settings.value.autoSync)
+        private set
+
+    fun setAutoSync(on: Boolean) {
+        moves.phone.updateSettings { it.copy(autoSync = on) }
+        autoSyncOn = on
+        autoSync?.poke()
+    }
+
+    /** The app came to the front: syncing by itself starts again. */
+    fun foreground() {
+        autoSync?.resume()
+    }
+
+    /** The app left the front: iOS lets it neither listen nor sync, so syncing by itself stops until it is back. */
+    fun background() {
+        autoSync?.pause()
+    }
+
     // ---- codes from outside: a link from the Camera, a paste, typing ---------------------------------------------
 
     /**
@@ -222,7 +255,7 @@ class AppModel(
             fresh = Fresh.Idle()
             join = JoinStep.Start()
             if (s != null) {
-                s.setDevice { it.copy(lastSyncAt = Words.nowMillis()) }
+                s.setDevice { it.copy(lastSyncAt = Words.nowMillis(), lastSyncWith = r.result.peerName) }
                 val who = r.result.joinedAs ?: s.me
                 val role = who?.role ?: s.myRole
                 val name = s.data.value.move.name.ifBlank { "the move" }
@@ -329,7 +362,7 @@ class AppModel(
 
     private fun hosted(r: WifiSync.Result) {
         val synced = r.ok || r.error == WifiSync.PHOTOS_CUT
-        if (synced) afterSync()
+        if (synced) afterSync(r.peerName)
         val report = if (synced) Words.syncResult(r) else Report(false, "Could not sync", r.error ?: "Something went wrong. Try again.")
         val showing = fresh as? Fresh.Showing
         fresh = if (showing != null && store != null) showing.copy(report = report) else Fresh.Idle(report)
@@ -363,14 +396,19 @@ class AppModel(
             }
             val r = withLocalNetworkCheck(invite, attempt) {}
             val synced = r.result.ok || r.result.error == WifiSync.PHOTOS_CUT
-            if (synced) afterSync()
+            if (synced) afterSync(r.result.peerName)
             fresh = Fresh.Idle(r.report ?: Words.syncResult(r.result))
         }
     }
 
     /** A sync went both ways: note when, and follow the move (a Helper's copy may have been let go of). */
-    private fun afterSync() {
-        store?.setDevice { it.copy(lastSyncAt = Words.nowMillis()) }
+    private fun afterSync(peer: String) {
+        store?.setDevice { it.copy(lastSyncAt = Words.nowMillis(), lastSyncWith = peer) }
+        followMove()
+    }
+
+    /** The move in use may have changed (a Helper's copy let go of after a sync): the screens follow it. */
+    private fun followMove() {
         val now = moves.current.value
         if (now !== store) {
             stopCode()

@@ -13,10 +13,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -26,16 +32,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import app.housemove.data.Store
+import app.housemove.sync.AutoSync
 import app.housemove.ui.Night
 import app.housemove.ui.icons.Icons
+import app.housemove.ui.icons.filled.CheckCircle
 import app.housemove.ui.icons.filled.Close
 import app.housemove.ui.icons.filled.Description
 import app.housemove.ui.icons.filled.QrCode2
+import app.housemove.ui.icons.filled.Settings
 import app.housemove.ui.icons.filled.Sync
+import app.housemove.ui.icons.filled.WifiOff
+import kotlinx.coroutines.delay
 
 /*
  * Getting fresh data: a sync with the Android phone, as two Android phones sync. One shows a sync code and the other
@@ -60,6 +72,8 @@ fun FreshScreen(model: AppModel, store: Store) {
             Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
+            // Syncing by itself first: with it on, there is usually nothing else to do here.
+            if (fresh !is Fresh.Showing) model.autoSync?.let { AutoPanel(model, it, device.lastSyncWith, device.lastSyncAt) }
             // While the code shows, it and its steps come first.
             if (fresh !is Fresh.Showing) Hint("Changed something on the Android phone? Bring it to this iPhone. Both phones need to be on the same Wi-Fi.")
             val report = when (fresh) {
@@ -128,6 +142,52 @@ fun FreshScreen(model: AppModel, store: Store) {
                 }
             }
             Hint(if (device.lastSyncAt == 0L) "Not synced yet." else "Last synced ${Words.ago(device.lastSyncAt)}.")
+        }
+    }
+}
+
+/**
+ * Syncing by itself (design/auto-sync.md), as Android's Sync and backup shows it: one line ("Up to date with Asha's phone
+ * · 2 min ago", "Looking for the family's phones on this Wi-Fi"), a hint when there is something to say, and the switch.
+ * [lastWith] and [lastAt] are the move's last sync, by code or by itself.
+ */
+@Composable
+private fun AutoPanel(model: AppModel, engine: AutoSync, lastWith: String, lastAt: Long) {
+    val live by engine.status.collectAsState()
+    val on = model.autoSyncOn
+    val status = (if (on) live else live.copy(state = AutoSync.State.OFF)).copy(lastWith = lastWith, lastAt = lastAt)
+        .let { s -> if (s.state == AutoSync.State.UP_TO_DATE && s.lastAt == 0L) s.copy(state = AutoSync.State.LOOKING) else s }
+    // "2 min ago" moves on with the clock.
+    var now by remember { mutableStateOf(Words.nowMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            now = Words.nowMillis()
+            delay(15_000)
+        }
+    }
+    val tone = if (status.state == AutoSync.State.UP_TO_DATE) Tone.Mint else Tone.Plain
+    Panel(Modifier.testTag("auto-sync"), tone = tone) {
+        Row(Modifier.semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }, verticalAlignment = Alignment.CenterVertically) {
+            val icon = when (status.state) {
+                AutoSync.State.UP_TO_DATE -> Icons.Filled.CheckCircle
+                AutoSync.State.NO_WIFI, AutoSync.State.DENIED -> Icons.Filled.WifiOff
+                else -> Icons.Filled.Sync
+            }
+            Icon(icon, contentDescription = null, tint = tone.accent(), modifier = Modifier.size(24.dp))
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(status.line(now), style = MaterialTheme.typography.titleMedium, color = Night.Text)
+                status.hint(now)?.let { Hint(it) }
+            }
+        }
+        if (status.state == AutoSync.State.DENIED) SmallButton("Open Settings", Icons.Filled.Settings, { model.openSettings() }, tone = Tone.Red)
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(value = on, role = Role.Switch, onValueChange = { model.setAutoSync(it) }),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Sync by itself on Wi-Fi", style = MaterialTheme.typography.bodyLarge, color = Night.Text, modifier = Modifier.weight(1f))
+            Spacer(Modifier.width(12.dp))
+            Switch(checked = on, onCheckedChange = null, colors = SwitchDefaults.colors(checkedTrackColor = Night.Mint, checkedThumbColor = Night.OnMint))
         }
     }
 }

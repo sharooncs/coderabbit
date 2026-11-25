@@ -58,10 +58,11 @@
 	<key>NSCameraUsageDescription</key>
 	<string>HouseMove uses the camera to scan box labels and barcodes and to take photos of your things.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>HouseMove shares your move with the other phones in it over your Wi-Fi.</string>
-	<!-- HouseMove's own Bonjour type, only to ask iOS whether the local network is allowed (IosHooks.kt,
-	     LocalNetworkCheck): the app advertises it briefly on this iPhone and looks for itself. Phones do not find
-	     each other this way; they meet through the address in a code. -->
+	<string>HouseMove finds the other phones of your move on your Wi-Fi and shares the move with them.</string>
+	<!-- HouseMove's own Bonjour type (design/auto-sync.md). While the app is open, the phones of a move find each other
+	     with it and sync by themselves: each advertises HM-<tag>-<random>, where the tag changes every hour and only
+	     phones of the move can work it out (no names, no move). The app also advertises it briefly to ask iOS whether
+	     the local network is allowed (IosHooks.kt, LocalNetworkCheck). -->
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_housemove._tcp</string>

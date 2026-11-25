@@ -3,6 +3,10 @@
 package app.housemove
 
 import app.housemove.data.File
+import app.housemove.sync.Discovery
+import app.housemove.sync.DnsSdDiscovery
+import app.housemove.sync.LocalDiscovery
+import app.housemove.sync.LocalLan
 import app.housemove.ui.iphone.LocalNetwork
 import app.housemove.ui.iphone.PhoneHooks
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -53,7 +57,7 @@ import kotlin.random.Random
  * screen staying awake, the clipboard, and deleting a move's folders. [dataDir] and [noBackupDir] are where the moves
  * are kept (AppFolders, or demo mode's own folders).
  */
-class IosHooks(override val dataDir: File, override val noBackupDir: File) : PhoneHooks {
+class IosHooks(override val dataDir: File, override val noBackupDir: File, private val demo: Boolean = false) : PhoneHooks {
     /**
      * "iPhone": since iOS 16 an app is told the model's name, not the one the owner gave the phone. Read once, here on
      * the main thread, as UIKit asks: the sync threads ask for it later.
@@ -78,6 +82,11 @@ class IosHooks(override val dataDir: File, override val noBackupDir: File) : Pho
     override fun deleteFolder(folder: File) {
         NSFileManager.defaultManager.removeItemAtPath(folder.path, error = null)
     }
+
+    /** Bonjour (dns_sd); in demo mode, the phones inside this app only: it and the sample move it hosts. */
+    override fun discovery(): Discovery = if (demo) LocalDiscovery(LocalLan.shared) else DnsSdDiscovery()
+
+    override val loopbackOnly: Boolean get() = demo
 }
 
 /**

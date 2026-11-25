@@ -6,6 +6,9 @@ import app.housemove.data.AppFolders
 import app.housemove.data.File
 import app.housemove.data.Outcome
 import app.housemove.data.Store
+import app.housemove.sync.AutoSync
+import app.housemove.sync.LocalDiscovery
+import app.housemove.sync.LocalLan
 import app.housemove.sync.WifiSync
 import app.housemove.sync.loopbackHost
 import app.housemove.ui.iphone.AppModel
@@ -51,6 +54,9 @@ internal fun startDemoHost(): AppModel.Demo {
     val alex = DemoMove.fill(store)
     val host = WifiSync.loopbackHost(store) {}
     demoHost = host
+    // The sample move syncs by itself too, as an Android phone on 2.3 does: the app finds it inside itself (LocalLan), on
+    // 127.0.0.1 only, so a test sees "Up to date" with no code typed.
+    demoEngine = AutoSync(LocalDiscovery(LocalLan.shared), { store }, { true }, loopbackOnly = true).also { it.resume() }
     val loopback = listOf("127.0.0.1")
     val invite = when (val made = host.inviteFor(alex, loopback)) {
         is Outcome.Ok -> made.value.encode()
@@ -61,3 +67,4 @@ internal fun startDemoHost(): AppModel.Demo {
 
 /** Kept for as long as the app runs. */
 private var demoHost: WifiSync.Host? = null
+private var demoEngine: AutoSync? = null

@@ -1,6 +1,7 @@
 package app.housemove.ui.iphone
 
 import app.housemove.data.File
+import app.housemove.sync.Discovery
 
 /**
  * What the shared screens of the first iPhone build ask of the phone they run on. The iPhone's side is in iosMain
@@ -32,6 +33,15 @@ interface PhoneHooks {
 
     /** Deletes [folder] and everything in it. Used to take a move off this phone when [app.housemove.data.Moves.remove] may not. */
     fun deleteFolder(folder: File) {}
+
+    /**
+     * How this phone finds the other phones of its move on the Wi-Fi, to sync by itself (design/auto-sync.md): Bonjour on
+     * the iPhone, an in-process stand-in in demo mode and tests. Null: this phone does not sync by itself.
+     */
+    fun discovery(): Discovery? = null
+
+    /** Syncing by itself listens on 127.0.0.1 alone (demo mode and tests), not on the Wi-Fi. */
+    val loopbackOnly: Boolean get() = false
 }
 
 /** What iOS says about HouseMove and the local network. */

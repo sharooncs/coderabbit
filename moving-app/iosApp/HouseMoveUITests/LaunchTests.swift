@@ -100,6 +100,20 @@ final class LaunchTests: XCTestCase {
         keep("fresh", app)
     }
 
+    /// Syncing by itself (design/auto-sync.md): demo mode's sample move syncs by itself, as an Android phone on 2.3 does,
+    /// found inside the app as Bonjour would find it on the Wi-Fi. After joining, "Get fresh data" says it is up to date
+    /// with Sam's phone, and no code was typed.
+    @MainActor
+    func testSyncsByItselfWithNoCode() throws {
+        let app = launch()
+        join(app)
+        labelled(app, "label == 'Get fresh data'").tap()
+        let line = labelled(app, "label BEGINSWITH 'Up to date with Sam'")
+        XCTAssertTrue(line.waitForExistence(timeout: 60), "synced by itself, with no code typed")
+        XCTAssertTrue(labelled(app, "label BEGINSWITH 'Sync by itself on Wi-Fi'").exists, "the switch is there")
+        keep("fresh-by-itself", app)
+    }
+
     @MainActor
     func testLeavesTheMove() throws {
         let app = launch()
