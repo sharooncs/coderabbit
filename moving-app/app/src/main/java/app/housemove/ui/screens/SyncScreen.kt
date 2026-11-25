@@ -124,6 +124,9 @@ fun SyncScreen(code: String? = null) {
                 )
             }
 
+            // Phones of a move with others in it sync by themselves on the same Wi-Fi; the code below stays for the rest.
+            if (data.shared()) AutoSyncSection()
+
             val h = host
             // With no Wi-Fi there is no code to show or scan: said first, in the sync's own words, until it is back.
             var looked by remember { mutableIntStateOf(0) }
@@ -151,7 +154,7 @@ fun SyncScreen(code: String? = null) {
                             // Only a move with a single person lets an unknown phone in by this code; see Joiner.
                             host = WifiSync.host(store, letNewPhonesIn = store.isAlone()) { r ->
                                 scope.launch {
-                                    if (r.listsSynced()) store.setDevice { it.copy(lastSyncAt = System.currentTimeMillis()) }
+                                    if (r.listsSynced()) store.setDevice { it.copy(lastSyncAt = System.currentTimeMillis(), lastSyncWith = r.peerName) }
                                     say(syncReport(r.copy(joinedAs = null), store))
                                 }
                             }
@@ -180,7 +183,8 @@ fun SyncScreen(code: String? = null) {
                 }
                 BigAction(Icons.Default.Close, "Stop showing the code", onClick = { h.stop(); host = null }, primary = false)
             }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // A move with others in it says when it last synced, and with whom, above (AutoSyncSection).
+            if (!data.shared()) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Icon(
                     if (device.lastSyncAt == 0L) Icons.Default.SyncProblem else Icons.Default.CheckCircle, contentDescription = null,
                     tint = if (device.lastSyncAt == 0L) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.tertiary,
@@ -240,6 +244,7 @@ fun SyncScreen(code: String? = null) {
 
             Fold("How syncing works", Icons.Default.HelpOutline) {
                 Text("Each phone keeps its own full copy and works without internet. Syncing swaps the changes both ways, photos included.")
+                Text("On the same Wi-Fi, the phones of a move sync by themselves while HouseMove is open. The code is for the first sync after an update, phones with an older HouseMove, and Wi-Fi that keeps phones apart (a phone's hotspot always works).")
                 Text("If both phones changed the same thing, the most recent change wins.")
                 Text("A new phone joins with an invite from People. All phones must be on the same version of the app.")
                 Text("A phone with no HouseMove, or an older one, can get this phone's copy: Quick Share sends it without internet.")

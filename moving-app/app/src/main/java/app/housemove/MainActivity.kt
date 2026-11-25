@@ -17,7 +17,7 @@ class MainActivity : ComponentActivity() {
         val moves = (application as App).moves
         if (savedInstanceState == null) takeUpdate(intent)
         // The move used last opens; a phone with none opens on "Start a new move" and "Join a move".
-        setContent { AppRoot(moves) }
+        setContent { AppRoot(moves, autoSync = (application as App).autoSync) }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -40,10 +40,14 @@ class MainActivity : ComponentActivity() {
         // On open: the daily small backup, and letting go of what this phone no longer needs. Away from the screen.
         val moves = (application as App).moves
         thread(name = "check-in", isDaemon = true) { moves.checkIn() }
+        // On screen: the phones of the move on the same Wi-Fi find each other and sync by themselves.
+        (application as App).autoSync.resume()
     }
 
     override fun onStop() {
         super.onStop()
+        // Off screen: no advertising, listening or syncing by itself until the app is opened again.
+        (application as App).autoSync.pause()
         // The list of moves follows what happened in the one in use (a join changes which move it is).
         val moves = (application as App).moves
         moves.refresh()

@@ -355,7 +355,7 @@ fun PersonScreen(id: String, showInvite: Boolean = false) {
             // An Organiser's or a Decider's phone waits for Right on this phone before anything is sent.
             val h = host ?: WifiSync.host(store, letNewPhonesIn = false, confirmJoins = true) { r ->
                 scope.launch {
-                    if (r.listsSynced()) store.setDevice { it.copy(lastSyncAt = System.currentTimeMillis()) }
+                    if (r.listsSynced()) store.setDevice { it.copy(lastSyncAt = System.currentTimeMillis(), lastSyncWith = r.peerName) }
                     if (r.ok && r.joinedAs?.id == id) {
                         joined = true
                         invite = null

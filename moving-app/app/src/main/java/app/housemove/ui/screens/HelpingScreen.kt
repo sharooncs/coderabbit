@@ -81,7 +81,7 @@ fun HelpingScreen() {
                 // Nobody gets in through this screen except with a code shown on it, and an Organiser's or a Decider's phone waits for Right.
                 WifiSync.host(store, letNewPhonesIn = false, confirmJoins = true) { r ->
                     scope.launch {
-                        if (r.listsSynced()) store.setDevice { it.copy(lastSyncAt = System.currentTimeMillis()) }
+                        if (r.listsSynced()) store.setDevice { it.copy(lastSyncAt = System.currentTimeMillis(), lastSyncWith = r.peerName) }
                         val who = r.joinedAs
                         heard = when {
                             who != null -> SyncReport(true, "${who.shownName()}'s phone has joined", "It is now ${who.shownName()}, ${who.role.label}.")

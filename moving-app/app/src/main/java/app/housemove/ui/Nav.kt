@@ -22,6 +22,7 @@ import androidx.navigation.navArgument
 import app.housemove.data.Home
 import app.housemove.data.Moves
 import app.housemove.data.Store
+import app.housemove.sync.AutoSync
 import app.housemove.ui.screens.*
 
 /**
@@ -30,12 +31,12 @@ import app.housemove.ui.screens.*
  * with that move's, starting at its Home.
  */
 @Composable
-fun AppRoot(moves: Moves, onNav: (NavHostController) -> Unit = {}) {
+fun AppRoot(moves: Moves, onNav: (NavHostController) -> Unit = {}, autoSync: AutoSync? = null) {
     HouseMoveTheme {
         val scope = rememberCoroutineScope()
         val state = remember { AppState(scope) }
         val current by moves.current.collectAsState()
-        CompositionLocalProvider(LocalMoves provides moves, LocalAppState provides state) {
+        CompositionLocalProvider(LocalMoves provides moves, LocalAppState provides state, LocalAutoSync provides autoSync) {
             val store = current
             if (store == null) FirstOpen(onNav)
             else key(store) { AppRoot(store, onNav = onNav) }

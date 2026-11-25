@@ -7,6 +7,7 @@ import android.provider.Settings
 import app.housemove.data.Moves
 import app.housemove.data.Shrink
 import app.housemove.data.Store
+import app.housemove.sync.AutoSync
 import app.housemove.ui.backupFolder
 import app.housemove.ui.shrinkJpeg
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,6 +27,14 @@ class App : Application() {
     }
 
     val store: Store get() = moves.currentOrNew()
+
+    /**
+     * Syncing by itself on the same Wi-Fi (design/auto-sync.md), for the move in use, while the setting is on. Started
+     * and stopped with the app's screen (MainActivity): Android gives an app in the background no reliable time.
+     */
+    val autoSync: AutoSync by lazy {
+        AutoSync(NsdDiscovery(this), { moves.current.value }, { moves.phone.settings.value.autoSync })
+    }
 
     /** An update file another app asked this one to open ("Open with HouseMove"), until the screens have opened it. */
     val incomingUpdate = MutableStateFlow<Uri?>(null)

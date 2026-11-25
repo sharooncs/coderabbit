@@ -176,7 +176,7 @@ class Joiner(private val store: Store, private val scope: CoroutineScope) {
         report = null
         scope.launch {
             val r = withContext(Dispatchers.IO) { WifiSync.join(store, invite, letNewPhonesIn = store.isAlone()) }
-            if (r.listsSynced()) store.setDevice { it.copy(lastSyncAt = System.currentTimeMillis()) }
+            if (r.listsSynced()) store.setDevice { it.copy(lastSyncAt = System.currentTimeMillis(), lastSyncWith = r.peerName) }
             report = syncReport(r, store)
             busy = false
         }

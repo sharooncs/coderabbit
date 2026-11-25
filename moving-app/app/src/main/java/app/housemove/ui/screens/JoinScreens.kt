@@ -163,7 +163,7 @@ fun JoinScreen(inMove: Boolean) {
             }
             // The move this phone is now in: the one it joined (Moves opened it), or the one shown on its own.
             val s = moves?.current?.value ?: single!!
-            s.setDevice { it.copy(lastSyncAt = System.currentTimeMillis()) }
+            s.setDevice { it.copy(lastSyncAt = System.currentTimeMillis(), lastSyncWith = r.peerName) }
             val d = s.data.value
             val who = r.joinedAs ?: s.me
             val role = who?.role ?: s.myRole
