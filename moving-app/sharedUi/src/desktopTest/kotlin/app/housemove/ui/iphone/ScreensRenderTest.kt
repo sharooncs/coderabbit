@@ -14,6 +14,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import app.housemove.data.Home
+import app.housemove.sync.AutoSync
+import app.housemove.sync.LocalLan
 import app.housemove.sync.WifiSync
 import org.jetbrains.skia.EncodedImageFormat
 import java.io.File
@@ -107,6 +109,27 @@ class ScreensRenderTest {
         both("fresh-code")
         model.showForPicture(Fresh.Idle(Words.syncResult(WifiSync.Result("Sam", "A", 0, 0))))
         both("fresh-done")
+    }
+
+    /** "Get fresh data" once the iPhone has synced by itself with an Android phone on 2.3 (design/auto-sync.md). */
+    @Test
+    fun getFreshDataByItself() {
+        val lan = LocalLan()
+        val phone = AndroidPhone(File(root, "auto").apply { mkdirs() }, lan)
+        val auto = AppModel(DesktopHooks(File(root, "iphone-auto"), lan = lan), "Test build 0.1 (1)", mainScope())
+        try {
+            auto.use(phone.invite())
+            auto.yes()
+            waitFor("the join") { auto.store != null }
+            auto.welcomeRead()
+            auto.open(Page.Fresh)
+            waitFor("up to date by itself", 30_000) { auto.autoSync?.status?.value?.state == AutoSync.State.UP_TO_DATE }
+            render("fresh-by-itself-normal.png", 1f, auto)
+            render("fresh-by-itself-large-text.png", 2f, auto)
+        } finally {
+            auto.autoSync?.close()
+            phone.close()
+        }
     }
 
     private fun render(name: String, fontScale: Float, which: AppModel = model) {
