@@ -26,7 +26,7 @@ class Phone internal constructor(
     val id: String,
     private val deviceNameOf: () -> String,
     private val settingsFile: File?,
-    /** Where this phone's key pair for update files is kept, beside the phone ID (see PhoneKeys). Null: made afresh, kept in memory only. */
+    /** Where this phone's key pair for update files is kept, beside the phone ID (see [UpdateKeyPair]). Null: made afresh, kept in memory only. */
     private val keysFile: File? = null,
 ) {
     /**

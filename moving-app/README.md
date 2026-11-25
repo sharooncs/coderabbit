@@ -292,8 +292,12 @@ section; rarely used things folded away.
 ## Code map
 
 Three Gradle modules. `shared/` is a Kotlin Multiplatform module with the move's
-data and sync (`src/jvmCommonMain/kotlin/app/housemove/`), built for Android and
-for a plain JVM, where its tests run (`src/jvmTest/`), and (still empty) for the iPhone.
+data and sync in common Kotlin (`src/commonMain/kotlin/app/housemove/`), built for
+Android, for a plain JVM, where its tests run (`src/jvmTest/`, and `src/commonTest/`,
+which also runs on the iPhone simulator), and for the iPhone. What it needs of the
+platform is behind small seams (`Files.kt`, `Threads.kt`, `Platform.kt`, `sync/Net.kt`),
+whose Android/JVM side is in `src/jvmCommonMain/` with the update-file crypto and
+zxing, and whose iPhone side is in `src/iosMain/` (`design/ios-step1.md`).
 `app/` is the Android app (`src/main/java/app/housemove/`): the screens, the PDFs and
 the activity, with the tests that need simulated Android (`src/test/`) or a device
 (`src/androidTest/`). `sharedUi/` (Compose Multiplatform) holds what the iPhone app

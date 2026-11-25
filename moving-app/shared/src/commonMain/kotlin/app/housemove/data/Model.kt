@@ -461,7 +461,7 @@ data class PhoneEntry(
     val retired: Stamp = Stamp(),
     /** A retired phone whose last work has been taken in. It is refused from then on. */
     val collected: Boolean = false,
-    /** Its public key for update files (X.509, Base64; see [PhoneKeys]), and when that key was made. Empty for a phone from before. */
+    /** Its public key for update files (X.509, Base64; see [UpdateKeyPair]), and when that key was made. Empty for a phone from before. */
     val key: String = "",
     val keyAt: Long = 0,
 )

@@ -217,7 +217,7 @@ object WifiSync {
         val person: Person? = null,
         /** From the host: the person the joining phone joins as. */
         val youAre: String = "",
-        /** The phone's public key for update files ([PhoneKeys.publicText]) and when it was made: the admitting phone puts it on its entry. */
+        /** The phone's public key for update files ([UpdateKeyPair.publicText]) and when it was made: the admitting phone puts it on its entry. */
         val key: String = "",
         val keyAt: Long = 0,
     )
