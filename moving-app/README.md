@@ -2,38 +2,37 @@
 
 An Android app for running a house move from the first photo to the last
 unpacked box: list what you own, decide what happens to it, pack, load,
-unload, unpack. It works offline. There is no account and no server; phones
-share the move by syncing directly with each other.
+unload, unpack. It works offline. There is no account and no server of anyone
+else's; phones share the move by syncing directly with each other, and, when the
+family wants it, through a mailbox on its own always-on laptop that can read none
+of it.
 
-This is version 2.4. What is new in it:
+This is version 2.5. What is new in it:
 
-- **Syncing is private.** When two phones with 2.4 sync, by themselves or by a
-  code, everything between them is encrypted: someone else on the same Wi-Fi
-  (a guest, or anyone on an open network) cannot read the move, the photos or
-  any key, and cannot change what goes across. Each phone checks that the other
-  is a phone of the move, with that phone's own key, before anything is sent.
-- **Nothing to do after updating.** Phones that have 2.4 sync by themselves
-  with each other straight away, as they did: each phone already knows the
-  others' keys from the move. (A phone whose key is not in the move yet, such
-  as one that has not synced since 2.0, syncs once by code first.)
-- **Codes are a little longer.** A phone with 2.4 shows codes of ten letters
-  and numbers, beginning with E2. Scanning one, a phone with 2.4 syncs only
-  encrypted, never the old way.
-- **Older phones keep working, and the app says so.** Phones on 2.3, 2.2 or
-  2.1.1 still sync by code with every phone, as before, but not encrypted: both
-  phones then say "Priya's phone has an older HouseMove, so this sync was not
-  encrypted", and Sync and backup says "Syncing by itself needs HouseMove 2.4 on
-  Priya's phone too." Update every phone to make every sync private.
-- **Someone taken out of the move is shut out at once.** As soon as a phone
-  knows a person was removed (or a phone retired), it no longer syncs with their
-  phone in any way.
-- **If a phone gets a new key** (rare: only if the file that holds it is lost),
-  the others say "Asha's phone has a new key. Sync once with a code to go on
-  syncing by itself." One code sync with any phone of the move puts it right.
-- **Nothing to allow.** No new permission; what a phone says on the Wi-Fi to be
-  found is still only a code that changes every hour.
-- **About the same size.** The app is 17.3 MB, 16 KB more than 2.3.
-- **Install it over 2.3** as before: every move on the phone is kept.
+- **Keep up to date when you are not together.** Phones of a move that are not on the same Wi-Fi now keep each other up
+  to date over the internet, through a small "mailbox" program on the family's always-on laptop. A change made at the
+  new house reaches the phone at the old one within a minute or two while HouseMove is open on both, with no code and no
+  file to send.
+- **The laptop cannot read any of it.** Each message is sealed on the phone for one other phone of the move, with that
+  phone's own key, and only that phone can open it. The laptop only keeps sealed messages until each phone fetches its
+  own: it never has a key that opens one. A phone takes in only what a phone of the move sealed, with the key it knows for
+  that phone.
+- **Set up once, by an Organiser.** The laptop shows a code (`design/asus-session.md` sets the laptop up); an Organiser
+  scans it in More, Sync and backup, Internet mailbox (on an iPhone, with the Camera). The other phones get it at their
+  next sync. Sync and backup says how it stands ("Up to date over the internet · 2 min ago", or what went wrong, in plain
+  words), and a switch turns it off on a phone.
+- **Someone taken out of the move is shut out at once**, over the internet as on the Wi-Fi: the phone that removed them
+  stops sending to their phone and takes nothing from it, and every phone does once it hears.
+- **Update files show who sent them.** Between phones with 2.5, Send update seals the file so the phone that opens it
+  sees which phone made it: "Update from Priya's phone". An update made the older way (from a phone on 2.4, or to one)
+  cannot show that, and a phone with 2.5 asks before it opens one.
+- **Syncing on the same Wi-Fi is unchanged**, and phones on 2.4 keep syncing with 2.5 phones as before (on the Wi-Fi only).
+- **Nothing to allow.** No new permission (HouseMove already had internet, for book titles).
+- **Install it over 2.4** as before: every move on the phone is kept.
+
+Version 2.4 made syncing private: two phones that both have it sync encrypted, by themselves or by a code, each checking
+the other's own key, and phones on older versions keep syncing by code, unencrypted, with both phones saying so. Its codes
+are ten letters and numbers beginning with E2, and a phone taken out of the move is shut out at once.
 
 Version 2.3 made the phones of a move find each other on the same Wi-Fi and
 sync by themselves while HouseMove is open, with a line on Sync and backup and
@@ -73,7 +72,7 @@ screens that need almost no typing.
 
 ## Install
 
-Download `releases/HouseMove-2.4.apk` from this repository (or scan the
+Download `releases/HouseMove-2.5.apk` from this repository (or scan the
 install code that comes with each release), or build it (below). Copy it to the
 phone and open it. A phone that already has HouseMove can pass it on without
 internet: Who's helping, Share the app. Android will ask to allow
@@ -251,6 +250,9 @@ in `design/auto-sync.md`.
 - Between phones with 2.4 the sync is encrypted. With a phone on an older
   HouseMove it is not, and both phones say so: sync on a network you trust, or
   update that phone first.
+- Not on the same Wi-Fi: once an Organiser has set up the internet mailbox (More, Sync and backup, Internet mailbox), the
+  phones with 2.5 keep each other up to date through it while HouseMove is open, sealed so that the laptop it runs on
+  reads nothing (`design/encryption.md`, "Mailbox as built"; the laptop's side is `mailbox/`).
 
 A backup file (zip of data and photos) can be saved or shared from the same
 screen by an Organiser or a Decider (Helpers cannot make backups). Restoring
@@ -274,6 +276,13 @@ fetches Gradle 9.7.0 the first time.
 ```
 
 The iPhone app (`iosApp/`) is built on a Mac with `tools/ios.sh`; see `design/ios-plan.md`.
+
+The internet mailbox for the laptop (`mailbox/`, Go 1.24, standard library only):
+
+```
+cd mailbox && go test ./...      # its own tests, a second or two
+mailbox/build.sh                 # dist/housemove-mailbox.exe for Windows, reproducibly; build.sh check compares it
+```
 
 ## How it is tested
 
@@ -312,6 +321,14 @@ iPhone simulator and through the iPhone's CryptoKit; `tools/noise_check.py`
 checks the recording with Python), by a relay that records every byte between
 two phones and finds nothing of the move in it (`SniffingTest`), and by the
 simulation, whose phones run 2.2, 2.3 and 2.4 side by side.
+
+The internet mailbox of 2.5 is tested with two and three phones in one process against a stand-in with the laptop
+program's API (`MailboxCommonTest`, also on the iPhone simulator), and with three phones over HTTP against the real Go
+program, built for the test (`MailboxGoServerTest`): removed phones, a key that is not the one pinned, changed, repeated,
+late and out-of-order messages, a full mailbox and a laptop that is off; and every file the program keeps, every request
+and answer and its log are searched for the move and find nothing. Its sealing (HPKE) is checked against the
+specification's test vectors and an implementation written apart (`tools/hpke_check.py`), and on the iPhone through
+CryptoKit and against CryptoKit's own HPKE. The program has its own Go tests.
 
 What no simulation covers: a physical camera reading a printed sticker in real
 light, a physical printer's scaling, speech recognition, and two phones on one
@@ -374,7 +391,9 @@ there later; the Android app does not use it yet.
 - `sync/` (in `shared/`) – phone-to-phone sync over a local socket, and invites;
   syncing by itself (`AutoSync`, `AutoSession`, `Discovery`: Bonjour, the
   handshake); the encryption from 2.4 (`Noise`, `SecureChannel`: the handshakes
-  and the encrypted channel; `Pins`: the keys each phone accepts)
+  and the encrypted channel; `Pins`: the keys each phone accepts); the internet mailbox
+  from 2.5 (`Hpke`: the sealing; `Mailbox`: the code, the envelopes and the laptop's API;
+  `MailboxSync`: registering, sending and reading; `Http`: HTTPS on each platform)
 - `pdf/` – QR label sheets, door signs, inventory and damage reports
 - `ui/` – the kit: `Theme.kt` (colours, type), `Glass.kt` (panels, pills, orbs),
   `Visual.kt` and `Common.kt` (tiles, buttons, inputs), `Dock.kt` (the dome at
@@ -383,3 +402,5 @@ there later; the Android app does not use it yet.
   `Journey.kt` (the phases of a move), `Nav.kt` (the routes)
 - `ui/screens/` – one file per screen or group of screens
 - `tools/` – the scripts above
+- `mailbox/` – the internet mailbox for the family's laptop (Go): it keeps sealed messages for the phones of a move. Its
+  README says how to run it and its API; `design/asus-session.md` how a Claude Code session on the laptop sets it up
