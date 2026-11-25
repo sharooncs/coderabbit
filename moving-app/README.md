@@ -240,7 +240,7 @@ fetches Gradle 9.7.0 the first time.
 ./gradlew :app:testDebugUnitTest          # the screens and PDFs on simulated Android, about 5 minutes
 ./gradlew :app:assembleRelease            # app/build/outputs/apk/release/app-release.apk
 ./gradlew :app:connectedDebugAndroidTest  # on a connected phone or running emulator
-./gradlew :sharedUi:desktopTest           # the screens shared with the iPhone, rendered to sharedUi/build/trial/*.png
+./gradlew :sharedUi:desktopTest           # the iPhone's screens and their model, rendered to sharedUi/build/screens/*.png
 ```
 
 The iPhone app (`iosApp/`) is built on a Mac with `tools/ios.sh`; see `design/ios-plan.md`.
@@ -316,8 +316,10 @@ zxing, and whose iPhone side is in `src/iosMain/` (`design/ios-step1.md`).
 `app/` is the Android app (`src/main/java/app/housemove/`): the screens, the PDFs and
 the activity, with the tests that need simulated Android (`src/test/`) or a device
 (`src/androidTest/`). `sharedUi/` (Compose Multiplatform) holds what the iPhone app
-shows: the shared theme, fonts and icons and, for now, a trial screen; the app's
-screens move there later. The app does not use it yet.
+shows: the shared theme, fonts and icons, and the first iPhone build's screens
+(`ui/iphone`: join a move that lives on an Android phone, look at it read-only, get
+fresh data, leave it; `design/ios-plan.md`, step 1c). The Android app's screens move
+there later; the Android app does not use it yet.
 
 - `data/` (in `shared/`) – the model, the JSON store, merge, backup, move logic (fit check,
   volume, search). `People.kt`, `Rules.kt` and `Changes.kt` hold who may do what.
