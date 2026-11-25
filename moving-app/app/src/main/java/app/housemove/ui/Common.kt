@@ -474,6 +474,12 @@ fun glassFieldColors(): TextFieldColors = OutlinedTextFieldDefaults.colors(
     unfocusedTrailingIconColor = Night.TextDim,
 )
 
+/**
+ * A field for a number of [kind], read by the shared [readNumber], which every number field uses. What it takes goes
+ * to [onChange]. An empty field goes as null, and so does text it refuses (anything that is not a number, NaN, an
+ * infinity, or a number beyond what [kind] takes), as anything not a number always has. Refused text is marked, with
+ * a few words under the field, unless [says] is false because the screen says it in words of its own.
+ */
 @Composable
 fun NumberInput(
     value: Double?,
@@ -481,15 +487,20 @@ fun NumberInput(
     label: String,
     modifier: Modifier = Modifier,
     key: Any? = null,
+    kind: NumberKind,
+    says: Boolean = true,
 ) {
     var text by remember(key) { mutableStateOf(fmtNum(value)) }
+    val refusal = if (says) readNumber(text, kind).refusal else null
     OutlinedTextField(
         value = text,
         onValueChange = {
             text = it
-            onChange(it.replace(',', '.').trim().toDoubleOrNull())
+            onChange(readNumber(it, kind).valueOrNull)
         },
         label = { Text(label, maxLines = 1) },
+        isError = refusal != null,
+        supportingText = refusal?.let { { Text(it) } },
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         colors = glassFieldColors(),

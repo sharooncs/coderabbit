@@ -309,7 +309,8 @@ screens move there later. The app does not use it yet.
   `Moves.kt` holds the moves on a phone, `Phone.kt` the phone's ID, letters and
   label ranges; `Hidden.kt`, `Records.kt` and `Where.kt` the records Helpers are
   not sent, damage and contents lines, and where things are; `Keys.kt`,
-  `Sealed.kt` and `Update.kt` the update files; `DailyBackup.kt` the daily backup
+  `Sealed.kt` and `Update.kt` the update files; `DailyBackup.kt` the daily
+  backup; `Numbers.kt` how every typed or spoken number is read, and what is refused
 - `sync/` (in `shared/`) – phone-to-phone sync over a local socket, and invites
 - `pdf/` – QR label sheets, door signs, inventory and damage reports
 - `ui/` – the kit: `Theme.kt` (colours, type), `Glass.kt` (panels, pills, orbs),

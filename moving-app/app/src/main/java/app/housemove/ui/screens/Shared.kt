@@ -902,7 +902,7 @@ internal fun AmountPicker(
         if (typing) {
             NumberInput(
                 value, { set(it ?: 0.0) }, if (currency.isBlank()) label else "$label (${currency.trim()})",
-                Modifier.fillMaxWidth(), key = "$label-typed",
+                Modifier.fillMaxWidth(), key = "$label-typed", kind = NumberKind.MONEY,
             )
         }
     }
