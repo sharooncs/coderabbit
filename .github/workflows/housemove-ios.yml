@@ -18,6 +18,7 @@ on:
       - "moving-app/gradlew"
       - "moving-app/tools/ios.sh"
       - "moving-app/tools/asc.swift"
+      - "moving-app/tools/failures.py"
       - ".github/workflows/housemove-ios.yml"
   workflow_dispatch:
 
@@ -104,7 +105,10 @@ jobs:
       # The numbers the cloud session reads from this log: wall time and peak memory of compiling the Kotlin klibs,
       # linking the debug framework for the simulator and the release framework for the iPhone (each with
       # /usr/bin/time -l), the size of the Release app for the iPhone, and the required-reason APIs in it.
+      # It takes about 18 minutes, so it runs only for a commit whose message says [measure] (workflow_dispatch
+      # cannot be used: the default branch does not have this workflow).
       - name: Measure the Kotlin build
+        if: contains(github.event.head_commit.message, '[measure]')
         run: tools/ios.sh measure
       - name: Build and test in the simulator
         run: tools/ios.sh sim
@@ -115,10 +119,16 @@ jobs:
           name: ios-shots
           path: moving-app/iosApp/build/shots
           if-no-files-found: ignore
+      # Every failed test with its message and the start of its stack trace, here in the log: the shared tests from
+      # Gradle's JUnit XML, the Xcode tests from the result bundle. When all passed, only the counts.
+      - name: Failed tests
+        if: always()
+        run: |
+          python3 tools/failures.py shared/build/test-results/iosSimulatorArm64Test --xcresult iosApp/build/sim.xcresult
       - name: The shared tests on the simulator must pass
         if: steps.shared-tests.outcome == 'failure'
         run: |
-          echo "The shared tests failed on the iPhone simulator: see the step 'Shared tests on the iPhone simulator', and the ios-shared-tests artifact."
+          echo "The shared tests failed on the iPhone simulator: see the step 'Failed tests' above, the step 'Shared tests on the iPhone simulator', and the ios-shared-tests artifact."
           exit 1
 
   # Copies the screenshots to the ci-shots branch, so they can be fetched with git and looked at.
