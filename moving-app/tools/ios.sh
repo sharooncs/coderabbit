@@ -11,6 +11,7 @@
 #   tools/ios.sh archive    signed Release archive, then a local App Store export (registers app.housemove.ios)
 #   tools/ios.sh upload     sign for App Store Connect and upload the archive to TestFlight
 #   tools/ios.sh phone      build for the paired iPhone, install and open it (no TestFlight needed)
+#   tools/ios.sh asc …      App Store Connect from the command line: TestFlight groups, testers, review (tools/asc.swift)
 #
 # The screens are Kotlin (sharedUi): every Xcode build runs Gradle first (iosApp/project.yml), which needs a JDK
 # (21) and the Android SDK (platform 37, build tools 36), even for the iPhone. `setup` installs both here.
@@ -151,6 +152,11 @@ for d in json.load(open(sys.argv[1]))["result"]["devices"]:
 }
 
 case "${1:-}" in
+  asc)
+    # Uses the App Store Connect API key kept in ~/.appstoreconnect on this Mac; see the top of tools/asc.swift.
+    shift
+    exec xcrun swift "$HERE/tools/asc.swift" "$@"
+    ;;
   doctor)
     say "macOS and Xcode"; sw_vers -productVersion; xcodebuild -version
     say "Xcode first launch and licence"

@@ -16,6 +16,7 @@ on:
       - "moving-app/gradle/**"
       - "moving-app/gradlew"
       - "moving-app/tools/ios.sh"
+      - "moving-app/tools/asc.swift"
       - ".github/workflows/housemove-ios.yml"
   workflow_dispatch:
 
@@ -71,6 +72,9 @@ jobs:
         with:
           packages: "platforms;android-37.0 build-tools;36.0.0"
           log-accepted-android-sdk-licenses: false
+      - name: The App Store Connect helper compiles
+        # It runs only on the owner's Mac (with the API key kept there); here it is only type-checked.
+        run: xcrun swiftc -typecheck tools/asc.swift
       - name: XcodeGen
         run: |
           echo "HM_TOOLS=$RUNNER_TEMP/tools" >> "$GITHUB_ENV"

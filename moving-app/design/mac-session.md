@@ -43,6 +43,13 @@ You are running on the owner's Mac, in `~/Developer`. A cloud session works on t
    - the output of `tools/ios.sh measure`, if the cloud session asked for it;
    - the whole diff of any change you made to the repo (nothing is pushed from this Mac).
 
+## App Store Connect from the command line
+The owner made an App Store Connect API key (2026-11-25). Its file is in `~/.appstoreconnect/private_keys/` and is never opened, printed or copied. `~/.appstoreconnect/housemove.conf` holds two lines, `key_id=…` and `issuer_id=…` (identifiers, not secrets; kept off GitHub because the repo is public). With them, `moving-app/tools/ios.sh asc` does on the command line what the TestFlight pages do:
+- `asc status`: the latest builds with their processing and Beta App Review state, and the tester groups.
+- `asc test-info`: the beta description, feedback email and review contact as saved.
+- `asc create-group NAME`, `asc add-tester GROUP EMAIL [FIRST LAST]`, `asc add-build GROUP BUILD` (a build number or `latest`), `asc what-to-test BUILD TEXT`, `asc submit BUILD`, `asc public-link GROUP on|off`.
+Ask the owner before `submit`, `add-tester` and `public-link`: they send something to Apple or to people.
+
 ## If something goes wrong
 - "No Account for Team USW8537DGX" or "No signing certificate": in Xcode → Settings → Accounts, check that the account lists the team. Manage Certificates → + → Apple Development; the owner clicks this.
 - A signing error about the certificate name or text encoding: the certificate name may have non-ASCII letters. Report the exact error text.

@@ -7,6 +7,7 @@ on:
       # Changes only to the iPhone app skip this workflow; the shared screens (sharedUi) are the Android app's too.
       - "!moving-app/iosApp/**"
       - "!moving-app/tools/ios.sh"
+      - "!moving-app/tools/asc.swift"
       - "moving-app/sharedUi/**"
       - ".github/workflows/housemove-apk.yml"
   workflow_dispatch:
