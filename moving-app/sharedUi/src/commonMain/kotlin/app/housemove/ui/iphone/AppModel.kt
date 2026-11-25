@@ -10,6 +10,7 @@ import app.housemove.data.Outcome
 import app.housemove.data.Role
 import app.housemove.data.Store
 import app.housemove.sync.AutoSync
+import app.housemove.sync.MailboxSync
 import app.housemove.sync.WifiSync
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
@@ -148,14 +149,47 @@ class AppModel(
         autoSync?.poke()
     }
 
-    /** The app came to the front: syncing by itself starts again. */
+    /**
+     * Syncing through the move's internet mailbox (design/encryption.md, "Mailbox as built"), beside syncing by itself: the
+     * phones of the move that are not on the same Wi-Fi keep each other up to date through the family laptop, while the app
+     * is at the front. Null where the phone does not (demo mode, the desktop tests).
+     */
+    val mailbox: MailboxSync? = if (!hooks.mailbox) null else MailboxSync({ moves.current.value }, { moves.phone.settings.value.mailbox }).also { engine ->
+        engine.onTookIn = { _, _ -> scope.launch { followMove() } }
+        engine.resume()
+    }
+
+    /** "Internet mailbox on this iPhone", as the phone's settings say. */
+    var mailboxOn: Boolean by mutableStateOf(moves.phone.settings.value.mailbox)
+        private set
+
+    fun setMailbox(on: Boolean) {
+        moves.phone.updateSettings { it.copy(mailbox = on) }
+        mailboxOn = on
+        mailbox?.poke()
+    }
+
+    /** The app came to the front: syncing by itself starts again, and the mailbox is read. */
     fun foreground() {
         autoSync?.resume()
+        mailbox?.resume()
     }
 
     /** The app left the front: iOS lets it neither listen nor sync, so syncing by itself stops until it is back. */
     fun background() {
         autoSync?.pause()
+        mailbox?.pause()
+    }
+
+    /**
+     * The internet mailbox's code (HMBOX:…, from the Camera's "Open in HouseMove" or pasted), on this iPhone's move: an
+     * Organiser sets the move's mailbox up; anyone keeps its code for the mailbox the move already has.
+     */
+    private fun setUpMailbox(s: Store, text: String) {
+        open(Page.Fresh)
+        val (ok, said) = MailboxSync.setUp(s, text)
+        fresh = Fresh.Idle(Report(ok, if (ok) "Internet mailbox" else "Not set up", said))
+        if (ok) mailbox?.poke()
     }
 
     // ---- codes from outside: a link from the Camera, a paste, typing ---------------------------------------------
@@ -165,9 +199,14 @@ class AppModel(
      * Maple Road as Priya, Decider?"); in a move, a sync code gets fresh data. Anything else is said in words.
      */
     fun use(text: String) {
+        val s = store
+        // The internet mailbox's code, for a phone in a move.
+        if (s != null && MailboxSync.isCode(text)) {
+            setUpMailbox(s, text)
+            return
+        }
         val code = Words.cleanCode(text)
         val invite = WifiSync.Invite.parse(code)
-        val s = store
         if (s == null) {
             if (join is JoinStep.Working) return
             join = when {

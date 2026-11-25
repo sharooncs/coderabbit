@@ -68,7 +68,8 @@
 		<string>_housemove._tcp</string>
 	</array>
 	<!-- An Android phone's invite and sync code are QR codes holding HMSYNC:…, a link of this kind: the iPhone's
-	     Camera offers to open it in HouseMove (HouseMoveApp.swift, onOpenURL). -->
+	     Camera offers to open it in HouseMove (HouseMoveApp.swift, onOpenURL). So is the internet mailbox's setup code,
+	     HMBOX:… (from 2.5, design/encryption.md, "Mailbox as built"). -->
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -79,6 +80,7 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>hmsync</string>
+				<string>hmbox</string>
 			</array>
 		</dict>
 	</array>

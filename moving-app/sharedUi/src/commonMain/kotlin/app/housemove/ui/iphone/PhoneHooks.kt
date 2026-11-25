@@ -42,6 +42,12 @@ interface PhoneHooks {
 
     /** Syncing by itself listens on 127.0.0.1 alone (demo mode and tests), not on the Wi-Fi. */
     val loopbackOnly: Boolean get() = false
+
+    /**
+     * Does this phone keep up to date through the move's internet mailbox when it has one (design/encryption.md, "Mailbox as
+     * built")? The iPhone does; demo mode and the desktop tests do not.
+     */
+    val mailbox: Boolean get() = false
 }
 
 /** What iOS says about HouseMove and the local network. */

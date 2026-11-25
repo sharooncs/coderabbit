@@ -8,6 +8,7 @@ import app.housemove.data.Moves
 import app.housemove.data.Shrink
 import app.housemove.data.Store
 import app.housemove.sync.AutoSync
+import app.housemove.sync.MailboxSync
 import app.housemove.ui.backupFolder
 import app.housemove.ui.shrinkJpeg
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -34,6 +35,14 @@ class App : Application() {
      */
     val autoSync: AutoSync by lazy {
         AutoSync(NsdDiscovery(this), { moves.current.value }, { moves.phone.settings.value.autoSync })
+    }
+
+    /**
+     * Syncing through the move's internet mailbox (design/encryption.md, "Mailbox as built"), for the move in use, while the
+     * switch is on and the move has one; beside syncing by itself, not instead. Started and stopped with the app's screen.
+     */
+    val mailbox: MailboxSync by lazy {
+        MailboxSync({ moves.current.value }, { moves.phone.settings.value.mailbox })
     }
 
     /** An update file another app asked this one to open ("Open with HouseMove"), until the screens have opened it. */

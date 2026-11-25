@@ -23,6 +23,7 @@ import app.housemove.data.Home
 import app.housemove.data.Moves
 import app.housemove.data.Store
 import app.housemove.sync.AutoSync
+import app.housemove.sync.MailboxSync
 import app.housemove.ui.screens.*
 
 /**
@@ -31,12 +32,12 @@ import app.housemove.ui.screens.*
  * with that move's, starting at its Home.
  */
 @Composable
-fun AppRoot(moves: Moves, onNav: (NavHostController) -> Unit = {}, autoSync: AutoSync? = null) {
+fun AppRoot(moves: Moves, onNav: (NavHostController) -> Unit = {}, autoSync: AutoSync? = null, mailbox: MailboxSync? = null) {
     HouseMoveTheme {
         val scope = rememberCoroutineScope()
         val state = remember { AppState(scope) }
         val current by moves.current.collectAsState()
-        CompositionLocalProvider(LocalMoves provides moves, LocalAppState provides state, LocalAutoSync provides autoSync) {
+        CompositionLocalProvider(LocalMoves provides moves, LocalAppState provides state, LocalAutoSync provides autoSync, LocalMailbox provides mailbox) {
             val store = current
             if (store == null) FirstOpen(onNav)
             else key(store) { AppRoot(store, onNav = onNav) }

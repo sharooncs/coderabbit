@@ -37,10 +37,13 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import app.housemove.data.Store
+import app.housemove.data.Action
 import app.housemove.sync.AutoSync
+import app.housemove.sync.MailboxSync
 import app.housemove.ui.Night
 import app.housemove.ui.icons.Icons
 import app.housemove.ui.icons.filled.CheckCircle
+import app.housemove.ui.icons.filled.CloudOff
 import app.housemove.ui.icons.filled.Close
 import app.housemove.ui.icons.filled.Description
 import app.housemove.ui.icons.filled.QrCode2
@@ -74,6 +77,8 @@ fun FreshScreen(model: AppModel, store: Store) {
         ) {
             // Syncing by itself first: with it on, there is usually nothing else to do here.
             if (fresh !is Fresh.Showing) model.autoSync?.let { AutoPanel(model, it, device.lastSyncWith, device.lastSyncAt) }
+            // Then the internet mailbox, for the phones that are not on this Wi-Fi.
+            if (fresh !is Fresh.Showing) MailboxPanel(model, store)
             // While the code shows, it and its steps come first.
             if (fresh !is Fresh.Showing) Hint("Changed something on the Android phone? Bring it to this iPhone. Both phones need to be on the same Wi-Fi.")
             val report = when (fresh) {
@@ -186,6 +191,63 @@ private fun AutoPanel(model: AppModel, engine: AutoSync, lastWith: String, lastA
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text("Sync by itself on Wi-Fi", style = MaterialTheme.typography.bodyLarge, color = Night.Text, modifier = Modifier.weight(1f))
+            Spacer(Modifier.width(12.dp))
+            Switch(checked = on, onCheckedChange = null, colors = SwitchDefaults.colors(checkedTrackColor = Night.Mint, checkedThumbColor = Night.OnMint))
+        }
+    }
+}
+
+/**
+ * The internet mailbox (design/encryption.md, "Mailbox as built"), as Android's Sync and backup shows it: one line ("Up to
+ * date over the internet · 2 min ago", "No internet mailbox yet", or what went wrong), a hint, and the switch. The
+ * iPhone has no scanner of its own: an Organiser points the Camera at the mailbox laptop's code and taps Open in
+ * HouseMove, or pastes it into the code field below.
+ */
+@Composable
+private fun MailboxPanel(model: AppModel, store: Store) {
+    val data by store.data.collectAsState()
+    val engine = model.mailbox
+    val flow = remember(engine) { engine?.status ?: kotlinx.coroutines.flow.MutableStateFlow(MailboxSync.Status(MailboxSync.State.NOT_SET_UP)) }
+    val live by flow.collectAsState()
+    val on = model.mailboxOn
+    val status = when {
+        !on -> MailboxSync.Status(MailboxSync.State.OFF)
+        data.mailbox.url.isBlank() -> MailboxSync.Status(MailboxSync.State.NOT_SET_UP)
+        engine == null -> MailboxSync.Status(MailboxSync.State.ALONE)
+        live.state == MailboxSync.State.NOT_SET_UP || live.state == MailboxSync.State.OFF -> MailboxSync.Status(MailboxSync.State.WORKING)
+        else -> live
+    }
+    val organiser = store.can(Action.MOVE_SETTINGS)
+    var now by remember { mutableStateOf(Words.nowMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            now = Words.nowMillis()
+            delay(15_000)
+        }
+    }
+    val tone = if (status.state == MailboxSync.State.UP_TO_DATE) Tone.Mint else Tone.Plain
+    Panel(Modifier.testTag("mailbox"), tone = tone) {
+        Row(Modifier.semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }, verticalAlignment = Alignment.CenterVertically) {
+            val icon = when (status.state) {
+                MailboxSync.State.UP_TO_DATE -> Icons.Filled.CheckCircle
+                MailboxSync.State.OFF, MailboxSync.State.PROBLEM -> Icons.Filled.CloudOff
+                else -> Icons.Filled.Sync
+            }
+            Icon(icon, contentDescription = null, tint = tone.accent(), modifier = Modifier.size(24.dp))
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(status.line(now), style = MaterialTheme.typography.titleMedium, color = Night.Text)
+                status.hint(now, organiser)?.let { Hint(it) }
+                if (organiser && on && (status.state == MailboxSync.State.NOT_SET_UP || status.problem == MailboxSync.Problem.CODE_REFUSED)) {
+                    Hint("On this iPhone: point the Camera at the code and tap Open in HouseMove, or paste it below.")
+                }
+            }
+        }
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(value = on, role = Role.Switch, onValueChange = { model.setMailbox(it) }),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Internet mailbox on this iPhone", style = MaterialTheme.typography.bodyLarge, color = Night.Text, modifier = Modifier.weight(1f))
             Spacer(Modifier.width(12.dp))
             Switch(checked = on, onCheckedChange = null, colors = SwitchDefaults.colors(checkedTrackColor = Night.Mint, checkedThumbColor = Night.OnMint))
         }

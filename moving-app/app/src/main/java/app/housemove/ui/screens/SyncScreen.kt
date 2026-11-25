@@ -126,6 +126,8 @@ fun SyncScreen(code: String? = null) {
 
             // Phones of a move with others in it sync by themselves on the same Wi-Fi; the code below stays for the rest.
             if (data.shared()) AutoSyncSection()
+            // And away from it: through the internet mailbox on the family laptop (2.5).
+            if (data.shared()) MailboxSection()
 
             val h = host
             // With no Wi-Fi there is no code to show or scan: said first, in the sync's own words, until it is back.

@@ -39,7 +39,10 @@ import java.time.LocalDate
 // ---- sending and opening update files --------------------------------------------------------
 
 /** An update from someone removed from the move, which this phone's Organiser may take in as their work alone. */
-class RemovedOffer(val uri: Uri, val name: String)
+class RemovedOffer(val uri: Uri, val name: String, val sure: Boolean = false)
+
+/** An update made the older way (format 1), which cannot show who made it: asked about before it is opened ([text]). */
+class UnprovenOffer(val uri: Uri, val text: String)
 
 /**
  * Sending and opening update files from a screen: the file is made away from the screen and handed to the share
@@ -56,6 +59,7 @@ class UpdateActions internal constructor(
         private set
     var report by mutableStateOf<SyncReport?>(null)
     var removedOffer by mutableStateOf<RemovedOffer?>(null)
+    var unprovenOffer by mutableStateOf<UnprovenOffer?>(null)
     internal var picker: () -> Unit = {}
 
     /**
@@ -67,10 +71,11 @@ class UpdateActions internal constructor(
         busy = true
         report = null
         scope.launch(Dispatchers.Main) {
+            var how: Update.Made? = null
             val made = withContext(Dispatchers.IO) {
                 try {
                     val file = app.housemove.pdf.Share.outFile(context, updateFileName(s))
-                    file.outputStream().use { Update.write(s, it, organisersOnly) }
+                    how = file.outputStream().use { Update.write(s, it, organisersOnly) }
                     file to null
                 } catch (e: Exception) {
                     null to (e.message?.takeIf { it == Update.NO_RECIPIENTS } ?: Update.COULD_NOT_WRITE)
@@ -82,7 +87,15 @@ class UpdateActions internal constructor(
                 report = SyncReport(false, "Could not make an update", made.second ?: Update.COULD_NOT_WRITE)
                 return@launch
             }
-            report = SyncReport(true, "Update ready to send", "Choose the app to send it with. It opens on " + phonesText(s, organisersOnly) + ".")
+            // Sealed (2.5, format 2): each phone sees it came from this one. Otherwise, why not.
+            val seal = how?.let { m ->
+                when {
+                    m.sealed -> " It shows them it came from this phone."
+                    m.plainFor.isNotEmpty() -> " " + Update.madeTheOlderWay(m.plainFor)
+                    else -> ""
+                }
+            } ?: ""
+            report = SyncReport(true, "Update ready to send", "Choose the app to send it with. It opens on " + phonesText(s, organisersOnly) + "." + seal)
             try {
                 shareSheet(context, file, Update.MIME)
             } catch (_: Exception) {
@@ -94,17 +107,21 @@ class UpdateActions internal constructor(
     /** Pick an update file and open it. */
     fun open() = picker()
 
-    /** Open the update at [uri]; with [takeInRemoved], the work of someone removed, as an Organiser may. */
-    fun openUri(uri: Uri, takeInRemoved: Boolean = false) {
+    /**
+     * Open the update at [uri]; with [takeInRemoved], the work of someone removed, as an Organiser may. One made the older
+     * way (which cannot show who made it) is asked about first ([unprovenOffer]), and opened with [sure] once the person
+     * says so.
+     */
+    fun openUri(uri: Uri, takeInRemoved: Boolean = false, sure: Boolean = false) {
         busy = true
         report = null
         scope.launch(Dispatchers.Main) {
             val r = withContext(Dispatchers.IO) {
                 fun read(): InputStream = context.contentResolver.openInputStream(uri) ?: throw IOException("could not read")
                 when {
-                    moves != null -> moves.openUpdate({ read() }, takeInRemoved)
+                    moves != null -> moves.openUpdate({ read() }, takeInRemoved, askIfUnproven = !sure)
                     store != null -> try {
-                        read().use { Update.open(store, it, takeInRemoved) }
+                        read().use { Update.open(store, it, takeInRemoved, askIfUnproven = !sure) }
                     } catch (_: Exception) {
                         Update.Opened(false, Update.NOT_AN_UPDATE)
                     }
@@ -112,9 +129,15 @@ class UpdateActions internal constructor(
                 }
             }
             busy = false
-            if (r.fromRemoved != null && r.mayTakeIn && !takeInRemoved) removedOffer = RemovedOffer(uri, r.fromName.ifBlank { "Their" })
+            if (r.unproven) {
+                unprovenOffer = UnprovenOffer(uri, r.message)
+                return@launch
+            }
+            if (r.fromRemoved != null && r.mayTakeIn && !takeInRemoved) removedOffer = RemovedOffer(uri, r.fromName.ifBlank { "Their" }, sure)
             report = when {
                 r.ok && r.message == Update.NOTHING_NEW -> SyncReport(true, "Nothing new", r.message)
+                // Sealed by the phone it came from (format 2): the screen names that phone.
+                r.ok && r.proven -> SyncReport(true, "Update from ${r.sender}", r.message)
                 r.ok -> SyncReport(true, "Update taken in", r.message)
                 else -> SyncReport(false, "Could not open the update", r.message)
             }
@@ -152,9 +175,23 @@ fun rememberUpdateActions(store: Store?): UpdateActions {
     return actions
 }
 
-/** What sending or opening an update asks: whether to take in the work of someone removed from the move. */
+/**
+ * What sending or opening an update asks: whether to open one made the older way, which cannot show who made it; and
+ * whether to take in the work of someone removed from the move.
+ */
 @Composable
 fun UpdateDialogs(a: UpdateActions) {
+    a.unprovenOffer?.let { asked ->
+        val close = { a.unprovenOffer = null }
+        GlassDialog(
+            "Open this update?", onDismiss = close, icon = Icons.Default.HelpOutline, text = asked.text,
+            buttons = {
+                DialogCancel(close, "Not now")
+                PillButton("Open it", onClick = { close(); a.openUri(asked.uri, sure = true) }, icon = Icons.Default.FileOpen)
+            },
+        )
+        return
+    }
     val offer = a.removedOffer ?: return
     val close = { a.removedOffer = null }
     GlassDialog(
@@ -162,7 +199,7 @@ fun UpdateDialogs(a: UpdateActions) {
         text = "${offer.name} has been removed from this move. You can still take in what they did. Anything they had no right to do is turned away, as at a sync.",
         buttons = {
             DialogCancel(close, "Not now")
-            PillButton("Take in their work", onClick = { close(); a.openUri(offer.uri, takeInRemoved = true) }, icon = Icons.Default.MoveToInbox)
+            PillButton("Take in their work", onClick = { close(); a.openUri(offer.uri, takeInRemoved = true, sure = offer.sure) }, icon = Icons.Default.MoveToInbox)
         },
     )
 }

@@ -58,6 +58,9 @@ import kotlin.random.Random
  * are kept (AppFolders, or demo mode's own folders).
  */
 class IosHooks(override val dataDir: File, override val noBackupDir: File, private val demo: Boolean = false) : PhoneHooks {
+    /** The internet mailbox: on the real app; demo mode's sample move has none. */
+    override val mailbox: Boolean get() = !demo
+
     /**
      * "iPhone": since iOS 16 an app is told the model's name, not the one the owner gave the phone. Read once, here on
      * the main thread, as UIKit asks: the sync threads ask for it later.

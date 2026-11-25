@@ -195,13 +195,54 @@ class ApartFlowsTest {
         go("moves")
         tapDesc("Back up, archive or remove Maple Road")
         tap("Open update")
-        waitFor("Update taken in")
+        // Sealed by Dee's phone (2.5, format 2): the screen names the phone it came from.
+        waitFor("Update from Dee's phone")
+        see("Taken in from Dee's phone")
         assertNotNull(asha.data.value.box(box.id))
         shot("opened")
         // The same file again changes nothing.
         tapDesc("Back up, archive or remove Maple Road")
         tap("Open update")
         waitFor("Nothing new")
+    }
+
+    /**
+     * An update made the older way (format 1: here because the phone writing it does not have the key on one recipient's
+     * entry pinned) cannot show who made it: the phone writing it says why, and a phone with 2.5 asks before it opens it.
+     */
+    @Test
+    fun anUpdateMadeTheOlderWayIsAskedAboutFirst() {
+        val ashaPhone = phone("Asha's phone", "Asha")
+        val asha = move(ashaPhone, "Maple Road", "Asha")
+        val deePhone = phone("Dee's phone", "Dee")
+        val dee = joined(deePhone, asha, "Dee", Role.DECIDER)
+        val omarPhone = phone("Omar's phone", "Omar")
+        val omar = joined(omarPhone, asha, "Omar", Role.DECIDER)
+        sync(asha, dee)
+        // On Dee's phone, Omar's entry shows a key Dee's phone has not pinned.
+        val other = java.security.KeyPairGenerator.getInstance("EC").apply { initialize(java.security.spec.ECGenParameterSpec("secp256r1")) }.generateKeyPair()
+        val otherKey = java.util.Base64.getEncoder().encodeToString(other.public.encoded)
+        dee.update { d -> d.copy(people = d.people.map { p -> p.copy(phones = p.phones.map { if (it.id == omar.phone.id) it.copy(key = otherKey, keyAt = it.keyAt + 1) else it }) }) }
+        val box = dee.createBox("D7", null)
+
+        show(deePhone)
+        go("sync")
+        tap("Send update")
+        val (file, _) = sharedFile()
+        waitFor("Update ready to send")
+        see("This update was made the older way, because Omar's phone has not shown it has HouseMove 2.5 yet")
+
+        opened = file
+        show(ashaPhone)
+        go("moves")
+        tapDesc("Back up, archive or remove Maple Road")
+        tap("Open update")
+        waitFor("Open this update?")
+        see("This update was made the older way, so it cannot show it came from Dee's phone. Open it only if Dee sent it to you.")
+        assertNull(asha.data.value.box(box.id))
+        tap("Open it")
+        waitFor("Update taken in")
+        assertNotNull(asha.data.value.box(box.id))
     }
 
     @Test
