@@ -1854,7 +1854,7 @@ class Store internal constructor(
         while (block != null && ownLabels(block.first, block.last).let { own -> avoidLabels.any { it.overlaps(own) } }) block = givenBlock(codes.labelsFrom, codes.labelsTo, ++n)
         if (block != null) saveCodes(codes.copy(blocksGiven = n + 1))
         // Its public key for update files, as it said it: the admitting phone can send it an update at once.
-        val ok = key.isNotEmpty() && updateCrypto?.isPublicKey(key) == true
+        val ok = key.isNotEmpty() && isPublicKeyText(key)
         val entry = PhoneEntry(
             id = phoneId, name = deviceName.trim(), letter = letter, labelsFrom = block?.first ?: 0, labelsTo = block?.last ?: 0, addedAt = t,
             key = if (ok) key else "", keyAt = if (ok) keyAt else 0,

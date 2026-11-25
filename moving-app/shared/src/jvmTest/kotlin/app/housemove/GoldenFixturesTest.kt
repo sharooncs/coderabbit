@@ -1086,13 +1086,13 @@ class GoldenFixturesTest {
                     put("plaintext", hex(plain.toByteArray()))
                     put("index", index)
                     put("last", last)
-                    put("sealed", hex(Sealing.chunkCipher(Cipher.ENCRYPT_MODE, key, prefix, headerHash, index, last).doFinal(plain.toByteArray())))
+                    put("sealed", hex(Sealing.sealChunk(JcaCrypto, key, prefix, headerHash, index, last, plain.toByteArray())))
                 }
             }
             // A stream of 150,000 bytes (byte i is i mod 251) through SealedOut: three chunks.
             val plain = ByteArray(150_000) { (it % 251).toByte() }
             val out = ByteArrayOutputStream()
-            SealedOut(DataOutputStream(out), key, prefix, headerHash).use { it.write(plain) }
+            SealedOut(JcaCrypto, out, key, prefix, headerHash).stream.use { it.write(plain) }
             val sealed = out.toByteArray()
             putJsonObject("stream") {
                 put("plaintext", "150000 bytes, byte i = i mod 251")
@@ -1109,7 +1109,7 @@ class GoldenFixturesTest {
                         p += 4 + n
                     }
                 }
-                val back = SealedIn(DataInputStream(ByteArrayInputStream(sealed)), key, prefix, headerHash).readBytes()
+                val back = SealedIn(JcaCrypto, ByteArrayInputStream(sealed), key, prefix, headerHash).stream.readBytes()
                 put("opensBack", back.contentEquals(plain))
             }
         }

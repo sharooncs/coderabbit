@@ -42,7 +42,35 @@ actual typealias InputStream = java.io.InputStream
 actual typealias OutputStream = java.io.OutputStream
 
 internal actual fun OutputStream.write(b: ByteArray, off: Int, len: Int) = write(b, off, len)
+internal actual fun OutputStream.flush() = flush()
 internal actual fun InputStream.read(b: ByteArray, off: Int, len: Int): Int = read(b, off, len)
+internal actual fun InputStream.bufferedStream(): InputStream = buffered()
+internal actual fun OutputStream.bufferedStream(): OutputStream = buffered()
+
+internal actual fun outputStreamOf(onWrite: (ByteArray, Int, Int) -> Unit, onFlush: () -> Unit, onClose: () -> Unit): OutputStream =
+    object : OutputStream() {
+        override fun write(b: Int) = onWrite(byteArrayOf(b.toByte()), 0, 1)
+
+        override fun write(b: ByteArray, off: Int, len: Int) = onWrite(b, off, len)
+
+        override fun flush() = onFlush()
+
+        override fun close() = onClose()
+    }
+
+internal actual fun inputStreamOf(onRead: (ByteArray, Int, Int) -> Int): InputStream =
+    object : InputStream() {
+        override fun read(): Int {
+            val one = ByteArray(1)
+            while (true) {
+                val n = onRead(one, 0, 1)
+                if (n < 0) return -1
+                if (n == 1) return one[0].toInt() and 0xff
+            }
+        }
+
+        override fun read(b: ByteArray, off: Int, len: Int): Int = onRead(b, off, len)
+    }
 
 actual typealias IOException = java.io.IOException
 actual typealias EOFException = java.io.EOFException
@@ -76,6 +104,8 @@ internal actual class ZipReader actual constructor(input: InputStream) : AutoClo
     actual fun copyTo(file: File) {
         file.ioOutputStream().use { zip.ioCopyTo(it) }
     }
+
+    actual fun read(b: ByteArray, off: Int, len: Int): Int = zip.read(b, off, len)
 
     actual fun closeEntry() = zip.closeEntry()
 

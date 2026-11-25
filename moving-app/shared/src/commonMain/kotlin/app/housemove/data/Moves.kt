@@ -476,7 +476,7 @@ class Moves(
     }
 
     // ---- working apart and safety nets --------------------------------------------------
-    // Opening an update file into the move it is for is Moves.openUpdate, in Update.kt: Android and the JVM only.
+    // Opening an update file into the move it is for is Moves.openUpdate, in Update.kt.
 
     /** Where the daily small backup goes ([DailyBackup]): the folder this phone's person picked once, or null while there is none. The app sets this. */
     @Volatile

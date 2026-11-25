@@ -1,18 +1,12 @@
 package app.housemove
 
-import app.housemove.data.AppJson
 import app.housemove.data.CountDownLatch
 import app.housemove.data.File
 import app.housemove.data.InputStream
 import app.housemove.data.OutputStream
-import app.housemove.data.UpdateCrypto
-import app.housemove.data.UpdateKeyPair
 import app.housemove.data.awaitMillis
 import app.housemove.data.deleteRecursively
-import app.housemove.data.isFile
-import app.housemove.data.readText
 import app.housemove.sync.ServerSocket
-import kotlinx.serialization.Serializable
 
 /*
  * What the common tests need of the platform they run on (jvmTest and iosTest give it): temporary folders, bytes in
@@ -39,10 +33,11 @@ internal expect class BytesOut() {
 }
 
 /**
- * On a platform without the update-file crypto (the iPhone), puts in [KeyTextOnly] for this run, so its phones say the
- * fixed public keys of their folders as JVM phones do. Elsewhere does nothing. Undone by the function it returns.
+ * On a platform whose crypto the app registers at start-up (the iPhone: CryptoKit, which Kotlin tests cannot call), puts in
+ * the reference crypto ([ReferenceCrypto]) for this run, so its phones have key pairs and read and write update files as
+ * JVM phones do. Elsewhere (the JCA) does nothing. Undone by the function it returns.
  */
-internal expect fun useKeyTextIfNoCrypto(): () -> Unit
+internal expect fun useTestCryptoIfNone(): () -> Unit
 
 /** Waits [ms] milliseconds. */
 internal fun sleepMillis(ms: Long) {
@@ -57,23 +52,4 @@ internal inline fun inTempFolder(block: (File) -> Unit) {
     } finally {
         dir.deleteRecursively()
     }
-}
-
-/**
- * A stand-in for the update-file crypto with none in it, for tests only: a phone's key pair is the public key text in
- * its key file, as it is; another phone's key text is taken when it has the shape of an EC P-256 public key in X.509
- * and Base64. Nothing is decoded, checked or worked out.
- */
-internal object KeyTextOnly : UpdateCrypto {
-    @Serializable
-    private data class Saved(val public: String = "", val private: String = "", val at: Long = 0)
-
-    private class Pair(override val publicText: String, override val madeAt: Long) : UpdateKeyPair
-
-    override fun keysIn(file: File?): UpdateKeyPair {
-        val saved = file?.takeIf { it.isFile }?.let { AppJson.decodeFromString(Saved.serializer(), it.readText()) } ?: Saved()
-        return Pair(saved.public, saved.at)
-    }
-
-    override fun isPublicKey(text: String): Boolean = text.length == 124 && text.startsWith("MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE")
 }

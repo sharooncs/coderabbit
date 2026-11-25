@@ -437,7 +437,7 @@ class NotANumberTest {
         val b64 = Base64.getEncoder()
         val contentKey = Sealing.randomBytes(32)
         val prefix = Sealing.randomBytes(8)
-        val w = Sealing.wrap(contentKey, PhoneKeys.publicFrom(to.phone.keys.publicText)!!, to.phone.id, id.id)
+        val w = Sealing.wrap(JcaCrypto, contentKey, Base64.getDecoder().decode(to.phone.keys.publicText), to.phone.id, id.id)
         val header = Update.Header(
             schema = SCHEMA, moveId = id.id, aliases = id.aliases, derived = id.derived, from = from.phone.id, at = now, nonce = b64.encodeToString(prefix),
             to = listOf(Update.To(to.phone.id, b64.encodeToString(w.ephemeral), b64.encodeToString(w.salt), b64.encodeToString(w.iv), b64.encodeToString(w.sealed))),
@@ -449,8 +449,8 @@ class NotANumberTest {
         dout.writeInt(Update.FORMAT)
         dout.writeInt(headerBytes.size)
         dout.write(headerBytes)
-        val sealed = SealedOut(dout, contentKey, prefix, Sealing.sha256(headerBytes))
-        val zip = ZipOutputStream(sealed)
+        val sealed = SealedOut(JcaCrypto, dout, contentKey, prefix, Sealing.sha256(headerBytes))
+        val zip = ZipOutputStream(sealed.stream)
         zip.putNextEntry(ZipEntry("data.json"))
         zip.write(json.toByteArray())
         zip.closeEntry()

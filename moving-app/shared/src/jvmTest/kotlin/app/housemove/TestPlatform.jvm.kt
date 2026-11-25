@@ -40,5 +40,5 @@ internal actual class BytesOut actual constructor() {
     actual fun bytes(): ByteArray = out.toByteArray()
 }
 
-/** The JVM has the update-file crypto (Keys.kt): nothing to stand in. */
-internal actual fun useKeyTextIfNoCrypto(): () -> Unit = {}
+/** The JVM has the update-file crypto (the JCA, Crypto.jvm.kt): nothing to stand in. */
+internal actual fun useTestCryptoIfNone(): () -> Unit = {}

@@ -9,8 +9,10 @@ import java.security.MessageDigest
 // Threads.kt, Platform.kt, sync/Net.kt): on Android and the JVM, in jvmCommonMain, each is the java.* call the code
 // made before (Android runs what it ran); on the iPhone, in iosMain, they are Apple's and POSIX calls with the same
 // behaviour (files, sockets, threads), and the zips and QR codes are common Kotlin (Zip.kt, QrEncoder.kt) that writes
-// what java.util.zip and zxing write. The update-file crypto (Keys.kt, Sealed.kt, Update.kt) and zxing stay in
-// jvmCommonMain only. The JVM target runs the data and sync tests without Android or Robolectric.
+// what java.util.zip and zxing write. The update files (Sealed.kt, Update.kt) are common too, on a small crypto interface
+// (Crypto.kt): the JCA on Android and the JVM (Crypto.jvm.kt), CryptoKit in Swift on the iPhone, registered at start-up
+// (Crypto.ios.kt; design/encryption.md). zxing stays in jvmCommonMain only. The JVM target runs the data and sync tests
+// without Android or Robolectric.
 plugins {
     id("org.jetbrains.kotlin.multiplatform")
     id("com.android.kotlin.multiplatform.library")
@@ -91,8 +93,8 @@ kotlin {
     jvm {
         compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
     }
-    // The iPhone (device and Apple-silicon simulator). Nothing in jvmCommonMain (java.*, javax.crypto, Keys.kt,
-    // Sealed.kt, Update.kt, zxing) reaches it.
+    // The iPhone (device and Apple-silicon simulator). Nothing in jvmCommonMain (java.*, javax.crypto, the JCA in
+    // Crypto.jvm.kt, zxing) reaches it; its crypto is the app's CryptoKit.
     iosArm64()
     iosSimulatorArm64()
 

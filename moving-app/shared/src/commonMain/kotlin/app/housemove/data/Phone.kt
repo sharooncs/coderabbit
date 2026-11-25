@@ -33,9 +33,9 @@ class Phone internal constructor(
 ) {
     /**
      * This phone's key pair for update files: made the first time it is asked for, and kept from then on. None on a
-     * phone without update files (the iPhone v1, see [updateCrypto]).
+     * phone without update-file crypto ([platformCrypto] is null: the iPhone before the app registers CryptoKit).
      */
-    val keys: UpdateKeyPair by lazy { updateCrypto?.keysIn(keysFile) ?: NoUpdateKeys }
+    val keys: UpdateKeyPair by lazy { platformCrypto?.phoneKeys(id, keysFile) ?: NoUpdateKeys }
 
     val deviceName: String get() = try {
         deviceNameOf().trim()

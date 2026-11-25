@@ -6,7 +6,7 @@ import app.housemove.data.OutputStream
 import app.housemove.data.idSource
 import app.housemove.data.mkdirs
 import app.housemove.data.randomUuid
-import app.housemove.data.updateCryptoStandIn
+import app.housemove.data.registeredCrypto
 import app.housemove.sync.ServerSocket
 import platform.Foundation.NSTemporaryDirectory
 
@@ -57,8 +57,12 @@ internal actual class BytesOut actual constructor() {
     actual fun bytes(): ByteArray = buf.copyOf(count)
 }
 
-/** The iPhone has no update-file crypto: the phones of a run say their key text as it is in their folders ([KeyTextOnly]). */
-internal actual fun useKeyTextIfNoCrypto(): () -> Unit {
-    updateCryptoStandIn = KeyTextOnly
-    return { updateCryptoStandIn = null }
+/**
+ * The app registers CryptoKit at start-up, which Kotlin tests cannot call: the phones of a run use the reference crypto
+ * ([ReferenceCrypto]) unless a test put in another.
+ */
+internal actual fun useTestCryptoIfNone(): () -> Unit {
+    if (registeredCrypto != null) return {}
+    registeredCrypto = ReferenceCrypto
+    return { registeredCrypto = null }
 }

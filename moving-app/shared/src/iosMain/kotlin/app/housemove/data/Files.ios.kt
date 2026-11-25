@@ -246,7 +246,34 @@ actual abstract class OutputStream : AutoCloseable {
 
 internal actual fun OutputStream.write(b: ByteArray, off: Int, len: Int) = writeBytes(b, off, len)
 
+@Suppress("EXTENSION_SHADOWED_BY_MEMBER")
+internal actual fun OutputStream.flush() = flush()
+
 internal actual fun InputStream.read(b: ByteArray, off: Int, len: Int): Int = if (len == 0) 0 else readBytes(b, off, len)
+
+internal actual fun InputStream.bufferedStream(): InputStream = BufferedInput(this)
+
+internal actual fun OutputStream.bufferedStream(): OutputStream = BufferedOutput(this)
+
+internal actual fun outputStreamOf(onWrite: (ByteArray, Int, Int) -> Unit, onFlush: () -> Unit, onClose: () -> Unit): OutputStream =
+    object : OutputStream() {
+        override fun writeBytes(b: ByteArray, off: Int, len: Int) {
+            checkRange(b, off, len)
+            onWrite(b, off, len)
+        }
+
+        override fun flush() = onFlush()
+
+        override fun close() = onClose()
+    }
+
+internal actual fun inputStreamOf(onRead: (ByteArray, Int, Int) -> Int): InputStream =
+    object : InputStream() {
+        override fun readBytes(b: ByteArray, off: Int, len: Int): Int {
+            checkRange(b, off, len)
+            return onRead(b, off, len)
+        }
+    }
 
 /** A file read from its start (java.io.FileInputStream). Throws FileNotFoundException when it cannot be opened. */
 internal class FileInput(file: File) : InputStream() {
@@ -450,6 +477,8 @@ internal actual class ZipReader actual constructor(input: InputStream) : AutoClo
             }
         }
     }
+
+    actual fun read(b: ByteArray, off: Int, len: Int): Int = zip.read(b, off, len)
 
     actual fun closeEntry() = zip.closeEntry()
 

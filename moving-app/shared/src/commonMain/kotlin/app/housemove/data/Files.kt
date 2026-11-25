@@ -51,8 +51,23 @@ expect abstract class OutputStream : AutoCloseable {
 
 internal expect fun OutputStream.write(b: ByteArray, off: Int, len: Int)
 
+/** Sends on what is buffered (java.io's OutputStream.flush). */
+internal expect fun OutputStream.flush()
+
 /** Up to [len] bytes into [b] from [off]: how many were read (at least one when [len] is not 0), or -1 at the end. */
 internal expect fun InputStream.read(b: ByteArray, off: Int, len: Int): Int
+
+/** This stream through a buffer of 8 KB (kotlin.io's `buffered()`: java.io.BufferedInputStream on Android and the JVM). */
+internal expect fun InputStream.bufferedStream(): InputStream
+
+/** This stream through a buffer of 8 KB (kotlin.io's `buffered()`: java.io.BufferedOutputStream on Android and the JVM). */
+internal expect fun OutputStream.bufferedStream(): OutputStream
+
+/** An output stream whose bytes go to [onWrite] (the update files' sealing, Sealed.kt). */
+internal expect fun outputStreamOf(onWrite: (ByteArray, Int, Int) -> Unit, onFlush: () -> Unit, onClose: () -> Unit): OutputStream
+
+/** An input stream whose bytes come from [onRead], which gives up to the asked number, or -1 at the end (Sealed.kt). */
+internal expect fun inputStreamOf(onRead: (ByteArray, Int, Int) -> Int): InputStream
 
 /** java.io.IOException on Android and the JVM. */
 expect open class IOException : Exception {
@@ -101,6 +116,9 @@ internal expect class ZipReader(input: InputStream) : AutoCloseable {
 
     /** The rest of the current entry, written to [file]. */
     fun copyTo(file: File)
+
+    /** Up to [len] bytes of the current entry into [b] from [off]: how many, or -1 at its end. */
+    fun read(b: ByteArray, off: Int, len: Int): Int
 
     fun closeEntry()
 

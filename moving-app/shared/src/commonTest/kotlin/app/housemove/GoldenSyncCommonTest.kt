@@ -67,8 +67,8 @@ import kotlin.test.fail
  * of the move made then holds what backup.json says every backup of it holds, and the backup Android made opens.
  *
  * This runs on the JVM (java.io, java.net, java.util.zip) and on the iPhone simulator (Files.ios.kt, Net.ios.kt, the
- * common zip writer and reader): the same bytes on both. The iPhone v1 has no update-file keys of its own; there the
- * phones say the fixed key text in their folders ([KeyTextOnly]), as the JVM's phones do with their real keys.
+ * common zip writer and reader): the same bytes on both. Kotlin tests on the iPhone cannot call the app's CryptoKit; there the
+ * phones use the reference crypto ([ReferenceCrypto]) with the fixed keys in their folders, as the JVM's phones use the JCA.
  */
 class GoldenSyncCommonTest {
     private companion object {
@@ -333,7 +333,7 @@ class GoldenSyncCommonTest {
 
     @Test
     fun theFixedMoveSyncsByteForByteAsAndroid211Did() {
-        val undo = useKeyTextIfNoCrypto()
+        val undo = useTestCryptoIfNone()
         try {
             inTempFolder { root ->
                 val ids = Ids()
@@ -355,7 +355,7 @@ class GoldenSyncCommonTest {
 
     @Test
     fun theBackupAndroidMadeOpensAsItDidOnAndroid() {
-        val undo = useKeyTextIfNoCrypto()
+        val undo = useTestCryptoIfNone()
         try {
             inTempFolder { root ->
                 val f = fixture("backup.json")

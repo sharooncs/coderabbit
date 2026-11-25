@@ -2,16 +2,6 @@ package app.housemove.data
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
-import java.io.DataInputStream
-import java.io.DataOutputStream
-import java.io.File
-import java.io.IOException
-import java.io.InputStream
-import java.io.OutputStream
-import java.util.Base64
-import java.util.zip.ZipEntry
-import java.util.zip.ZipInputStream
-import java.util.zip.ZipOutputStream
 
 /**
  * Update files: working apart (design 2.1, section 4). Any phone of a move can send one through any messaging
@@ -29,6 +19,10 @@ import java.util.zip.ZipOutputStream
  * The file: "HMUPDATE", the format (an int), the header's length and the header ([Header], JSON: the move, the
  * phone it is from, and the content key wrapped for each phone it is for), then the sealed contents ([SealedOut]):
  * a zip of data.json and photos/ as a backup has them.
+ *
+ * Common to Android and the iPhone (design/encryption.md): the crypto is the platform's ([platformCrypto]: the JCA on
+ * Android, CryptoKit on the iPhone) and everything else is here, so an iPhone opens what an Android phone sends, and the
+ * other way round.
  */
 object Update {
     /** The ending of an update file's name. */
@@ -38,7 +32,7 @@ object Update {
     const val MIME = "application/vnd.housemove.update"
 
     internal const val FORMAT = 1
-    private val MAGIC = "HMUPDATE".toByteArray()
+    private val MAGIC = "HMUPDATE".toUtf8()
     private const val MAX_HEADER = 1 shl 20
     private const val MAX_JSON = 64 * 1024 * 1024
     private const val MAX_PHOTO = 40L * 1024 * 1024
@@ -104,9 +98,6 @@ object Update {
         val mayTakeIn: Boolean = false,
     )
 
-    private val b64e = Base64.getEncoder()
-    private val b64d = Base64.getDecoder()
-
     // ---- making one ---------------------------------------------------------------------
 
     /**
@@ -115,7 +106,8 @@ object Update {
      * Throws an IOException with words for the screen when there is nobody to send it to, or it cannot be written.
      */
     fun write(store: Store, out: OutputStream, organisersOnly: Boolean = store.removedFromMove()): Made {
-        val to = store.updateRecipients(organisersOnly).mapNotNull { (_, ph) -> PhoneKeys.publicFrom(ph.key)?.let { ph.id to it } }.distinctBy { it.first }
+        val crypto = platformCrypto ?: throw IOException(COULD_NOT_WRITE)
+        val to = store.updateRecipients(organisersOnly).mapNotNull { (_, ph) -> publicKeyDer(crypto, ph.key)?.let { ph.id to it } }.distinctBy { it.first }
         if (to.isEmpty()) throw IOException(NO_RECIPIENTS)
         store.flush()
         val data = store.data.value
@@ -124,39 +116,70 @@ object Update {
         val prefix = Sealing.randomBytes(8)
         val header = Header(
             schema = SCHEMA, moveId = id.id, aliases = id.aliases, derived = id.derived, from = store.phone.id,
-            at = System.currentTimeMillis(), nonce = b64e.encodeToString(prefix),
-            to = to.map { (phoneId, key) ->
-                val w = Sealing.wrap(contentKey, key, phoneId, id.id)
-                To(phoneId, b64e.encodeToString(w.ephemeral), b64e.encodeToString(w.salt), b64e.encodeToString(w.iv), b64e.encodeToString(w.sealed))
-            },
+            at = currentTimeMillis(), nonce = base64Encode(prefix),
+            to = to.map { (phoneId, key) -> wrappedFor(crypto, contentKey, key, phoneId, id.id) },
         )
-        val headerBytes = AppJson.encodeToString(header).toByteArray()
         var photos = 0
         try {
-            val dout = DataOutputStream(out.buffered())
-            dout.write(MAGIC)
-            dout.writeInt(FORMAT)
-            dout.writeInt(headerBytes.size)
-            dout.write(headerBytes)
-            val sealed = SealedOut(dout, contentKey, prefix, Sealing.sha256(headerBytes))
-            val zip = ZipOutputStream(sealed)
-            zip.putNextEntry(ZipEntry("data.json"))
-            zip.write(AppJson.encodeToString(data).toByteArray())
-            zip.closeEntry()
-            for (p in photosFor(store)) {
-                val bytes = Shrink.copyOf(File(store.photoDir, p.file)) ?: continue
-                zip.putNextEntry(ZipEntry("photos/" + p.file))
-                zip.write(bytes)
-                zip.closeEntry()
-                photos++
+            writeSealed(crypto, out, header, contentKey, prefix) { sealed ->
+                val zip = ZipWriter(sealed)
+                zip.put("data.json") { AppJson.encodeToString(data).toUtf8() }
+                for (p in photosFor(store)) {
+                    val bytes = Shrink.copyOf(File(store.photoDir, p.file)) ?: continue
+                    zip.put("photos/" + p.file) { bytes }
+                    photos++
+                }
+                // Ends the zip and closes the sealed stream under it, which seals the last chunk.
+                zip.close()
             }
-            zip.finish()
-            sealed.close()
-            dout.flush()
         } catch (e: IOException) {
             throw IOException(COULD_NOT_WRITE, e)
         }
         return Made(to.size, photos)
+    }
+
+    /** [text], a public key as it travels, as X.509 bytes, when it is one [crypto] can agree a key with. */
+    private fun publicKeyDer(crypto: PlatformCrypto, text: String): ByteArray? {
+        if (text.isBlank()) return null
+        val der = try {
+            base64Decode(text)
+        } catch (_: Exception) {
+            return null
+        }
+        return der.takeIf { crypto.isPublicKey(it) }
+    }
+
+    /** [contentKey] wrapped for [phoneId], whose public key is [key] ([Sealing.wrap]), as the header carries it. */
+    internal fun wrappedFor(
+        crypto: PlatformCrypto,
+        contentKey: ByteArray,
+        key: ByteArray,
+        phoneId: String,
+        moveId: String,
+        ephemeral: AgreementKey = crypto.generateKey(),
+        salt: ByteArray = Sealing.randomBytes(16),
+        iv: ByteArray = Sealing.randomBytes(12),
+    ): To {
+        val w = Sealing.wrap(crypto, contentKey, key, phoneId, moveId, ephemeral, salt, iv)
+        return To(phoneId, base64Encode(w.ephemeral), base64Encode(w.salt), base64Encode(w.iv), base64Encode(w.sealed))
+    }
+
+    /**
+     * Writes an update file to [out]: the magic, the format, [header], then what [body] writes to the stream it is given,
+     * sealed under [contentKey] with chunk nonces that start with [prefix]. [body] may close that stream when it is done
+     * (a zip writer does), which seals the last chunk. [out] is flushed and left open.
+     */
+    internal fun writeSealed(crypto: PlatformCrypto, out: OutputStream, header: Header, contentKey: ByteArray, prefix: ByteArray, body: (OutputStream) -> Unit) {
+        val headerBytes = AppJson.encodeToString(header).toUtf8()
+        val buffered = out.bufferedStream()
+        buffered.write(MAGIC, 0, MAGIC.size)
+        writeInt(buffered, FORMAT)
+        writeInt(buffered, headerBytes.size)
+        buffered.write(headerBytes, 0, headerBytes.size)
+        val sealed = SealedOut(crypto, buffered, contentKey, prefix, Sealing.sha256(headerBytes))
+        body(sealed.stream)
+        sealed.close()
+        buffered.flush()
     }
 
     /**
@@ -170,18 +193,18 @@ object Update {
 
     // ---- reading one --------------------------------------------------------------------
 
-    private fun readHeader(din: DataInputStream): Pair<Header, ByteArray> {
+    private fun readHeader(din: InputStream): Pair<Header, ByteArray> {
         val magic = ByteArray(MAGIC.size)
         try {
-            din.readFully(magic)
+            readFully(din, magic)
             if (!magic.contentEquals(MAGIC)) throw IllegalArgumentException(NOT_AN_UPDATE)
-            val format = din.readInt()
+            val format = readInt(din)
             if (format > FORMAT) throw IllegalArgumentException(TOO_NEW)
             if (format < 1) throw IllegalArgumentException(NOT_AN_UPDATE)
-            val n = din.readInt()
+            val n = readInt(din)
             if (n <= 0 || n > MAX_HEADER) throw IllegalArgumentException(NOT_AN_UPDATE)
-            val bytes = ByteArray(n).also { din.readFully(it) }
-            val header = AppJson.decodeFromString<Header>(bytes.decodeToString())
+            val bytes = ByteArray(n).also { readFully(din, it) }
+            val header = AppJson.decodeFromString<Header>(bytes.decodeUtf8())
             if (header.moveId.isEmpty()) throw IllegalArgumentException(NOT_AN_UPDATE)
             return header to bytes
         } catch (e: IllegalArgumentException) {
@@ -193,7 +216,7 @@ object Update {
 
     /** Read what an update says about itself: which move it is for, and which phones. An IllegalArgumentException in words when it is not one. */
     fun peek(input: InputStream): Peek {
-        val (h, _) = readHeader(DataInputStream(input.buffered()))
+        val (h, _) = readHeader(input.bufferedStream())
         return Peek(h.moveId, h.aliases, h.from, h.at, h.to.map { it.phone })
     }
 
@@ -204,7 +227,7 @@ object Update {
      * and no photo file is left behind.
      */
     fun open(store: Store, input: InputStream, takeInRemoved: Boolean = false): Opened {
-        val din = DataInputStream(input.buffered())
+        val din = input.bufferedStream()
         val (header, headerBytes) = try {
             readHeader(din)
         } catch (e: IllegalArgumentException) {
@@ -215,13 +238,15 @@ object Update {
         if (header.schema != SCHEMA) return Opened(false, OTHER_VERSION)
         val mine = header.to.firstOrNull { it.phone == store.phone.id }
             ?: return Opened(false, if (header.from == store.phone.id) FROM_THIS_PHONE else NOT_FOR_THIS_PHONE)
+        val crypto = platformCrypto ?: return Opened(false, DAMAGED)
         val key = try {
-            Sealing.unwrap(Sealing.Wrapped(b64d.decode(mine.epk), b64d.decode(mine.salt), b64d.decode(mine.iv), b64d.decode(mine.key)), store.phone.keyPair, store.phone.id, header.moveId)
+            val w = Sealing.Wrapped(base64Decode(mine.epk), base64Decode(mine.salt), base64Decode(mine.iv), base64Decode(mine.key))
+            Sealing.unwrap(crypto, w, store.phone.keys, store.phone.id, header.moveId)
         } catch (_: Exception) {
             null
         } ?: return Opened(false, DAMAGED)
         val prefix = try {
-            b64d.decode(header.nonce).takeIf { it.size == 8 }
+            base64Decode(header.nonce).takeIf { it.size == 8 }
         } catch (_: Exception) {
             null
         } ?: return Opened(false, DAMAGED)
@@ -231,16 +256,16 @@ object Update {
         try {
             var json: String? = null
             try {
-                val sealed = SealedIn(din, key, prefix, Sealing.sha256(headerBytes))
-                val zip = ZipInputStream(sealed)
+                val sealed = SealedIn(crypto, din, key, prefix, Sealing.sha256(headerBytes))
+                val zip = ZipReader(sealed.stream)
                 while (true) {
-                    val e = zip.nextEntry ?: break
+                    val e = zip.nextEntry() ?: break
                     val name = e.name
                     when {
                         name == "data.json" -> {
                             val bytes = zip.readBytes()
                             if (bytes.size > MAX_JSON) throw IOException("too large")
-                            json = bytes.decodeToString()
+                            json = bytes.decodeUtf8()
                         }
                         name.startsWith("photos/") && !e.isDirectory -> {
                             val file = name.removePrefix("photos/")
@@ -251,7 +276,7 @@ object Update {
                                     val buf = ByteArray(16 * 1024)
                                     var total = 0L
                                     while (true) {
-                                        val n = zip.read(buf)
+                                        val n = zip.read(buf, 0, buf.size)
                                         if (n < 0) break
                                         total += n
                                         if (total > MAX_PHOTO) throw IOException("photo too large")
@@ -352,7 +377,6 @@ object Update {
  * Open an update file ([Update]) into the move it is for, which need not be the one in use: the move is
  * looked for by its ID before anything else. [read] opens the file; it is read twice. With
  * [takeInRemoved], an Organiser takes in the work of someone removed from the move ([Update.open]).
- * Android and the JVM only: the iPhone v1 has no update files.
  */
 fun Moves.openUpdate(read: () -> InputStream, takeInRemoved: Boolean = false): Update.Opened {
     val peek = try {
