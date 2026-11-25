@@ -160,7 +160,9 @@ internal object AutoSession {
     fun sendVouches(out: DataOutputStream, store: Store, peer: String) {
         val keys = store.pins.vouches(store.data.value, store.phone.id, peer).take(Pins.MAX_VOUCHES)
         val newer = !WifiSync.phone24(store.phone.id)
-        val access = if (newer) store.data.value.mailbox.url.takeIf { it.isNotBlank() }?.let { store.mailboxState.access(it) } else null
+        // The mailbox's access goes only to a phone of the move, as this phone's data has it after the sync.
+        val member = store.data.value.memberPhone(peer) != null
+        val access = if (newer && member) store.data.value.mailbox.url.takeIf { it.isNotBlank() }?.let { store.mailboxState.access(it) } else null
         val opening = if (newer) store.pins.hpkePhones(store.data.value, store.phone.id, peer).take(Pins.MAX_VOUCHES) else emptyList()
         val bytes = AppJson.encodeToString(Vouches(keys, if (newer) 1 else 0, access, opening)).toUtf8()
         out.writeInt(bytes.size)
