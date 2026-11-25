@@ -11,6 +11,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -154,6 +155,18 @@ fun AppRoot(store: Store, startRoute: String? = null, onNav: (NavHostController)
             }
             // Opened from another move (a label scanned there, "Sync" on its card): where to go on from here.
             LaunchedEffect(nav) { state.takeRoute()?.let { r -> runCatching { nav.navigate(r) } } }
+            SaveProblems(store)
         }
     }
+}
+
+/**
+ * A save that failed is said at once, on whatever screen is open, so no change is lost without the person knowing.
+ * Home says it too until a save goes through ([Store.saveProblem]).
+ */
+@Composable
+private fun SaveProblems(store: Store) {
+    val context = LocalContext.current
+    val problem by store.saveProblem.collectAsState()
+    LaunchedEffect(problem) { problem?.let { toast(context, it) } }
 }

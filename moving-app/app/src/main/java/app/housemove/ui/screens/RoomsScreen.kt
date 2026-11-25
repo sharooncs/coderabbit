@@ -189,7 +189,7 @@ private fun RoomDialog(room: Room, onClose: () -> Unit) {
                     GlassChip("Other", selected = otherWidth, onClick = { otherWidth = !otherWidth })
                 }
                 if (otherWidth) {
-                    NumberInput(room.doorWidthCm, { v -> store.put(room.copy(doorWidthCm = v)) }, "Width in cm", Modifier.fillMaxWidth(), key = room.id + "door")
+                    NumberInput(room.doorWidthCm, { v -> store.put(room.copy(doorWidthCm = v)) }, "Width in cm", Modifier.fillMaxWidth(), key = room.id + "door", kind = NumberKind.LENGTH)
                 }
                 Fold(
                     "Label code and directions", Icons.Default.Edit,

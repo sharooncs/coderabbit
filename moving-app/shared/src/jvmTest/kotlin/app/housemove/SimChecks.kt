@@ -731,6 +731,8 @@ internal class SimChecks(private val sim: Simulation) {
     private fun disk() {
         for (p in sim.phones) {
             val had = p.onUi { p.stores().map { Triple(it.moveId, it.data.value, it.device.value) } }
+            // A save that failed would be said on the phone (Store.saveProblem); none may have.
+            p.onUi { p.stores().forEach { s -> s.saveProblem.value?.let { broke(DISK, "${p.tag} could not save ${sim.others[s.moveId] ?: "Maple Road"}: $it") } } }
             val cards = p.moves.cards.value.map { it.moveId }.sorted()
             p.onUi { p.stores().forEach { it.close() } }
             val again = p.onUi { p.openMoves() }

@@ -716,6 +716,54 @@ class FlowsTest {
         assertEquals(180.5, e.amount, 0.001)
     }
 
+    /**
+     * 2.1.1 took "NaN" as a cost's amount, and from then on saved nothing: the next change was gone when the app was
+     * opened again. The field now refuses it in words, and the changes after it are saved.
+     */
+    @Test
+    @Config(sdk = [34], qualifiers = NARROW)
+    fun aCostAmountThatIsNotANumberIsRefusedAndTheNextChangeIsSavedForGood() {
+        start("budget")
+        tap("Costs")
+        tap("Add a cost")
+        tap("Other amount")
+        type("Amount", "NaN")
+        see(NOT_A_NUMBER)
+        // Nothing to add: the amount is not set, and the button says so.
+        see("Choose an amount")
+        assertTrue(data.liveExpenses.isEmpty())
+        type("Amount", "1" + "0".repeat(309))
+        see(TOO_BIG)
+        // A normal amount, and the cost is added.
+        type("Amount", "180.50")
+        dontSee(NOT_A_NUMBER)
+        dontSee(TOO_BIG)
+        tap("Details")
+        type("Name", "Van hire")
+        tap("Add cost", sub = true)
+        assertEquals(180.5, data.liveExpenses.single().amount, 0.0)
+
+        // Changing it: "Infinity" is refused the same way and the saved cost stays as it was; the next amount is saved.
+        tap("Van hire")
+        tap("Other amount")
+        type("Amount", "Infinity")
+        see(NOT_A_NUMBER)
+        assertEquals(180.5, data.liveExpenses.single().amount, 0.0)
+        type("Amount", "95")
+        tap("Save", sub = true)
+        assertEquals(95.0, data.liveExpenses.single().amount, 0.0)
+        assertNull(store.saveProblem.value)
+
+        // Opened again, the move has the last change.
+        store.close()
+        val again = Store(File(tmp.root, "flows"))
+        val cost = again.data.value.liveExpenses.single()
+        assertEquals("Van hire", cost.title)
+        assertEquals(95.0, cost.amount, 0.0)
+        assertNull(again.loadWarning)
+        again.close()
+    }
+
     @Test
     @Config(sdk = [34], qualifiers = NARROW)
     fun roomsCanBeAddedLinkedAndDeletedWhileInUse() {

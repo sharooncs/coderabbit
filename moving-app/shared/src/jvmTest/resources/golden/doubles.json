@@ -1,5 +1,5 @@
 {
-  "about": "Doubles as 2.1.1 writes them: Double.toString (in record text, which merges compare), doubleToLongBits (what seal() hashes), AppJson (kotlinx.serialization, as the Store saves and the sync sends), and fmtNum (what the screens show). numberInput: what a number field makes of typed or pasted text (text.replace(',', '.').trim().toDoubleOrNull()).",
+  "about": "Doubles as 2.1.1 writes them: Double.toString (in record text, which merges compare), doubleToLongBits (what seal() hashes), AppJson (kotlinx.serialization, as the Store saves and the sync sends), and fmtNum (what the screens show). numberInput: what a number field of each kind makes of typed or pasted text (data/Numbers.kt, readNumber, since 2.2): 2.1.1's reading, text.replace(',', '.').trim().toDoubleOrNull(), with NaN, the infinities and numbers beyond the kind's bounds refused.",
   "doubles": [
     {
       "name": "0.1",
@@ -315,126 +315,278 @@
   "numberInput": [
     {
       "typed": "12.5",
-      "value": "12.5",
+      "money": "12.5",
+      "length": "12.5",
+      "volume": "12.5",
+      "count": "12.5",
       "rawBits": "4029000000000000"
     },
     {
       "typed": "12,5",
-      "value": "12.5",
+      "money": "12.5",
+      "length": "12.5",
+      "volume": "12.5",
+      "count": "12.5",
       "rawBits": "4029000000000000"
     },
     {
       "typed": " 7 ",
-      "value": "7.0",
+      "money": "7.0",
+      "length": "7.0",
+      "volume": "7.0",
+      "count": "7.0",
       "rawBits": "401c000000000000"
     },
     {
       "typed": "1e7",
-      "value": "1.0E7",
+      "money": "1.0E7",
+      "length": "refused: That number is too big",
+      "volume": "refused: That number is too big",
+      "count": "refused: That number is too big",
       "rawBits": "416312d000000000"
     },
     {
       "typed": "1E-4",
-      "value": "1.0E-4",
+      "money": "1.0E-4",
+      "length": "1.0E-4",
+      "volume": "1.0E-4",
+      "count": "1.0E-4",
       "rawBits": "3f1a36e2eb1c432d"
     },
     {
       "typed": "-0",
-      "value": "-0.0",
+      "money": "-0.0",
+      "length": "-0.0",
+      "volume": "-0.0",
+      "count": "-0.0",
       "rawBits": "8000000000000000"
     },
     {
       "typed": ".5",
-      "value": "0.5",
+      "money": "0.5",
+      "length": "0.5",
+      "volume": "0.5",
+      "count": "0.5",
       "rawBits": "3fe0000000000000"
     },
     {
       "typed": "5.",
-      "value": "5.0",
+      "money": "5.0",
+      "length": "5.0",
+      "volume": "5.0",
+      "count": "5.0",
       "rawBits": "4014000000000000"
     },
     {
       "typed": "+5",
-      "value": "5.0",
+      "money": "5.0",
+      "length": "5.0",
+      "volume": "5.0",
+      "count": "5.0",
       "rawBits": "4014000000000000"
     },
     {
       "typed": "1,000.5",
-      "value": "null"
+      "money": "refused: Not a number",
+      "length": "refused: Not a number",
+      "volume": "refused: Not a number",
+      "count": "refused: Not a number"
     },
     {
       "typed": "1 000",
-      "value": "null"
+      "money": "refused: Not a number",
+      "length": "refused: Not a number",
+      "volume": "refused: Not a number",
+      "count": "refused: Not a number"
     },
     {
       "typed": "NaN",
-      "value": "NaN",
-      "rawBits": "7ff8000000000000"
+      "money": "refused: Not a number",
+      "length": "refused: Not a number",
+      "volume": "refused: Not a number",
+      "count": "refused: Not a number"
     },
     {
       "typed": "nan",
-      "value": "null"
+      "money": "refused: Not a number",
+      "length": "refused: Not a number",
+      "volume": "refused: Not a number",
+      "count": "refused: Not a number"
     },
     {
       "typed": "Infinity",
-      "value": "Infinity",
-      "rawBits": "7ff0000000000000"
+      "money": "refused: Not a number",
+      "length": "refused: Not a number",
+      "volume": "refused: Not a number",
+      "count": "refused: Not a number"
     },
     {
       "typed": "-Infinity",
-      "value": "-Infinity",
-      "rawBits": "fff0000000000000"
+      "money": "refused: Not a number",
+      "length": "refused: Not a number",
+      "volume": "refused: Not a number",
+      "count": "refused: Not a number"
     },
     {
       "typed": "1000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
-      "value": "Infinity",
-      "rawBits": "7ff0000000000000"
+      "money": "refused: That number is too big",
+      "length": "refused: That number is too big",
+      "volume": "refused: That number is too big",
+      "count": "refused: That number is too big"
     },
     {
       "typed": "0x10",
-      "value": "null"
+      "money": "refused: Not a number",
+      "length": "refused: Not a number",
+      "volume": "refused: Not a number",
+      "count": "refused: Not a number"
     },
     {
       "typed": "0x1p4",
-      "value": "16.0",
+      "money": "16.0",
+      "length": "16.0",
+      "volume": "16.0",
+      "count": "16.0",
       "rawBits": "4030000000000000"
     },
     {
       "typed": "5d",
-      "value": "5.0",
+      "money": "5.0",
+      "length": "5.0",
+      "volume": "5.0",
+      "count": "5.0",
       "rawBits": "4014000000000000"
     },
     {
       "typed": "5f",
-      "value": "5.0",
+      "money": "5.0",
+      "length": "5.0",
+      "volume": "5.0",
+      "count": "5.0",
       "rawBits": "4014000000000000"
     },
     {
       "typed": "5L",
-      "value": "null"
+      "money": "refused: Not a number",
+      "length": "refused: Not a number",
+      "volume": "refused: Not a number",
+      "count": "refused: Not a number"
     },
     {
       "typed": "١٢",
       "typedUtf16": "0661 0662",
-      "value": "null"
+      "money": "refused: Not a number",
+      "length": "refused: Not a number",
+      "volume": "refused: Not a number",
+      "count": "refused: Not a number"
     },
     {
       "typed": "12٫5",
       "typedUtf16": "0031 0032 066b 0035",
-      "value": "null"
+      "money": "refused: Not a number",
+      "length": "refused: Not a number",
+      "volume": "refused: Not a number",
+      "count": "refused: Not a number"
     },
     {
       "typed": "１２",
       "typedUtf16": "ff11 ff12",
-      "value": "null"
+      "money": "refused: Not a number",
+      "length": "refused: Not a number",
+      "volume": "refused: Not a number",
+      "count": "refused: Not a number"
     },
     {
       "typed": "",
-      "value": "null"
+      "money": "empty",
+      "length": "empty",
+      "volume": "empty",
+      "count": "empty"
     },
     {
       "typed": "-",
-      "value": "null"
+      "money": "refused: Not a number",
+      "length": "refused: Not a number",
+      "volume": "refused: Not a number",
+      "count": "refused: Not a number"
+    },
+    {
+      "typed": "1e309",
+      "money": "refused: That number is too big",
+      "length": "refused: That number is too big",
+      "volume": "refused: That number is too big",
+      "count": "refused: That number is too big"
+    },
+    {
+      "typed": "1e5",
+      "money": "100000.0",
+      "length": "refused: That number is too big",
+      "volume": "refused: That number is too big",
+      "count": "100000.0",
+      "rawBits": "40f86a0000000000"
+    },
+    {
+      "typed": "  12.50 ",
+      "money": "12.5",
+      "length": "12.5",
+      "volume": "12.5",
+      "count": "12.5",
+      "rawBits": "4029000000000000"
+    },
+    {
+      "typed": "-12.5",
+      "money": "-12.5",
+      "length": "-12.5",
+      "volume": "-12.5",
+      "count": "refused: That number is too small",
+      "rawBits": "c029000000000000"
+    },
+    {
+      "typed": "-1",
+      "money": "-1.0",
+      "length": "-1.0",
+      "volume": "-1.0",
+      "count": "refused: That number is too small",
+      "rawBits": "bff0000000000000"
+    },
+    {
+      "typed": "10000",
+      "money": "10000.0",
+      "length": "10000.0",
+      "volume": "10000.0",
+      "count": "10000.0",
+      "rawBits": "40c3880000000000"
+    },
+    {
+      "typed": "10000.5",
+      "money": "10000.5",
+      "length": "refused: That number is too big",
+      "volume": "refused: That number is too big",
+      "count": "10000.5",
+      "rawBits": "40c3884000000000"
+    },
+    {
+      "typed": "1000000",
+      "money": "1000000.0",
+      "length": "refused: That number is too big",
+      "volume": "refused: That number is too big",
+      "count": "1000000.0",
+      "rawBits": "412e848000000000"
+    },
+    {
+      "typed": "1e15",
+      "money": "1.0E15",
+      "length": "refused: That number is too big",
+      "volume": "refused: That number is too big",
+      "count": "refused: That number is too big",
+      "rawBits": "430c6bf526340000"
+    },
+    {
+      "typed": "1000000000000001",
+      "money": "refused: That number is too big",
+      "length": "refused: That number is too big",
+      "volume": "refused: That number is too big",
+      "count": "refused: That number is too big"
     }
   ]
 }

@@ -193,7 +193,7 @@ fun SettingsScreen() {
                     if (otherSize) {
                         NumberInput(
                             move.vanCapacityM3, { v -> if (v != null && v > 0) change { it.copy(vanCapacityM3 = v) } },
-                            "Load space (m³)", Modifier.fillMaxWidth(), key = "van",
+                            "Load space (m³)", Modifier.fillMaxWidth(), key = "van", kind = NumberKind.VOLUME,
                         )
                     }
                     SwitchRow("Furniture sizes in inches", move.useInches, { v -> change { it.copy(useInches = v) } })

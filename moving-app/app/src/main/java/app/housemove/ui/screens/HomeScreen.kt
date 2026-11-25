@@ -235,6 +235,13 @@ private fun HomeHero(data: AppData, device: DeviceInfo, packing: Boolean, modifi
                 }
             }
         }
+        // Changes that could not be written to the phone yet: said until a save goes through.
+        val unsaved by store.saveProblem.collectAsState()
+        unsaved?.let { w ->
+            GlassCard(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp), tone = GlassTone.Red) {
+                Text(w, color = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.padding(16.dp))
+            }
+        }
         // News about this phone's own role: "You are now a Decider", and what a promotion still waits for.
         RoleBanner(data, device, Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp))
         // A phone taken out of the move: it says so, and offers to send its last work to an Organiser.

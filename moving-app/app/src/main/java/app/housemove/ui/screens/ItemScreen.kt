@@ -353,7 +353,10 @@ fun ItemScreen(id: String) {
                 if (canSpeak()) Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Width, depth and height in $unit", style = MaterialTheme.typography.labelLarge, color = Night.TextDim, modifier = Modifier.weight(1f))
                     SpeakButton("Width, depth and height, in $unit", contentDescription = "Say its size", size = 40.dp) { said ->
-                        val n = spokenNumbers(said)
+                        // Read as the size fields read what is typed: a number too big for a length leaves its side as it was, and says so.
+                        val heard = spokenNumbers(said, NumberKind.LENGTH)
+                        val n = heard.map { it.valueOrNull }
+                        heard.firstNotNullOfOrNull { it.refusal }?.let { toast(context, it) }
                         if (n.isNotEmpty()) {
                             edit {
                                 it.copy(
@@ -367,9 +370,9 @@ fun ItemScreen(id: String) {
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    NumberInput(shown(item.widthCm), { v -> edit { it.copy(widthCm = toCm(v)) } }, "Width $unit", Modifier.weight(1f), key = "$id-w-$unit-$sizeSaid")
-                    NumberInput(shown(item.depthCm), { v -> edit { it.copy(depthCm = toCm(v)) } }, "Depth $unit", Modifier.weight(1f), key = "$id-d-$unit-$sizeSaid")
-                    NumberInput(shown(item.heightCm), { v -> edit { it.copy(heightCm = toCm(v)) } }, "Height $unit", Modifier.weight(1f), key = "$id-h-$unit-$sizeSaid")
+                    NumberInput(shown(item.widthCm), { v -> edit { it.copy(widthCm = toCm(v)) } }, "Width $unit", Modifier.weight(1f), key = "$id-w-$unit-$sizeSaid", kind = NumberKind.LENGTH)
+                    NumberInput(shown(item.depthCm), { v -> edit { it.copy(depthCm = toCm(v)) } }, "Depth $unit", Modifier.weight(1f), key = "$id-d-$unit-$sizeSaid", kind = NumberKind.LENGTH)
+                    NumberInput(shown(item.heightCm), { v -> edit { it.copy(heightCm = toCm(v)) } }, "Height $unit", Modifier.weight(1f), key = "$id-h-$unit-$sizeSaid", kind = NumberKind.LENGTH)
                 }
                 val handling = listOf(
                     Toggle("Fragile", Pic.Fragile, item.fragile) { v -> edit { it.copy(fragile = v) } },
@@ -604,10 +607,6 @@ fun ItemScreen(id: String) {
 
 
 }
-
-/** The numbers in what was said, in order: "200 by 90 by 85" gives 200, 90 and 85. A decimal comma counts as a point. */
-internal fun spokenNumbers(said: String): List<Double> =
-    Regex("\\d+(?:[.,]\\d+)?").findAll(said).map { it.value.replace(',', '.').toDouble() }.toList()
 
 /** An empty circle until it has gone, then a tick: the same picture as on the Sell, donate, bin list. */
 private fun goneIcon(gone: Boolean) = if (gone) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked

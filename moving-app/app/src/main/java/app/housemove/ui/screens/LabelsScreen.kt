@@ -237,6 +237,8 @@ fun LabelsScreen() {
                             label = "First number",
                             modifier = Modifier.weight(1f),
                             key = "start:$round",
+                            // The printout above says what it takes, in words of its own.
+                            kind = NumberKind.COUNT, says = false,
                         )
                         NumberInput(
                             n?.toDouble(),
@@ -244,6 +246,7 @@ fun LabelsScreen() {
                             label = "How many boxes",
                             modifier = Modifier.weight(1f),
                             key = "count:$round:$sheet:$copies",
+                            kind = NumberKind.COUNT, says = false,
                         )
                     }
                 }
