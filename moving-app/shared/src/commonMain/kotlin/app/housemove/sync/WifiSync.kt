@@ -461,6 +461,14 @@ object WifiSync {
             return Outcome.Ok(Invite(hosts, port, code, HELPER_CODE, "", Role.HELPER, store.moveId, d.move.name))
         }
 
+        /**
+         * Gives the invite made with [code] the code [fixed] in its place. Only tests use it, to repeat a run byte for
+         * byte (the golden fixtures, whose invite code is fixed): the app's codes are always drawn at random.
+         */
+        internal fun recode(code: String, fixed: String) {
+            synchronized(personalLock) { personal.remove(code)?.let { personal[fixed] = it } }
+        }
+
         /** Say whether the phone of a [waiting] request is the right one. Undo ([right] false) leaves the invite unused. */
         fun confirm(requestId: String, right: Boolean) {
             val a = synchronized(answersLock) { answers[requestId] } ?: return

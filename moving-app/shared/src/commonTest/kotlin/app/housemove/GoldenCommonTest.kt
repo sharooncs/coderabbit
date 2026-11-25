@@ -39,7 +39,8 @@ import kotlin.test.fail
  * platform's own Double.toString, lowercase() and the like (record text, JSON, line ids) are those Kotlin/Native must
  * pass for an iPhone to agree with Android phones.
  *
- * What needs files, sockets, zips, QR modules or update files stays in jvmTest (GoldenFixturesTest) until step 1b.
+ * The fixed move's syncs over real sockets, its backup and the QR modules are checked in GoldenSyncCommonTest,
+ * ZipCommonTest and QrCommonTest; the update files (not on the iPhone v1) stay in jvmTest (GoldenFixturesTest).
  */
 class GoldenCommonTest {
     // ---- reading the fixtures ----------------------------------------------------------------------------------------
