@@ -5,20 +5,31 @@ unpacked box: list what you own, decide what happens to it, pack, load,
 unload, unpack. It works offline. There is no account and no server; phones
 share the move by syncing directly with each other.
 
-This is version 2.2. What is new in it:
+This is version 2.3. What is new in it:
 
-- **A fix for number boxes.** It fixes a rare problem: typing something that is
-  not a number, such as "NaN", into a box for a number (a price, a cost, a
-  size) made the app stop saving every change made after it, and those changes
-  were gone the next time the app was opened. Such a box now says it is not a
-  number, and nothing from it is saved. If a phone ever cannot save, the app now
-  says so and keeps trying, instead of saying nothing.
-- **Getting ready for the iPhone.** Behind the scenes, much of the app has been
-  rebuilt so that the coming iPhone version can share it. Nothing else looks or
-  works differently.
-- **A slightly bigger download.** The app is 17.2 MB, 1.5 MB more than 2.1.1
-  (15.7 MB).
-- **Install it over 2.1.1** as before: every move on the phone is kept.
+- **Phones sync by themselves.** Once a phone has joined a move, the phones of
+  that move find each other on the same Wi-Fi and sync while HouseMove is open:
+  when it is opened, every couple of minutes, and a few seconds after a change.
+  Nobody shows or scans a sync code for that. More, Sync and backup says how it
+  stands ("Up to date with Asha's phone · 2 min ago") and has a switch, **Sync
+  by itself on Wi-Fi**, which is on.
+- **One code sync after updating.** A phone that joined before 2.3 syncs once
+  by code with a phone of the move that has 2.3; from then on it syncs by
+  itself. When someone is taken out of the move, the phones that have synced by
+  themselves before carry on; one that never has needs one code sync too.
+- **Older phones keep working.** Phones still on 2.2 or 2.1.1 sync by code with
+  every phone, as before. They sync by themselves once they are updated.
+- **Only while HouseMove is open.** When it is closed, nothing syncs; it catches
+  up the next time it is opened. Some Wi-Fi keeps devices apart (many guest
+  networks); there the code, or a phone's hotspot, still works.
+- **Nothing to allow.** No new permission. What a phone says on the Wi-Fi to be
+  found holds no names, only a code that changes every hour and that only the
+  phones of the move can work out.
+- **The same size.** The app is 17.2 MB, as 2.2 was.
+- **Install it over 2.2** as before: every move on the phone is kept.
+
+Version 2.2 fixed number boxes that took "NaN" and then stopped saving every
+change made after it; a phone that cannot save now says so and keeps trying.
 
 Version 2.1.1 added renaming rooms where they are added: each room in setup has
 a pencil, and a new name is a tap (Guest room, Kids' room...), said or typed.
@@ -51,7 +62,7 @@ screens that need almost no typing.
 
 ## Install
 
-Download `releases/HouseMove-2.2.apk` from this repository (or scan the
+Download `releases/HouseMove-2.3.apk` from this repository (or scan the
 install code that comes with each release), or build it (below). Copy it to the
 phone and open it. A phone that already has HouseMove can pass it on without
 internet: Who's helping, Share the app. Android will ask to allow
@@ -202,11 +213,15 @@ spoken word or a tap on a room.
 
 ## Several phones
 
-Each phone holds a full copy. To sync, one phone shows a code
-(More, Sync and backup, Show sync code) and the other scans it. Both must be
-on the same Wi-Fi, or one on the other's hotspot. Data and photos go both ways;
-if the same record was changed on both, the most recent change by someone
-allowed to make it wins.
+Each phone holds a full copy. On the same Wi-Fi, the phones of a move find
+each other and sync by themselves while HouseMove is open (from 2.3; More,
+Sync and backup says how it stands and has the switch). Otherwise one phone
+shows a code (More, Sync and backup, Show sync code) and the other scans it:
+for the first sync after an update, with a phone on an older HouseMove, or on
+Wi-Fi that keeps devices apart. Both must be on the same Wi-Fi, or one on the
+other's hotspot. Data and photos go both ways; if the same record was changed
+on both, the most recent change by someone allowed to make it wins. How phones
+find and trust each other without a code is in `design/auto-sync.md`.
 
 - Set the move up on one phone only. Other phones join with an invite.
 - A phone can hold several moves. Each has its own ID, checked before any data
@@ -273,10 +288,16 @@ Four layers, all free to run:
    opened with Android's own renderer and their labels scanned, sync over a real
    socket, backup through the share route, and the app being rebuilt and stopped.
 
+Syncing by itself is tested with two to four phones in one process that find
+each other through a stand-in for Bonjour and sync over real sockets
+(`AutoSyncCommonTest`, `AutoHandshakeCommonTest`, `AutoSyncOldPhonesTest`), and a
+third of the seven-phone simulation's syncs are by themselves.
+
 What no simulation covers: a physical camera reading a printed sticker in real
 light, a physical printer's scaling, speech recognition, and two phones on one
 particular Wi-Fi network (some routers and guest networks stop devices talking
-to each other; a phone hotspot avoids that).
+to each other, or do not pass on Bonjour, so phones neither sync by themselves
+nor reach each other's code; a phone hotspot avoids that).
 
 ## Audit tools
 
@@ -328,7 +349,9 @@ there later; the Android app does not use it yet.
   not sent, damage and contents lines, and where things are; `Keys.kt`,
   `Sealed.kt` and `Update.kt` the update files; `DailyBackup.kt` the daily
   backup; `Numbers.kt` how every typed or spoken number is read, and what is refused
-- `sync/` (in `shared/`) – phone-to-phone sync over a local socket, and invites
+- `sync/` (in `shared/`) – phone-to-phone sync over a local socket, and invites;
+  syncing by itself (`AutoSync`, `AutoSession`, `Ring`, `Discovery`: Bonjour, the
+  handshake, the keys)
 - `pdf/` – QR label sheets, door signs, inventory and damage reports
 - `ui/` – the kit: `Theme.kt` (colours, type), `Glass.kt` (panels, pills, orbs),
   `Visual.kt` and `Common.kt` (tiles, buttons, inputs), `Dock.kt` (the dome at
