@@ -116,18 +116,30 @@ val noiseSources = tasks.register<GoldenSources>("noiseSources") {
     output.set(layout.buildDirectory.dir("generated/noise/kotlin"))
 }
 
+// HPKE (RFC 9180) as the mailbox and update files of format 2 seal (src/jvmTest/resources/hpke): the CFRG's test vectors
+// for HouseMove's suite, and HouseMove's own sealed messages with fixed keys (HpkeFixtureTest), for the common tests: the
+// JVM, the reference crypto on the simulator and CryptoKit in the app must all make them byte for byte.
+val hpkeSources = tasks.register<GoldenSources>("hpkeSources") {
+    fixtures.from(layout.projectDirectory.dir("src/jvmTest/resources/hpke").asFileTree.matching { include("*.json") })
+    objectName.set("HpkeFiles")
+    packageName.set("app.housemove")
+    about.set("src/jvmTest/resources/hpke")
+    output.set(layout.buildDirectory.dir("generated/hpke/kotlin"))
+}
+
 // What the iPhone app's crypto check opens and seals (CryptoCheck.kt, iosMain): Android's update file from the golden
-// fixtures, the sealing known-answer file, and the encrypted sync's handshakes. Only the app run with -HMCryptoCheck YES
-// (the UI tests) reads them.
+// fixtures, the sealing known-answer file, the encrypted sync's handshakes, and HPKE's test vectors and HouseMove's
+// sealed messages. Only the app run with -HMCryptoCheck YES (the UI tests) reads them.
 val cryptoCheckSources = tasks.register<GoldenSources>("cryptoCheckSources") {
     fixtures.from(
         layout.projectDirectory.file("src/jvmTest/resources/golden/update.json"),
         layout.projectDirectory.file("src/jvmTest/resources/sealing/update-sealed.json"),
         layout.projectDirectory.file("src/jvmTest/resources/noise/handshakes.json"),
+        layout.projectDirectory.dir("src/jvmTest/resources/hpke").asFileTree.matching { include("*.json") },
     )
     objectName.set("CryptoCheckFiles")
     packageName.set("app.housemove.data")
-    about.set("golden/update.json, sealing/update-sealed.json and noise/handshakes.json")
+    about.set("golden/update.json, sealing/update-sealed.json, noise/handshakes.json and hpke/*.json")
     output.set(layout.buildDirectory.dir("generated/cryptoCheck/kotlin"))
 }
 
@@ -187,6 +199,7 @@ kotlin {
             kotlin.srcDir(goldenSources)
             kotlin.srcDir(sealingSources)
             kotlin.srcDir(noiseSources)
+            kotlin.srcDir(hpkeSources)
             dependencies {
                 implementation(kotlin("test"))
             }
