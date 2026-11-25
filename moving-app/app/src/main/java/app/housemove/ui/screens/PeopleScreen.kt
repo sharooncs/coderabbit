@@ -337,6 +337,9 @@ fun PersonScreen(id: String, showInvite: Boolean = false) {
     var host by remember { mutableStateOf<WifiSync.Host?>(null) }
     var invite by remember { mutableStateOf<ShownInvite?>(null) }
     var joined by remember { mutableStateOf(false) }
+
+    /** Set when the phone joined without encryption, because it has an older HouseMove: said under "has joined". */
+    var joinedPlain by remember { mutableStateOf("") }
     var problem by remember { mutableStateOf<String?>(null) }
     var naming by rememberSaveable { mutableStateOf(false) }
     DisposableEffect(Unit) { onDispose { host?.stop() } }
@@ -358,6 +361,7 @@ fun PersonScreen(id: String, showInvite: Boolean = false) {
                     if (r.listsSynced()) store.setDevice { it.copy(lastSyncAt = System.currentTimeMillis(), lastSyncWith = r.peerName) }
                     if (r.ok && r.joinedAs?.id == id) {
                         joined = true
+                        joinedPlain = plainNote(r).trim()
                         invite = null
                     } else if (r.error == WifiSync.UNDONE) problem = "Undone: nothing was sent to that phone. The invite still works for the right one."
                     else if (!r.ok) problem = r.error
@@ -414,6 +418,7 @@ fun PersonScreen(id: String, showInvite: Boolean = false) {
                         Column {
                             Text("$name's phone has joined", style = MaterialTheme.typography.titleMedium)
                             Text("It is now $name, ${p.role.label}.", style = MaterialTheme.typography.bodyMedium)
+                            if (joinedPlain.isNotEmpty()) Text(joinedPlain, style = MaterialTheme.typography.bodyMedium)
                         }
                     }
                 }

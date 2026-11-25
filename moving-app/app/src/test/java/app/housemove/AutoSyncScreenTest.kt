@@ -24,6 +24,7 @@ import app.housemove.sync.WifiSync
 import app.housemove.ui.AppRoot
 import app.housemove.ui.LocalAutoSync
 import app.housemove.ui.LocalSyncAddresses
+import app.housemove.ui.screens.syncReport
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -139,6 +140,40 @@ class AutoSyncScreenTest {
         dontSee("Sync by itself is off")
     }
 
+    /**
+     * From 2.4 a sync with a phone whose HouseMove is older is not encrypted, and the report says so in plain words, on
+     * whichever phone shows it; between two phones with 2.4 (every sync in these tests) nothing of the kind is said.
+     */
+    @Test
+    fun aSyncWithAnOlderPhoneSaysItWasNotEncrypted() {
+        val plain = WifiSync.Result("Priya", "P", 1, 0, plain = true)
+        val said = syncReport(plain, null)
+        assertTrue(said.ok)
+        assertTrue(said.text, said.text.endsWith("Priya's phone has an older HouseMove, so this sync was not encrypted. Sync on a Wi-Fi you trust, or update HouseMove on Priya's phone first."))
+        assertFalse(syncReport(plain.copy(plain = false), null).text.contains("not encrypted"))
+        // A sync that did not go through says only why.
+        assertFalse(syncReport(plain.copy(error = WifiSync.CONNECTION_LOST), null).text.contains("not encrypted"))
+        // Joining by an invite an older HouseMove made: said before anything is sent.
+        assertTrue(WifiSync.OLDER_CODE.startsWith("That code comes from an older HouseMove, so this sync is not encrypted."))
+        // And the line under Sync by itself names the older phone.
+        assertEquals(
+            "Syncing by itself needs HouseMove 2.4 on Priya's phone too.",
+            AutoSync.Status(AutoSync.State.LOOKING, older = "Priya").hint(0),
+        )
+    }
+
+    @Test
+    fun twoPhonesWith24SyncEncrypted() {
+        val asha = asha()
+        val priya = priyaJoins(asha)
+        val host = WifiSync.host(asha, letNewPhonesIn = false) {}.also { h -> closing += { h.stop() } }
+        assertTrue(WifiSync.isE2(host.token))
+        val r = WifiSync.join(priya, host.invite(local), letNewPhonesIn = false)
+        assertTrue(r.error, r.ok && !r.plain)
+        show(asha)
+        dontSee("not encrypted")
+    }
+
     @Test
     fun aMoveOnItsOwnHasNothingToSyncWith() {
         show(asha())
@@ -155,7 +190,7 @@ class AutoSyncScreenTest {
         closing += { engines.forEach { it.close() } }
         show(asha, engines[0])
         engines.forEach { it.resume() }
-        // The join was a meeting: they swap keys and sync, with no code shown or scanned.
+        // The join pinned each other's keys: they sync, encrypted, with no code shown or scanned.
         priya.createItem("Lamp", null)
         rule.waitUntil(30_000) { asha.data.value.liveItems.any { it.name == "Lamp" } }
         waitFor("Up to date with Priya's phone · ")

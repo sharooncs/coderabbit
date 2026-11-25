@@ -171,7 +171,7 @@ fun JoinScreen(inMove: Boolean) {
             state.banner = HomeBanner(
                 s.moveId,
                 title = if (who != null && who.name.isNotBlank()) "You are ${who.name}, ${role.label}, in $move" else "You are in $move",
-                text = role.line(),
+                text = role.line() + plainNote(r),
                 personId = who?.id.orEmpty(),
             )
             goHome()
@@ -288,6 +288,10 @@ private fun AskToJoin(a: JoinStep.Asking, onNo: () -> Unit, onYes: (bring: Boole
                 )
                 invite.role?.takeIf { invite.personId != null }?.let { role ->
                     Text(role.line(), style = MaterialTheme.typography.bodyMedium, color = Night.TextSoft, textAlign = TextAlign.Center)
+                }
+                // An invite an older HouseMove made: the join will not be encrypted. Said before anything is sent.
+                if (!WifiSync.isE2(invite.token)) {
+                    Text(WifiSync.OLDER_CODE, style = MaterialTheme.typography.bodyMedium, color = Night.TextSoft, textAlign = TextAlign.Center)
                 }
             }
             // A Helper code: the phone joins under the name it knows its person by.

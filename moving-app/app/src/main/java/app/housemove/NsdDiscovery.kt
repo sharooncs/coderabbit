@@ -37,7 +37,7 @@ class NsdDiscovery(context: Context) : Discovery {
                 serviceName = name
                 serviceType = Discovery.SERVICE_TYPE
                 setPort(port)
-                setAttribute("v", "1")
+                setAttribute("v", Discovery.VERSION)
             }
             val listener = object : NsdManager.RegistrationListener {
                 override fun onServiceRegistered(info: NsdServiceInfo) {

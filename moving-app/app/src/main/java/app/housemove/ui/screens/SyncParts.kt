@@ -99,7 +99,7 @@ private fun titleFor(error: String?): String = when {
  */
 fun syncReport(r: WifiSync.Result, store: Store?): SyncReport {
     if (r.error == WifiSync.PHOTOS_CUT) {
-        return SyncReport(true, "Synced with ${r.peerName.ifBlank { "the other phone" }}, all but some photos", r.error!!)
+        return SyncReport(true, "Synced with ${r.peerName.ifBlank { "the other phone" }}, all but some photos", r.error!! + plainNote(r))
     }
     if (!r.ok && r.joinedAs == null) {
         val text = when {
@@ -114,14 +114,21 @@ fun syncReport(r: WifiSync.Result, store: Store?): SyncReport {
     else "Photos sent ${r.photosSent}, received ${r.photosReceived}."
     val who = r.joinedAs
     if (who != null) {
-        return SyncReport(true, "You are ${who.name.ifBlank { "on the move" }}, ${who.role.label}", who.role.line(), who)
+        return SyncReport(true, "You are ${who.name.ifBlank { "on the move" }}, ${who.role.label}", who.role.line() + plainNote(r), who)
     }
     val myLetter = store?.device?.value?.letter.orEmpty()
     val clash = if (r.peerLetter.isNotBlank() && r.peerLetter.equals(myLetter, ignoreCase = true)) {
         " Both phones use the letter $myLetter for handwritten codes: change it on one of them in Settings."
     } else ""
-    return SyncReport(true, "Synced with ${r.peerName.ifBlank { "the other phone" }}", photos + clash)
+    return SyncReport(true, "Synced with ${r.peerName.ifBlank { "the other phone" }}", photos + clash + plainNote(r))
 }
+
+/**
+ * After a sync that went through without encryption because the other phone has an older HouseMove: a sentence saying
+ * so ("Priya's phone has an older HouseMove, so this sync was not encrypted…"), to follow the report's text. Empty when
+ * the sync was encrypted, as every sync between two phones with 2.4 is.
+ */
+fun plainNote(r: WifiSync.Result): String = if (r.plain && r.listsSynced()) "\n" + WifiSync.notEncrypted(r.peerName) else ""
 
 /**
  * The result of a sync or a join as a panel: mint when it worked, red with the reason when it
