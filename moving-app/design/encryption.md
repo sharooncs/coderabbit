@@ -3,9 +3,10 @@
 Two parts. **Part 1 is built** (branch `crypto`): the iPhone has the same update-file crypto as Android, byte for byte,
 through a small interface whose Android side is the JCA code Android has run since 2.1 and whose iPhone side is
 CryptoKit. **Part 2 is built** (branch `enc-sync`, Android 2.4, versionCode 12; the iPhone build stays 0.1): an
-encrypted, mutually authenticated channel for phone-to-phone sync, which replaces 2.3's Wi-Fi keys and pair keys. The
-mailbox on the owner's always-on Windows laptop (HPKE) is not built; the design below keeps it, and "Part 2 as built"
-says what is ready for it.
+encrypted, mutually authenticated channel for phone-to-phone sync, which replaces 2.3's Wi-Fi keys and pair keys. **The
+mailbox is built** (branch `mailbox`, Android 2.5, versionCode 13; the iPhone build stays 0.1): phones that are not on the
+same Wi-Fi keep each other up to date through sealed messages (HPKE) left in a small program on the owner's always-on
+Windows laptop, and update files are sealed the same way (format 2); "Mailbox as built" says what was built.
 
 ## Part 1: crypto on the iPhone, byte-compatible with Android
 
@@ -519,7 +520,8 @@ of phones of the move other than the two (at most 500).
    is the mailbox step.)
 2. **No warning for update files from older phones yet.** Update files are still format 1 on every version (HPKE format
    2 belongs to the mailbox step, out of scope), so no update file can show its sender yet, from any phone; the warning
-   comes with format 2. The hook: `WifiSync.Result.plain` and `Pins.olderPhones` say which phones are older.
+   comes with format 2. The hook: `WifiSync.Result.plain` and `Pins.olderPhones` say which phones are older. (2.5 has
+   format 2 and the warning: "Mailbox as built".)
 3. **"Both phones say" a new key without a word on the wire.** The design wants both phones to say so; the answering
    phone closes without an answer (as the design also says), so each phone says it from what it knows: the others
    from the data (entry key ≠ pin), the phone itself from its own key having changed.
@@ -566,6 +568,186 @@ that would still need format 1. Nothing is sent anywhere but the local network.
   the code and its pre-shared key, and all six session keys: none is there. The same search over a sync with a 2.3
   phone finds the move, the code and the public keys (private keys never travel), so the search works.
 
+## Mailbox as built (2.5)
+
+Built on branch `mailbox` (Android 2.5, versionCode 13; the iPhone build stays 0.1). The design is "The mailbox" above;
+what was built, the formats, the choices it left open and where the build differs are here.
+
+### In short
+
+- **The laptop.** `mailbox/` is a small Go program (standard library only) for the owner's always-on Windows laptop. It
+  listens on 127.0.0.1 only; Tailscale Funnel gives it a fixed `https://<machine>.<tailnet>.ts.net/` address with a normal
+  Let's Encrypt certificate. It stores and forwards sealed envelopes, by mailbox, and never holds a key that opens one.
+  Its API, limits, files and log are in `mailbox/README.md`; `design/asus-session.md` is how a Claude Code session on the
+  laptop sets it up. The .exe is committed, built reproducibly, with its SHA-256 in the README.
+- **HPKE** (RFC 9180), `sync/Hpke.kt`: mode_auth with DHKEM(P-256, HKDF-SHA256), HKDF-SHA256 and AES-256-GCM, in common
+  Kotlin on Part 1's `PlatformCrypto` and nothing else (ECDH through the phone's keys, AES-GCM through `sealGcm`/`openGcm`,
+  HKDF over the common HMAC). No primitive was added to the interface, commonMain or iosMain. Checked against the CFRG's
+  test vectors for exactly this suite, against an HPKE written apart in Python, and in the iPhone app with CryptoKit and
+  against CryptoKit's own HPKE.
+- **The phones** (`sync/MailboxSync.kt`, shared, so Android and the iPhone): an Organiser scans the laptop's code; the
+  address goes into the move's data, the house token to the other phones only inside encrypted syncs and sealed messages.
+  Each phone registers a mailbox of its own and puts its address on its entry. A little after a change, and whenever
+  another phone lacks something, it seals for each other phone of the move with a pinned key and a mailbox, and posts. At
+  the start and every minute while HouseMove is open it reads its mailbox, opens what a pinned phone of the move sealed,
+  merges it as `Update.open` does, and deletes it. Beside syncing on the Wi-Fi, never instead of it.
+- **Update files of format 2**: the same HPKE, in a file. 2.5 writes format 2 when every phone the file is for is known
+  to open it, and opens format 1 and 2. The phone opening one sees which phone made it ("Update from Priya's phone").
+- **Unchanged:** the Wi-Fi sync's handshakes, channel and exchange, byte for byte; the Noise code; the golden fixtures; the
+  data layout's version (`SCHEMA` 5), so 2.4 and 2.5 phones sync as before. Nothing in the data changes while a move has
+  no mailbox.
+- **Export compliance:** unchanged, `ITSAppUsesNonExemptEncryption` = `NO`. HPKE is a way of using CryptoKit's ECDH and
+  AES-GCM, as Noise is; CryptoKit's own HPKE is called only by the crypto check.
+
+### Wire formats
+
+`[a, b, c]` is a list of parts, each a four-byte big-endian length and its bytes (`AutoSession.joined`).
+
+**The setup code** (the laptop's QR code, `data/setup-code.png`): `HMBOX:1:<house token>:<address>`, the token 64
+lower-case hex digits (32 random bytes), the address `https://…` with no slash at the end. The phones also take the
+address and the token pasted apart, in either order. An iPhone's Camera opens it in HouseMove (`hmbox` in Info.plist).
+
+**The API** (`mailbox/README.md` has the answers): `PUT /v1/mailboxes/{id}` `{"secret": …}` with
+`Authorization: Bearer <house token>`; `POST /v1/mailboxes/{id}/envelopes` (the bytes; no credential: the ID is the
+capability to post); `GET …/envelopes`, `GET …/envelopes/{e}`, `DELETE …/envelopes/{e}` and `DELETE /v1/mailboxes/{id}`
+with `Authorization: Bearer <read secret>`; `GET /v1/health`. A mailbox ID is 32 hex digits (128 random bits) and the read
+secret 64 (256 bits), both chosen by the phone; the laptop keeps only the secret's SHA-256 and compares in constant time.
+
+**The envelope** (what the laptop holds):
+
+```
+"HMB1" | enc (65) | head length (4, big-endian) | Seal(aad "HouseMove mailbox 1 head", head) | Seal(aad "HouseMove mailbox 1 body", body)
+info = ["HouseMove mailbox 1", move ID, recipient's phone ID]          (the move ID the sender advertises with: the lowest)
+SetupAuthS(recipient's pinned point, info, sender's static key): the head is the context's message 0, the body message 1
+```
+
+The head is JSON `{"from":"p…","seq":12,"at":<ms>,"ack":7,"schema":5,"access":{"url":…,"token":…,"at":…}}`: the sender's
+phone ID (which must be the phone whose pinned key opened it), the message's number from that sender to this recipient,
+when it was sealed, the newest of the recipient's messages the sender has opened, the sender's data layout, and the
+mailbox's access when the sender has it. The body is a zip of `data.json` (the move as the recipient's person may see it,
+`AppData.sentTo`) and `photos/<file>` (small copies). The recipient does not know who sealed it until it opens: it tries
+each phone of the move it has a pin for, opening the small head first; the envelope says nothing of its sender.
+
+**An update file of format 2:**
+
+```
+"HMUPDATE" | 2 (4) | header length (4) | header JSON
+chunks as format 1: (length (4) | AES-GCM(content key, prefix | n, SHA-256(header) | n | last, ≤ 64 KB)) …
+0 (4)                                                                   the end of the chunks
+trailer length (4) | AES-GCM(content key, prefix | FFFFFFFF, "HouseMove update 2 trailer" | h, trailer JSON)
+```
+
+The header is format 1's (`format`, `schema`, `moveId`, `aliases`, `derived`, `from`, `at`, `nonce`) with `to` entries
+`{"phone":…,"key":…,"enc":…}`: per phone, `SetupAuthS(its pinned point, ["HouseMove update 2", move ID, phone ID], this
+phone's key)`, `enc` the encapsulated key and `key` the context's message 0, the content key sealed with aad the nonce
+prefix. `h` is SHA-256(header), then for each sealed chunk `h = SHA-256(h | chunk)`. The trailer is
+`{"sums":[{"phone":…,"sum":…}]}`, each `sum` that phone's context's message 1, `h` sealed with aad
+"HouseMove update 2 sum". A phone opens its envelope only with the pinned key of the phone the header says it is from (a
+phone no longer of the move: the key its entry carries, so an Organiser can still take in a removed person's last
+work), checks every chunk, opens the trailer, and takes in nothing unless its own sum is the `h` of what came: another
+phone the file was for, which holds the same content key, can make other chunks and seal the trailer again, but cannot
+seal another phone's sum.
+
+**Which format.** Format 2 when every phone the file is for is pinned with the key its entry carries and known to open
+HPKE (`Pin.hpke`); otherwise format 1, exactly as 2.4 writes it, and the phone writing it says whose phones made it so.
+
+**The vouches after an encrypted sync** gain three fields, which 2.4 reads past: `{"keys":[…],"hpke":1,
+"hpkePhones":["p…"],"access":{"url":…,"token":…,"at":…}}`: this phone opens HPKE; the phones of the move it knows open it
+(taken with the rule of key vouches: in a meeting from any phone, by itself only from an Organiser's or a Decider's); the
+mailbox's access.
+
+**In the move's data** (absent while unset, so a move without a mailbox writes what 2.4 writes):
+`"mailbox":{"url":…,"setBy":{"by":…,"at":…,"sum":…}}` (an Organiser's, with a check value over the address, as the move's
+settings have; the newest good one wins at a merge) and on each phone entry `"mailbox":{"url":…,"id":…,"at":…}` (the newest
+wins; an empty one, with its time, once the phone has stopped using it). `PhoneEntry` writes its text (which merges compare)
+as before while it has no mailbox, so the golden fixtures' records.json stands.
+
+**On the phone** (`mailbox.json` in the move's no-backup folder, beside `pins.json`; never in a backup, an update or a
+sync): the access (address and house token), this phone's mailbox ID and read secret, and per other phone what was sent and
+heard (message numbers, the data's stamp last sent, photos sent and not yet acknowledged, photos it has).
+
+### Trust, as built
+
+- **Who sets it up.** Only an Organiser sets the move's mailbox (the merge refuses anyone else's, as for the move's
+  settings). Anyone may scan the same mailbox's code to get the token.
+- **The house token travels, but never in the data.** Each phone needs it to register its own mailbox, so it goes to every
+  phone of the move, Helpers included: inside the encrypted channel after a sync (the vouches) and inside sealed messages.
+  It is never in the move's data, because the data also goes in the clear to phones on 2.3 and older, into backup files
+  (not encrypted) and into update files. What the token allows is registering mailboxes on the laptop, within its limits;
+  it opens nothing. Someone removed keeps it; the owner can make a new one (`--new-token`) and an Organiser scans it.
+- **Sending.** Only to phones of the move as this phone's data has them now (on someone's list, not retired, the person
+  not removed), only to a pinned key, never to a key that is not pinned. A phone whose entry shows another key than its pin
+  is sealed to its pin (so a key changed in the data does not redirect anything).
+- **Receiving.** Only what a phone of the move sealed with its pinned key opens; the head must name that phone. So a
+  removed person is shut out at once on the phone that removed them, both ways, and everywhere after the next sync; a
+  stranger who knows a mailbox ID can post, but nothing it posts opens.
+- **Replays, duplicates, late and out-of-order messages.** Each message carries the whole of what the recipient may see,
+  and merging is idempotent and does not care about order, so a message played back late, twice or out of turn changes
+  nothing wrong (a test plays back an old message after a deletion: nothing comes back). Message numbers and
+  acknowledgements only decide which photos go again.
+- **What the laptop sees:** mailbox IDs, sizes, times and addresses (through Funnel), and who registers. Not the move, not
+  a name, not a phone ID, not which mailboxes belong to one move beyond what timing shows. It can delete, delay or replay
+  envelopes, not read or change them.
+- **Echoes.** After taking in a message, a phone sends nothing back unless the sender lacks something of its own (merging
+  what it has into what came changes it), so a change costs about one message per other phone, plus relays.
+
+### Where the build differs from the design, and why
+
+1. **HTTPS without pinning the laptop's key.** The design offered pinning or Noise IK to the laptop. Funnel's certificate is
+   a normal Let's Encrypt one that Tailscale renews every few months, so a pin would break the mailbox at each renewal,
+   and Noise to the laptop would need a key and code on it. The content is sealed end to end either way; someone who could
+   pose as the laptop would learn the metadata and a phone's read secret, which lets them read sealed envelopes and delete
+   them, nothing more.
+2. **An envelope is two messages of one HPKE context**, a small head and the body, so that the recipient, which has to try
+   each pinned phone (the envelope does not say who sealed it, so the laptop cannot learn who writes to whom), tries on the
+   head and opens the body once.
+3. **Update files of format 2 seal the content key per phone, not the whole contents per phone**, with a trailer of sealed
+   hashes: the design said "the same HPKE envelopes in a file"; sealing everything once per phone would make a file N
+   times larger. The trailer gives the same guarantee for each phone (no other phone the file was for can change it).
+   Info is `["HouseMove update 2", move ID, phone ID]`, apart from the mailbox's, so one cannot pass for the other.
+4. **One format per file.** A file goes to several phones; with one that does not open HPKE it is format 1 for all (a
+   format 1 file cannot carry HPKE envelopes 2.4 would read past without a second pass). The design's warning, asked once
+   before opening, is on every 2.5 phone that opens a format 1 file: "This update was made the older way, so it cannot show
+   it came from Priya's phone. Open it only if Priya sent it to you." The wording says "made the older way" rather than "from
+   an older HouseMove", since a 2.5 phone writes format 1 too when one of its recipients is older; the writing phone says
+   which ("…because Omar's phone has not shown it has HouseMove 2.5 yet").
+5. **Which phones open HPKE is learnt, not written in the data:** a field on every phone entry would change the golden sync
+   transcripts. Each phone keeps it with its pins, from what a phone said inside an encrypted sync, vouches, and what opened.
+6. **Messages carry the whole shareable data**, not only what changed since the last acknowledgement: simple and safe
+   (nothing lost when a message is), at the cost of the data's size per message (zipped, usually tens of kilobytes).
+   Photos are the part that goes once: small copies, until acknowledged, again after 30 minutes otherwise, at most about
+   6 MB a message, and only the photos this phone's person took (so a photo is not sent once by every phone that has it).
+7. **The read secret and the mailbox ID are chosen by the phone**, so registering again after a lost answer changes
+   nothing; the laptop keeps only the secret's hash.
+8. **The tools' simulation is not extended to the mailbox.** Its per-merge checks follow the Wi-Fi sync's exchange; a
+   mailbox message is taken in through `Update`'s path, which they do not know. The mailbox has its own multi-phone tests
+   instead (below); the simulation still runs every Wi-Fi invariant on the 2.5 code.
+9. **Demo mode on the iPhone has no mailbox**, so the UI tests see nothing of the internet; the iPhone's mailbox is
+   checked by the shared tests, the desktop tests of its model, and on the owner's phone (`design/ios-plan.md`, 1f).
+
+### How it is checked
+
+- **HPKE:** `HpkeCommonTest` (the CFRG's vectors for this suite, mode_auth and mode_base: keys, shared secret, key
+  schedule, seven messages each, exports; mode_auth with fresh keys and what it refuses), on the JVM and the simulator;
+  `HpkeFixtureTest` and `hpke/housemove.json` (an envelope and a file of format 2 with fixed keys, made again byte for byte
+  on the JVM, the simulator and, through CryptoKit, in the app); `tools/hpke_check.py` (Python's `cryptography` and an HPKE
+  written apart: the vectors, the envelope sealed and opened, the file written byte for byte and opened); the app's crypto
+  check against CryptoKit's own `HPKE.Sender` and `HPKE.Recipient` (UI test `testCryptoKitOpensAndSealsAsAndroidDoes`).
+- **Update files:** `UpdateFormat2CommonTest` (format 2 between 2.5 phones, naming the sender; format 1 for a 2.4 phone,
+  said; a 2.5 phone asking before format 1; a 2.4 phone refusing format 2; a changed header, chunk or trailer; another
+  phone the file was for re-sealing its chunks and trailer; a key that is not the pin; a removed sender's last work);
+  the existing update tests and golden fixtures, unchanged.
+- **The phones:** `MailboxCommonTest` (on the JVM and the simulator, against an in-process stand-in with the program's
+  API): two and three phones, a removal (shut out at once on the remover, then everywhere), a Helper sent no costs, an
+  unpinned key and a phone saying it is another, a changed envelope, replays, duplicates and out of order, a laptop off
+  and back, a full mailbox, a wiped laptop, photos and their acknowledgements, the switch, who may set it up, the words,
+  and a search of every request, answer and envelope for the move. `MailboxGoServerTest` (JVM): three phones over HTTP
+  (HttpURLConnection) against the real Go program, built for the test, and its files, request and answer bodies and log
+  searched for the move, the read secrets and the token. Screens: `MailboxScreenTest` and `ApartFlowsTest` (Android),
+  `MailboxModelTest` (the iPhone's model).
+- **The laptop:** `go test` in `mailbox/` (the API, limits, retention, rate limits, a log and files with nothing secret,
+  crash-safe files, settings, the setup code, many posts at once, and QR codes module for module ZXing's).
+
 ## Risks
 
 - **CryptoKit in CI is checked only in the UI test.** The Kotlin tests on the simulator use the reference crypto. If the
@@ -604,6 +786,56 @@ that would still need format 1. Nothing is sent anywhere but the local network.
 - **Part 2: a plain hello with an E2 code from a phone not known to speak 2.4** is still taken (the older phone it says
   it is might be one): someone who saw the code on the screen can join or sync as a new phone that way, as anyone with
   the code could in 2.3. The code is shown in person, lasts ten minutes, and an invite works once.
+- **Mailbox: Funnel's sender address.** The rate limits go by the last `X-Forwarded-For` entry of a connection from the
+  laptop itself, which Tailscale's Funnel proxy adds. Should a Tailscale version not add it, every request counts as
+  127.0.0.1 and the limits hold for all senders together, which a family's phones stay well within; the laptop's log
+  cannot say which (it keeps no addresses), and only the real Funnel shows it.
+- **Mailbox: the laptop.** Whoever runs or breaks into it sees mailbox IDs, sizes, times and addresses, can delete, delay
+  or replay envelopes, and can register mailboxes; it cannot read or change one. A phone's read secret travels to it over
+  HTTPS without a pin (see above): someone who could pose as the laptop learns the same, and no more.
+- **Mailbox: a member acting badly** can put another mailbox on another phone's entry (its messages then go where they
+  cannot be read, until that phone puts its own back at its next round), say a 2.4 phone opens HPKE (update files of
+  format 2 it then cannot open, and says so), or keep the house token after being removed (registering mailboxes within the
+  laptop's limits, until the owner makes a new token). None of it reads or changes the move.
+- **Mailbox: always-on.** The laptop must not sleep, Tailscale must run unattended and the program start without a
+  login; `design/asus-session.md` sets that up, and only the laptop itself shows that it holds (a restart, the lid shut).
+- **Mailbox: what only real phones and CI show.** NSURLSession on an iPhone (the Kotlin compiles here, and the simulator's
+  test uses the in-process stand-in), CryptoKit's own HPKE against HouseMove's (the crypto check in CI; the Swift was not
+  compiled here), Funnel's certificate and its X-Forwarded-For, mobile networks, a phone woken from sleep, and the
+  battery and data a poll a minute while HouseMove is open costs.
+
+## Verify, the mailbox (2026-11-25, on Linux, branch `mailbox`)
+
+- `tools/test.sh`: 583 tests, 0 failed (shared 401, app 166, sharedUi 16). New: `HpkeCommonTest` (5), `HpkeFixtureTest`
+  (1), `UpdateFormat2CommonTest` (5), `MailboxCommonTest` (9) (the common ones also on the simulator),
+  `MailboxGoServerTest` (1, against the real Go program, built for the test), `MailboxScreenTest` (4),
+  `MailboxModelTest` (1), and one more in `ApartFlowsTest`. Two existing tests changed what they expect, for what 2.5
+  does: `CodeSyncCommonTest` (the pin now records that the phone opens HPKE) and `ApartFlowsTest` (an update from a 2.5
+  phone says "Update from Dee's phone").
+- `go test` in `mailbox/`: 14 tests, all pass (`go vet` and `gofmt` clean). `mailbox/build.sh check`: the committed
+  `dist/housemove-mailbox.exe` (Windows amd64, 6,496,256 bytes, SHA-256
+  `8c00e9bab2ca1dc6a622da3d415b2b184f29ccda4dd653a2e0f7772505b3d85b`) is what the source builds, also from another folder.
+- `tools/hpke_check.py`: the CFRG's vectors (14 messages, keys, schedules, exports) and HouseMove's envelope and update
+  file of format 2 agree with Python's `cryptography` on every byte. `tools/noise_check.py` still agrees with the Noise
+  transcripts.
+- The golden fixtures are byte for byte as at 0c9c089 (`git diff 0c9c089 -- shared/src/jvmTest/resources/golden` is empty);
+  none was recorded again. `noise/handshakes.json` and `sealing/update-sealed.json` are unchanged too.
+- `tools/simulate.sh 50`: 0 seeds broke an invariant (phones on 2.2, 2.3 and the current code; 3,809 syncs, 801
+  encrypted code syncs and 224 by themselves); the 5 seeds with phones working while they sync held every invariant.
+- `tools/checks.sh` (0 findings but the one text field on search, as before) and `tools/roles.sh` (nothing found on core
+  screens; the same "alone" notes as before) pass with the new section on Sync and backup.
+- `:app:assembleRelease`: versionCode 13, versionName 2.5, the same signing certificate (SHA-256 afc48c1a…ab00a3);
+  `aapt dump badging` differs from 2.4's only in the version (the same permissions: camera and internet). `classes.dex`
+  and `classes2.dex` are byte for byte 2.4's; `classes3.dex` is 162 KB larger (HPKE, the envelopes, the engine, the HTTP
+  client, format 2, the screens); no test class (no `MailboxStandIn`, `HpkeKat`, `ReferenceCrypto`). The APK is 17,320,764
+  bytes (2.4: 17,255,228), SHA-256 `799fc4facbfd87c804593efc39d7b9c1c57dd9529d7f05d6f6f96c495007bfd2`, in
+  `releases/HouseMove-2.5.apk` and `HouseMove-latest.apk`.
+- iOS: `:shared:compileKotlinIosArm64`, `:shared:compileKotlinIosSimulatorArm64`, `:shared:compileTestKotlinIosSimulatorArm64`,
+  `:sharedUi:compileKotlinIosArm64` and `:sharedUi:compileKotlinIosSimulatorArm64` succeed (NSURLSession included). The
+  Swift (CryptoKit's HPKE for the crypto check), the simulator tests and the UI tests run in CI only.
+- **The iPhone encrypts only through `PlatformCrypto`:** HPKE in `sync/Hpke.kt` calls `agree` (through the phones'
+  `NoiseKey`), `generateKey`, `sealGcm` and `openGcm`; HKDF and HMAC are common; no cipher, curve or hash is written in
+  commonMain or iosMain. CryptoKit's own HPKE is called only by the crypto check.
 
 ## Verify, Part 2 (2026-11-25, on Linux, branch `enc-sync`)
 

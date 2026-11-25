@@ -12,7 +12,8 @@ find each other on the Wi-Fi and sync by themselves while HouseMove is open. Nob
 
 This is the design. It is built on Android (`:app`, `:shared`) and on the iPhone (`:sharedUi`, `:shared` iosMain,
 `iosApp`'s Info.plist). A later step syncs over the internet through an end-to-end-sealed mailbox on the owner's
-always-on Windows laptop; it is not built now, and the last section says what this design leaves ready for it.
+always-on Windows laptop; it is not built now, and the last section says what this design leaves ready for it. (It is
+built in 2.5, beside this, with the phones' own keys: `design/encryption.md`, "Mailbox as built".)
 
 ## In short
 

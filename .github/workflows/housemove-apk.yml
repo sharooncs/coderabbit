@@ -36,6 +36,11 @@ jobs:
           # Save the Gradle cache from this branch too (by default only the default branch writes it), so runs
           # do not fetch every library again and get turned away by Maven Central (HTTP 429).
           cache-read-only: false
+      # MailboxGoServerTest builds the internet mailbox (moving-app/mailbox) and runs phones against it over HTTP.
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.7"
+          cache: false
       - name: Test
         # The data and sync tests (plain JVM), the app's tests (simulated Android) and the shared screens rendered on a
         # plain JVM; --continue runs them all even if one fails.
@@ -47,6 +52,27 @@ jobs:
           name: HouseMove-apk
           path: moving-app/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
+
+  # The internet mailbox for the family's laptop (moving-app/mailbox, Go): its tests, and the committed Windows .exe is
+  # byte for byte what its source builds.
+  mailbox:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: moving-app/mailbox
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.7"
+          cache: false
+      - name: Vet and test
+        run: |
+          test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+          go vet ./...
+          go test -count=1 ./...
+      - name: The committed .exe is what the source builds
+        run: ./build.sh check
 
   # Installs the app on a real Android emulator and drives it: the whole
   # journey, the camera, the live scanner, real PDFs, sync and restart.
