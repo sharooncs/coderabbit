@@ -4,6 +4,17 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
+// The Android images Robolectric runs the screen tests on: Android 14 (the tests' @Config(sdk = [34])) and
+// Android 15 (the default, from targetSdk). Keep these in step with the Robolectric version below.
+// One configuration each: in one, Gradle would keep only the newer "version" of the same artifact.
+val robolectricImage14: Configuration by configurations.creating { isTransitive = false }
+val robolectricImage15: Configuration by configurations.creating { isTransitive = false }
+val robolectricImagesDir = layout.buildDirectory.dir("robolectric-images")
+val robolectricImages by tasks.registering(Sync::class) {
+    from(robolectricImage14, robolectricImage15)
+    into(robolectricImagesDir)
+}
+
 android {
     namespace = "app.housemove"
     // 37 for the Compose that Compose Multiplatform 1.12 uses on Android; the app still targets 35.
@@ -52,6 +63,11 @@ android {
             all {
                 it.systemProperty("roborazzi.test.record", "true")
                 it.systemProperty("robolectric.graphicsMode", "NATIVE")
+                // Robolectric's Android images come through Gradle (cached, retried) instead of Robolectric's own
+                // download from Maven Central on every run, which CI has seen refused with HTTP 429.
+                it.dependsOn(robolectricImages)
+                it.systemProperty("robolectric.offline", "true")
+                it.systemProperty("robolectric.dependency.dir", robolectricImagesDir.get().asFile.absolutePath)
                 it.maxHeapSize = "1536m"
                 // A failure in CI says which test and why in the job log itself.
                 it.testLogging {
@@ -106,6 +122,8 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.14.1")
+    robolectricImage14("org.robolectric:android-all-instrumented:14-robolectric-10818077-i7")
+    robolectricImage15("org.robolectric:android-all-instrumented:15-robolectric-12650502-i7")
     testImplementation("androidx.test:core:1.6.1")
     testImplementation(composeBom)
     testImplementation("androidx.compose.ui:ui-test-junit4")
