@@ -4,6 +4,7 @@ import androidx.compose.ui.window.ComposeUIViewController
 import app.housemove.data.AppFolders
 import app.housemove.data.KeychainServices
 import app.housemove.data.useAppleCrypto
+import app.housemove.data.useAppleCryptoInMemory
 import app.housemove.ui.iphone.AppModel
 import app.housemove.ui.iphone.HouseMoveApp
 import kotlinx.coroutines.MainScope
@@ -31,8 +32,9 @@ fun MainViewController(buildLabel: String, crypto: AppleCrypto): UIViewControlle
         val demo = demoRequested()
         val hooks = if (demo) {
             val (data, noBackup) = demoFolders()
-            // Demo mode's keys under a Keychain service of their own, cleared at every start with demo mode's folders.
-            useAppleCrypto(SwiftCrypto(crypto), KeychainServices.DEMO, noBackup)
+            // Demo mode's keys: CryptoKit's, kept in memory for as long as the app runs (its folders are emptied at every start),
+            // so the demo's phones sync encrypted also when an unsigned build may not use the Keychain.
+            useAppleCryptoInMemory(SwiftCrypto(crypto))
             IosHooks(data, noBackup, demo = true)
         } else {
             // Photos and the phone's own codes are kept out of iCloud backups, as Android keeps them out of its backup.

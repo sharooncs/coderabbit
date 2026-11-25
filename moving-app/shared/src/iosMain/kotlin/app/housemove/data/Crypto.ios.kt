@@ -106,6 +106,17 @@ fun useAppleCrypto(kit: AppleCryptoKit, service: String, noBackupDir: File) {
     registeredCrypto = IosCrypto(kit, service)
 }
 
+/**
+ * Registers the app's CryptoKit for demo mode (the UI tests): the phones' keys are made by CryptoKit and kept in memory for
+ * as long as the app runs, one per phone ID, never in the Keychain. Demo mode's folders are emptied at every start, so its
+ * keys would be new each time anyway; and an unsigned build in CI may be refused the Keychain (errSecMissingEntitlement),
+ * which would leave the demo's phones without keys, so unable to sync encrypted. The Keychain is checked by the crypto
+ * check instead ([CryptoCheck]).
+ */
+fun useAppleCryptoInMemory(kit: AppleCryptoKit) {
+    registeredCrypto = IosCrypto(kit, KeychainServices.DEMO, inMemory = true)
+}
+
 /** The reinstall marker's name, in the no-backup folder. */
 internal const val REINSTALL_MARKER = "keychain-marker"
 
@@ -123,7 +134,11 @@ internal fun forgetKeysAfterReinstall(kit: AppleCryptoKit, service: String, noBa
 }
 
 /** CryptoKit's ECDH and AES-GCM ([AppleCryptoKit]) as the shared code's [PlatformCrypto], with X.509 public keys. */
-internal class IosCrypto(private val kit: AppleCryptoKit, private val service: String) : PlatformCrypto {
+internal class IosCrypto(private val kit: AppleCryptoKit, private val service: String, private val inMemory: Boolean = false) : PlatformCrypto {
+    /** The phones' keys in memory ([inMemory]: demo mode), by phone ID. */
+    private val memory = HashMap<String, UpdateKeyPair>()
+    private val memoryLock = Lock()
+
     override fun generateKey(): AgreementKey = AppleAgreementKey(kit.generateKey())
 
     /** The key pair of the 32-byte scalar [raw] (the known-answer check), or null. */
@@ -137,8 +152,11 @@ internal class IosCrypto(private val kit: AppleCryptoKit, private val service: S
     override fun openGcm(key: ByteArray, nonce: ByteArray, aad: ByteArray, sealed: ByteArray): ByteArray? =
         if (key.size != 32 || nonce.size != 12 || sealed.size < Sealing.TAG) null else kit.open(key, nonce, aad, sealed)
 
-    override fun phoneKeys(phoneId: String, file: File?): UpdateKeyPair =
-        if (file == null) MemoryKeys(generateKey(), currentTimeMillis()) else KeychainKeys(kit, service, phoneId, file)
+    override fun phoneKeys(phoneId: String, file: File?): UpdateKeyPair = when {
+        inMemory -> synchronized(memoryLock) { memory.getOrPut(phoneId) { MemoryKeys(generateKey(), currentTimeMillis()) } }
+        file == null -> MemoryKeys(generateKey(), currentTimeMillis())
+        else -> KeychainKeys(kit, service, phoneId, file)
+    }
 }
 
 /** A CryptoKit key pair, with X.509 public keys. */

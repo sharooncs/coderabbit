@@ -262,7 +262,7 @@ class AppModel(
                 welcome = Report(
                     true,
                     if (who != null && who.name.isNotBlank()) "You are ${who.name}, ${role.label}, in $name" else "You are in $name",
-                    Words.roleLine(role) + " " + Words.READ_ONLY,
+                    Words.roleLine(role) + " " + Words.READ_ONLY + Words.plainNote(r.result),
                 )
             }
         }

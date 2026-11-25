@@ -38,6 +38,10 @@ final class LaunchTests: XCTestCase {
         XCTAssertTrue(lines.contains { $0.hasPrefix("Check passed: Android's update opens on Asha's phone") }, report)
         XCTAssertTrue(lines.contains { $0.hasPrefix("Check passed: An update sealed here is the JVM's byte for byte") }, report)
         XCTAssertTrue(lines.contains { $0.hasPrefix("Check passed: That update opens on Asha's phone") }, report)
+        // The encrypted sync of 2.4 (design/encryption.md, Part 2): the JVM's recorded handshakes and frames, through CryptoKit.
+        XCTAssertTrue(lines.contains { $0.hasPrefix("Check passed: Noise IK through CryptoKit") }, report)
+        XCTAssertTrue(lines.contains { $0.hasPrefix("Check passed: Noise XXpsk0 through CryptoKit") }, report)
+        XCTAssertTrue(lines.contains { $0.hasPrefix("Check passed: Noise IK and XXpsk0 between keys CryptoKit makes now") }, report)
         if lines.contains(where: { $0.hasPrefix("Check skipped: the Keychain") }) {
             // CI builds with code signing off: the simulator may then refuse the Keychain (errSecMissingEntitlement).
             print("Note: the Keychain was not checked in this unsigned build: \(report)")
@@ -139,6 +143,8 @@ final class LaunchTests: XCTestCase {
     func testSyncsByItselfWithNoCode() throws {
         let app = launch()
         join(app)
+        // The demo move's phone speaks 2.4, as this app does: the join was encrypted, so nothing says otherwise.
+        XCTAssertFalse(labelled(app, "label CONTAINS 'not encrypted'").exists, "the join with the demo phone was encrypted")
         labelled(app, "label == 'Get fresh data'").tap()
         let line = labelled(app, "label BEGINSWITH 'Up to date with Sam'")
         XCTAssertTrue(line.waitForExistence(timeout: 60), "synced by itself, with no code typed")

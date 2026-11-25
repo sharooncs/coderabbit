@@ -79,9 +79,33 @@ object CryptoCheck {
         } finally {
             registeredCrypto = before
         }
+        noiseChecks(crypto, ::check)
         keychainChecks(kit, crypto, scratch, ::check)
         scratch.deleteRecursively()
         return lines
+    }
+
+    /**
+     * The encrypted sync through CryptoKit (design/encryption.md, Part 2): the IK and XXpsk0 handshakes and the channel's
+     * frames the JVM recorded (noise/handshakes.json, NoiseFixtureTest), made again here with CryptoKit's ECDH and AES-GCM on
+     * the same fixed keys, byte for byte; a changed message refused; and both handshakes between keys CryptoKit makes now.
+     */
+    private fun noiseChecks(crypto: IosCrypto, check: (String, () -> Boolean?) -> Unit) {
+        val kat = Json.parseToJsonElement(CryptoCheckFiles.text.getValue("handshakes.json")).jsonObject
+        val keys = kat.obj("scalars").mapValues { (_, v) -> unhex(v.jsonPrimitive.content) }
+        fun key(name: String): app.housemove.sync.NoiseKey =
+            crypto.importKey(keys.getValue(name))?.let { app.housemove.sync.NoiseCheck.keyOf(it) } ?: throw IllegalStateException("CryptoKit did not take $name")
+        check("CryptoKit makes the handshakes' public keys the JVM made") {
+            kat.obj("publicKeys").all { (name, v) -> key(name).point.toHex() == v.jsonPrimitive.content }
+        }
+        for ((pattern, field) in listOf(app.housemove.sync.Noise.IK to "ik", app.housemove.sync.Noise.XX_PSK0 to "xxpsk0")) {
+            check("Noise $pattern through CryptoKit: every message, the hash, the keys and the frames are the JVM's (noise/handshakes.json)") {
+                app.housemove.sync.NoiseCheck.replay(crypto, kat.obj(field), pattern, kat.str("moveId"), ::key)
+            }
+        }
+        check("Noise IK and XXpsk0 between keys CryptoKit makes now; a changed message does not open") {
+            app.housemove.sync.NoiseCheck.live(crypto)
+        }
     }
 
     /** The summary line: passed when no line failed. */

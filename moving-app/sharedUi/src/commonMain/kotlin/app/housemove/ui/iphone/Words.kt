@@ -98,11 +98,18 @@ object Words {
         else -> Report(false, "Could not join", error ?: "Something went wrong. Try again.")
     }
 
+    /**
+     * After a sync or a join that went through without encryption because the other phone has an older HouseMove: a
+     * sentence saying so, to follow what is said. Empty when it was encrypted, as it is with a phone that has 2.4.
+     */
+    fun plainNote(r: WifiSync.Result): String =
+        if (r.plain && (r.ok || r.error == WifiSync.PHOTOS_CUT)) " " + WifiSync.notEncrypted(r.peerName) else ""
+
     /** What a sync to get fresh data tells the person. */
     fun syncResult(r: WifiSync.Result): Report = when {
         r.ok || r.error == WifiSync.PHOTOS_CUT -> Report(
             true, "Up to date",
-            "Synced with ${r.peerName.ifBlank { "the Android phone" }}. What changed there is on this iPhone now.",
+            "Synced with ${r.peerName.ifBlank { "the Android phone" }}. What changed there is on this iPhone now." + plainNote(r),
         )
         r.error == WifiSync.CODE_NOT_ACCEPTED -> Report(
             false, "The code was not accepted",
