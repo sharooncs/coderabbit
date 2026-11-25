@@ -12,6 +12,9 @@ import java.net.NetworkInterface
 
 internal actual typealias ServerSocket = java.net.ServerSocket
 
+internal actual fun listeningSocket(loopbackOnly: Boolean): ServerSocket =
+    if (loopbackOnly) java.net.ServerSocket(0, 50, java.net.InetAddress.getByName("127.0.0.1")) else java.net.ServerSocket(0)
+
 internal actual val ServerSocket.localPort: Int get() = getLocalPort()
 internal actual fun ServerSocket.accept(): Socket = accept()
 internal actual fun ServerSocket.close() = close()

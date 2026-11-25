@@ -194,6 +194,8 @@ private fun localPortOf(fd: Int): Int = memScoped {
     a.port()
 }
 
+internal actual fun listeningSocket(loopbackOnly: Boolean): ServerSocket = ServerSocket(0, loopbackOnly)
+
 /** A listening TCP socket on [port] (0: any free one), on every IPv4 address of the phone or, with [loopbackOnly], on 127.0.0.1 alone. */
 internal actual class ServerSocket(port: Int, loopbackOnly: Boolean) {
     actual constructor(port: Int) : this(port, false)

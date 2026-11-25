@@ -16,6 +16,12 @@ import app.housemove.data.IOException
 /** A listening TCP socket: java.net.ServerSocket on Android and the JVM. */
 internal expect class ServerSocket(port: Int)
 
+/**
+ * A listening socket on a free port: on every address of the phone, or with [loopbackOnly] on 127.0.0.1 alone (tests,
+ * and the iPhone's demo mode). Syncing by itself listens on one of these (design/auto-sync.md).
+ */
+internal expect fun listeningSocket(loopbackOnly: Boolean): ServerSocket
+
 internal expect val ServerSocket.localPort: Int
 
 /** The next phone that connects. Throws IOException once the socket has been closed. */
