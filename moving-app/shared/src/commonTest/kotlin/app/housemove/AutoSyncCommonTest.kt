@@ -30,12 +30,26 @@ class AutoSyncCommonTest {
 
     private fun phone(name: String, engineOn: Boolean = true) = AutoPhone(root, name, lan, engineOn).also { phones += it }
 
+    init {
+        explainTimeout = {
+            phones.joinToString("; ") { p ->
+                val st = p.engine.status.value
+                "${p.name}: ${st.state}, ${st.phones} phones seen, last dial ${p.engine.lastDial.ifEmpty { "none" }}" +
+                    (st.newKey?.let { ", new key $it" } ?: "") + (st.older?.let { ", older $it" } ?: "")
+            }
+        }
+    }
+
     @AfterTest
     fun cleanUp() {
-        phones.forEach { it.close() }
-        root.deleteRecursively()
-        WifiSync.olderPhone = { false }
-        undoCrypto()
+        try {
+            phones.forEach { it.close() }
+            root.deleteRecursively()
+        } finally {
+            WifiSync.olderPhone = { false }
+            explainTimeout = null
+            undoCrypto()
+        }
     }
 
     private fun AutoPhone.hasItem(name: String) = store.data.value.liveItems.any { it.name == name }

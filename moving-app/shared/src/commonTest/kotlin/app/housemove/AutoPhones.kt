@@ -12,6 +12,8 @@ import app.housemove.data.currentTimeMillis
 import app.housemove.data.delete
 import app.housemove.data.mkdirs
 import app.housemove.data.writeText
+import app.housemove.data.platformCrypto
+import app.housemove.sync.AutoSession
 import app.housemove.sync.AutoSync
 import app.housemove.sync.LocalDiscovery
 import app.housemove.sync.LocalLan
@@ -42,15 +44,20 @@ internal class AutoPhone(private val root: File, val name: String, lan: LocalLan
     var moves = Moves(files, noBackup, deviceName = { "$name's phone" })
         private set
     val store: Store get() = moves.current.value ?: fail("$name's phone has no move")
+    // The timings made short, but each well above a handshake (TestSpeed): two phones that dial each other at once are both
+    // told BUSY, and with a pause shorter than a handshake they would meet again every time.
     val engine = AutoSync(LocalDiscovery(lan), { moves.current.value }, { moves.phone.settings.value.autoSync }, loopbackOnly = true).apply {
+        val hs = TestSpeed.handshakeMs()
         tickMs = 20
-        periodMs = 400
-        fallbackMs = 1_000
+        periodMs = 400 + 2 * hs
+        fallbackMs = 1_000 + 4 * hs
         debounceMs = 100
-        firstBackoffMs = 150
-        maxBackoffMs = 600
-        busyMinMs = 30
-        busyMaxMs = 120
+        firstBackoffMs = 150 + hs
+        maxBackoffMs = 600 + 4 * hs
+        busyMinMs = 30 + 2 * hs
+        busyMaxMs = 120 + 6 * hs
+        // A handshake step may take as long as the slowest key agreements, with every phone of the test busy at once.
+        AutoSession.stepMs = maxOf(5_000L, 8 * hs).toInt()
     }
     private var host: WifiSync.Host? = null
 
@@ -113,11 +120,42 @@ internal class AutoPhone(private val root: File, val name: String, lan: LocalLan
     }
 }
 
-/** Waits up to [ms] for [done], then fails saying [what]. */
-internal fun waitUntil(what: String, ms: Long = 20_000, done: () -> Boolean) {
+/**
+ * How fast the crypto of the test phones is: a key agreement takes well under a millisecond with the JCA (the JVM), and far
+ * longer with the reference crypto (pure Kotlin, not optimised) that the iPhone simulator's tests use, since they cannot
+ * call CryptoKit. Waits and pauses grow with it, so the tests ask the same of the code on both. Measured once a crypto is there.
+ */
+internal object TestSpeed {
+    private var measured = -1L
+
+    /** One key agreement, in milliseconds (0 while the tests have no crypto). */
+    fun agreeMs(): Long {
+        if (measured >= 0) return measured
+        val crypto = platformCrypto ?: return 0
+        val a = crypto.generateKey()
+        val b = crypto.generateKey()
+        a.agree(b.publicDer)
+        val start = currentTimeMillis()
+        repeat(4) { a.agree(b.publicDer) }
+        measured = (currentTimeMillis() - start) / 4
+        return measured
+    }
+
+    /** About how long a handshake of syncing by itself takes: both phones' key agreements, one after the other. */
+    fun handshakeMs(): Long = 12 * agreeMs()
+}
+
+/** What a test that timed out adds to its failure: say, how each phone's syncing by itself stands. */
+internal var explainTimeout: (() -> String)? = null
+
+/** Waits up to [ms] (longer where the crypto is slow: [TestSpeed]) for [done], then fails saying [what]. */
+internal fun waitUntil(what: String, ms: Long = 20_000 + 20 * TestSpeed.handshakeMs(), done: () -> Boolean) {
     val until = currentTimeMillis() + ms
     while (!done()) {
-        if (currentTimeMillis() > until) fail("timed out waiting for $what")
+        if (currentTimeMillis() > until) {
+            val more = explainTimeout?.let { "; " + it() } ?: ""
+            fail("timed out waiting for $what after $ms ms (a key agreement takes ${TestSpeed.agreeMs()} ms here)$more")
+        }
         sleepMillis(20)
     }
 }

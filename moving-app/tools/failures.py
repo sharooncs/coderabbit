@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Prints every failed test, with its message and the start of its stack trace, so that a CI log says what failed
-without the reports having to be downloaded.
+without the reports having to be downloaded; then the slowest tests, with their times.
 
   tools/failures.py DIR_OR_XML... [--xcresult PATH]
 
@@ -15,6 +15,7 @@ import sys
 import xml.etree.ElementTree as ET
 
 STACK_LINES = 25
+SLOWEST = 12
 
 
 def junit(paths):
@@ -26,6 +27,7 @@ def junit(paths):
         elif os.path.isfile(p):
             files.append(p)
     failed = total = 0
+    timings = []
     for f in files:
         try:
             tree = ET.parse(f)
@@ -34,6 +36,10 @@ def junit(paths):
             continue
         for case in tree.iter("testcase"):
             total += 1
+            try:
+                timings.append((float(case.get("time") or 0), f"{case.get('classname', '')}.{case.get('name', '')}"))
+            except ValueError:
+                pass
             for kind in ("failure", "error"):
                 for bad in case.findall(kind):
                     failed += 1
@@ -49,6 +55,11 @@ def junit(paths):
                     print()
     if files:
         print(f"JUnit results: {total} tests, {failed} failed ({len(files)} files)")
+        slow = sorted(timings, reverse=True)[:SLOWEST]
+        if slow and slow[0][0] >= 1:
+            print("Slowest:")
+            for t, name in slow:
+                print(f"  {t:7.1f} s  {name}")
 
 
 def xcresult(path):

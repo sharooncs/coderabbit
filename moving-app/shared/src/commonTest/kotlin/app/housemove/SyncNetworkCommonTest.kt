@@ -32,6 +32,8 @@ import kotlin.time.TimeSource
  * a sync after either goes through. On the iPhone this is SO_RCVTIMEO, EOF and resets through Net.ios.kt.
  */
 class SyncNetworkCommonTest {
+    // The hosts here show E2 codes, as every 2.4 phone that can encrypt does: on the simulator, the reference crypto.
+    private val undoCrypto = useTestCryptoIfNone()
     private var now = 1_000_000L
     private val local = listOf("127.0.0.1")
     private val hosts = ArrayList<WifiSync.Host>()
@@ -48,6 +50,7 @@ class SyncNetworkCommonTest {
             }
         }
         WifiSync.timeoutMs = 30_000
+        undoCrypto()
     }
 
     private fun phone(name: String): Store {

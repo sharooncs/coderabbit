@@ -119,6 +119,9 @@ class AutoSync(
     @Volatile internal var busyMinMs = 3_000L
     @Volatile internal var busyMaxMs = 8_000L
 
+    /** How the last dial went, for a test that timed out to say: the phone dialled, the word (OK, NO, BUSY, LOST) and any error. */
+    @Volatile internal var lastDial = ""
+
     /** "Up to date" for this long after the last sync. */
     @Volatile internal var upToDateMs = 5 * 60_000L
 
@@ -388,6 +391,7 @@ class AutoSync(
         dialling = null
         val t = clock()
         val r = d.result
+        lastDial = "${p.phone.take(8)} ${d.word}" + (r?.error?.takeIf { it.isNotEmpty() }?.let { " ($it)" } ?: "")
         when {
             d.word == "BUSY" -> {
                 // Already syncing with another phone: again soon, at a random moment, without counting it against this one.
