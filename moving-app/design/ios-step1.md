@@ -102,8 +102,9 @@ later: shortest, closest, one or two digits when the shortest has one), `URLEnco
   `build/generated/golden/kotlin/app/housemove/GoldenFiles.kt` from `src/jvmTest/resources/golden/*.json`, with the
   SHA-256 of each file, which `theFixturesComeThroughWhole` checks. The files are only read.
 - `jvmTest/JavaTextTest` (10): the iPhone's text rules and wire against the JVM's own functions (above).
-- Still in `jvmTest` until 1b: everything that needs a Store on disk, sockets, zips, QR modules or update files,
-  `GoldenFixturesTest` among them.
+- 1b added 42 common tests for files, zips, threads, sockets, QR codes and the fixed move's syncs (see 1b below);
+  the rest of what needs a Store on disk, and the update files, `GoldenFixturesTest` among them, are still in
+  `jvmTest`.
 
 ## CI
 
@@ -111,9 +112,11 @@ later: shortest, closest, one or two digits when the shortest has one), `URLEnco
 (`tools/ios.sh sim-id`, given to Gradle as `HM_SIMULATOR`), before the Xcode steps, and keeps the reports
 (artifact `ios-shared-tests`). A failure lets the Xcode steps run and fails the job at the end. The iPhone workflow
 runs for `moving-app/shared/**` (and sharedUi, iosApp, the Gradle setup), not for the Android app alone; the APK
-workflow runs for everything in `moving-app` but the iPhone app.
+workflow runs for everything in `moving-app` but the iPhone app. Since 1b, a step "Failed tests" prints every failed
+test with its message and stack (`tools/failures.py`: the shared tests' JUnit XML and the Xcode result bundle), and
+"Measure the Kotlin build" (18 minutes) runs only for a commit whose message says `[measure]`.
 
-**Not yet seen:** the first CI run is the first time these tests run under Kotlin/Native. What they test there that
+**Seen since (run 45544621082):** all 26 passed on the simulator. **Before that:** the first CI run was the first time these tests ran under Kotlin/Native. What they test there that
 the JVM could not: Kotlin/Native's `Double.toString`, `lowercase()`/`uppercase()` special casing (İ, final Σ, ß),
 `trim()`, `String.hashCode`, `toDoubleOrNull` (the number fields of step 2), its Regex (contents lines), and the iPhone's
 SHA-256. Whatever fails there is 1b's first job.
@@ -137,28 +140,83 @@ SHA-256. Whatever fails there is 1b's first job.
 - `:shared:compileKotlinIosArm64`, `:shared:compileKotlinIosSimulatorArm64`, `:shared:compileTestKotlinIosSimulatorArm64`
   and `:sharedUi`'s two iPhone compiles succeed.
 
-## What 1b must do on the iPhone
+## 1b: what the iPhone has now (branch `ios-1b`)
 
-- [ ] **Files** (`Files.ios.kt`): `File` as a path (NSFileManager or POSIX) under Application Support, the
-  no-backup folder excluded from iCloud backup; `renameTo` replacing the target as POSIX `rename` does;
-  `readText`/`writeText` through `JavaText` UTF-8; `copyTo` and `deleteRecursively` as kotlin.io's; file streams
-  (subclasses of the iOS `InputStream`/`OutputStream`).
-- [ ] **Zip** (`ZipWriter`, `ZipReader`): DEFLATE through the iOS SDK's zlib; entries as Java writes them (version 20,
-  flags 0x0808 with a data descriptor after the data, UTF-8 names, no extra fields); a reader that takes data
-  descriptors; what `backup.json`'s `deterministic` part says.
-- [ ] **The store's writer** (`SerialWorker`), **`CountDownLatch`**, **`startThread`**: a serial GCD queue or a
-  thread; `NSCondition`; `NSThread`.
-- [ ] **Sockets** (`sync/Net.ios.kt`): POSIX, a connect with a timeout, `SO_RCVTIMEO` as `SocketTimeoutException`,
-  `TCP_NODELAY`, `SO_NOSIGPIPE`, an end of stream as `EOFException` and a reset as `SocketException`, closing a
-  listening socket ending `accept` with an `IOException`; an 8 KB buffer on the sending side, as
-  `BufferedOutputStream`; `siteLocalAddresses` from `getifaddrs` without cellular (`pdp_ip`) and VPN (`utun`,
-  `ipsec`) interfaces.
-- [ ] **QR encoder** (`qrPixels`): byte mode ISO-8859-1, error correction M, zxing's version and mask choice, so that
-  `qr.json`'s matrices match module for module.
-- [ ] **Tests**: give `commonTest` a temporary folder and common stand-ins for the JVM queues the tests use, then move
-  the Store, Moves, sync and simulation tests there, and `GoldenFixturesTest`'s fixed move (the sync transcripts over
-  real sockets, the backup).
-- [ ] **Whatever the first simulator run of `commonTest` shows** (above).
+Nothing on the iPhone throws `"step 1b"` any more. Book title lookup is still a stub (`"later"`): it is not in v1.
+
+| Seam | The iPhone's side | How it keeps Android's behaviour |
+|---|---|---|
+| `File` and its functions (`Files.ios.kt`) | a path; POSIX `stat`/`lstat`, `open`/`read`/`write`, `rename`, `remove`, `mkdir`, `opendir`/`readdir`, `getcwd` | java.io.File's rules for paths (normalised, `equals` by path), `rename(2)` replacing the target (so the store's write-then-rename is atomic, as on Android; no fsync on either), `mkdirs`/`delete`/`listFiles` as java.io, `copyTo`/`deleteRecursively` as kotlin.io (a symbolic link is not followed), text through `JavaText` UTF-8; `lastModified` joins the seam |
+| Folders (`Folders.ios.kt`, `AppFolders`) | Application Support/HouseMove (Moves' filesDir), Application Support/HouseMove-no-backup (noBackupDir), Caches/HouseMove | `photos/` and the no-backup folder carry `NSURLIsExcludedFromBackupKey` (set again at every start), as Android's backup rules leave out files/photos and no_backup |
+| Streams | `InputStream`/`OutputStream` with file, socket, buffered (8 KB, as BufferedInput/OutputStream) and test memory kinds | `InputStream.read` joins the seam |
+| `ZipWriter`/`ZipReader` | common `ZipOut`/`ZipIn` (`Zip.kt`) through a buffer; DEFLATE from zlib (`platform.zlib`, raw, windowBits -15, level -1, memLevel 8) | see "Zips" below |
+| `SerialWorker` (the store's writer) | a serial dispatch queue | see "Order" below |
+| `CountDownLatch` | an atomic count and a dispatch semaphore | the count stops at zero; once open every wait ends at once (each waiter that gets through signals again); the semaphore orders memory as the JVM's latch does |
+| `startThread` | an NSThread with an autorelease pool and a 1 MB stack | |
+| Sockets (`sync/Net.ios.kt`) | POSIX, IPv4 | see "Sockets" below |
+| `siteLocalAddresses` | `getifaddrs`, then `syncAddresses` (`sync/Addresses.kt`, common) | site-local IPv4 on `en*` (Wi-Fi) and `bridge*` (Personal Hotspot, 172.20.10.x), up and running, not loopback; never `pdp_ip*`, `utun*`, `ipsec*`, `awdl*`, `llw*`, `lo*` or any other; in the order getifaddrs lists them, interface by interface, as the JVM keeps NetworkInterface's order |
+| `qrPixels` | common (`QrEncoder.kt`, ported from ZXing 3.5.3, Apache 2.0, `licenses/ZXing-Apache-2.0.txt`) on every platform | ZXing's modules exactly; Android keeps ZXing for `Qr.matrix` (label PDFs) and the camera decoder |
+| `updateCrypto` | null in the app; tests on the simulator may put in a stand-in that only passes key text on (`updateCryptoStandIn`, `KeyTextOnly` in commonTest) | no crypto in commonMain or iosMain: the only Apple security calls are still `SecRandomCopyBytes` and `CC_SHA256` |
+
+**Order.** The writer keeps what the JVM's single-thread scheduled executor gives the store: tasks run one at a time,
+each seeing what the one before did (a serial queue); `execute` runs in the order given (FIFO); a `schedule`d task
+joins the queue when it is due (`dispatch_after`), so what is given meanwhile runs first, as the JVM orders tasks by
+due time; `runAndWait` (the store's `flush`) runs after everything given before it and waits, throwing when the task
+failed or was late (a late task still runs, as with `Future.get`); `shutdownNow` drops what has not started and
+takes nothing more (an `IllegalStateException`, where the JVM throws `RejectedExecutionException`; the store catches
+both); `awaitTermination` waits for the task running; a task's exception is dropped, as the JVM keeps it in a Future
+nobody reads. One difference: the JVM's `shutdownNow` interrupts the running task; the store's writes are not
+interruptible there either. `ThreadsCommonTest` checks each of these on both platforms.
+
+**Zips.** `ZipOut` writes what `java.util.zip.ZipOutputStream` writes for the app's entries: version 20, flags
+0x0808, a data descriptor with its signature, UTF-8 names, no extra fields or comments, the DOS time in local time,
+ZIP64 records only when a size, an offset or the count needs them. `ZipIn` reads as `ZipInputStream`: from the start,
+DEFLATE and stored entries, descriptors with or without the signature, every CRC and size checked. On the JVM, where
+its DEFLATE is `java.util.zip.Deflater`, `ZipOut`'s zips are Java's byte for byte (`ZipJvmTest`: 60 random zips and
+a ZIP64 one of 70,000 entries); Java reads them streaming and through the central directory; `ZipIn` reads Java's.
+On the iPhone the compressed bytes are zlib's, which only have to read the same. One difference on purpose: a zip
+entry whose name is not UTF-8 is an IOException (so "not a HouseMove backup"); Java throws IllegalArgumentException.
+
+**Sockets.** Every socket has `SO_NOSIGPIPE` (a write to a phone that has gone is a SocketException, never a signal);
+`TCP_NODELAY` when WifiSync asks; the hosting phone's listening socket `SO_REUSEADDR` (as Java's), backlog 50, on all
+IPv4 addresses (tests: 127.0.0.1 only). A read waits at most `soTimeout` (`SO_RCVTIMEO`, as Android sets
+`SO_TIMEOUT`), then `SocketTimeoutException`; a connect at most its timeout (non-blocking `connect` and `poll`), then
+`SocketTimeoutException`; refused or unreachable is a `ConnectException` (a SocketException). The end of the stream
+reads -1 (so the wire reader throws `EOFException`); a reset or a broken pipe is a `SocketException`. Closing the
+listening socket ends a wait in `accept` (a pipe wakes its `poll`) with a SocketException; a socket closed from another
+thread is shut down and its descriptor let go only when the call using it returns. Sending is buffered 8 KB, as
+`BufferedOutputStream`.
+
+**Privacy manifest.** The shared code calls `stat` and `lstat` (File timestamp APIs) on the app's own files: reason
+C617.1 is now declared beside 0A2A.1.
+
+**Tests** (commonTest, on the JVM in every run and on the simulator in CI), 68 in all, 42 of them new:
+`GoldenSyncCommonTest` (2: the fixed move through the real Store and WifiSync, host and joiner on threads of one
+process over 127.0.0.1 through a relay that keeps every byte: `move-data.json`, `sync-join.json`, `sync-plain.json`
+and every answer in `sync-refusals.json` byte for byte; a backup made then holds `backup.json`'s `deterministic`;
+Android's backup sample peeks and restores as `opened` says), `FilesCommonTest` (6), `ZipCommonTest` (10, the golden
+sample among them), `ThreadsCommonTest` (6), `SocketsCommonTest` (7), `SyncNetworkCommonTest` (3, from NetworkTest:
+a quiet phone, a dropped connection, nobody there), `MovesCommonTest` (2, from MoveIdTest), `QrCommonTest` (3,
+`qr.json`'s modules and drawings), `AddressesCommonTest` (3). In jvmTest: `ZipJvmTest` (6) and `QrEncoderJvmTest` (2:
+ZXing's modules on 3,600 texts, and `qrPixels` as `Qr.matrix`). On the simulator the iPhone v1 has no keys of its own,
+so the golden phones say the key text in their folders (`KeyTextOnly`); without it the hellos and phone entries
+would carry no key, which is what a real iPhone v1 sends.
+
+Still on the JVM only: the rest of the Store, sync and simulation suites (`DataTest`, `JoiningTest`, `PeopleTest`,
+`SimulationTest` and the others, which use JUnit rules, java.io and JVM queues) and the update files.
+
+## What 1b had to do on the iPhone
+
+- [x] **Files** (`Files.ios.kt`), with `AppFolders` (`Folders.ios.kt`).
+- [x] **Zip** (`Zip.kt`, `Zip.ios.kt`).
+- [x] **The store's writer** (`SerialWorker`), **`CountDownLatch`**, **`startThread`**.
+- [x] **Sockets** (`sync/Net.ios.kt`) and **addresses** (`sync/Addresses.kt`).
+- [x] **QR encoder** (`QrEncoder.kt`, common).
+- [ ] **Tests**: done for files, zips, threads, sockets, QR codes, Moves on disk, part of NetworkTest and the fixed
+  move's syncs and backup; the rest of the Store, sync and simulation suites are still JVM-only.
+- [x] **Whatever the first simulator run of `commonTest` shows**: step 1a's 26 common tests passed on the simulator
+  (Kotlin/Native's Double.toString, case rules, toDoubleOrNull and Regex matched the fixtures). The 1b tests' first
+  run is next.
 - [ ] **Phone keys**: an iPhone that admits an Android phone keeps no key on its entry (`updateCrypto` is null, so
   `isPublicKey` is false); the phone puts its own key back on its next sync. A check of the key's shape alone (an X.509
   P-256 public key in Base64, no crypto) would keep it; to be decided with the update files.

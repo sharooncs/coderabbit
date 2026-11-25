@@ -7,9 +7,10 @@ import java.security.MessageDigest
 // Android app and the iPhone app (steps 0c and 1 of design/ios-plan.md; design/ios-step1.md is the checklist).
 // Nearly all of it is in commonMain. What it asks of the platform is behind small expect/actual seams (Files.kt,
 // Threads.kt, Platform.kt, sync/Net.kt): on Android and the JVM, in jvmCommonMain, each is the java.* call the code
-// made before (Android runs what it ran); on the iPhone, in iosMain, the small ones are Apple's, and the files,
-// sockets, zips and QR codes come in step 1b. The update-file crypto (Keys.kt, Sealed.kt, Update.kt) and zxing stay
-// in jvmCommonMain only. The JVM target runs the data and sync tests without Android or Robolectric.
+// made before (Android runs what it ran); on the iPhone, in iosMain, they are Apple's and POSIX calls with the same
+// behaviour (files, sockets, threads), and the zips and QR codes are common Kotlin (Zip.kt, QrEncoder.kt) that writes
+// what java.util.zip and zxing write. The update-file crypto (Keys.kt, Sealed.kt, Update.kt) and zxing stay in
+// jvmCommonMain only. The JVM target runs the data and sync tests without Android or Robolectric.
 plugins {
     id("org.jetbrains.kotlin.multiplatform")
     id("com.android.kotlin.multiplatform.library")

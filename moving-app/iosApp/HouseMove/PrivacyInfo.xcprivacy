@@ -9,18 +9,22 @@
 	<array/>
 	<key>NSPrivacyCollectedDataTypes</key>
 	<array/>
-	<!-- Apple's required-reason APIs in the app come from Kotlin/Native and Compose Multiplatform (with Skia), not
-	     from HouseMove's own code. JetBrains' guidance, kotlinlang.org/docs/multiplatform/multiplatform-privacy-manifest.html:
-	     Compose Multiplatform may bring stat and fstat (file timestamps, reason 0A2A.1) and mach_absolute_time
-	     (system boot time, reason 35F9.1). `tools/ios.sh measure` lists the ones the built app calls (CI log). -->
+	<!-- Apple's required-reason APIs in the app: HouseMove's own shared code calls stat and lstat on the files in its
+	     container (Files.ios.kt: whether a file is there, its kind, size and time; reason C617.1). The rest come from
+	     Kotlin/Native and Compose Multiplatform (with Skia). JetBrains' guidance,
+	     kotlinlang.org/docs/multiplatform/multiplatform-privacy-manifest.html: Compose Multiplatform may bring stat and
+	     fstat (file timestamps, reason 0A2A.1) and mach_absolute_time (system boot time, reason 35F9.1).
+	     `tools/ios.sh measure` lists the ones the built app calls (CI log, with [measure] in the commit message). -->
 	<key>NSPrivacyAccessedAPITypes</key>
 	<array>
-		<!-- stat and fstat, which the Kotlin runtime and Compose call on the app's own files. -->
+		<!-- stat, lstat and fstat on the app's own files: HouseMove's shared code (C617.1), the Kotlin runtime and
+		     Compose (0A2A.1). -->
 		<dict>
 			<key>NSPrivacyAccessedAPIType</key>
 			<string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
 			<key>NSPrivacyAccessedAPITypeReasons</key>
 			<array>
+				<string>C617.1</string>
 				<string>0A2A.1</string>
 			</array>
 		</dict>
