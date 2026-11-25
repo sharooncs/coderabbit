@@ -18,7 +18,8 @@ struct StartView: UIViewControllerRepresentable {
     }()
 
     func makeUIViewController(context: Context) -> UIViewController {
-        let screen = MainViewControllerKt.MainViewController(buildLabel: Self.buildLabel)
+        // The shared code's crypto for update files: CryptoKit, with this phone's private key in the Keychain.
+        let screen = MainViewControllerKt.MainViewController(buildLabel: Self.buildLabel, crypto: CryptoKitCrypto())
         // The launch screen's colour, until Compose draws its first frame.
         screen.view.backgroundColor = UIColor(named: "Ground")
         return screen

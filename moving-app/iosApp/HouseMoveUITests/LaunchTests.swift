@@ -13,7 +13,39 @@ import XCTest
 /// Compose Multiplatform hands its texts and images to iOS accessibility itself: plain texts as static texts,
 /// headings with the header trait, and a button or a card as one element read as one line. So the tests look
 /// elements up by their label, whatever element type iOS gives them.
+///
+/// The crypto check (testCryptoKitOpensAndSealsAsAndroidDoes) is the one place CI runs the app's real CryptoKit and
+/// Keychain: launched with `-HMCryptoCheck YES`, the app checks them against Android's update files and shows a line per
+/// check (sharedUi iosMain CryptoCheckScreen.kt, shared iosMain CryptoCheck.kt).
 final class LaunchTests: XCTestCase {
+    /// The iPhone's update-file crypto against Android's, through the app's own CryptoKit (design/encryption.md): Android's
+    /// update file from the golden fixtures opens on Asha's phone as it did on Android, the known-answer file the JVM opens
+    /// is sealed byte for byte, and the Keychain keeps and finds the phone's key. Every line the app shows is in the
+    /// failure message, so CI's log says which check failed.
+    @MainActor
+    func testCryptoKitOpensAndSealsAsAndroidDoes() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["-HMCryptoCheck", "YES"]
+        app.launch()
+        let summary = labelled(app, "label == 'Crypto check passed' OR label == 'Crypto check failed'")
+        XCTAssertTrue(summary.waitForExistence(timeout: 120), "the crypto check finished")
+        let lines = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Check '"))
+            .allElementsBoundByIndex.map { $0.label }
+        let report = ([summary.label] + lines).joined(separator: " | ")
+        print("Crypto check: \(report)")
+        keep("crypto-check", app)
+        XCTAssertEqual(summary.label, "Crypto check passed", report)
+        XCTAssertTrue(lines.contains { $0.hasPrefix("Check passed: Android's update opens on Asha's phone") }, report)
+        XCTAssertTrue(lines.contains { $0.hasPrefix("Check passed: An update sealed here is the JVM's byte for byte") }, report)
+        XCTAssertTrue(lines.contains { $0.hasPrefix("Check passed: That update opens on Asha's phone") }, report)
+        if lines.contains(where: { $0.hasPrefix("Check skipped: the Keychain") }) {
+            // CI builds with code signing off: the simulator may then refuse the Keychain (errSecMissingEntitlement).
+            print("Note: the Keychain was not checked in this unsigned build: \(report)")
+        } else {
+            XCTAssertTrue(lines.contains { $0.hasPrefix("Check passed: this phone's key is kept in the Keychain") }, report)
+        }
+    }
+
     @MainActor
     func testShowsTheJoinScreen() throws {
         let app = launch(demo: false)

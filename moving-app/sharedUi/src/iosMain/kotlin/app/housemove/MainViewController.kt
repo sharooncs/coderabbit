@@ -2,6 +2,8 @@ package app.housemove
 
 import androidx.compose.ui.window.ComposeUIViewController
 import app.housemove.data.AppFolders
+import app.housemove.data.KeychainServices
+import app.housemove.data.useAppleCrypto
 import app.housemove.ui.iphone.AppModel
 import app.housemove.ui.iphone.HouseMoveApp
 import kotlinx.coroutines.MainScope
@@ -16,19 +18,27 @@ private var model: AppModel? = null
 private var waitingLink: String? = null
 
 /**
- * What the iPhone app shows; its SwiftUI StartView hosts it (in Swift: `MainViewControllerKt.MainViewController`).
- * The first iPhone build: join a move that lives on an Android phone, look at it read-only, get fresh data, leave
- * it. [buildLabel] names the build, as in "Test build 0.1 (202611241030)".
+ * What the iPhone app shows; its SwiftUI StartView hosts it (in Swift:
+ * `MainViewControllerKt.MainViewController(buildLabel:crypto:)`). The first iPhone build: join a move that lives on an
+ * Android phone, look at it read-only, get fresh data, leave it. [buildLabel] names the build, as in "Test build 0.1
+ * (202611241030)". [crypto] is the app's CryptoKit (CryptoKitCrypto.swift): the shared code's P-256 and AES-GCM for update
+ * files, with this phone's private key in the Keychain (design/encryption.md). Launched with `-HMCryptoCheck YES` (the UI
+ * tests only), the app checks that crypto against Android's instead (CryptoCheckScreen.kt).
  */
-fun MainViewController(buildLabel: String): UIViewController {
+fun MainViewController(buildLabel: String, crypto: AppleCrypto): UIViewController {
+    if (cryptoCheckRequested()) return ComposeUIViewController { CryptoCheckScreen(crypto) }
     val m = model ?: run {
         val demo = demoRequested()
         val hooks = if (demo) {
             val (data, noBackup) = demoFolders()
+            // Demo mode's keys under a Keychain service of their own, cleared at every start with demo mode's folders.
+            useAppleCrypto(SwiftCrypto(crypto), KeychainServices.DEMO, noBackup)
             IosHooks(data, noBackup, demo = true)
         } else {
             // Photos and the phone's own codes are kept out of iCloud backups, as Android keeps them out of its backup.
             AppFolders.prepare()
+            // Before any move is opened: this phone's key for update files is CryptoKit's, its private half in the Keychain.
+            useAppleCrypto(SwiftCrypto(crypto), KeychainServices.PHONE, AppFolders.noBackup)
             IosHooks(AppFolders.data, AppFolders.noBackup)
         }
         AppModel(hooks, buildLabel, MainScope(), demo = if (demo) startDemoHost() else null).also {
