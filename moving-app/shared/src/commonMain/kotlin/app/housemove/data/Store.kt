@@ -187,10 +187,13 @@ class Store internal constructor(
     val moveId: String get() = _identity.value.id
 
     /**
-     * This move's keys for syncing by itself on the same Wi-Fi (design/auto-sync.md): kept beside the codes, in the
-     * no-backup folder, so no backup, update file or sync ever carries them. A ring of another move counts as empty.
+     * The keys this phone accepts for the other phones of the move, for encrypted sync (design/encryption.md, "The trust
+     * root: pins"): kept beside the codes, in the no-backup folder, so no backup, update file or sync ever carries them.
+     * Pins saved for another move count as none. Opening the move deletes 2.3's key ring beside them (`ring.json`): from
+     * 2.4 its Wi-Fi keys and pair keys open nothing.
      */
-    internal val ring: app.housemove.sync.Ring by lazy { app.housemove.sync.Ring(File(codesDir, "ring.json")) { _identity.value } }
+    internal val pins: app.housemove.sync.Pins =
+        app.housemove.sync.Pins(File(codesDir, "pins.json"), File(codesDir, "ring.json"), { _identity.value }, { clock() })
 
     private fun load(): AppData {
         var damaged = false

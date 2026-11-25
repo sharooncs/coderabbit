@@ -37,6 +37,10 @@ internal actual fun Socket.dataInUnbuffered(): DataInputStream = DataInputStream
 
 internal actual fun Socket.dataOut(): DataOutputStream = DataOutputStream(getOutputStream().buffered())
 
+internal actual fun dataInputOf(input: app.housemove.data.InputStream): DataInputStream = DataInputStream(input)
+
+internal actual fun dataOutputOf(out: app.housemove.data.OutputStream): DataOutputStream = DataOutputStream(out)
+
 internal actual typealias DataInputStream = java.io.DataInputStream
 
 internal actual fun DataInputStream.readUTF(): String = readUTF()

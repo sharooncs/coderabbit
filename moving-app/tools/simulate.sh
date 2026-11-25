@@ -1,7 +1,7 @@
 #!/bin/bash
 # Runs the seven-phone simulation over many random seeds and writes
 # shared/build/audit/simulation.md: seeds, actions, syncs (a third of them by themselves, with no code, as phones on the
-# same Wi-Fi do since 2.3), refusals by rule, and
+# same Wi-Fi do since 2.3), on phones of mixed versions (2.2, 2.3 and 2.4: two 2.4 phones always encrypted), refusals by rule, and
 # every invariant with pass or the seeds that broke it. (SimulationTest is a test
 # of the shared module, so it runs on a plain JVM in shared/.)
 #   tools/simulate.sh              50 seeds, starting at seed 1
@@ -29,7 +29,7 @@ rc=$?
 if [ -f shared/build/audit/simulation.md ]; then
   [ -f shared/build/audit/simulation-loose.md ] && cat shared/build/audit/simulation-loose.md >> shared/build/audit/simulation.md && rm shared/build/audit/simulation-loose.md
   echo "report: shared/build/audit/simulation.md"
-  sed -n '/^| Seeds run/,/^| Syncs by themselves/p;/^## Invariants/,/^## Refusals/p' shared/build/audit/simulation.md | grep -v '^## '
+  sed -n '/^| Seeds run/,/^| Encrypted/p;/^## Invariants/,/^## Refusals/p' shared/build/audit/simulation.md | grep -v '^## '
   grep -A2 '^## Phones that keep working' shared/build/audit/simulation.md | tail -1
 else
   cat build/simulate.txt

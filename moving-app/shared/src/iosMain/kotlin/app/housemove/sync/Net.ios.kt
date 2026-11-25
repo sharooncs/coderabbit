@@ -503,6 +503,10 @@ internal actual fun Socket.dataInUnbuffered(): DataInputStream = DataInputStream
 /** Through an 8 KB buffer, as BufferedOutputStream writes for the JVM's DataOutputStream: nothing goes until it is full or flushed. */
 internal actual fun Socket.dataOut(): DataOutputStream = DataOutputStream(BufferedOutput(output))
 
+internal actual fun dataInputOf(input: InputStream): DataInputStream = DataInputStream(input)
+
+internal actual fun dataOutputOf(out: OutputStream): DataOutputStream = DataOutputStream(out)
+
 /** Reads [input] as java.io.DataInputStream does (Wire.kt). */
 internal actual class DataInputStream(input: InputStream) {
     val wire = WireReader { b, off, len -> input.readBytes(b, off, len) }

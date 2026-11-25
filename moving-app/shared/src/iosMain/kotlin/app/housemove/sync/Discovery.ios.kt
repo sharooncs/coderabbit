@@ -49,8 +49,8 @@ import kotlin.concurrent.Volatile
  * makes iOS ask the local-network question, and "Don't Allow" comes back as kDNSServiceErr_PolicyDenied ([denied]).
  */
 
-/** The TXT record: the protocol version and nothing else (a length byte, then "v=1"). */
-private val TXT = byteArrayOf(3, 'v'.code.toByte(), '='.code.toByte(), '1'.code.toByte())
+/** The TXT record: the protocol version and nothing else (a length byte, then "v=2": encrypted sync, [Discovery.VERSION]). */
+private val TXT = byteArrayOf(3, 'v'.code.toByte(), '='.code.toByte(), Discovery.VERSION[0].code.toByte())
 
 /** A dns_sd operation under way, and what it is about: the context its answers come back with. */
 internal class BonjourOp(val discovery: DnsSdDiscovery, val name: String = "", val port: Int = 0) {

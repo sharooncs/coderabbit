@@ -257,12 +257,13 @@ class JoiningTest {
         assertEquals(a, asha.data.value)
         assertEquals(z, zed.data.value)
         // An invite that names one move, shown by a phone of another (an old QR code on the screen, say), is refused too.
+        // From 2.4 the move's ID is part of the code's key: the encrypted handshake does not even open, and nothing is said.
         val p = asha.addPerson("Hal", Role.HELPER).valueOrNull()!!
         val h = hosting(asha)
         val wrongMove = h.host.inviteFor(p.id, local).valueOrNull()!!.copy(moveId = zed.moveId)
         val phone = moves()
-        assertEquals(WifiSync.WRONG_MOVE, phone.join(phone.readInvite(wrongMove.encode())!!).error)
-        assertEquals(WifiSync.WRONG_MOVE, h.result().error)
+        assertEquals(WifiSync.CODE_NOT_ACCEPTED, phone.join(phone.readInvite(wrongMove.encode())!!).error)
+        assertEquals(WifiSync.WRONG_CODE, h.result().error)
         assertTrue(phone.cards.value.isEmpty())
     }
 

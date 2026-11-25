@@ -435,14 +435,16 @@ class MovesFlowsTest {
         waitFor("Removed from this move")
         assertTrue(phone.cards.value.isEmpty())
 
-        // An invite that names one move, shown by a phone of another.
+        // An invite that names one move, shown by a phone of another. From 2.4 the move's ID is part of the code's key,
+        // so the encrypted handshake does not open: the code is not accepted, and nothing is sent.
         val elm = move(phone("Zed's phone"), "Elm Street")
         val pat = maple.addPerson("Pat", Role.HELPER).valueOrNull()!!
         val wrong = host.inviteFor(pat.id, local).valueOrNull()!!.copy(moveId = elm.moveId).encode()
         tap("Scan again")
         scan(wrong)
         tap("Yes")
-        waitFor("A different move")
+        waitFor("Code not accepted")
+        assertTrue(phone.cards.value.isEmpty())
 
         // Something that is not an invite at all.
         tap("Scan again")

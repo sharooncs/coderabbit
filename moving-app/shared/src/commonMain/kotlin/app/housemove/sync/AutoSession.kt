@@ -1,52 +1,51 @@
 package app.housemove.sync
 
-import app.housemove.data.AppData
 import app.housemove.data.AppJson
 import app.housemove.data.IOException
 import app.housemove.data.Lock
 import app.housemove.data.MoveIdentity
 import app.housemove.data.Person
 import app.housemove.data.Store
+import app.housemove.data.base64Encode
 import app.housemove.data.currentTimeMillis
+import app.housemove.data.decodeUtf8
 import app.housemove.data.hmacSha256
-import app.housemove.data.sameBytes
 import app.housemove.data.synchronized
 import app.housemove.data.toHex
 import app.housemove.data.toUtf8
+import app.housemove.data.P256Der
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlin.concurrent.Volatile
 
 /**
- * One sync by itself between two phones of a move on the same Wi-Fi (design/auto-sync.md): the handshake that proves
- * to each that the other is a phone of the move, today's sync ([WifiSync]) on the same connection with the code check
- * replaced by that proof, and the offer of Wi-Fi keys at the end. D dials, A answers:
+ * One sync by itself between two phones of a move on the same Wi-Fi, from 2.4 (design/encryption.md, Part 2): the dialling
+ * phone D knows, from the tag the answering phone A advertises, which phone A is, and from its pin which key A has.
+ * They run Noise's IK handshake ([Handshake]) with the phones' own keys, then today's sync ([WifiSync]) unchanged inside
+ * the encrypted channel ([SecureChannel]), then each vouches for the keys it has met ([Pins.vouches]):
  *
  * ```
- * D → A   "HMAUTO1", tag, D's service name, nD (32 random bytes)
- * A → D   nA (32 random bytes)
- * D → A   n (int), then n proofs, each HMAC(k, "HMAUTO1 dialler" | tag | nD | nA | idD), sorted
- * A → D   "OK" + HMAC(k, "HMAUTO1 answerer" | tag | nD | nA | idD | idA), or "NO", or "BUSY"
- * D → A   "GO" + HMAC(k, "HMAUTO1 confirm" | tag | nD | nA | idD | idA), or "NO"
- * A → D   "SYNC", or "NO"
- * then WifiSync's own exchange (D says the hello, with AUTO for the code), then D's offer of keys, then A's.
+ * D → A   "HMAUTO2" (writeUTF), then IK's first message as a frame:  e, es, s, ss   payload: [D's phone ID]
+ * A → D   IK's second message as a frame:                           e, ee, se      payload: [A's phone ID, OK | BUSY]
+ * then, in the channel: WifiSync's exchange (D says the hello, with AUTO for the code), D's vouches, A's vouches.
  * ```
  *
- * Strings are writeUTF, as in code sync; `|` joins parts each as a four-byte length and its bytes. The phone IDs are
- * never sent: each side tries the phones of the move it knows. Nothing of the move is sent before both proofs.
+ * The prologue is "HouseMove sync 2" | move ID (`|` joins parts each as a four-byte length and its bytes), the ID A
+ * advertises its tag with; a frame is a two-byte length and its bytes. A answers only a phone of the move (on someone's
+ * list, not retired, its person not removed) that presents the key A has pinned for it: anything else, a stranger, a
+ * removed phone, a phone of the move with another key than its pin, a phone of another move or something that is not
+ * HouseMove, is closed without an answer (the phones say "… has a new key" from their pins: [Pins.changed],
+ * [Pins.ownKeyIsNew]). One that comes while A is syncing by itself with another is told BUSY. D's static key travels encrypted to A's key; A's never travels; nothing of the move,
+ * no phone ID and no long-lived key is in the clear. A takes D as proved only once D's first frame in the channel opens,
+ * so a stranger who holds A's private key still cannot pose to A as D (key-compromise impersonation).
  */
 internal object AutoSession {
-    const val MAGIC = "HMAUTO1"
-    const val NONCE = 32
-    const val PROOF = 32
+    const val MAGIC = "HMAUTO2"
+    private const val PROLOGUE = "HouseMove sync 2"
 
-    /** At most this many proofs are read from a dialling phone. */
-    const val MAX_PROOFS = 64
-
-    private const val DIALLER = "HMAUTO1 dialler"
-    private const val ANSWERER = "HMAUTO1 answerer"
-    private const val CONFIRM = "HMAUTO1 confirm"
-    private const val PAIR = "HMAUTO1 pair"
+    /** A's answers in its handshake message. */
+    const val OK = "OK"
+    const val BUSY = "BUSY"
 
     /** How long each step of the handshake may take, in milliseconds. Tests shorten it. */
     @Volatile
@@ -57,30 +56,57 @@ internal object AutoSession {
     /** The hour [millis] falls in, counted from 1970 (UTC). */
     fun hourOf(millis: Long): Long = millis.floorDiv(3_600_000L)
 
-    /** The tag of the move [moveId] in [hour]: only a phone that knows the move ID can work it out. */
-    fun tag(moveId: String, hour: Long): String = hmacSha256(("housemove-discovery:$moveId").toUtf8(), "tag:$hour".toUtf8()).toHex().take(16)
+    /**
+     * The tag phone [phoneId] of the move [moveId] advertises in [hour]: a phone of the move can work out every phone's,
+     * so it knows whom it dials; anyone without the move ID cannot, and cannot link one hour's tag to the next.
+     */
+    fun phoneTag(moveId: String, hour: Long, phoneId: String): String =
+        hmacSha256("housemove-discovery-2:$moveId".toUtf8(), "phone:$hour:$phoneId".toUtf8()).toHex().take(16)
 
-    /** The tag this phone advertises: of the lowest ID the move is known by, so that phones that know each other's IDs agree. */
-    fun advertisedTag(identity: MoveIdentity, now: Long): String = tag(identity.all.filter { it.isNotEmpty() }.min(), hourOf(now))
+    /** The ID a phone advertises its tag with: the lowest the move is known by, so that phones that know each other's IDs agree. */
+    fun advertisedMove(identity: MoveIdentity): String = identity.all.filter { it.isNotEmpty() }.min()
 
-    /** The tags a phone of the move may advertise now: of every ID the move is known by, in the hour before, this hour and the next. */
-    fun tagsOf(identity: MoveIdentity, now: Long): Set<String> {
-        val hour = hourOf(now)
-        return identity.all.filter { it.isNotEmpty() }.flatMap { id -> (-1L..1L).map { tag(id, hour + it) } }.toSet()
-    }
+    /** The tag this phone ([phoneId]) advertises now. */
+    fun advertisedTag(identity: MoveIdentity, phoneId: String, now: Long): String = phoneTag(advertisedMove(identity), hourOf(now), phoneId)
 
-    private val SERVICE = Regex("HM-([0-9a-f]{16})-[a-z0-9]{1,12}")
+    private val SERVICE = Regex("HN-([0-9a-f]{16})-[a-z0-9]{1,12}")
+    private val OLD_SERVICE = Regex("HM-([0-9a-f]{16})-[a-z0-9]{1,12}")
 
-    /** The name a phone advertises: `HM-<tag>-<random>`. */
-    fun serviceName(tag: String, suffix: String): String = "HM-$tag-$suffix"
+    /** The name a phone advertises: `HN-<tag>-<random>`. 2.3 phones look only for `HM-…`, and pass it by. */
+    fun serviceName(tag: String, suffix: String): String = "HN-$tag-$suffix"
 
     /** The tag in an advertised name, or null when the name is not one of these. */
     fun tagOfService(name: String): String? = SERVICE.matchEntire(name)?.groupValues?.get(1)
 
-    // ---- proofs -------------------------------------------------------------------------------------------------
+    /**
+     * Which of [phones] advertises [tag], and with which of the move's IDs: worked out for every ID the move is known by,
+     * in the hour before, this hour and the next (clocks disagree). Null when none does.
+     */
+    fun whoAdvertises(tag: String, identity: MoveIdentity, phones: Collection<String>, now: Long): Pair<String, String>? {
+        val hour = hourOf(now)
+        for (id in identity.all.filter { it.isNotEmpty() }) for (h in listOf(hour, hour - 1, hour + 1)) for (p in phones) {
+            if (phoneTag(id, h, p) == tag) return p to id
+        }
+        return null
+    }
+
+    /**
+     * Is [name] a 2.3 phone of this move advertising (`HM-<move tag>-…`)? 2.4 does not sync by itself with it, but says why:
+     * "Syncing by itself needs HouseMove 2.4 on … too."
+     */
+    fun isOldPhoneOf(name: String, identity: MoveIdentity, now: Long): Boolean {
+        val tag = OLD_SERVICE.matchEntire(name)?.groupValues?.get(1) ?: return false
+        val hour = hourOf(now)
+        return identity.all.filter { it.isNotEmpty() }.any { id -> (-1L..1L).any { oldTag(id, hour + it) == tag } }
+    }
+
+    /** 2.3's move tag (design/auto-sync.md), only to notice a 2.3 phone of the move: 2.4 never advertises it. */
+    private fun oldTag(moveId: String, hour: Long): String = hmacSha256("housemove-discovery:$moveId".toUtf8(), "tag:$hour".toUtf8()).toHex().take(16)
+
+    // ---- the parts of the messages ------------------------------------------------------------------------------
 
     /** Each part as a four-byte length and its bytes: no two lists of parts give the same bytes. */
-    private fun joined(parts: List<ByteArray>): ByteArray {
+    fun joined(vararg parts: ByteArray): ByteArray {
         val out = ByteArray(parts.sumOf { 4 + it.size })
         var at = 0
         for (p in parts) {
@@ -91,79 +117,85 @@ internal object AutoSession {
         return out
     }
 
-    internal fun proof(key: ByteArray, label: String, tag: String, nD: ByteArray, nA: ByteArray, vararg ids: String): ByteArray =
-        hmacSha256(key, joined(listOf(label.toUtf8(), tag.toUtf8(), nD, nA) + ids.map { it.toUtf8() }))
-
-    /** Which kind of key proved a phone. The order is the one preferred when more than one would. */
-    enum class Kind { PAIR, MEETING, WIFI }
-
-    /** A key this phone proves with, and accepts proofs with: for each of [phones]. [id] names it (a Wi-Fi key's ID). */
-    class Cred(val kind: Kind, val key: ByteArray, val phones: List<String>, val id: String = "")
-
-    /**
-     * Every key [store] can prove with and accept a proof with, each with the phones it counts for (design/auto-sync.md,
-     * the table): its pair keys and meetings for their one phone, its Wi-Fi keys for every phone of the move.
-     */
-    fun creds(store: Store): List<Cred> {
-        val d = store.data.value
-        val me = store.phone.id
-        val members = d.memberPhones() - me
-        val out = ArrayList<Cred>()
-        for ((phone, key) in store.ring.pairs()) if (phone in members) out += Cred(Kind.PAIR, key, listOf(phone))
-        for (m in Meetings.recent(me, store.identity.value.all)) if (m.peer in members) out += Cred(Kind.MEETING, meetingKey(m.code), listOf(m.peer))
-        for (k in store.ring.keys(d)) k.bytes?.let { out += Cred(Kind.WIFI, it, members.toList(), k.id) }
+    /** The parts of [b] as [joined] wrote them, or null when it is not that. */
+    fun parts(b: ByteArray): List<ByteArray>? {
+        val out = ArrayList<ByteArray>()
+        var at = 0
+        while (at < b.size) {
+            if (at + 4 > b.size || out.size >= 16) return null
+            val n = ((b[at].toInt() and 0xff) shl 24) or ((b[at + 1].toInt() and 0xff) shl 16) or ((b[at + 2].toInt() and 0xff) shl 8) or (b[at + 3].toInt() and 0xff)
+            if (n < 0 || at + 4 + n > b.size) return null
+            out += b.copyOfRange(at + 4, at + 4 + n)
+            at += 4 + n
+        }
         return out
     }
 
-    private fun meetingKey(code: String): ByteArray = "meeting:$code".toUtf8()
+    fun prologue(moveId: String): ByteArray = joined(PROLOGUE.toUtf8(), moveId.toUtf8())
 
-    /** The first key and phone, pair keys first, for which [matches] holds. */
-    private fun search(creds: List<Cred>, matches: (Cred, String) -> Boolean): Pair<Cred, String>? {
-        for (c in creds.sortedBy { it.kind.ordinal }) for (phone in c.phones) if (matches(c, phone)) return c to phone
-        return null
+    /** A handshake message as a frame: a two-byte length and its bytes. */
+    fun writeFrame(out: DataOutputStream, message: ByteArray) {
+        require(message.size <= Noise.MAX_MESSAGE)
+        out.write(byteArrayOf((message.size ushr 8).toByte(), message.size.toByte()))
+        out.write(message)
     }
 
-    // ---- the offer of keys --------------------------------------------------------------------------------------
+    fun readFrame(din: DataInputStream): ByteArray = ByteArray(din.readUnsignedShort()).also { din.readFully(it) }
+
+    /** A public key as phone entries carry it (X.509, Base64), from its point. */
+    fun keyText(point: ByteArray): String = base64Encode(P256Der.of(point))
+
+    // ---- vouching -----------------------------------------------------------------------------------------------
 
     @Serializable
-    private class Offer(val keys: List<WifiKey> = emptyList())
+    private class Vouches(val keys: List<Vouch> = emptyList())
 
-    private fun offerText(keys: List<WifiKey>): String {
-        var list = keys
-        while (true) {
-            val text = AppJson.encodeToString(Offer(list))
-            // writeUTF takes at most 65,535 bytes; keys that list very many outsiders are left out, the lowest IDs first.
-            if (text.length < 60_000 || list.isEmpty()) return text
-            list = list.dropLast(1)
+    /** Sends what this phone vouches for after a sync with [peer]. */
+    fun sendVouches(out: DataOutputStream, store: Store, peer: String) {
+        val bytes = AppJson.encodeToString(Vouches(store.pins.vouches(store.data.value, store.phone.id, peer).take(Pins.MAX_VOUCHES))).toUtf8()
+        out.writeInt(bytes.size)
+        out.write(bytes)
+        out.flush()
+    }
+
+    /** Reads what [peer] vouches for, and takes in what may be taken ([Pins.take]). */
+    fun takeVouches(din: DataInputStream, store: Store, peer: String, meeting: Boolean) {
+        val n = din.readInt()
+        if (n < 0 || n > MAX_VOUCHES_BYTES) throw IOException("bad vouches")
+        val bytes = ByteArray(n).also { din.readFully(it) }
+        val list = try {
+            AppJson.decodeFromString<Vouches>(bytes.decodeUtf8()).keys
+        } catch (_: Exception) {
+            emptyList()
         }
+        store.pins.take(list, store.data.value, store.phone.id, peer, meeting)
     }
 
-    private fun offerFrom(text: String): List<WifiKey> = try {
-        AppJson.decodeFromString<Offer>(text).keys.take(Ring.MAX_KEYS * 2)
-    } catch (_: Exception) {
-        emptyList()
-    }
-
-    /** Is the key that proved the other phone still good, and that phone still one of the move, now that the two have synced? */
-    private fun stillGood(store: Store, d: AppData, cred: Cred, peer: String): Boolean =
-        d.memberPhone(peer) != null && (cred.kind != Kind.WIFI || store.ring.keys(d).any { it.id == cred.id })
-
-    private fun pairKey(cred: Cred, tag: String, nD: ByteArray, nA: ByteArray, a: String, b: String): ByteArray =
-        proof(cred.key, PAIR, tag, nD, nA, minOf(a, b), maxOf(a, b))
+    private const val MAX_VOUCHES_BYTES = 1_000_000
 
     // ---- dialling -----------------------------------------------------------------------------------------------
 
-    /** How a dial went. [word]: OK (they synced; [result] says how), NO (refused, or no key to prove with), BUSY, or LOST (not reached, or cut off). */
-    class Dialled(val word: String, val result: WifiSync.Result? = null, val peerPhone: String? = null, val via: Kind? = null)
+    /**
+     * How a dial went. [word]: OK (they synced; [result] says how), NO (not answered, refused, or nothing to dial with),
+     * BUSY, or LOST (not reached, or cut off).
+     */
+    class Dialled(val word: String, val result: WifiSync.Result? = null, val peerPhone: String? = null)
 
     /**
-     * Dial the phone advertising at [host]:[port], prove this phone to it, and sync. [myName] is this phone's advertised
-     * name (or blank), told to the other phone so it knows whom it synced with. Blocking; call off the main thread.
+     * Dial phone [peerPhone], advertising at [host]:[port] with its tag of the move's ID [moveId], and sync with it in an
+     * encrypted channel. Blocking; call off the main thread. [onProven] is called once the other phone has proved it is
+     * [peerPhone].
      */
-    fun dial(store: Store, host: String, port: Int, myName: String = "", connectTimeoutMs: Int = 3_000, onProven: (Person) -> Unit = {}): Dialled {
-        // Meetings and Wi-Fi keys first, then pair keys: at most as many proofs as a phone reads.
-        val creds = creds(store).sortedBy { if (it.kind == Kind.PAIR) 1 else 0 }.take(MAX_PROOFS)
-        if (creds.isEmpty()) return Dialled("NO")
+    fun dial(
+        store: Store, host: String, port: Int, peerPhone: String, moveId: String = advertisedMove(store.identity.value),
+        connectTimeoutMs: Int = 3_000, onProven: (Person) -> Unit = {},
+    ): Dialled {
+        val crypto = noiseCrypto() ?: return Dialled("NO")
+        val me = store.phone.id
+        val s = store.phone.keys.noiseKey() ?: return Dialled("NO")
+        val d = store.data.value
+        val rs = store.pins.keyOf(peerPhone, d, me) ?: return Dialled("NO")
+        val person = d.memberPhone(peerPhone) ?: return Dialled("NO")
         val socket = Socket()
         try {
             socket.connect(host, port, connectTimeoutMs)
@@ -172,51 +204,43 @@ internal object AutoSession {
             return Dialled("LOST")
         }
         try {
-            socket.use { s ->
-                s.soTimeout = stepMs
-                s.tcpNoDelay = true
-                val din = s.dataIn()
-                val out = s.dataOut()
-                val me = store.phone.id
-                val tag = advertisedTag(store.identity.value, currentTimeMillis())
-                val nD = Strong.bytes(NONCE)
-                out.writeUTF(MAGIC); out.writeUTF(tag); out.writeUTF(myName); out.write(nD); out.flush()
-                val nA = ByteArray(NONCE).also { din.readFully(it) }
-                // Sorted, so that their order says nothing of which kinds of key this phone holds.
-                val proofs = creds.map { proof(it.key, DIALLER, tag, nD, nA, me) }.sortedBy { it.toHex() }
-                out.writeInt(proofs.size)
-                for (p in proofs) out.write(p)
+            socket.use { sock ->
+                sock.soTimeout = stepMs
+                sock.tcpNoDelay = true
+                val din = sock.dataIn()
+                val out = sock.dataOut()
+                val hs = Handshake(crypto, Noise.IK, initiator = true, prologue(moveId), s, rs)
+                out.writeUTF(MAGIC)
+                writeFrame(out, hs.write(joined(me.toUtf8())))
                 out.flush()
-                val word = din.readUTF()
-                if (word != "OK") return Dialled(if (word == "BUSY") "BUSY" else "NO")
-                val theirs = ByteArray(PROOF).also { din.readFully(it) }
-                val found = search(creds) { c, phone -> sameBytes(proof(c.key, ANSWERER, tag, nD, nA, me, phone), theirs) }
-                val person = found?.let { store.data.value.memberPhone(it.second) }
-                if (found == null || person == null) {
-                    out.writeUTF("NO"); out.flush()
+                val answer = try {
+                    readFrame(din)
+                } catch (_: IOException) {
+                    // Closed without an answer: this phone is not one the other takes (or it is not who the tag said).
                     return Dialled("NO")
                 }
-                val (cred, peer) = found
-                out.writeUTF("GO"); out.write(proof(cred.key, CONFIRM, tag, nD, nA, me, peer)); out.flush()
-                if (din.readUTF() != "SYNC") return Dialled("NO")
-                onProven(person)
-                s.soTimeout = WifiSync.timeoutMs
-                val result = WifiSync.joinProven(store, s, din, out, WifiSync.Proven(peer, person.id))
-                if (!result.ok) return Dialled("OK", result, peer, cred.kind)
-                // The keys: this phone offers first, then takes in the other's.
-                try {
-                    val good = stillGood(store, store.data.value, cred, peer)
-                    out.writeUTF(offerText(if (good) store.ring.keys(store.data.value) else emptyList())); out.flush()
-                    val offered = offerFrom(din.readUTF())
-                    if (good) {
-                        store.ring.take(offered, store.data.value)
-                        if (cred.kind != Kind.PAIR) store.ring.setPair(peer, pairKey(cred, tag, nD, nA, me, peer))
-                        if (cred.kind == Kind.MEETING) Meetings.used(me, peer)
-                    }
-                } catch (_: IOException) {
-                    // The sync itself went through; the keys are offered again next time.
+                val said = hs.read(answer)?.let { parts(it) }
+                if (said == null || said.size != 2 || said[0].decodeUtf8() != peerPhone) return Dialled("NO")
+                when (said[1].decodeUtf8()) {
+                    OK -> Unit
+                    BUSY -> return Dialled("BUSY")
+                    else -> return Dialled("NO")
                 }
-                return Dialled("OK", result, peer, cred.kind)
+                // Only the phone holding the key pinned for peerPhone could have written that answer.
+                onProven(person)
+                val (send, receive) = hs.split()
+                val channel = SecureChannel(din, out, send, receive)
+                sock.soTimeout = WifiSync.timeoutMs
+                val result = WifiSync.joinProven(store, sock, channel.dataIn, channel.dataOut, WifiSync.Proven(peerPhone, person.id))
+                if (!result.listsSynced()) return Dialled("OK", result, peerPhone)
+                store.pins.synced(peerPhone, store.phone.keys.publicText)
+                try {
+                    sendVouches(channel.dataOut, store, peerPhone)
+                    takeVouches(channel.dataIn, store, peerPhone, meeting = false)
+                } catch (_: IOException) {
+                    // The sync itself went through; the keys are vouched for again next time.
+                }
+                return Dialled("OK", result, peerPhone)
             }
         } catch (_: Exception) {
             return Dialled("LOST")
@@ -225,79 +249,75 @@ internal object AutoSession {
 
     // ---- answering ----------------------------------------------------------------------------------------------
 
-    /** How an answer went: the sync with [peerPhone] (advertised as [peerName], or blank) and what came of it. */
-    class Answered(val result: WifiSync.Result, val peerPhone: String, val peerName: String, val via: Kind)
+    /** How an answer went: the sync with [peerPhone] and what came of it. */
+    class Answered(val result: WifiSync.Result, val peerPhone: String)
 
     /**
-     * Answer a phone that dialled this one on [s], for [store]'s move. [slot] is taken once the phone has proved
-     * itself, for the length of the sync: a phone already syncing by itself says BUSY. Returns null when nothing was
-     * synced (a stranger, a phone of another move, a refused proof, BUSY, a dropped connection).
+     * Answer a phone that dialled this one on [s], for [store]'s move. [slot] is taken once the phone has proved itself,
+     * for the length of the sync: a phone already syncing by itself says BUSY. Returns null when nothing was synced (a
+     * stranger, a phone of another move, a key that is not the pinned one, BUSY, a dropped connection).
      */
     fun answer(store: Store, s: Socket, slot: AutoSlot, onProven: (Person) -> Unit = {}): Answered? {
         s.soTimeout = stepMs
         s.tcpNoDelay = true
         val din = s.dataIn()
         val out = s.dataOut()
-        // The first line is short and known; anything else is not a HouseMove phone, and is not answered.
+        // The first line is short and known; anything else is not a HouseMove phone of 2.4, and is not answered.
         val length = din.readUnsignedShort()
         if (length != MAGIC.length) return null
-        if (ByteArray(length).also { din.readFully(it) }.decodeToString() != MAGIC) return null
-        val tag = din.readUTF()
-        val theirName = din.readUTF()
-        val nD = ByteArray(NONCE).also { din.readFully(it) }
-        // A phone of another move, or anything that is not a phone of this one, is not answered either.
-        if (tag !in tagsOf(store.identity.value, currentTimeMillis())) return null
-        val nA = Strong.bytes(NONCE)
-        out.write(nA); out.flush()
-        val n = din.readInt()
-        if (n !in 0..MAX_PROOFS) return null
-        val proofs = HashSet<String>()
-        repeat(n) { proofs += ByteArray(PROOF).also { din.readFully(it) }.toHex() }
+        if (ByteArray(length).also { din.readFully(it) }.decodeUtf8() != MAGIC) return null
+        val first = readFrame(din)
+        val crypto = noiseCrypto() ?: return null
         val me = store.phone.id
-        val creds = creds(store)
-        val found = search(creds) { c, phone -> proof(c.key, DIALLER, tag, nD, nA, phone).toHex() in proofs }
-        val person = found?.let { store.data.value.memberPhone(it.second) }
-        if (found == null || person == null) {
-            out.writeUTF("NO"); out.flush()
-            return null
+        val sk = store.phone.keys.noiseKey() ?: return null
+        // The ID the dialling phone used is the one this phone advertises with; any other it knows the move by is tried too.
+        val ids = store.identity.value.all.filter { it.isNotEmpty() }.sorted()
+        var hs: Handshake? = null
+        var said: List<ByteArray>? = null
+        for (id in ids) {
+            val h = Handshake(crypto, Noise.IK, initiator = false, prologue(id), sk)
+            val p = h.read(first)?.let { parts(it) } ?: continue
+            hs = h
+            said = p
+            break
         }
+        if (hs == null || said == null || said.size != 1) return null
+        val peer = said[0].decodeUtf8()
+        val d = store.data.value
+        // Only a phone of the move, as this phone has it now, with a pin: anyone else is closed without an answer.
+        val person = d.memberPhone(peer) ?: return null
+        if (peer == me) return null
+        val pinned = store.pins.keyOf(peer, d, me) ?: return null
+        val presented = hs.remoteStatic ?: return null
+        fun reply(word: String) {
+            writeFrame(out, hs.write(joined(me.toUtf8(), word.toUtf8())))
+            out.flush()
+        }
+        // A phone of the move with another key than its pin is not taken: it needs a code sync first (design: never replaced silently).
+        if (!pinned.contentEquals(presented)) return null
         if (!slot.take()) {
-            out.writeUTF("BUSY"); out.flush()
+            reply(BUSY)
             return null
         }
         try {
-            val (cred, peer) = found
-            out.writeUTF("OK"); out.write(proof(cred.key, ANSWERER, tag, nD, nA, peer, me)); out.flush()
-            if (din.readUTF() != "GO") return null
-            val confirm = ByteArray(PROOF).also { din.readFully(it) }
-            if (!sameBytes(confirm, proof(cred.key, CONFIRM, tag, nD, nA, peer, me))) {
-                out.writeUTF("NO"); out.flush()
-                return null
-            }
-            out.writeUTF("SYNC"); out.flush()
+            reply(OK)
+            val (send, receive) = hs.split()
+            val channel = SecureChannel(din, out, send, receive)
+            // The dialling phone has proved its key only once its first frame opens (ss alone could be made with this phone's own key).
+            if (!channel.awaitFirst()) return null
             onProven(person)
             s.soTimeout = WifiSync.timeoutMs
             val host = WifiSync.Host(store, null, "", ::currentTimeMillis, letNewPhonesIn = false, confirmJoins = false, onResult = {})
-            val result = host.serveProven(din, out, WifiSync.Proven(peer, person.id))
-            if (!result.ok) return Answered(result, peer, theirName, cred.kind)
-            // The keys: the dialling phone offers first; this one takes them in, makes one if it still has none, and offers.
+            val result = host.serveProven(channel.dataIn, channel.dataOut, WifiSync.Proven(peer, person.id))
+            if (!result.listsSynced()) return Answered(result, peer)
+            store.pins.synced(peer, store.phone.keys.publicText)
             try {
-                val offered = offerFrom(din.readUTF())
-                val d = store.data.value
-                val good = stillGood(store, d, cred, peer)
-                if (good) {
-                    store.ring.take(offered, d)
-                    store.ring.mintIfNone(d)
-                }
-                out.writeUTF(offerText(if (good) store.ring.keys(d) else emptyList())); out.flush()
-                if (good) {
-                    if (cred.kind != Kind.PAIR) store.ring.setPair(peer, pairKey(cred, tag, nD, nA, peer, me))
-                    if (cred.kind == Kind.MEETING) Meetings.used(me, peer)
-                }
+                takeVouches(channel.dataIn, store, peer, meeting = false)
+                sendVouches(channel.dataOut, store, peer)
             } catch (_: IOException) {
-                // The sync itself went through; the keys are offered again next time.
+                // The sync itself went through; the keys are vouched for again next time.
             }
-            return Answered(result, peer, theirName, cred.kind)
+            return Answered(result, peer)
         } finally {
             slot.release()
         }

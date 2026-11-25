@@ -2,25 +2,28 @@ package app.housemove
 
 import app.housemove.data.Expense
 import app.housemove.data.Role
+import app.housemove.data.deleteRecursively
 import app.housemove.data.newId
 import app.housemove.sync.AutoSync
 import app.housemove.sync.LocalLan
-import app.housemove.sync.Meetings
+import app.housemove.sync.Pin
+import app.housemove.sync.WifiSync
 import app.housemove.sync.memberPhone
-import app.housemove.data.deleteRecursively
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertNotEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * Syncing by itself (design/auto-sync.md), two to four phones in one process: each keeps its moves as the app does, has
- * its own engine, finds the others through an in-process stand-in for Bonjour, and syncs with them over real sockets on
- * 127.0.0.1, with no code shown or scanned after joining. On the JVM in every test run, and on the iPhone simulator in CI.
+ * Syncing by itself (design/auto-sync.md, encrypted from 2.4: design/encryption.md, Part 2), two to four phones in one
+ * process: each keeps its moves as the app does, has its own engine, finds the others through an in-process stand-in for
+ * Bonjour, and syncs with them over real sockets on 127.0.0.1, with no code shown or scanned after joining. On the JVM in
+ * every test run, and on the iPhone simulator in CI.
  */
 class AutoSyncCommonTest {
+    private val undoCrypto = useTestCryptoIfNone()
     private val root = newTempFolder()
     private val lan = LocalLan()
     private val phones = ArrayList<AutoPhone>()
@@ -30,13 +33,14 @@ class AutoSyncCommonTest {
     @AfterTest
     fun cleanUp() {
         phones.forEach { it.close() }
-        Meetings.clear()
         root.deleteRecursively()
+        WifiSync.olderPhone = { false }
+        undoCrypto()
     }
 
     private fun AutoPhone.hasItem(name: String) = store.data.value.liveItems.any { it.name == name }
 
-    private fun AutoPhone.keyIds() = store.ring.keys(store.data.value).map { it.id }.toSet()
+    private fun AutoPhone.pinOf(other: AutoPhone) = store.pins.pinOf(other.store.phone.id)
 
     @Test
     fun twoPhonesFindEachOtherAndSyncWithNoCode() {
@@ -44,9 +48,10 @@ class AutoSyncCommonTest {
         val priya = phone("Priya")
         asha.found("Maple Road")
         asha.invite(priya, Role.DECIDER)
-        // The join was a meeting: the two swap keys by themselves, and from then on need no code.
-        waitUntil("both phones hold the same Wi-Fi key") { asha.keyIds().isNotEmpty() && asha.keyIds() == priya.keyIds() }
-        waitUntil("a pair key each") { asha.store.ring.pairs().containsKey(priya.store.phone.id) && priya.store.ring.pairs().containsKey(asha.store.phone.id) }
+        // The join was encrypted, and each phone pinned the other's key as met.
+        assertEquals(Pin.MET, asha.pinOf(priya)?.how)
+        assertEquals(Pin.MET, priya.pinOf(asha)?.how)
+        assertEquals(priya.store.phone.keys.publicText, asha.pinOf(priya)?.key)
 
         priya.store.createItem("Lamp", null)
         waitUntil("Asha's phone has Priya's lamp") { asha.hasItem("Lamp") }
@@ -58,6 +63,7 @@ class AutoSyncCommonTest {
         assertTrue(priya.engine.status.value.line(now).startsWith("Up to date with Asha's phone · "), priya.engine.status.value.line(now))
         assertTrue(asha.engine.status.value.line(now).startsWith("Up to date with Priya's phone · "), asha.engine.status.value.line(now))
         assertFalse(priya.engine.status.value.needsCode)
+        assertNull(priya.engine.status.value.hint(now))
     }
 
     @Test
@@ -71,9 +77,8 @@ class AutoSyncCommonTest {
         asha.invite(omar, Role.ORGANISER)
         asha.invite(hal, Role.HELPER)
         val all = listOf(asha, priya, omar, hal)
-        waitUntil("every phone holds a Wi-Fi key they share") { all.all { it.keyIds().isNotEmpty() } && all.map { it.keyIds().max() }.toSet().size == 1 }
 
-        // Priya and Omar never met: they sync by themselves all the same, with the move's Wi-Fi key.
+        // Priya and Omar never met: each pins the other's key from the move, and they sync by themselves all the same.
         omar.store.createItem("Bike", null)
         hal.store.createItem("Toolbox", null)
         assertTrue(omar.store.saveCost(Expense(id = newId(), title = "Van hire", amount = 180.0)).ok)
@@ -81,30 +86,35 @@ class AutoSyncCommonTest {
         waitUntil("the Decider has the cost") { priya.store.data.value.expenses.any { it.title == "Van hire" } }
         // A Helper's phone is still never sent costs: the rules of the sync are the same.
         holds("Hal's phone, a Helper's, was sent a cost", 800) { hal.store.data.value.expenses.isEmpty() }
-        assertTrue(priya.store.ring.pairs().containsKey(omar.store.phone.id) || omar.store.ring.pairs().containsKey(priya.store.phone.id))
+        waitUntil("Priya's and Omar's phones hold each other's keys") { priya.pinOf(omar) != null && omar.pinOf(priya) != null }
+        assertEquals(omar.store.phone.keys.publicText, priya.pinOf(omar)!!.key)
     }
 
     @Test
-    fun aPhoneThatJoinedBeforeGetsItsKeysAtItsNextCodeSync() {
+    fun aNewKeyIsTakenOnlyFromAMeetingOrAnOrganisersOrDecidersVouch() {
         val asha = phone("Asha")
-        // Priya's phone joined as a 2.2 phone would: nothing by itself.
-        val priya = phone("Priya", engineOn = false)
+        val priya = phone("Priya")
+        val omar = phone("Omar")
         asha.found("Maple Road")
-        asha.invite(priya, Role.DECIDER)
-        // Long ago: the meeting no longer counts.
-        Meetings.clear()
-        priya.engine.resume()
-        waitUntil("Priya's phone says it needs one code sync") { priya.engine.status.value.needsCode }
-        assertTrue(priya.engine.status.value.hint(0)!!.startsWith("Sync once with a code"))
+        asha.invite(priya, Role.HELPER)
+        asha.invite(omar, Role.DECIDER)
+        waitUntil("Asha's phone has synced with Priya's") { asha.store.pins.speaksV2(priya.store.phone.id) }
+        // Priya's phone lost its key file: it makes a new key, and says so.
+        priya.restart(newKey = true)
+        val newKey = priya.store.phone.keys.publicText
+        waitUntil("Priya's phone says it has a new key") { priya.engine.status.value.newKey == AutoSync.Status.THIS_PHONE }
+        assertEquals("This phone has a new key. Sync once with a code to go on syncing by itself.", priya.engine.status.value.hint(0))
         priya.store.createItem("Lamp", null)
-        holds("nothing synced by itself without a key", 1_000) { !asha.hasItem("Lamp") }
+        holds("Priya's lamp reached a phone by itself, with a key nobody has met", 1_200) { !asha.hasItem("Lamp") && !omar.hasItem("Lamp") }
 
-        // One code sync: from then on, by itself.
-        assertTrue(asha.codeSync(priya).ok)
-        waitUntil("Priya's phone has the Wi-Fi key") { priya.keyIds().isNotEmpty() && priya.keyIds() == asha.keyIds() }
-        priya.store.createItem("Desk", null)
-        waitUntil("Asha's phone has Priya's desk, with no code") { asha.hasItem("Desk") }
-        assertFalse(priya.engine.status.value.needsCode)
+        // Omar's phone meets it (a code sync): Omar's pins the new key, and, a Decider's phone, vouches for it to Asha's.
+        assertTrue(omar.codeSync(priya).ok)
+        assertEquals(newKey, omar.pinOf(priya)!!.key)
+        assertEquals(Pin.MET, omar.pinOf(priya)!!.how)
+        waitUntil("Asha's phone took Priya's new key from Omar's") { asha.pinOf(priya)?.key == newKey }
+        waitUntil("Priya's lamp reached Asha's phone by itself") { asha.hasItem("Lamp") }
+        waitUntil("Priya's phone no longer says so") { priya.engine.status.value.newKey == null }
+        assertTrue(asha.pinOf(priya)!!.how == Pin.MET)
     }
 
     @Test
@@ -118,29 +128,36 @@ class AutoSyncCommonTest {
         asha.invite(omar, Role.DECIDER)
         val halPerson = asha.invite(hal, Role.HELPER)
         val all = listOf(asha, priya, omar, hal)
-        waitUntil("every phone holds the Wi-Fi key") { all.all { it.keyIds().isNotEmpty() } && all.map { it.keyIds().max() }.toSet().size == 1 }
-        // Everyone has met everyone by itself (pair keys), as a family's phones on one Wi-Fi do in a few minutes.
-        waitUntil("pair keys between the phones that stay") {
-            listOf(asha, priya, omar).all { a -> listOf(asha, priya, omar).all { b -> a === b || a.store.ring.pairs().containsKey(b.store.phone.id) } }
-        }
-        val old = asha.keyIds()
+        hal.store.createItem("Hal's first crate", null)
+        waitUntil("everyone has Hal's first crate") { all.all { it.hasItem("Hal's first crate") } }
 
         assertTrue(asha.store.removePerson(halPerson.id).ok)
-        // Asha's phone knows Hal is out: the key Hal holds is dropped, and a new one, which lists Hal's phone, takes over.
-        waitUntil("a new Wi-Fi key that the others share") {
-            val k = listOf(asha, priya, omar).map { it.keyIds() }
-            k.all { it.isNotEmpty() && it.intersect(old).isEmpty() } && k.toSet().size == 1
+        // Asha's phone knows Hal is out: Hal's phone is unpinned at once. The others hear of it at their next sync.
+        assertNull(asha.store.pins.keyOf(hal.store.phone.id, asha.store.data.value, asha.store.phone.id))
+        waitUntil("every phone that stays knows Hal is out, and has unpinned Hal's phone") {
+            listOf(asha, priya, omar).all { it.store.data.value.memberPhone(hal.store.phone.id) == null && it.pinOf(hal) == null }
         }
-        assertTrue(hal.keyIds().isNotEmpty(), "Hal's phone still holds the old key: it heard nothing")
-        for (p in listOf(asha, priya, omar)) assertEquals(null, p.store.data.value.memberPhone(hal.store.phone.id), "${p.name} knows Hal is out")
-
-        // Hal's phone can no longer sync by itself, though it holds the old key; the others still do, with no code.
-        hal.store.createItem("Hal's crate", null)
+        // They carry on by themselves; Hal's phone, with the keys it knew, can no longer sync by itself with any of them.
         omar.store.createItem("Omar's rug", null)
         waitUntil("Priya's phone has Omar's rug") { priya.hasItem("Omar's rug") && asha.hasItem("Omar's rug") }
+        hal.store.createItem("Hal's crate", null)
         holds("Hal's crate reached a phone of the move", 1_500) { listOf(asha, priya, omar).none { it.hasItem("Hal's crate") } }
         assertFalse(hal.hasItem("Omar's rug"))
-        assertNotEquals(hal.keyIds(), asha.keyIds())
+    }
+
+    @Test
+    fun aPhoneWithAnOlderHouseMoveIsSyncedByCodeAndNamed() {
+        val asha = phone("Asha")
+        val priya = phone("Priya", engineOn = false)
+        // Priya's phone is on 2.3 (it stands in for one): it shows eight-character codes and speaks plain.
+        val older = priya.moves.phone.id
+        WifiSync.olderPhone = { it == older }
+        asha.found("Maple Road")
+        asha.invite(priya, Role.DECIDER)
+        val r = asha.codeSync(priya)
+        assertTrue(r.ok && r.plain, "a plain sync: ${r.error}")
+        waitUntil("Asha's phone says Priya's needs 2.4") { asha.engine.status.value.older == "Priya" }
+        assertEquals("Syncing by itself needs HouseMove 2.4 on Priya's phone too.", asha.engine.status.value.hint(0))
     }
 
     @Test
@@ -149,13 +166,24 @@ class AutoSyncCommonTest {
         val priya = phone("Priya")
         asha.found("Maple Road")
         asha.invite(priya, Role.HELPER)
-        waitUntil("they swapped keys") { priya.keyIds().isNotEmpty() }
+        waitUntil("they synced by themselves") { asha.store.pins.speaksV2(priya.store.phone.id) && asha.engine.status.value.state == AutoSync.State.UP_TO_DATE }
         priya.moves.phone.updateSettings { it.copy(autoSync = false) }
         priya.engine.poke()
         waitUntil("Priya's phone stopped") { priya.engine.status.value.state == AutoSync.State.OFF }
         assertEquals("Sync by itself is off", priya.engine.status.value.line(0))
-        // Switching off stops new syncs; one already under way may finish. Wait until none is, on either side.
-        waitUntil("no sync under way") { asha.engine.status.value.state != AutoSync.State.SYNCING }
+        // Switching off stops new syncs; one already under way (its handshake perhaps not yet done) may finish. Wait until
+        // none has been under way for a while.
+        var last = -1L
+        var calmSince = 0L
+        waitUntil("no sync under way") {
+            val now = app.housemove.data.currentTimeMillis()
+            val at = asha.store.device.value.lastSyncAt
+            if (asha.engine.status.value.state == AutoSync.State.SYNCING || at != last) {
+                last = at
+                calmSince = now
+            }
+            now - calmSince > 1_500
+        }
         priya.store.createItem("Lamp", null)
         holds("nothing went while the setting was off", 1_000) { !asha.hasItem("Lamp") }
         priya.moves.phone.updateSettings { it.copy(autoSync = true) }
@@ -177,5 +205,11 @@ class AutoSyncCommonTest {
         assertEquals("Not on Wi-Fi", s.copy(state = AutoSync.State.NO_WIFI).line(0))
         assertEquals("HouseMove may not use your Wi-Fi", s.copy(state = AutoSync.State.DENIED).line(0))
         assertEquals(null, s.hint(1_000_000))
+        // 2.4's: a new key, here or there, and a phone with an older HouseMove.
+        assertEquals("Priya's phone has a new key. Sync once with a code to go on syncing by itself.", s.copy(newKey = "Priya").hint(0))
+        assertEquals("This phone has a new key. Sync once with a code to go on syncing by itself.", s.copy(newKey = AutoSync.Status.THIS_PHONE).hint(0))
+        assertEquals("Syncing by itself needs HouseMove 2.4 on Priya's phone too.", s.copy(older = "Priya").hint(0))
+        assertEquals("Syncing by itself needs HouseMove 2.4 on the other phone too.", s.copy(older = AutoSync.Status.ANOTHER).hint(0))
+        assertEquals("Sync once with a code to start syncing by itself.", s.copy(needsCode = true, older = "Priya").hint(0))
     }
 }

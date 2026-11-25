@@ -106,16 +106,28 @@ val sealingSources = tasks.register<GoldenSources>("sealingSources") {
     output.set(layout.buildDirectory.dir("generated/sealing/kotlin"))
 }
 
+// The encrypted sync's handshakes and frames with fixed keys (src/jvmTest/resources/noise, NoiseFixtureTest), for the
+// common tests: the JVM, the reference crypto on the simulator and CryptoKit in the app must all make them byte for byte.
+val noiseSources = tasks.register<GoldenSources>("noiseSources") {
+    fixtures.from(layout.projectDirectory.dir("src/jvmTest/resources/noise").asFileTree.matching { include("*.json") })
+    objectName.set("NoiseFiles")
+    packageName.set("app.housemove")
+    about.set("src/jvmTest/resources/noise")
+    output.set(layout.buildDirectory.dir("generated/noise/kotlin"))
+}
+
 // What the iPhone app's crypto check opens and seals (CryptoCheck.kt, iosMain): Android's update file from the golden
-// fixtures and the sealing known-answer file. Only the app run with -HMCryptoCheck YES (the UI tests) reads them.
+// fixtures, the sealing known-answer file, and the encrypted sync's handshakes. Only the app run with -HMCryptoCheck YES
+// (the UI tests) reads them.
 val cryptoCheckSources = tasks.register<GoldenSources>("cryptoCheckSources") {
     fixtures.from(
         layout.projectDirectory.file("src/jvmTest/resources/golden/update.json"),
         layout.projectDirectory.file("src/jvmTest/resources/sealing/update-sealed.json"),
+        layout.projectDirectory.file("src/jvmTest/resources/noise/handshakes.json"),
     )
     objectName.set("CryptoCheckFiles")
     packageName.set("app.housemove.data")
-    about.set("golden/update.json and sealing/update-sealed.json")
+    about.set("golden/update.json, sealing/update-sealed.json and noise/handshakes.json")
     output.set(layout.buildDirectory.dir("generated/cryptoCheck/kotlin"))
 }
 
@@ -174,6 +186,7 @@ kotlin {
             // The golden fixtures as Kotlin (goldenSources, above), for the tests that also run on the iPhone simulator.
             kotlin.srcDir(goldenSources)
             kotlin.srcDir(sealingSources)
+            kotlin.srcDir(noiseSources)
             dependencies {
                 implementation(kotlin("test"))
             }

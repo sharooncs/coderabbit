@@ -60,6 +60,7 @@ class NotANumberTest {
     fun hangUp() {
         open.forEach { it.stop() }
         servers.forEach { it.close() }
+        WifiSync.olderPhone = { false }
     }
 
     private fun hosting(store: Store): Pair<WifiSync.Host, LinkedBlockingQueue<WifiSync.Result>> {
@@ -69,10 +70,12 @@ class NotANumberTest {
 
     private fun LinkedBlockingQueue<WifiSync.Result>.next(): WifiSync.Result = poll(20, TimeUnit.SECONDS) ?: throw AssertionError("the host reported nothing")
 
-    private fun invited(host: Store, name: String, role: Role): Store {
+    /** [name]'s phone joins [host]'s move; with [older], it is a phone with an older HouseMove, which syncs only plain. */
+    private fun invited(host: Store, name: String, role: Role, older: Boolean = false): Store {
         val p = host.addPerson(name, role).valueOrNull()!!
         val (h, results) = hosting(host)
         val phone = phone(name)
+        if (older) WifiSync.olderPhone = { it == phone.phone.id }
         val r = WifiSync.join(phone, h.inviteFor(p.id, local).valueOrNull()!!)
         assertTrue(r.error, r.ok)
         assertTrue(results.next().ok)
@@ -355,8 +358,9 @@ class NotANumberTest {
             assertNull(bad, asha.data.value.firstNonFinite())
         }
 
-        // The other way: a phone of the move that sends its data with the cost spoilt to a hosting phone.
-        val dee = invited(asha, "Dee", Role.DECIDER)
+        // The other way: a phone of the move that sends its data with the cost spoilt to a hosting phone. It says the plain
+        // hello by hand, so it is a phone with an older HouseMove (a 2.4 phone saying it would be refused for that alone).
+        val dee = invited(asha, "Dee", Role.DECIDER, older = true)
         sync(asha, dee)
         fun sendToTheHost(change: (String) -> String): Pair<WifiSync.Result, Boolean> {
             val (h, results) = hosting(asha)

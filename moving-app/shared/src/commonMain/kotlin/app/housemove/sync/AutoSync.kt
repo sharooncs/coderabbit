@@ -19,11 +19,12 @@ import kotlin.concurrent.Volatile
 import kotlin.random.Random
 
 /**
- * Syncing by itself on the same Wi-Fi (design/auto-sync.md): while HouseMove is open ([resume] to [pause]) and the
- * setting is on ([enabled]), this phone advertises the move in use ([currentStore]) through [discovery], listens for
- * phones of the move, and syncs with each one it finds ([AutoSession]): when it comes to the front, every two minutes,
- * shortly after a change made here, when the network changes, and at once after a code was used (to swap keys).
- * One sync by itself at a time, dialling or answering; a phone that fails is tried again later and later.
+ * Syncing by itself on the same Wi-Fi (design/auto-sync.md, encrypted from 2.4: design/encryption.md, Part 2): while
+ * HouseMove is open ([resume] to [pause]) and the setting is on ([enabled]), this phone advertises its own tag for the
+ * move in use ([currentStore]) through [discovery], listens for phones of the move, and syncs in an encrypted channel
+ * with each one it finds and has a pin for ([AutoSession]): when it comes to the front, every two minutes, shortly
+ * after a change made here, when the network changes, and at once when its pins change (a code sync, a phone that has
+ * joined). One sync by itself at a time, dialling or answering; a phone that fails is tried again later and later.
  *
  * [status] says, in the words of [Status.line], what it is doing, for the Sync and backup screen (Android) and "Get
  * fresh data" (iPhone). [loopbackOnly] listens on 127.0.0.1 alone (tests and the iPhone's demo mode).
@@ -41,7 +42,10 @@ class AutoSync(
     /**
      * The status line's facts: the [state], the phone being synced with ([syncingWith], its person's name), the last
      * phone synced with and when ([lastWith], [lastAt], by code or by itself), whether this phone still needs one sync
-     * by code before it can sync by itself ([needsCode]), and how many phones of the move it sees ([phones]).
+     * by code before it can sync by itself ([needsCode]), and how many phones of the move it sees ([phones]). [newKey]
+     * names a phone whose key is not the one pinned here ([THIS_PHONE] when it is this phone's key another phone did not
+     * take), and [older] one with an older HouseMove, which does not sync by itself with this one ([ANOTHER] when its
+     * name is not known).
      */
     data class Status(
         val state: State,
@@ -50,6 +54,8 @@ class AutoSync(
         val lastAt: Long = 0,
         val needsCode: Boolean = false,
         val phones: Int = 0,
+        val newKey: String? = null,
+        val older: String? = null,
     ) {
         /** The status line: "Up to date with Asha's phone · 2 min ago", "Looking for the family's phones on this Wi-Fi"… */
         fun line(now: Long): String = when (state) {
@@ -65,12 +71,21 @@ class AutoSync(
         fun hint(now: Long): String? = when {
             state == State.OFF -> "Phones sync when one shows its code and the other scans it."
             state == State.DENIED -> "Switch on Local Network for HouseMove in Settings to sync by itself."
+            newKey == THIS_PHONE -> "This phone has a new key. Sync once with a code to go on syncing by itself."
+            newKey != null -> "${phoneOf(newKey)} has a new key. Sync once with a code to go on syncing by itself."
             needsCode -> "Sync once with a code to start syncing by itself."
+            older != null -> "Syncing by itself needs HouseMove 2.4 on ${if (older == ANOTHER) "the other phone" else phoneOf(older)} too."
             state != State.UP_TO_DATE && lastAt > 0 -> "Last synced with ${phoneOf(lastWith)} ${ago(lastAt, now)}."
             else -> null
         }
 
         companion object {
+            /** [newKey] for this phone's own key, which another phone did not take. */
+            const val THIS_PHONE = "\u0000this"
+
+            /** [older] for a phone of the move with an older HouseMove whose name is not known (seen on the Wi-Fi). */
+            const val ANOTHER = "\u0000another"
+
             /** "Asha's phone", from its person's name; "another phone" when there is none. */
             fun phoneOf(name: String): String = name.trim().let { if (it.isEmpty()) "another phone" else "$it's phone" }
 
@@ -121,8 +136,8 @@ class AutoSync(
     @Volatile
     private var wake = CountDownLatch(1)
 
-    /** A phone found on the network, by its advertised name. Read and changed on the engine's thread only. */
-    private class Peer(val name: String, val firstSeen: Long) {
+    /** A phone of the move found on the network, by its advertised name: [phone] and the move ID its tag was made with. */
+    private class Peer(val name: String, val firstSeen: Long, val phone: String, val moveId: String) {
         var host = ""
         var port = 0
         var lastTry = 0L
@@ -139,11 +154,15 @@ class AutoSync(
     private var browsing = false
     private var lastAddresses: List<String>? = null
     private var addressesAt = 0L
-    private var seenMeetings = -1
-    private var seenRing = -1
+    private var seenPins = -1
     private var lastData: AppData? = null
-    private var meetingAt = 0L
+    private var pinsAt = 0L
     private var pushAt = 0L
+
+    /** A 2.3 phone of the move advertises on this network ([AutoSession.isOldPhoneOf]). */
+    @Volatile
+    private var oldPhoneHere = false
+
 
     /** The move the engine works on; the listener answers for it too. */
     @Volatile
@@ -152,10 +171,8 @@ class AutoSync(
     @Volatile
     private var peerCount = 0
 
-    // Whom this phone synced with lately, by phone ID, and which phone each advertised name is. Under [lock]: the
-    // listener's threads write them too.
+    // Whom this phone synced with lately, by phone ID. Under [lock]: the listener's threads write it too.
     private val contact = HashMap<String, Long>()
-    private val nameToPhone = HashMap<String, String>()
 
     @Volatile
     private var dialling: String? = null
@@ -267,7 +284,8 @@ class AutoSync(
         }
 
         val identity = store.identity.value
-        val tag = AutoSession.advertisedTag(identity, now)
+        val me = store.phone.id
+        val tag = AutoSession.advertisedTag(identity, me, now)
         val myPort = synchronized(lock) {
             if (!running) return
             val l = listener ?: AutoListener(loopbackOnly, { forStore }, slot, ::answerProven, ::answerEnded).also {
@@ -287,27 +305,32 @@ class AutoSync(
             l.port
         }
 
-        // The phones of this move on the network now. One newly found (or found again) is synced with at once. This phone's
-        // own service is left out, also when the network renamed it (on one of its addresses, at its port).
-        val tags = AutoSession.tagsOf(identity, now)
+        // The phones of this move on the network now, each known by its tag: only phones this phone has a pin for (a stranger's
+        // tag, or another move's, matches none). One newly found (or found again) is synced with at once. This phone's own
+        // service is left out, also when the network renamed it (on one of its addresses, at its port).
+        val pinned = store.pins.learn(store.data.value, me).keys
         val mine = (lastAddresses ?: emptyList()) + "127.0.0.1"
-        val seen = discovery.found().filter { it.name != advertised && AutoSession.tagOfService(it.name) in tags && !(it.port == myPort && it.host in mine) }
-        peers.keys.retainAll(seen.map { it.name }.toSet())
-        for (f in seen) {
-            val p = peers.getOrPut(f.name) { Peer(f.name, now) }
+        val found = discovery.found().filter { it.name != advertised && !(it.port == myPort && it.host in mine) }
+        oldPhoneHere = found.any { AutoSession.isOldPhoneOf(it.name, identity, now) }
+        val seen = HashMap<String, Pair<Found, Pair<String, String>>>()
+        for (f in found) {
+            val t = AutoSession.tagOfService(f.name) ?: continue
+            val who = peers[f.name]?.let { it.phone to it.moveId }?.takeIf { it.first in pinned } ?: AutoSession.whoAdvertises(t, identity, pinned, now) ?: continue
+            seen[f.name] = f to who
+        }
+        peers.keys.retainAll(seen.keys)
+        for ((name, fw) in seen) {
+            val (f, who) = fw
+            val p = peers.getOrPut(name) { Peer(name, now, who.first, who.second) }
             p.host = f.host
             p.port = f.port
         }
         peerCount = peers.size
 
-        // A code was just used, or the keys changed: try everyone afresh.
-        if (Meetings.version != seenMeetings) {
-            if (seenMeetings >= 0) meetingAt = now
-            seenMeetings = Meetings.version
-            freshStart()
-        }
-        if (store.ring.version != seenRing) {
-            seenRing = store.ring.version
+        // The pins changed (a code sync, a phone that joined, a key vouched for): try everyone afresh, at once.
+        if (store.pins.version != seenPins) {
+            if (seenPins >= 0) pinsAt = now
+            seenPins = store.pins.version
             freshStart()
         }
         // A change made on this phone that no other phone has yet: pushed to everyone a little after the last one.
@@ -343,12 +366,12 @@ class AutoSync(
     /** Is it time to sync with [p]? (design/auto-sync.md, "When syncs happen" and "Who dials") */
     private fun due(p: Peer, now: Long): Boolean {
         val mine = advertised ?: return false
-        val last = maxOf(p.lastOk, synchronized(lock) { nameToPhone[p.name]?.let { contact[it] } } ?: 0L)
+        val last = maxOf(p.lastOk, synchronized(lock) { contact[p.phone] } ?: 0L)
         return when {
             // Found since HouseMove came to the front or the network changed: at once.
             p.lastTry == 0L -> true
-            // A code was just used: swap keys while the meeting lasts.
-            p.lastTry < meetingAt -> true
+            // The pins just changed: at once.
+            p.lastTry < pinsAt -> true
             // A change made here: a little after the last one.
             pushAt > 0 && p.lastTry < pushAt -> now >= pushAt + debounceMs
             // The timed syncs: the phone whose name sorts first dials; the other only if it has not been called for long.
@@ -358,7 +381,7 @@ class AutoSync(
     }
 
     private fun dial(store: Store, p: Peer) {
-        val d = AutoSession.dial(store, p.host, p.port, advertised ?: "") { person ->
+        val d = AutoSession.dial(store, p.host, p.port, p.phone, p.moveId) { person ->
             dialling = person.name
             publish(null, store)
         }
@@ -378,12 +401,8 @@ class AutoSync(
                 p.failures = 0
                 p.busy = 0
                 p.nextTry = 0
-                val phone = d.peerPhone ?: ""
-                synchronized(lock) {
-                    contact[phone] = t
-                    nameToPhone[p.name] = phone
-                }
-                synced(store, phone, r, t)
+                synchronized(lock) { contact[p.phone] = t }
+                synced(store, p.phone, r, t)
             }
             else -> failed(p, t)
         }
@@ -409,10 +428,7 @@ class AutoSync(
         answering = null
         if (a != null && a.result.listsSynced()) {
             val t = clock()
-            synchronized(lock) {
-                contact[a.peerPhone] = t
-                if (a.peerName.isNotEmpty()) nameToPhone[a.peerName] = a.peerPhone
-            }
+            synchronized(lock) { contact[a.peerPhone] = t }
             synced(store, a.peerPhone, a.result, t)
         }
         publish(null, store)
@@ -440,9 +456,20 @@ class AutoSync(
             dev != null && dev.lastSyncAt > 0 && now - dev.lastSyncAt < upToDateMs -> State.UP_TO_DATE
             else -> State.LOOKING
         }
-        val needsCode = store != null && d != null && s != State.OFF && (d.memberPhones() - store.phone.id).isNotEmpty() &&
-            store.ring.empty(d) && Meetings.recent(store.phone.id, store.identity.value.all).isEmpty()
-        _status.value = Status(s, with ?: "", dev?.lastSyncWith ?: "", dev?.lastSyncAt ?: 0, needsCode, if (s == State.OFF) 0 else peerCount)
+        var needsCode = false
+        var newKey: String? = null
+        var older: String? = null
+        if (store != null && d != null && s != State.OFF) {
+            val me = store.phone.id
+            val others = d.memberPhones() - me
+            val pins = store.pins.learn(d, me)
+            // Other phones of the move, and not one with a key to sync with: a code sync first.
+            needsCode = others.isNotEmpty() && pins.isEmpty()
+            newKey = if (store.pins.ownKeyIsNew(store.phone.keys.publicText)) Status.THIS_PHONE
+            else store.pins.changed(d, me).firstOrNull()?.let { d.memberPhone(it)?.name ?: "" }
+            older = store.pins.olderPhones(d, me).firstOrNull()?.let { d.memberPhone(it)?.name ?: "" } ?: if (oldPhoneHere) Status.ANOTHER else null
+        }
+        _status.value = Status(s, with ?: "", dev?.lastSyncWith ?: "", dev?.lastSyncAt ?: 0, needsCode, if (s == State.OFF) 0 else peerCount, newKey, older)
     }
 
     private companion object {

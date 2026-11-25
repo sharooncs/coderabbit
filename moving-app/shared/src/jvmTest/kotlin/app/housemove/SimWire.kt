@@ -2,6 +2,11 @@ package app.housemove
 
 import app.housemove.data.AppData
 import app.housemove.data.AppJson
+import app.housemove.data.JcaCrypto
+import app.housemove.data.toHex
+import app.housemove.sync.CipherState
+import app.housemove.sync.Noise
+import app.housemove.sync.SecureChannel
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.Closeable
@@ -10,8 +15,32 @@ import java.io.IOException
 import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
+
+/**
+ * The keys of the encrypted sessions made in this process, by the initiator's one-use public key, as [Noise.keyLog] gives
+ * them (as TLS's SSLKEYLOGFILE): only so that the tests' relays can read what crossed, to check each merge as they do for a
+ * plain sync. [install] puts the log in; the app never has one.
+ */
+internal object SessionKeys {
+    private val keys = ConcurrentHashMap<String, Pair<ByteArray, ByteArray>>()
+
+    fun install() {
+        Noise.keyLog = { e, i2r, r2i -> keys[e.toHex()] = i2r to r2i }
+    }
+
+    fun uninstall() {
+        Noise.keyLog = null
+        keys.clear()
+    }
+
+    fun of(ephemeral: ByteArray): Pair<ByteArray, ByteArray>? = keys[ephemeral.toHex()]
+
+    /** Every key logged so far: the sniffing test looks for them on the wire too. */
+    fun all(): List<ByteArray> = keys.values.flatMap { listOf(it.first, it.second) }
+}
 
 /**
  * The network between two phones in a test: a real localhost socket on each
@@ -29,11 +58,17 @@ import kotlin.concurrent.thread
  * when someone walks out of Wi-Fi range. The side that was receiving sees the
  * bytes that got through and then the end of the connection; what the sender
  * goes on to send is thrown away.
+ *
+ * An encrypted sync (2.4: a code sync that opens with HMSYNC4, or a sync by itself with HMAUTO2) is seen at its first
+ * bytes: the handshake's two turns before it are passed on and not counted (its third message goes with the hello, in
+ * phase 1), phases 9 and 10 are the phones vouching for keys, and [bytes] gives what each phase carried as the phones
+ * read it, decrypted with the session's keys from [SessionKeys] (a frame cut short gives nothing). [raw] is every byte
+ * that went either way, as anyone on the network would see it.
  */
 internal class Wire(
     private val targetPort: Int,
     private val cut: Cut? = null,
-    /** Phases passed on before the sync's first (the handshake of syncing by itself, AutoSession): not counted, never cut. */
+    /** Phases passed on before the sync's first (2.3's handshake of syncing by itself): not counted, never cut. */
     private val skip: Int = 0,
     private val onPhase: (phase: Int) -> Unit = {},
 ) : Closeable {
@@ -57,7 +92,18 @@ internal class Wire(
     var phases = 0
         private set
 
+    /** The sync was encrypted (it opened with a 2.4 handshake); [xx]: a code sync's (XXpsk0), else one by itself (IK). */
+    @Volatile
+    var encrypted = false
+        private set
+
+    @Volatile
+    var xx = false
+        private set
+
     private val said = HashMap<Int, ByteArrayOutputStream>()
+    private val rawOut = ByteArrayOutputStream()
+    private val rawBack = ByteArrayOutputStream()
     private val talks = ArrayList<Talk>()
 
     init {
@@ -81,8 +127,14 @@ internal class Wire(
         }
     }
 
-    /** The bytes of [phase] that reached the other side. */
-    fun bytes(phase: Int): ByteArray? = synchronized(said) { said[phase]?.toByteArray() }
+    /** Every byte that went from the joining phone (0) or the hosting one (1), handshakes and all, on every connection. */
+    fun raw(direction: Int): ByteArray = synchronized(said) { (if (direction == 0) rawOut else rawBack).toByteArray() }
+
+    /** What crossed in [phase], as the receiving phone read it (decrypted, for an encrypted sync). */
+    fun bytes(phase: Int): ByteArray? {
+        val seen = synchronized(said) { said[phase]?.toByteArray() } ?: return null
+        return if (encrypted) decrypted()[phase] else seen
+    }
 
     /** The dataset that crossed in phase 3 (joiner to host) or 4 (host to joiner), if all of it got through. */
     fun data(phase: Int): AppData? {
@@ -117,6 +169,43 @@ internal class Wire(
         return out
     }
 
+    /** Each phase's frames opened, in order, with the session's keys; a phase whose frames do not open gives what opened before. */
+    private fun decrypted(): Map<Int, ByteArray> {
+        val first = raw(0)
+        // writeUTF of the magic (2 + 7 bytes), the first message's length (2), then its one-use key (65 bytes).
+        if (first.size < 11 + 65) return emptyMap()
+        val keys = SessionKeys.of(first.copyOfRange(11, 11 + 65)) ?: return emptyMap()
+        val phasesSeen = synchronized(said) { said.keys.sorted() }
+        val out = HashMap<Int, ByteArray>()
+        for (dir in 0..1) {
+            val cipher = CipherState(JcaCrypto).apply { initializeKey(if (dir == 0) keys.first else keys.second) }
+            var frames = 0L
+            var opened = true
+            for (phase in phasesSeen.filter { (it % 2 == 1) == (dir == 0) }) {
+                val b = synchronized(said) { said[phase]!!.toByteArray() }
+                var at = 0
+                // The third message of XXpsk0 goes before the joiner's first frame.
+                if (dir == 0 && phase == 1 && xx && b.size >= 2) at = 2 + (((b[0].toInt() and 0xff) shl 8) or (b[1].toInt() and 0xff))
+                val plain = ByteArrayOutputStream()
+                while (opened && at + 2 <= b.size) {
+                    val len = ((b[at].toInt() and 0xff) shl 8) or (b[at + 1].toInt() and 0xff)
+                    if (at + 2 + len > b.size) break
+                    val p = cipher.decryptWithAd(ByteArray(0), b.copyOfRange(at + 2, at + 2 + len))
+                    if (p == null) {
+                        opened = false
+                        break
+                    }
+                    plain.write(p)
+                    at += 2 + len
+                    frames++
+                    if (frames % SecureChannel.REKEY_EVERY == 0L) cipher.rekey()
+                }
+                out[phase] = plain.toByteArray()
+            }
+        }
+        return out
+    }
+
     override fun close() {
         try {
             server.close()
@@ -131,6 +220,9 @@ internal class Wire(
         private var inPhase = 0
         private var lost = false
         private val done = BooleanArray(2)
+
+        /** The turns of a 2.4 handshake before the sync's first phase, once its first bytes are seen. */
+        private var handshake = 0
 
         fun start() {
             thread(name = "wire-out", isDaemon = true) { pump(0, joiner, host) }
@@ -167,15 +259,24 @@ internal class Wire(
             if (dir != lastDir) {
                 lastDir = dir
                 turns++
-                if (turns > skip) phase++
+                if (planned && turns == 1 && dir == 0 && n >= 9) {
+                    val magic = String(buf, 2, 7, Charsets.ISO_8859_1)
+                    if (buf[0] == 0.toByte() && buf[1] == 7.toByte() && (magic == "HMSYNC4" || magic == "HMAUTO2")) {
+                        encrypted = true
+                        xx = magic == "HMSYNC4"
+                        handshake = 2
+                    }
+                }
+                if (turns > skip + handshake) phase++
                 inPhase = 0
-                if (planned && turns > skip) {
+                if (planned && turns > skip + handshake) {
                     phases = phase
                     if (cut != null && cut.phase < phase) return lose(to)
                     onPhase(phase)
                 }
             }
-            if (turns <= skip) {
+            if (planned) synchronized(said) { (if (dir == 0) rawOut else rawBack).write(buf, 0, n) }
+            if (turns <= skip + handshake) {
                 // The handshake: passed on as it is.
                 try {
                     to.getOutputStream().apply { write(buf, 0, n); flush() }

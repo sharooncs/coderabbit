@@ -13,7 +13,7 @@ class Found(val name: String, val host: String, val port: Int)
  * time; what the platform reports comes in on threads of its own.
  */
 interface Discovery {
-    /** Advertise this phone as [name] (`HM-<tag>-<random>`) on [port], in place of anything it advertised before. */
+    /** Advertise this phone as [name] (`HN-<phone tag>-<random>`) on [port], in place of anything it advertised before. */
     fun advertise(name: String, port: Int)
 
     /** Start looking for other phones' services; what is found comes into [found]. */
@@ -34,6 +34,12 @@ interface Discovery {
     companion object {
         /** HouseMove's Bonjour service type, as the iPhone's Info.plist declares it (NSBonjourServices). */
         const val SERVICE_TYPE = "_housemove._tcp"
+
+        /**
+         * The protocol version in the TXT record (`v=2`): 2.4's encrypted sync, advertised under `HN-…` names
+         * (design/encryption.md, "Discovery"). 2.3 advertised `v=1` under `HM-…`.
+         */
+        const val VERSION = "2"
     }
 }
 

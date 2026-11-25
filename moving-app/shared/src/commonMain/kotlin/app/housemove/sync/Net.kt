@@ -2,6 +2,8 @@ package app.housemove.sync
 
 import app.housemove.data.File
 import app.housemove.data.IOException
+import app.housemove.data.InputStream
+import app.housemove.data.OutputStream
 
 /*
  * The network as the phone-to-phone sync uses it (step 1 of design/ios-plan.md): blocking TCP sockets with timeouts,
@@ -47,6 +49,12 @@ internal expect fun Socket.dataInUnbuffered(): DataInputStream
 
 /** The bytes this socket sends, buffered: nothing goes until [flush]. */
 internal expect fun Socket.dataOut(): DataOutputStream
+
+/** [input] read as DataInputStream reads (the plain side of an encrypted channel, [SecureChannel]). */
+internal expect fun dataInputOf(input: InputStream): DataInputStream
+
+/** [out] written as DataOutputStream writes (the plain side of an encrypted channel): it sends when it is flushed. */
+internal expect fun dataOutputOf(out: OutputStream): DataOutputStream
 
 /** java.io.DataInputStream on Android and the JVM. */
 internal expect class DataInputStream

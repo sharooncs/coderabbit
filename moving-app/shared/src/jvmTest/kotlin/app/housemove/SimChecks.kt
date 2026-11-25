@@ -264,7 +264,7 @@ internal class SimChecks(private val sim: Simulation) {
         const val DISK = "The data on disk loads again into the same state, in every move on the phone"
         val ALL = listOf(
             Simulation.RUN, SAME, LOST, MERGE, RULES, HELPERS, COUNTED, NESTING, LETTERS, CODES, TWICE, PHOTOS, DISK, Simulation.OUTSIDERS, SimUpdates.UPDATES,
-            Simulation.MOVES_APART, Simulation.CROSS, Simulation.LETTERS_APART, Simulation.SCANNED, Simulation.AUTO,
+            Simulation.MOVES_APART, Simulation.CROSS, Simulation.LETTERS_APART, Simulation.SCANNED, Simulation.AUTO, Simulation.ENCRYPTED,
         )
     }
 

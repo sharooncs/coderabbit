@@ -80,6 +80,14 @@ import kotlin.concurrent.Volatile
  * joiner: data      host: merged data      (each leaves out what the other's role is not sent)
  * joiner: file names   host: file names   joiner: files   host: files
  * ```
+ * From 2.4, two phones that both have it sync encrypted (design/encryption.md, Part 2): a 2.4 phone shows codes of ten
+ * characters that begin with [E2], and the phone that scans one opens with [SECURE_MAGIC] and Noise's XXpsk0 handshake,
+ * whose pre-shared key is made from the code ([codeKey]); the exchange above then runs unchanged inside the encrypted
+ * channel ([SecureChannel]), and each phone pins the other's key ([Pins.met]). A phone that scans an E2 code speaks
+ * only that and never falls back. A phone with an older HouseMove sends the plain hello above with whatever code it
+ * scanned, and is answered as 2.3 answered it, byte for byte; both phones then say the sync was not encrypted
+ * ([Result.plain], [notEncrypted]).
+ *
  * The hello's first six lines are 2.0's, so a phone on 2.0 reads all of it and answers VERSION,
  * as it does for any phone on another data layout; 2.0's last line, the person an invite is for,
  * is where 2.1 puts the rest of what it says first: the phone ID, the move and so on.
@@ -90,6 +98,12 @@ import kotlin.concurrent.Volatile
  */
 object WifiSync {
     private const val MAGIC = "HMSYNC3"
+
+    /** What a 2.4 phone says first when it has scanned an E2 code: then Noise's XXpsk0 handshake, and the sync encrypted. */
+    internal const val SECURE_MAGIC = "HMSYNC4"
+
+    /** How the codes of a phone that syncs encrypted begin ([isE2]). */
+    const val E2 = "E2"
 
     /** What version 1.3 says first. Its data layout is older, so the two cannot sync. */
     private const val MAGIC_1_3 = "HMSYNC2"
@@ -117,6 +131,48 @@ object WifiSync {
 
     /** What a phone syncing by itself says where a code goes: it proved who it is instead ([AutoSession]). */
     internal const val AUTO_TOKEN = "AUTO"
+
+    /** This phone has no key it can use just now (the iPhone's Keychain refused it), so it cannot sync encrypted. */
+    const val CANNOT_ENCRYPT = "This phone cannot sync encrypted just now, so nothing was exchanged. Close HouseMove, open it again, and try once more."
+
+    /**
+     * A phone that has synced encrypted with this one came without encryption, with a code this phone showed for encrypted
+     * syncs: not what HouseMove 2.4 does. Nothing was exchanged.
+     */
+    const val NOT_ENCRYPTED_REFUSED = "A phone that syncs encrypted tried to sync without encryption, so nothing was exchanged. Someone else may have seen the code: show a new one."
+
+    /**
+     * Said after a sync that went through without encryption because the other phone's HouseMove is older: [name] is that
+     * phone's person ("Priya"), or blank.
+     */
+    fun notEncrypted(name: String): String {
+        val phone = name.trim().let { if (it.isEmpty()) "The other phone" else "$it's phone" }
+        val update = name.trim().let { if (it.isEmpty()) "the other phone" else "$it's phone" }
+        return "$phone has an older HouseMove, so this sync was not encrypted. Sync on a Wi-Fi you trust, or update HouseMove on $update first."
+    }
+
+    /** Said before a sync by a code that an older HouseMove made: the sync will not be encrypted. */
+    const val OLDER_CODE = "That code comes from an older HouseMove, so this sync is not encrypted. Do it on a Wi-Fi you trust, or update HouseMove on the other phone first."
+
+    /** Is [token] a code of a phone that syncs encrypted (ten characters, beginning [E2])? Older phones' codes are eight. */
+    fun isE2(token: String): Boolean = token.length == 10 && token.startsWith(E2)
+
+    /** The pre-shared key of the XXpsk0 handshake for [code] in the move [moveId]: HKDF(code, salt "HouseMove code 2", info move ID). */
+    internal fun codeKey(code: String, moveId: String): ByteArray =
+        app.housemove.data.Sealing.hkdf(code.toUtf8(), "HouseMove code 2".toUtf8(), moveId.toUtf8())
+
+    /** The XXpsk0 handshake's prologue: "HouseMove code 2" | move ID. */
+    internal fun codePrologue(moveId: String): ByteArray = AutoSession.joined("HouseMove code 2".toUtf8(), moveId.toUtf8())
+
+    /** Can this phone sync encrypted: the platform's crypto, and a key of its own? */
+    internal fun canEncrypt(store: Store): Boolean = noiseCrypto() != null && store.phone.keys.noiseKey() != null && !olderPhone(store.phone.id)
+
+    /**
+     * Tests stand in a phone with an older HouseMove (2.1.1 to 2.3) by its phone ID: it shows codes of eight characters and
+     * speaks only the plain sync, whatever code it scans, as those versions do. The app never sets it.
+     */
+    @Volatile
+    internal var olderPhone: (String) -> Boolean = { false }
 
     /** The two phones hold different moves. Nothing was exchanged. */
     const val WRONG_MOVE = "That phone is on a different move, so nothing was exchanged. Open the same move on both phones, then sync again."
@@ -195,6 +251,8 @@ object WifiSync {
         val oneWay: Boolean = false,
         /** The other phone's name in its own settings. */
         val peerDevice: String = "",
+        /** The sync was not encrypted: the other phone has an older HouseMove (shown with [notEncrypted]). */
+        val plain: Boolean = false,
     ) {
         val ok get() = error == null
     }
@@ -323,6 +381,9 @@ object WifiSync {
         return (1..8).map { chars[r.nextInt(chars.length)] }.joinToString("")
     }
 
+    /** A code to show: [E2] and eight random characters when this phone syncs encrypted ([e2]), eight as before when it cannot. */
+    internal fun newCode(e2: Boolean): String = if (e2) E2 + newToken() else newToken()
+
     private fun personJson(p: Person?): String = if (p == null) "" else AppJson.encodeToString(p)
 
     private fun personFrom(json: String): Person? = try {
@@ -401,6 +462,8 @@ object WifiSync {
         private val clock: () -> Long,
         private val letNewPhonesIn: Boolean,
         private val confirmJoins: Boolean,
+        /** Its codes are E2 codes ([isE2]): a phone with 2.4 that scans one syncs encrypted. False only for a phone that cannot ([canEncrypt]). */
+        private val e2: Boolean = true,
         private val onResult: (Result) -> Unit,
     ) {
         val port: Int get() = server?.localPort ?: 0
@@ -449,7 +512,7 @@ object WifiSync {
             val p = d.person(personId)?.takeIf { !it.removed } ?: return Outcome.Refused("That person is not in the move.")
             // An invite with nowhere to connect to cannot be scanned; say why now rather than show a code that does nothing.
             if (hosts.isEmpty()) return Outcome.Refused(NO_NETWORK)
-            val code = newToken()
+            val code = newCode(e2)
             synchronized(personalLock) { personal[code] = Personal(p.id, clock() + INVITE_MINUTES * 60_000L) }
             return Outcome.Ok(Invite(hosts, port, code, p.id, p.name, p.role, store.moveId, d.move.name))
         }
@@ -463,7 +526,7 @@ object WifiSync {
             val d = store.data.value
             d.refusal(store.me, Action.MANAGE_PEOPLE)?.let { return Outcome.Refused(it) }
             if (hosts.isEmpty()) return Outcome.Refused(NO_NETWORK)
-            val code = newToken()
+            val code = newCode(e2)
             synchronized(personalLock) { helperCodes[code] = clock() + HELPER_CODE_MINUTES * 60_000L }
             return Outcome.Ok(Invite(hosts, port, code, HELPER_CODE, "", Role.HELPER, store.moveId, d.move.name))
         }
@@ -535,6 +598,16 @@ object WifiSync {
             var mine: Personal? = null
             var listsDone = false
             var result: Result? = null
+
+            /** The phone said its plain hello: it has an older HouseMove, and nothing is encrypted. */
+            var plain = false
+        }
+
+        /** Says [r] to this phone's screen; a sync that was not encrypted says so ([Result.plain]). */
+        private fun report(st: Served, r: Result): Result {
+            val said = if (st.plain) r.copy(plain = true) else r
+            onResult(said)
+            return said
         }
 
         private fun serve(socket: Socket) {
@@ -545,12 +618,66 @@ object WifiSync {
                     // Each side writes a whole message and then waits for the answer, so nothing is gained by the
                     // network holding the tail of a message back to fill a packet; it only makes every step wait.
                     s.tcpNoDelay = true
-                    exchange(s.dataIn(), s.dataOut(), st, null)
+                    val din = s.dataIn()
+                    val out = s.dataOut()
+                    // The first line is short and known. Anything else is not a HouseMove phone, and is not read any further.
+                    val length = din.readUnsignedShort()
+                    if (length !in 4..16) throw Stop(NOT_HOUSEMOVE)
+                    val magic = ByteArray(length).also { din.readFully(it) }.decodeUtf8()
+                    if (magic == SECURE_MAGIC && !olderPhone(store.phone.id)) serveSecure(din, out, st)
+                    else {
+                        st.plain = true
+                        exchange(din, out, st, null, magic)
+                    }
                 }
             } catch (e: Exception) {
                 ended(e, st)
             } finally {
                 st.mine?.let { synchronized(personalLock) { it.busy = false } }
+            }
+        }
+
+        /**
+         * A phone with 2.4 that scanned one of this phone's E2 codes: XXpsk0 with each code shown here as the pre-shared
+         * key, until one opens its first message (a phone without any of them is not answered); then the exchange in the
+         * encrypted channel, the two phones pinning each other's keys, and each vouching for the keys it has met.
+         */
+        private fun serveSecure(din: DataInputStream, out: DataOutputStream, st: Served) {
+            val crypto = noiseCrypto() ?: throw Stop(CANNOT_ENCRYPT)
+            val sk = store.phone.keys.noiseKey() ?: throw Stop(CANNOT_ENCRYPT)
+            val first = AutoSession.readFrame(din)
+            val codes = synchronized(personalLock) { listOf(token) + personal.keys + helperCodes.keys }.filter { it.isNotEmpty() }.distinct()
+            var hs: Handshake? = null
+            var code = ""
+            for (c in codes) {
+                val h = Handshake(crypto, Noise.XX_PSK0, initiator = false, codePrologue(store.moveId), sk, psk = codeKey(c, store.moveId))
+                if (h.read(first) == null) continue
+                hs = h
+                code = c
+                break
+            }
+            // No code shown here opens it: closed without a word, as a wrong code.
+            if (hs == null) throw Stop(WRONG_CODE)
+            val me = store.phone.id
+            AutoSession.writeFrame(out, hs.write(AutoSession.joined(me.toUtf8())))
+            out.flush()
+            val said = hs.read(AutoSession.readFrame(din))?.let { AutoSession.parts(it) }
+            val theirKey = hs.remoteStatic
+            if (said == null || said.size != 1 || theirKey == null) throw Stop(UNREADABLE)
+            val peerPhone = said[0].decodeUtf8()
+            val (send, receive) = hs.split()
+            val channel = SecureChannel(din, out, send, receive)
+            val keyText = AutoSession.keyText(theirKey)
+            exchange(channel.dataIn, channel.dataOut, st, null, null, viaCode = code, secured = peerPhone, securedKey = keyText)
+            val done = st.result ?: return
+            if (!done.listsSynced()) return
+            // Met: the code was seen on this phone's screen, and the other phone proved the key it joined or synced with.
+            if (store.data.value.memberPhone(peerPhone) != null) store.pins.met(peerPhone, keyText, store.phone.keys.publicText)
+            try {
+                AutoSession.takeVouches(channel.dataIn, store, peerPhone, meeting = true)
+                AutoSession.sendVouches(channel.dataOut, store, peerPhone)
+            } catch (_: IOException) {
+                // The sync itself went through; keys are vouched for again next time.
             }
         }
 
@@ -581,15 +708,22 @@ object WifiSync {
                 st.mine?.let { synchronized(personalLock) { it.busy = false } }
                 Result(st.peer, st.letter, 0, 0, whatWentWrong(e, st.listsDone), peerPersonId = st.peerId, peerDevice = st.device)
             }
-            onResult(r)
-            return r
+            // An exchange that got that far has already said how it ended; this only says what stopped it before then.
+            if (st.result != null) return st.result!!
+            return report(st, r)
         }
 
         /**
          * One phone served, from its first line: a code sync or join, or with [proven] a sync by itself whose
          * handshake has proved which phone it is. [st] keeps what has been learnt, for the words if it ends early.
+         * [firstLine] is the first line when it has been read already (a plain hello's). In an encrypted code sync
+         * ([secured], the phone ID the XXpsk0 handshake gave, with its key [securedKey]), the hello must give [viaCode],
+         * the code that opened the handshake, and that phone ID and key.
          */
-        private fun exchange(din: DataInputStream, out: DataOutputStream, st: Served, proven: Proven?) {
+        private fun exchange(
+            din: DataInputStream, out: DataOutputStream, st: Served, proven: Proven?, firstLine: String? = null,
+            viaCode: String? = null, secured: String? = null, securedKey: String? = null,
+        ) {
             // What is learnt of the other phone is kept in st, for the words if the exchange ends early.
             var peer by st::peer
             var letter by st::letter
@@ -604,9 +738,11 @@ object WifiSync {
             }
 
             // The first line is short and known. Anything else is not a HouseMove phone, and is not read any further.
-            val length = din.readUnsignedShort()
-            if (length !in 4..16) throw Stop(NOT_HOUSEMOVE)
-            val magic = ByteArray(length).also { din.readFully(it) }.decodeUtf8()
+            val magic = firstLine ?: run {
+                val length = din.readUnsignedShort()
+                if (length !in 4..16) throw Stop(NOT_HOUSEMOVE)
+                ByteArray(length).also { din.readFully(it) }.decodeUtf8()
+            }
             fun knows(code: String) = code == token || synchronized(personalLock) { personal.containsKey(code) || helperCodes.containsKey(code) }
             if (magic == OLD_MAGIC) refuse("NO", VERSION_MISMATCH)
             if (magic != MAGIC) {
@@ -640,6 +776,8 @@ object WifiSync {
             val invited = if (proven != null) null else synchronized(personalLock) { personal[theirToken] }
             val helperUntil = if (proven != null) null else synchronized(personalLock) { helperCodes[theirToken] }
             if (proven == null && theirToken != token && invited == null && helperUntil == null) refuse("NO", WRONG_CODE)
+            // In an encrypted code sync, the code is the one whose key opened the handshake.
+            if (viaCode != null && theirToken != viaCode) refuse("NO", WRONG_CODE)
             if (theirSchema != SCHEMA) {
                 // The other phone may be older and not know this phone's version; it is told it, for a newer one to see.
                 out.writeUTF("VERSION"); out.writeInt(SCHEMA); out.flush()
@@ -648,6 +786,11 @@ object WifiSync {
             val hello = helloFrom(last) ?: refuse("NO", UNREADABLE)
             // A phone that proved which phone it is must say it is that phone, and its person must be that phone's.
             if (proven != null && (hello.phoneId != proven.phoneId || theirPerson?.id != proven.personId)) refuse("NO", NOT_THE_PHONE)
+            // A phone that proved a key in an encrypted code sync says it is the phone it named there, and gives that key.
+            if (secured != null && (hello.phoneId != secured || hello.key != securedKey)) refuse("NO", NOT_THE_PHONE)
+            // Without encryption, with a code shown for encrypted syncs, from a phone that has synced encrypted here before:
+            // HouseMove 2.4 never does that (it would have opened with the handshake), so it is not taken.
+            if (st.plain && isE2(theirToken) && store.pins.speaksV2(hello.phoneId)) refuse("NO", NOT_ENCRYPTED_REFUSED)
             val claim = hello.claim
             device = hello.deviceName
             peerId = theirPerson?.id ?: ""
@@ -752,7 +895,7 @@ object WifiSync {
                 store.markCollected(hello.phoneId)
                 out.writeUTF("DONE"); out.flush()
                 store.flush()
-                onResult(Result(peer, letter, 0, received, RETIRED_HERE, peerPersonId = peerId, oneWay = true, peerDevice = device))
+                st.result = report(st, Result(peer, letter, 0, received, RETIRED_HERE, peerPersonId = peerId, oneWay = true, peerDevice = device))
                 return
             }
             if (go == "TAKE") {
@@ -762,7 +905,7 @@ object WifiSync {
                 val theirFiles = readNames(din)
                 listsDone = true
                 val sent = sendFiles(out, store, wanted(store, theirFiles, role))
-                onResult(Result(peer, letter, sent, 0, RETIRED_PHONE, peerPersonId = peerId, oneWay = true, peerDevice = device))
+                st.result = report(st, Result(peer, letter, sent, 0, RETIRED_PHONE, peerPersonId = peerId, oneWay = true, peerDevice = device))
                 return
             }
 
@@ -781,8 +924,8 @@ object WifiSync {
             // from here on both phones have each other's data and only photos can still go missing.
             val theirFiles = readNames(din)
             listsDone = true
-            // Both phones used the code shown here: a meeting, from which the two can start syncing by themselves.
-            if (proven == null) Meetings.note(store.phone.id, store.identity.value.all, hello.phoneId, theirToken)
+            // Which phones sync encrypted with this one, and which are older: the pins say, for the next sync and the screens.
+            if (st.plain) store.pins.older(hello.phoneId) else store.pins.synced(hello.phoneId, store.phone.keys.publicText)
             writeNames(out, haveFiles(store, role))
             val received = receiveFiles(din, store)
             val sent = sendFiles(out, store, wanted(store, theirFiles, role))
@@ -800,8 +943,7 @@ object WifiSync {
             store.flush()
             val done = Result(peer, letter, sent, received, peerPersonId = peerId, joinedAs = if (joining != null) store.data.value.person(peerId) else null, peerDevice = device)
             store.syncFinished()
-            st.result = done
-            onResult(done)
+            st.result = report(st, done)
         }
 
         fun stop() {
@@ -841,7 +983,8 @@ object WifiSync {
         confirmJoins: Boolean = false,
         onResult: (Result) -> Unit,
     ): Host {
-        val h = Host(store, ServerSocket(0), newToken(), clock, letNewPhonesIn, confirmJoins, onResult)
+        val e2 = canEncrypt(store)
+        val h = Host(store, ServerSocket(0), newCode(e2), clock, letNewPhonesIn, confirmJoins, e2, onResult)
         h.start()
         return h
     }
@@ -868,6 +1011,24 @@ object WifiSync {
     ): Result {
         // With no Wi-Fi there is nothing to try: say so at once instead of waiting for every address to time out.
         if (invite.hosts.all { onLocalNetwork(it) } && addresses().isEmpty()) return Result("", "", 0, 0, NO_NETWORK)
+        // A code a phone with 2.4 showed: encrypted, and nothing else. Never the plain hello, which would send the code in the clear.
+        if (isE2(invite.token) && !olderPhone(store.phone.id)) return joinSecure(store, invite, connectTimeoutMs, letNewPhonesIn, holdsCard, onWaiting)
+        return joinPlain(store, invite, connectTimeoutMs, letNewPhonesIn, holdsCard, onWaiting)
+    }
+
+    /**
+     * The sync of a phone with an older HouseMove, byte for byte as 2.1.1 to 2.3 speak it: what a 2.4 phone does with a code
+     * an older phone showed (and what tests use to stand in for an older phone). Nothing is encrypted ([Result.plain]).
+     */
+    internal fun joinPlain(
+        store: Store,
+        invite: Invite,
+        connectTimeoutMs: Int = 4000,
+        letNewPhonesIn: Boolean = true,
+        holdsCard: Boolean = false,
+        onWaiting: () -> Unit = {},
+    ): Result {
+        if (invite.hosts.all { onLocalNetwork(it) } && addresses().isEmpty()) return Result("", "", 0, 0, NO_NETWORK)
         var lastError = UNREACHABLE
         for (host in invite.hosts) {
             val socket = Socket()
@@ -883,10 +1044,78 @@ object WifiSync {
                     s.soTimeout = timeoutMs
                     s.tcpNoDelay = true
                     return exchangeAsJoiner(store, s, s.dataIn(), s.dataOut(), host, invite, connectTimeoutMs, letNewPhonesIn, holdsCard, onWaiting, st, null)
+                        .copy(plain = true)
                 }
             } catch (e: Exception) {
                 lastError = whatWentWrong(e, st.listsDone)
                 // Joined, and only photos were lost on the way: the phone is in the move all the same.
+                if (st.joined != null) return Result(st.peer, st.letter, 0, 0, lastError, peerPersonId = st.peerId, joinedAs = st.joined, peerDevice = st.device, plain = true)
+            }
+        }
+        return Result("", "", 0, 0, lastError, plain = true)
+    }
+
+    /**
+     * Join or sync with a phone that showed an E2 code: XXpsk0 with the code's key, then the exchange in the encrypted
+     * channel, each phone pinning the other's key and vouching for the keys it has met. A phone that does not answer the
+     * handshake is not tried any other way.
+     */
+    private fun joinSecure(
+        store: Store, invite: Invite, connectTimeoutMs: Int, letNewPhonesIn: Boolean, holdsCard: Boolean, onWaiting: () -> Unit,
+    ): Result {
+        val crypto = noiseCrypto() ?: return Result("", "", 0, 0, CANNOT_ENCRYPT)
+        val sk = store.phone.keys.noiseKey() ?: return Result("", "", 0, 0, CANNOT_ENCRYPT)
+        var lastError = UNREACHABLE
+        for (host in invite.hosts) {
+            val socket = Socket()
+            try {
+                socket.connect(host, invite.port, connectTimeoutMs)
+            } catch (e: Exception) {
+                socket.close()
+                continue
+            }
+            val st = Joining()
+            try {
+                socket.use { s ->
+                    s.soTimeout = timeoutMs
+                    s.tcpNoDelay = true
+                    val din = s.dataIn()
+                    val out = s.dataOut()
+                    val hs = Handshake(crypto, Noise.XX_PSK0, initiator = true, codePrologue(invite.moveId), sk, psk = codeKey(invite.token, invite.moveId))
+                    out.writeUTF(SECURE_MAGIC)
+                    AutoSession.writeFrame(out, hs.write())
+                    out.flush()
+                    // The other phone shows no such code, or is not the phone that showed it: it closes, or answers what does not open.
+                    val answer = try {
+                        AutoSession.readFrame(din)
+                    } catch (_: IOException) {
+                        return Result("", "", 0, 0, CODE_NOT_ACCEPTED)
+                    }
+                    val said = hs.read(answer)?.let { AutoSession.parts(it) }
+                    val theirKey = hs.remoteStatic
+                    if (said == null || said.size != 1 || theirKey == null) return Result("", "", 0, 0, CODE_NOT_ACCEPTED)
+                    val peerPhone = said[0].decodeUtf8()
+                    AutoSession.writeFrame(out, hs.write(AutoSession.joined(store.phone.id.toUtf8())))
+                    val (send, receive) = hs.split()
+                    val channel = SecureChannel(din, out, send, receive)
+                    val keyText = AutoSession.keyText(theirKey)
+                    val r = exchangeAsJoiner(
+                        store, s, channel.dataIn, channel.dataOut, host, invite, connectTimeoutMs, letNewPhonesIn, holdsCard, onWaiting, st, null,
+                        secured = peerPhone, securedKey = keyText,
+                    )
+                    if (r.listsSynced()) {
+                        if (store.data.value.memberPhone(peerPhone) != null) store.pins.met(peerPhone, keyText, store.phone.keys.publicText)
+                        try {
+                            AutoSession.sendVouches(channel.dataOut, store, peerPhone)
+                            AutoSession.takeVouches(channel.dataIn, store, peerPhone, meeting = true)
+                        } catch (_: IOException) {
+                            // The sync itself went through; keys are vouched for again next time.
+                        }
+                    }
+                    return r
+                }
+            } catch (e: Exception) {
+                lastError = whatWentWrong(e, st.listsDone)
                 if (st.joined != null) return Result(st.peer, st.letter, 0, 0, lastError, peerPersonId = st.peerId, joinedAs = st.joined, peerDevice = st.device)
             }
         }
@@ -923,6 +1152,7 @@ object WifiSync {
     private fun exchangeAsJoiner(
         store: Store, s: Socket, din: DataInputStream, out: DataOutputStream, host: String, invite: Invite, connectTimeoutMs: Int,
         letNewPhonesIn: Boolean, holdsCard: Boolean, onWaiting: () -> Unit, st: Joining, proven: Proven?,
+        secured: String? = null, securedKey: String? = null,
     ): Result {
         // What is learnt of the other phone is kept in st, for the words if the exchange ends early.
         var listsDone by st::listsDone
@@ -945,8 +1175,9 @@ object WifiSync {
             din.readUTF()
         } catch (e: IOException) {
             if (e !is EOFException && e !is SocketException) throw e
-            // A phone that syncs by itself is on 2.3 or later: it does not hang up at the first line.
-            if (proven != null) throw e
+            // A phone that syncs by itself, or in an encrypted channel, is on 2.3 or later: it does not hang up at the first
+            // line, and nothing is ever said to it in the clear.
+            if (proven != null || secured != null) throw e
             // A phone on an older version hangs up at the first line. Say hello the way
             // it understands, so that it too shows the "different versions" message.
             // A phone on this version answers that hello with "AGAIN": then it was only the connection that dropped.
@@ -1009,6 +1240,8 @@ object WifiSync {
         }
         // A phone that proved which phone it is must say it is that phone, and its person must be that phone's.
         if (proven != null && (hostHello.phoneId != proven.phoneId || theirPerson?.id != proven.personId)) return refuse("NO", NOT_THE_PHONE)
+        // In an encrypted code sync, the phone and the key the handshake gave.
+        if (secured != null && (hostHello.phoneId != secured || hostHello.key != securedKey)) return refuse("NO", NOT_THE_PHONE)
 
         if (answer == "ONEWAY") {
             // This phone has been retired: its last work goes to the other phone, and nothing comes back.
@@ -1096,8 +1329,8 @@ object WifiSync {
         val upTo = store.stampOf(merged)
         // The host merged this phone's data before it sent its own, so both now have everything but photos.
         listsDone = true
-        // Both phones used the code this phone scanned: a meeting, from which the two can start syncing by themselves.
-        if (proven == null) Meetings.note(store.phone.id, store.identity.value.all, hostHello.phoneId, invite.token)
+        // Which phones sync encrypted with this one, and which are older: the pins say, for the next sync and the screens.
+        if (proven == null && secured == null) store.pins.older(hostHello.phoneId) else store.pins.synced(hostHello.phoneId, store.phone.keys.publicText)
 
         writeNames(out, haveFiles(store, role))
         val theirFiles = readNames(din)
