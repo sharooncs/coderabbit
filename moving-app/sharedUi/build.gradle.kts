@@ -66,6 +66,11 @@ compose.resources {
 }
 
 tasks.named<Test>("desktopTest") {
+    // A failure in CI says which test and why in the job log itself.
+    testLogging {
+        events(org.gradle.api.tasks.testing.logging.TestLogEvent.FAILED)
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
     // The rendered screens go to build/screens (see ScreensRenderTest).
     systemProperty("screens.out", layout.buildDirectory.dir("screens").get().asFile.path)
     maxHeapSize = "1536m"

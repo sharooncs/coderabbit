@@ -154,6 +154,8 @@ class AutoSyncCommonTest {
         priya.engine.poke()
         waitUntil("Priya's phone stopped") { priya.engine.status.value.state == AutoSync.State.OFF }
         assertEquals("Sync by itself is off", priya.engine.status.value.line(0))
+        // Switching off stops new syncs; one already under way may finish. Wait until none is, on either side.
+        waitUntil("no sync under way") { asha.engine.status.value.state != AutoSync.State.SYNCING }
         priya.store.createItem("Lamp", null)
         holds("nothing went while the setting was off", 1_000) { !asha.hasItem("Lamp") }
         priya.moves.phone.updateSettings { it.copy(autoSync = true) }
