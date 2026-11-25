@@ -102,7 +102,7 @@ later: shortest, closest, one or two digits when the shortest has one), `URLEnco
   `build/generated/golden/kotlin/app/housemove/GoldenFiles.kt` from `src/jvmTest/resources/golden/*.json`, with the
   SHA-256 of each file, which `theFixturesComeThroughWhole` checks. The files are only read.
 - `jvmTest/JavaTextTest` (10): the iPhone's text rules and wire against the JVM's own functions (above).
-- 1b added 42 common tests for files, zips, threads, sockets, QR codes and the fixed move's syncs (see 1b below);
+- 1b added 43 common tests for files, zips, threads, sockets, QR codes and the fixed move's syncs (see 1b below);
   the rest of what needs a Store on disk, and the update files, `GoldenFixturesTest` among them, are still in
   `jvmTest`.
 
@@ -190,14 +190,14 @@ thread is shut down and its descriptor let go only when the call using it return
 **Privacy manifest.** The shared code calls `stat` and `lstat` (File timestamp APIs) on the app's own files: reason
 C617.1 is now declared beside 0A2A.1.
 
-**Tests** (commonTest, on the JVM in every run and on the simulator in CI), 68 in all, 42 of them new:
+**Tests** (commonTest, on the JVM in every run and on the simulator in CI), 79 in all (with 2.2's `NumbersCommonTest`), 43 of them new in 1b:
 `GoldenSyncCommonTest` (2: the fixed move through the real Store and WifiSync, host and joiner on threads of one
 process over 127.0.0.1 through a relay that keeps every byte: `move-data.json`, `sync-join.json`, `sync-plain.json`
 and every answer in `sync-refusals.json` byte for byte; a backup made then holds `backup.json`'s `deterministic`;
 Android's backup sample peeks and restores as `opened` says), `FilesCommonTest` (6), `ZipCommonTest` (10, the golden
 sample among them), `ThreadsCommonTest` (6), `SocketsCommonTest` (7), `SyncNetworkCommonTest` (3, from NetworkTest:
 a quiet phone, a dropped connection, nobody there), `MovesCommonTest` (2, from MoveIdTest), `QrCommonTest` (3,
-`qr.json`'s modules and drawings), `AddressesCommonTest` (3). In jvmTest: `ZipJvmTest` (6) and `QrEncoderJvmTest` (2:
+`qr.json`'s modules and drawings), `AddressesCommonTest` (3), `StoreSaveCommonTest` (1, 2.2's save retry through the writer, from NotANumberTest). In jvmTest: `ZipJvmTest` (6) and `QrEncoderJvmTest` (2:
 ZXing's modules on 3,600 texts, and `qrPixels` as `Qr.matrix`). On the simulator the iPhone v1 has no keys of its own,
 so the golden phones say the key text in their folders (`KeyTextOnly`); without it the hellos and phone entries
 would carry no key, which is what a real iPhone v1 sends.
