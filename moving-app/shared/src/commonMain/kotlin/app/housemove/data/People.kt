@@ -222,7 +222,7 @@ internal fun mergePeople(a: List<Person>, b: List<Person>): List<Person> {
     if (a.isEmpty() && b.isEmpty()) return a
     val other = HashMap<String, Person>()
     for (p in a) other[p.id] = p
-    for (p in b) other.merge(p.id, p) { x, y -> x.copy(grants = (x.grants + y.grants), phones = mergePhones(x.phones, y.phones)) }
+    for (p in b) other.mergeValue(p.id, p) { x, y -> x.copy(grants = (x.grants + y.grants), phones = mergePhones(x.phones, y.phones)) }
     val merged = mergeList(a, b).map { p ->
         val both = other.getValue(p.id)
         val grants = both.grants.distinct().sortedWith(GRANT_ORDER)
@@ -230,6 +230,12 @@ internal fun mergePeople(a: List<Person>, b: List<Person>): List<Person> {
         if (grants == p.grants && phones == p.phones) p else p.copy(grants = grants, phones = phones)
     }
     return keepRetirementsToTheRule(settlePeople(merged))
+}
+
+/** Map.merge: [value] under [key], or what [remap] makes of the value already there and [value]. */
+private inline fun <K, V : Any> MutableMap<K, V>.mergeValue(key: K, value: V, remap: (V, V) -> V) {
+    val old = this[key]
+    this[key] = if (old == null) value else remap(old, value)
 }
 
 /**
@@ -241,7 +247,7 @@ internal fun mergePhones(a: List<PhoneEntry>, b: List<PhoneEntry>): List<PhoneEn
     if (a.isEmpty()) return b
     val out = LinkedHashMap<String, PhoneEntry>()
     for (x in a) out[x.id] = x
-    for (y in b) out.merge(y.id, y) { x, z ->
+    for (y in b) out.mergeValue(y.id, y) { x, z ->
         val retired = listOf(x.retired, z.retired).filter { it.by.isNotEmpty() }.minWithOrNull(compareBy({ it.at }, { it.by })) ?: Stamp()
         fun rest(e: PhoneEntry) = e.copy(retired = Stamp(), collected = false, key = "", keyAt = 0).toString()
         val details = if (rest(x) >= rest(z)) x else z
@@ -351,7 +357,7 @@ internal fun AppData.letterInstead(me: Person): String? {
     if (first.id == me.id) return null
     val used = people.map { it.letter.uppercase() }.toSet()
     // Where to start looking differs from person to person, so that two who must both change do not pick the same again.
-    var n = Math.floorMod(me.id.hashCode(), 26)
+    var n = me.id.hashCode().mod(26)
     repeat(26) {
         if (mine + letterAt(n) !in used) return mine + letterAt(n)
         n = (n + 1) % 26

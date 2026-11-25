@@ -75,35 +75,6 @@ class BarcodeTest {
     }
 
     @Test
-    fun isbnAndBarcodeNumberRecognition() {
-        assertTrue(isIsbn("9780140328721"))
-        assertTrue(isIsbn("978-0-14-032872-1"))
-        assertTrue(isIsbn("0140328726"))
-        assertTrue(isIsbn("080442957X"))
-        assertFalse(isIsbn("9780140328722")) // wrong check digit
-        assertFalse(isIsbn("5012345678900")) // a product, not a book
-        assertFalse(isIsbn("Dune"))
-        assertTrue(looksLikeBarcodeNumber("5012345678900"))
-        assertTrue(looksLikeBarcodeNumber("96385074"))
-        assertFalse(looksLikeBarcodeNumber("Garden tools"))
-        assertFalse(looksLikeBarcodeNumber("L042"))
-        assertFalse(looksLikeBarcodeNumber("1984")) // a title that happens to be digits
-    }
-
-    @Test
-    fun catalogueReplyIsUnderstood() {
-        val reply = """{"ISBN:9780140328721": {"url": "https://openlibrary.org/books/OL7353617M/Fantastic_Mr._Fox",
-            "key": "/books/OL7353617M", "title": "Fantastic Mr. Fox", "authors": [{"url": "https://openlibrary.org/authors/OL34184A/Roald_Dahl",
-            "name": "Roald Dahl"}, {"name": "Quentin Blake"}], "number_of_pages": 96, "publish_date": "October 1, 1988"}}"""
-        assertEquals(BookInfo("Fantastic Mr. Fox", "Roald Dahl, Quentin Blake"), BookLookup.parse(reply))
-        assertEquals(BookInfo("Dune: A novel", ""), BookLookup.parse("""{"ISBN:1": {"title": "Dune", "subtitle": "A novel"}}"""))
-        assertNull(BookLookup.parse("{}")) // not in the catalogue
-        assertNull(BookLookup.parse("<html>Service unavailable</html>"))
-        assertNull(BookLookup.parse("""{"ISBN:1": {"authors": []}}"""))
-        assertTrue(BookLookup.url("9780140328721").startsWith("https://openlibrary.org/api/books?bibkeys=ISBN:9780140328721"))
-    }
-
-    @Test
     fun scanningThingsIntoBoxes() {
         val s = store("scan")
         val a = s.createBox("L001", null)

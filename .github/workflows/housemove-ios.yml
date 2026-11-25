@@ -3,7 +3,8 @@ name: HouseMove iPhone
 # Builds the iPhone app on GitHub's macOS runner and tests it in a simulator. Needs no secrets: signing and
 # TestFlight uploads happen on the owner's Mac (moving-app/tools/ios.sh, design/ios-plan.md). The app's screens are
 # Kotlin (moving-app/sharedUi, on top of moving-app/shared), built by Gradle inside the Xcode build, so changes there
-# and to the Gradle setup run this too.
+# and to the Gradle setup run this too; shared's common tests run in the simulator first. Changes to the Android app
+# alone (moving-app/app) do not run this; changes to moving-app/shared run this and the APK workflow both.
 on:
   push:
     paths:
@@ -30,8 +31,9 @@ concurrency:
 jobs:
   simulator:
     runs-on: xcode-27
-    # The first run also downloads the Kotlin/Native toolchain and links the framework from scratch.
-    timeout-minutes: 75
+    # The first run also downloads the Kotlin/Native toolchain and links the framework from scratch, and the shared
+    # tests link a test program of their own.
+    timeout-minutes: 90
     defaults:
       run:
         working-directory: moving-app
@@ -75,6 +77,26 @@ jobs:
       - name: The App Store Connect helper compiles
         # It runs only on the owner's Mac (with the API key kept there); here it is only type-checked.
         run: xcrun swiftc -typecheck tools/asc.swift
+      # The shared data and sync code's common tests (moving-app/shared/src/commonTest, with the golden fixtures of
+      # 2.1.1) on the simulator the UI tests use: the code the iPhone runs, against the bytes and text Android phones
+      # make. A failure does not stop the Xcode steps below, so one run tells everything; the job fails at the end.
+      - name: Shared tests on the iPhone simulator
+        id: shared-tests
+        continue-on-error: true
+        run: |
+          export HM_SIMULATOR="$(tools/ios.sh sim-id)"
+          echo "Simulator $HM_SIMULATOR"
+          # --no-daemon: the Gradle daemon would keep its memory while Xcode and the simulator need it.
+          ./gradlew --no-daemon :shared:iosSimulatorArm64Test
+      - name: Keep the shared test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-shared-tests
+          path: |
+            moving-app/shared/build/reports/tests/iosSimulatorArm64Test
+            moving-app/shared/build/test-results/iosSimulatorArm64Test
+          if-no-files-found: ignore
       - name: XcodeGen
         run: |
           echo "HM_TOOLS=$RUNNER_TEMP/tools" >> "$GITHUB_ENV"
@@ -93,6 +115,11 @@ jobs:
           name: ios-shots
           path: moving-app/iosApp/build/shots
           if-no-files-found: ignore
+      - name: The shared tests on the simulator must pass
+        if: steps.shared-tests.outcome == 'failure'
+        run: |
+          echo "The shared tests failed on the iPhone simulator: see the step 'Shared tests on the iPhone simulator', and the ios-shared-tests artifact."
+          exit 1
 
   # Copies the screenshots to the ci-shots branch, so they can be fetched with git and looked at.
   # The only job that may write to the repository; it pushes nothing else.

@@ -1,16 +1,81 @@
 import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.plugin.KotlinPlatformType
+import java.security.MessageDigest
 
 // The move's data and its phone-to-phone sync (packages app.housemove.data and app.housemove.sync), shared by the
-// Android app and, later, the iPhone app (step 0c of design/ios-plan.md). For now the code still uses java.io,
-// java.net, javax.crypto and other JDK APIs, so it sits in jvmCommonMain, below commonMain, which the Android target
-// and a plain JVM target both build on. The JVM target runs the data and sync tests without Android or Robolectric.
-// The iPhone targets have only commonMain (empty) until step 1 moves code there.
+// Android app and the iPhone app (steps 0c and 1 of design/ios-plan.md; design/ios-step1.md is the checklist).
+// Nearly all of it is in commonMain. What it asks of the platform is behind small expect/actual seams (Files.kt,
+// Threads.kt, Platform.kt, sync/Net.kt): on Android and the JVM, in jvmCommonMain, each is the java.* call the code
+// made before (Android runs what it ran); on the iPhone, in iosMain, the small ones are Apple's, and the files,
+// sockets, zips and QR codes come in step 1b. The update-file crypto (Keys.kt, Sealed.kt, Update.kt) and zxing stay
+// in jvmCommonMain only. The JVM target runs the data and sync tests without Android or Robolectric.
 plugins {
     id("org.jetbrains.kotlin.multiplatform")
     id("com.android.kotlin.multiplatform.library")
     id("org.jetbrains.kotlin.plugin.serialization")
+}
+
+/**
+ * The golden fixtures (src/jvmTest/resources/golden, see its README) as a Kotlin object, GoldenFiles, for the common
+ * tests: on the iPhone simulator there are no Java resources to read them from. Each file's text goes in with every
+ * character that is not plain ASCII as a \u escape, beside the SHA-256 of the file's bytes, which the tests check, so
+ * what they read is the file exactly. The files are only read: nothing here records or changes them.
+ */
+abstract class GoldenSources : DefaultTask() {
+    @get:InputDirectory
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val fixtures: DirectoryProperty
+
+    @get:OutputDirectory
+    abstract val output: DirectoryProperty
+
+    private fun literal(s: String): String = buildString {
+        append('"')
+        for (c in s) {
+            if (c.code in 0x20..0x7e && c != '"' && c != '\\' && c != '$') append(c)
+            else append("\\u").append(c.code.toString(16).padStart(4, '0'))
+        }
+        append('"')
+    }
+
+    @TaskAction
+    fun write() {
+        val files = fixtures.get().asFile.listFiles { f -> f.name.endsWith(".json") }!!.sortedBy { it.name }
+        val out = StringBuilder()
+        out.append("// Made by the Gradle task :shared:goldenSources from src/jvmTest/resources/golden. Not to be edited.\n")
+        out.append("package app.housemove\n\n")
+        out.append("internal object GoldenFiles {\n")
+        out.append("    /** The text of each fixture, by file name. */\n")
+        out.append("    val text: Map<String, String> by lazy {\n        mapOf(\n")
+        for ((i, f) in files.withIndex()) out.append("            ${literal(f.name)} to file$i(),\n")
+        out.append("        )\n    }\n\n")
+        out.append("    /** The SHA-256 of each fixture's bytes, as lower-case hex. */\n")
+        out.append("    val sha256: Map<String, String> = mapOf(\n")
+        for (f in files) {
+            val sha = MessageDigest.getInstance("SHA-256").digest(f.readBytes())
+                .joinToString("") { ((it.toInt() and 0xff) + 0x100).toString(16).substring(1) }
+            out.append("        ${literal(f.name)} to ${literal(sha)},\n")
+        }
+        out.append("    )\n")
+        for ((i, f) in files.withIndex()) {
+            val text = f.readBytes().decodeToString(throwOnInvalidSequence = true)
+            out.append("\n    private fun file$i(): String = listOf(\n")
+            // Pieces of at most 4000 characters, so that no constant is too long for a JVM class file.
+            for (piece in text.chunked(4000)) out.append("        ${literal(piece)},\n")
+            out.append("    ).joinToString(\"\")\n")
+        }
+        out.append("}\n")
+        val dir = output.get().asFile.resolve("app/housemove")
+        dir.deleteRecursively()
+        dir.mkdirs()
+        dir.resolve("GoldenFiles.kt").writeText(out.toString())
+    }
+}
+
+val goldenSources = tasks.register<GoldenSources>("goldenSources") {
+    fixtures.set(layout.projectDirectory.dir("src/jvmTest/resources/golden"))
+    output.set(layout.buildDirectory.dir("generated/golden/kotlin"))
 }
 
 kotlin {
@@ -25,13 +90,12 @@ kotlin {
     jvm {
         compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
     }
-    // The iPhone (device and Apple-silicon simulator), so that sharedUi can depend on this module there. They build
-    // on commonMain alone: nothing in jvmCommonMain (java.*, javax.crypto, Keys.kt, Sealed.kt) reaches the iPhone.
+    // The iPhone (device and Apple-silicon simulator). Nothing in jvmCommonMain (java.*, javax.crypto, Keys.kt,
+    // Sealed.kt, Update.kt, zxing) reaches it.
     iosArm64()
     iosSimulatorArm64()
 
-    // commonMain stays empty until code moves there (step 1); jvmCommonMain holds what the Android and JVM targets
-    // share, and iosMain what the two iPhone targets will share.
+    // jvmCommonMain holds what the Android and JVM targets share, and iosMain what the two iPhone targets share.
     @OptIn(ExperimentalKotlinGradlePluginApi::class)
     applyDefaultHierarchyTemplate {
         common {
@@ -45,19 +109,39 @@ kotlin {
         }
     }
 
+    // expect/actual classes (File, Lock and the other seams in commonMain) are Beta in Kotlin 2.4; this only silences
+    // the warning that says so.
+    compilerOptions { freeCompilerArgs.add("-Xexpect-actual-classes") }
+
     sourceSets {
+        commonMain.dependencies {
+            // api: their types are part of what this module offers (StateFlow, the serializers).
+            api("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
+            api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.1")
+        }
         named("jvmCommonMain") {
             dependencies {
-                // api: their types are part of what this module offers (StateFlow, the serializers, Qr's BitMatrix).
-                api("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
-                api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.1")
+                // QR codes and barcodes on Android and the JVM (Qr.kt); api: Qr.matrix gives zxing's BitMatrix.
                 api("com.google.zxing:core:3.5.3")
+            }
+        }
+        commonTest {
+            // The golden fixtures as Kotlin (goldenSources, above), for the tests that also run on the iPhone simulator.
+            kotlin.srcDir(goldenSources)
+            dependencies {
+                implementation(kotlin("test"))
             }
         }
         jvmTest.dependencies {
             implementation("junit:junit:4.13.2")
         }
     }
+}
+
+// The simulator the common tests run on: HM_SIMULATOR names one (CI gives the one tools/ios.sh sim uses); without it
+// the Kotlin plugin picks one of those Xcode has.
+tasks.withType<org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTest>().configureEach {
+    providers.environmentVariable("HM_SIMULATOR").orNull?.takeIf { it.isNotBlank() }?.let { device.set(it) }
 }
 
 tasks.named<Test>("jvmTest") {

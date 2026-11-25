@@ -39,29 +39,6 @@ enum class ScanFormats(internal val formats: List<BarcodeFormat>) {
     internal val hasLinear get() = formats.any { it != BarcodeFormat.QR_CODE && it != BarcodeFormat.DATA_MATRIX }
 }
 
-/** What a label QR printed by 2.1 begins with: then the move's tag ([moveTag]), a colon, and the code. */
-const val TAGGED_PREFIX = "HM2:"
-
-/** A scanned label: its code, and the tag of the move it was printed for (null on a label from before 2.1). */
-data class ScannedLabel(val code: String, val tag: String?)
-
-/** Read the text of a scanned label QR. Old labels ("HM:L042") still read, without a tag; other text is used as it is, as [labelFromQr] does. */
-fun readLabel(text: String): ScannedLabel {
-    val t = text.trim()
-    if (t.startsWith(TAGGED_PREFIX)) {
-        val rest = t.removePrefix(TAGGED_PREFIX)
-        val i = rest.indexOf(':')
-        if (i > 0) return ScannedLabel(rest.substring(i + 1).trim().take(24), rest.substring(0, i).uppercase())
-    }
-    return ScannedLabel(labelFromQr(t), null)
-}
-
-/** The code in a scanned label's text, with the move tag of a new label left out. The screens use this where they used [labelFromQr]. */
-fun labelCodeOf(text: String): String = readLabel(text).code
-
-/** The text of the QR code printed on a label for [code] in the move with [moveTag]; without a tag, as before 2.1. */
-fun labelQrText(code: String, moveTag: String): String = if (moveTag.isBlank()) QR_PREFIX + code else "$TAGGED_PREFIX$moveTag:$code"
-
 /** QR and barcode encoding and decoding, kept free of Android classes so it can be tested on its own. */
 object Qr {
     fun matrix(text: String, sizePx: Int): BitMatrix {
@@ -106,4 +83,10 @@ object Qr {
             }
         }
     }
+}
+
+/** Android and the JVM: [Qr.matrix], as label sheets and screens draw it. */
+actual fun qrPixels(text: String, sizePx: Int): QrPixels {
+    val m = Qr.matrix(text, sizePx)
+    return QrPixels(m.width, BooleanArray(m.width * m.height) { m.get(it % m.width, it / m.width) })
 }

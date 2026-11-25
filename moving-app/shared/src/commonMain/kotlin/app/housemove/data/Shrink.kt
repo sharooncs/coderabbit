@@ -1,6 +1,6 @@
 package app.housemove.data
 
-import java.io.File
+import kotlin.concurrent.Volatile
 
 /**
  * Small copies of photos, for update files and the daily small backup: about [SIDE] pixels on the longer

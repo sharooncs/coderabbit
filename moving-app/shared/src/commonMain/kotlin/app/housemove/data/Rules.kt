@@ -42,13 +42,13 @@ internal fun seal(vararg parts: Any?): String {
     for (p in parts) {
         val s = when (p) {
             null -> "\u0000"
-            is Double -> java.lang.Double.doubleToLongBits(p).toString()
+            is Double -> p.toBits().toString()
             else -> p.toString()
         }
         for (ch in s) h = 31 * h + ch.code
         h = 31 * h + 0x1F
     }
-    return java.lang.Long.toString(h and 0xFFFFFFFFFFL, 36)
+    return (h and 0xFFFFFFFFFFL).toString(36)
 }
 
 internal fun Item.decisionSum() = seal(disposition, deadlineDay)

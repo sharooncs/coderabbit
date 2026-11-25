@@ -20,9 +20,9 @@ import java.util.Base64
  * public one travels with this phone's entry in the move ([PhoneEntry.key]), so after any sync every phone
  * knows the keys of the move's Organiser and Decider phones and can send them an update.
  */
-class PhoneKeys internal constructor(val public: PublicKey, internal val private: PrivateKey, val madeAt: Long) {
+class PhoneKeys internal constructor(val public: PublicKey, internal val private: PrivateKey, override val madeAt: Long) : UpdateKeyPair {
     /** The public key as it travels: X.509, Base64 on one line. */
-    val publicText: String = Base64.getEncoder().encodeToString(public.encoded)
+    override val publicText: String = Base64.getEncoder().encodeToString(public.encoded)
 
     @Serializable
     private data class Saved(val public: String = "", val private: String = "", val at: Long = 0)
@@ -67,6 +67,16 @@ class PhoneKeys internal constructor(val public: PublicKey, internal val private
         }
     }
 }
+
+/** The update-file crypto the shared code calls (UpdateKeys.kt): this file's, on Android and the JVM. */
+internal actual val updateCrypto: UpdateCrypto? = object : UpdateCrypto {
+    override fun keysIn(file: File?): UpdateKeyPair = file?.let { PhoneKeys.inFile(it) } ?: PhoneKeys.make()
+
+    override fun isPublicKey(text: String): Boolean = PhoneKeys.publicFrom(text) != null
+}
+
+/** This phone's key pair for update files, with its private half: on Android and the JVM, [Phone.keys] is always one. */
+internal val Phone.keyPair: PhoneKeys get() = keys as PhoneKeys
 
 /** Where new key pairs (and nothing else) get their randomness. A test that has to repeat a run exactly swaps in a seeded source. */
 @Volatile

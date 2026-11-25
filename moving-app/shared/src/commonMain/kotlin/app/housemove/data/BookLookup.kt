@@ -3,9 +3,6 @@ package app.housemove.data
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
 
 data class BookInfo(val title: String, val author: String)
 
@@ -32,19 +29,19 @@ object BookLookup {
         null
     }
 
+    /** What [fetch] says when the catalogue answers with anything but the book. */
+    const val NOT_ANSWERING = "The book catalogue is not answering just now. The title can be looked up later."
+
     /** Blocking; call off the main thread. Null when not listed; throws [IOException] when there is no connection. */
     fun fetch(isbn: String, timeoutMs: Int = 7000): BookInfo? {
         val clean = isbn.filter { it.isDigit() || it == 'X' || it == 'x' }
-        val conn = URL(url(clean)).openConnection() as HttpURLConnection
-        try {
-            conn.connectTimeout = timeoutMs
-            conn.readTimeout = timeoutMs
-            conn.setRequestProperty("User-Agent", "HouseMove (Android app)")
-            conn.setRequestProperty("Accept", "application/json")
-            if (conn.responseCode != 200) throw IOException("The book catalogue is not answering just now. The title can be looked up later.")
-            return parse(conn.inputStream.use { it.readBytes().decodeToString() })
-        } finally {
-            conn.disconnect()
-        }
+        return parse(fetchCatalogue(url(clean), timeoutMs))
     }
 }
+
+/**
+ * The catalogue's answer at [url] as text, waiting up to [timeoutMs] milliseconds to connect and to read. Throws
+ * IOException ([BookLookup.NOT_ANSWERING] when it answers with anything but 200). Android and the JVM ask with
+ * HttpURLConnection; book titles are not looked up on the iPhone v1.
+ */
+internal expect fun fetchCatalogue(url: String, timeoutMs: Int): String

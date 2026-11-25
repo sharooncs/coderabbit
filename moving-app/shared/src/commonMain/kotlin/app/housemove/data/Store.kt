@@ -5,12 +5,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import java.io.File
-import java.util.UUID
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicLong
+import kotlin.concurrent.Volatile
 
 val AppJson = Json {
     ignoreUnknownKeys = true
@@ -20,7 +15,7 @@ val AppJson = Json {
 
 /** Where new ids come from. A test that has to repeat a run exactly swaps in a seeded source; the app never does. */
 @Volatile
-internal var idSource: () -> String = { UUID.randomUUID().toString() }
+internal var idSource: () -> String = { randomUuid() }
 
 fun newId(): String = idSource()
 
@@ -115,7 +110,7 @@ class Store internal constructor(
     private val labelsElsewhere: () -> List<IntRange> = { emptyList() },
 ) {
     /** A move kept in [dir] on its own, with the phone's ID and codes beside it. */
-    constructor(dir: File, clock: () -> Long = System::currentTimeMillis) : this(dir, clock, Phone.standalone(dir), dir, { emptySet() })
+    constructor(dir: File, clock: () -> Long = ::currentTimeMillis) : this(dir, clock, Phone.standalone(dir), dir, { emptySet() })
 
     val photoDir: File = photos.apply {
         mkdirs()
@@ -131,13 +126,11 @@ class Store internal constructor(
     /** The codes live in a folder of their own, apart from the move's folder (which Android's backup copies). */
     private val codesApart = codesDir.absoluteFile != dir.absoluteFile
 
-    private val io = Executors.newSingleThreadScheduledExecutor { r ->
-        Thread(r, "store-io").apply { isDaemon = true }
-    }
+    private val io = SerialWorker("store-io")
     private val dirty = AtomicBoolean(false)
 
     /** Everything that changes the data or the device settings takes this, so each change is seen whole. */
-    private val lock = Any()
+    private val lock = Lock()
 
     /** Set when the saved data could not be read normally at start-up; shown once on the dashboard. */
     @Volatile
@@ -225,7 +218,7 @@ class Store internal constructor(
     private fun randomLetter(): String {
         val elsewhere = lettersElsewhere().map { it.uppercase() }.toSet()
         val free = ('A'..'Z').map { it.toString() }.filter { it !in elsewhere }
-        return if (free.isEmpty()) "A" else free[(Math.random() * free.size).toInt().coerceIn(0, free.size - 1)]
+        return if (free.isEmpty()) "A" else free[(mathRandom() * free.size).toInt().coerceIn(0, free.size - 1)]
     }
 
     private fun saveCodes(next: Codes) {
@@ -299,7 +292,7 @@ class Store internal constructor(
 
     private fun scheduleSave() {
         if (dirty.compareAndSet(false, true)) {
-            io.schedule({ writeNow() }, 250, TimeUnit.MILLISECONDS)
+            io.schedule(250) { writeNow() }
         }
     }
 
@@ -321,7 +314,7 @@ class Store internal constructor(
     /** Blocks until everything is on disk. Call when the app goes to the background. */
     fun flush() {
         try {
-            io.submit { writeNow() }.get(10, TimeUnit.SECONDS)
+            io.runAndWait(10_000) { writeNow() }
         } catch (_: Exception) {
         }
     }
@@ -330,10 +323,7 @@ class Store internal constructor(
     fun close() {
         flush()
         io.shutdownNow() // also drops delayed writes; flush() above already saved everything
-        try {
-            io.awaitTermination(5, TimeUnit.SECONDS)
-        } catch (_: InterruptedException) {
-        }
+        io.awaitTermination(5_000)
     }
 
     private fun writeDevice(next: DeviceInfo) {
@@ -1810,7 +1800,7 @@ class Store internal constructor(
         while (block != null && ownLabels(block.first, block.last).let { own -> avoidLabels.any { it.overlaps(own) } }) block = givenBlock(codes.labelsFrom, codes.labelsTo, ++n)
         if (block != null) saveCodes(codes.copy(blocksGiven = n + 1))
         // Its public key for update files, as it said it: the admitting phone can send it an update at once.
-        val ok = key.isNotEmpty() && PhoneKeys.publicFrom(key) != null
+        val ok = key.isNotEmpty() && updateCrypto?.isPublicKey(key) == true
         val entry = PhoneEntry(
             id = phoneId, name = deviceName.trim(), letter = letter, labelsFrom = block?.first ?: 0, labelsTo = block?.last ?: 0, addedAt = t,
             key = if (ok) key else "", keyAt = if (ok) keyAt else 0,
@@ -2155,8 +2145,7 @@ class Store internal constructor(
      * anything was let go.
      */
     fun fullSyncDone(peerPersonId: String?, sent: AppData? = null): Boolean {
-        val dropped: List<Photo>
-        synchronized(lock) {
+        val dropped: List<Photo> = synchronized(lock) {
             val d = _data.value
             val dev = _device.value
             if (!d.hasOrganiser() || d.roleOf(dev) != Role.HELPER) return false
@@ -2167,8 +2156,8 @@ class Store internal constructor(
             val next = d.withoutHiddenFor(dev.personId).let { if (sent == null) it else it.keepingUnsent(d, sent, dev.personId) }
             if (next == d) return false
             val kept = next.photos.map { it.file }.toSet()
-            dropped = d.photos.filter { it.kind in HIDDEN_FROM_HELPERS && it.file !in kept }
             _data.value = next
+            d.photos.filter { it.kind in HIDDEN_FROM_HELPERS && it.file !in kept }
         }
         scheduleSave()
         dropped.forEach { File(photoDir, it.file).delete() }
@@ -2301,7 +2290,7 @@ class Store internal constructor(
     }
 
     /** Mark the move done ([done] true, on [day]) or not done after all. Organisers only. */
-    fun markDone(done: Boolean = true, day: Long = java.time.LocalDate.now().toEpochDay()): Outcome<MoveInfo> =
+    fun markDone(done: Boolean = true, day: Long = today()): Outcome<MoveInfo> =
         changeMove { it.copy(doneDay = if (done) it.doneDay ?: day else null) }
 
     /**

@@ -59,7 +59,7 @@ private fun <T : Rec> withDeletionOf(live: T, dead: T): T? = when (live) {
  * thing in a container is, its damage and a container's contents). Blank for a record the merge takes whole from the
  * newer copy, and for one whose parts are all protected.
  */
-private fun ownPart(r: Rec): String = when (r) {
+internal fun ownPart(r: Rec): String = when (r) {
     is Item -> r.copy(
         disposition = Disposition.UNDECIDED, deadlineDay = null, decisionBy = Stamp(), destRoomId = null, roomBy = Stamp(),
         listed = false, gone = false, outcomeBy = Stamp(), handoverTo = null, paid = false, handoverBy = Stamp(), handedOver = false, handedOverBy = Stamp(),
@@ -414,7 +414,7 @@ private fun mergeLines(a: List<ContentsLine>, b: List<ContentsLine>): List<Conte
     val merged = mergeList(a, b)
     if (merged.none { it.batch != 0L }) return merged
     val newest = HashMap<String, Long>()
-    for (l in merged) if (l.batch != 0L) newest.merge(l.boxId, l.batch, ::maxOf)
+    for (l in merged) if (l.batch != 0L) newest[l.boxId] = newest[l.boxId]?.let { maxOf(it, l.batch) } ?: l.batch
     return merged.filter { it.batch == 0L || it.batch == newest[it.boxId] }
 }
 

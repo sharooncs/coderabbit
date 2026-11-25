@@ -24,9 +24,9 @@ internal fun deletedSum() = seal(true)
 
 /** The people in a list of hands, as kept: no blanks, no repeats, in order, so every phone writes the same. */
 internal fun joinHands(vararg lists: Collection<String>): List<String> {
-    val out = java.util.TreeSet<String>()
+    val out = HashSet<String>()
     for (l in lists) for (h in l) if (h.isNotEmpty()) out += h
-    return out.toList()
+    return out.sorted()
 }
 
 /** Who has had a hand in what, worked out once for a whole dataset. */
@@ -59,7 +59,7 @@ internal class HandsOn(private val d: AppData) {
      * "someone, not known who": something from before version 2.0 or from a move with nobody to ask.
      */
     fun others(x: Owned, creator: String = x.createdBy): List<String> {
-        val all = java.util.TreeSet<String>()
+        val all = HashSet<String>()
         fun add(people: Collection<String>) {
             if (people.none { it.isNotEmpty() }) all += "" else for (p in people) if (p.isNotEmpty()) all += p
         }
@@ -80,7 +80,7 @@ internal class HandsOn(private val d: AppData) {
             }
         }
         all.remove(creator)
-        return all.toList()
+        return all.sorted()
     }
 }
 

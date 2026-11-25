@@ -22,24 +22,33 @@ import app.housemove.data.sentTo
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.Serializable
+import app.housemove.data.AtomicInteger
+import app.housemove.data.CountDownLatch
+import app.housemove.data.EOFException
+import app.housemove.data.File
+import app.housemove.data.IOException
+import app.housemove.data.Lock
+import app.housemove.data.awaitMillis
+import app.housemove.data.countDown
+import app.housemove.data.currentTimeMillis
+import app.housemove.data.decodeUtf8
+import app.housemove.data.decrementAndGet
+import app.housemove.data.delete
+import app.housemove.data.exists
+import app.housemove.data.incrementAndGet
+import app.housemove.data.isFile
+import app.housemove.data.length
+import app.housemove.data.outputStream
+import app.housemove.data.renameTo
+import app.housemove.data.secureRandom
+import app.housemove.data.startThread
+import app.housemove.data.synchronized
+import app.housemove.data.toUtf8
+import app.housemove.data.urlDecode
+import app.housemove.data.urlEncode
+import app.housemove.data.write
 import kotlinx.serialization.encodeToString
-import java.io.DataInputStream
-import java.io.DataOutputStream
-import java.io.EOFException
-import java.io.File
-import java.io.IOException
-import java.net.Inet4Address
-import java.net.InetSocketAddress
-import java.net.NetworkInterface
-import java.net.ServerSocket
-import java.net.Socket
-import java.net.SocketException
-import java.net.URLDecoder
-import java.net.URLEncoder
-import java.security.SecureRandom
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
-import kotlin.concurrent.thread
+import kotlin.concurrent.Volatile
 
 /**
  * Phone-to-phone sync over the local network, with no server or account.
@@ -208,7 +217,7 @@ object WifiSync {
         val person: Person? = null,
         /** From the host: the person the joining phone joins as. */
         val youAre: String = "",
-        /** The phone's public key for update files ([PhoneKeys.publicText]) and when it was made: the admitting phone puts it on its entry. */
+        /** The phone's public key for update files ([UpdateKeyPair.publicText]) and when it was made: the admitting phone puts it on its entry. */
         val key: String = "",
         val keyAt: Long = 0,
     )
@@ -235,9 +244,9 @@ object WifiSync {
 
         fun encode(): String {
             val base = SYNC_PREFIX + hosts.joinToString(",") + ":" + port + ":" + token
-            val person = if (personId == null) null else personId + ":" + (role?.name ?: "") + ":" + URLEncoder.encode(personName, "UTF-8")
+            val person = if (personId == null) null else personId + ":" + (role?.name ?: "") + ":" + urlEncode(personName)
             if (moveId.isEmpty()) return base + if (person == null) "" else ":$person"
-            return base + ":" + (person ?: "::") + ":" + moveId + ":" + URLEncoder.encode(moveName, "UTF-8")
+            return base + ":" + (person ?: "::") + ":" + moveId + ":" + urlEncode(moveName)
         }
 
         /** What the joining phone asks before anything is sent. */
@@ -261,7 +270,7 @@ object WifiSync {
                 if (hosts.isEmpty() || parts[2].isBlank()) return null
                 if (parts.size == 3) return Invite(hosts, port, parts[2])
                 fun decoded(s: String): String? = try {
-                    URLDecoder.decode(s, "UTF-8")
+                    urlDecode(s)
                 } catch (_: Exception) {
                     null
                 }
@@ -288,13 +297,7 @@ object WifiSync {
 
     /** IPv4 addresses other phones on the same network can reach. */
     fun localAddresses(): List<String> = try {
-        NetworkInterface.getNetworkInterfaces().toList()
-            .filter { it.isUp && !it.isLoopback }
-            .flatMap { it.inetAddresses.toList() }
-            .filterIsInstance<Inet4Address>()
-            .filter { it.isSiteLocalAddress }
-            .map { it.hostAddress ?: "" }
-            .filter { it.isNotBlank() }
+        siteLocalAddresses()
     } catch (_: Exception) {
         emptyList()
     }
@@ -310,7 +313,7 @@ object WifiSync {
 
     private fun newToken(): String {
         val chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-        val r = SecureRandom()
+        val r = secureRandom()
         return (1..8).map { chars[r.nextInt(chars.length)] }.joinToString("")
     }
 
@@ -378,7 +381,7 @@ object WifiSync {
     private fun whatWentWrong(e: Exception, listsDone: Boolean = false): String = when {
         e is Stop -> e.message ?: CONNECTION_LOST
         listsDone -> PHOTOS_CUT
-        e is EOFException || e is SocketException || e is java.net.SocketTimeoutException -> CONNECTION_LOST
+        e is EOFException || e is SocketException || e is SocketTimeoutException -> CONNECTION_LOST
         else -> UNREADABLE
     }
 
@@ -401,6 +404,9 @@ object WifiSync {
 
         private val personal = HashMap<String, Personal>()
 
+        /** Taken while [personal] or [helperCodes] is read or changed. */
+        private val personalLock = Lock()
+
         /** Helper codes and until when each can be used. */
         private val helperCodes = HashMap<String, Long>()
 
@@ -411,6 +417,9 @@ object WifiSync {
 
         private val answers = HashMap<String, Pair<CountDownLatch, BooleanArray>>()
 
+        /** Taken while [answers] is read or changed. */
+        private val answersLock = Lock()
+
         private val _helpers = MutableStateFlow<List<Person>>(emptyList())
 
         /** Who has joined with a Helper code shown here, each for the screen to list with Remove. */
@@ -420,7 +429,7 @@ object WifiSync {
         fun invite(hosts: List<String> = addresses()) = Invite(hosts, port, token, moveId = store.moveId, moveName = store.data.value.move.name)
 
         /** Phones being served right now. */
-        private val serving = java.util.concurrent.atomic.AtomicInteger(0)
+        private val serving = AtomicInteger(0)
 
         /**
          * An invite that makes the phone that scans it [personId], someone an Organiser
@@ -434,7 +443,7 @@ object WifiSync {
             // An invite with nowhere to connect to cannot be scanned; say why now rather than show a code that does nothing.
             if (hosts.isEmpty()) return Outcome.Refused(NO_NETWORK)
             val code = newToken()
-            synchronized(personal) { personal[code] = Personal(p.id, clock() + INVITE_MINUTES * 60_000L) }
+            synchronized(personalLock) { personal[code] = Personal(p.id, clock() + INVITE_MINUTES * 60_000L) }
             return Outcome.Ok(Invite(hosts, port, code, p.id, p.name, p.role, store.moveId, d.move.name))
         }
 
@@ -448,13 +457,13 @@ object WifiSync {
             d.refusal(store.me, Action.MANAGE_PEOPLE)?.let { return Outcome.Refused(it) }
             if (hosts.isEmpty()) return Outcome.Refused(NO_NETWORK)
             val code = newToken()
-            synchronized(personal) { helperCodes[code] = clock() + HELPER_CODE_MINUTES * 60_000L }
+            synchronized(personalLock) { helperCodes[code] = clock() + HELPER_CODE_MINUTES * 60_000L }
             return Outcome.Ok(Invite(hosts, port, code, HELPER_CODE, "", Role.HELPER, store.moveId, d.move.name))
         }
 
         /** Say whether the phone of a [waiting] request is the right one. Undo ([right] false) leaves the invite unused. */
         fun confirm(requestId: String, right: Boolean) {
-            val a = synchronized(answers) { answers[requestId] } ?: return
+            val a = synchronized(answersLock) { answers[requestId] } ?: return
             a.second[0] = right
             a.first.countDown()
         }
@@ -463,18 +472,18 @@ object WifiSync {
         private fun awaitConfirm(r: JoinRequest): Boolean? {
             val latch = CountDownLatch(1)
             val answer = BooleanArray(1)
-            synchronized(answers) { answers[r.id] = latch to answer }
+            synchronized(answersLock) { answers[r.id] = latch to answer }
             _waiting.value = _waiting.value + r
             try {
-                return if (latch.await(confirmMs.toLong(), TimeUnit.MILLISECONDS)) answer[0] else null
+                return if (latch.awaitMillis(confirmMs.toLong())) answer[0] else null
             } finally {
-                synchronized(answers) { answers.remove(r.id) }
+                synchronized(answersLock) { answers.remove(r.id) }
                 _waiting.value = _waiting.value.filter { it.id != r.id }
             }
         }
 
         internal fun start() {
-            thread(name = "sync-host", isDaemon = true) {
+            startThread("sync-host") {
                 while (!closed) {
                     val socket = try {
                         server.accept()
@@ -490,7 +499,7 @@ object WifiSync {
                         }
                         continue
                     }
-                    thread(name = "sync-peer", isDaemon = true) {
+                    startThread("sync-peer") {
                         try {
                             serve(socket)
                         } finally {
@@ -514,8 +523,8 @@ object WifiSync {
                     // Each side writes a whole message and then waits for the answer, so nothing is gained by the
                     // network holding the tail of a message back to fill a packet; it only makes every step wait.
                     s.tcpNoDelay = true
-                    val din = DataInputStream(s.getInputStream().buffered())
-                    val out = DataOutputStream(s.getOutputStream().buffered())
+                    val din = s.dataIn()
+                    val out = s.dataOut()
                     fun refuse(word: String, message: String): Nothing {
                         out.writeUTF(word); out.flush()
                         throw Stop(message)
@@ -524,8 +533,8 @@ object WifiSync {
                     // The first line is short and known. Anything else is not a HouseMove phone, and is not read any further.
                     val length = din.readUnsignedShort()
                     if (length !in 4..16) throw Stop(NOT_HOUSEMOVE)
-                    val magic = ByteArray(length).also { din.readFully(it) }.decodeToString()
-                    fun knows(code: String) = code == token || synchronized(personal) { personal.containsKey(code) || helperCodes.containsKey(code) }
+                    val magic = ByteArray(length).also { din.readFully(it) }.decodeUtf8()
+                    fun knows(code: String) = code == token || synchronized(personalLock) { personal.containsKey(code) || helperCodes.containsKey(code) }
                     if (magic == OLD_MAGIC) refuse("NO", VERSION_MISMATCH)
                     if (magic != MAGIC) {
                         if (!magic.startsWith("HMSYNC")) throw Stop(NOT_HOUSEMOVE)
@@ -554,8 +563,8 @@ object WifiSync {
                     val theirSchema = din.readInt()
                     val theirPerson = personFrom(din.readUTF())
                     val last = din.readUTF()
-                    val invited = synchronized(personal) { personal[theirToken] }
-                    val helperUntil = synchronized(personal) { helperCodes[theirToken] }
+                    val invited = synchronized(personalLock) { personal[theirToken] }
+                    val helperUntil = synchronized(personalLock) { helperCodes[theirToken] }
                     if (theirToken != token && invited == null && helperUntil == null) refuse("NO", WRONG_CODE)
                     if (theirSchema != SCHEMA) {
                         // The other phone may be older and not know this phone's version; it is told it, for a newer one to see.
@@ -598,7 +607,7 @@ object WifiSync {
                         joining = id
                         peerId = id
                     } else if (invited != null) {
-                        val free = synchronized(personal) {
+                        val free = synchronized(personalLock) {
                             (!invited.used && !invited.busy && clock() <= invited.until && claim == invited.personId).also { if (it) invited.busy = true }
                         }
                         if (!free) refuse("EXPIRED", INVITE_EXPIRED)
@@ -701,7 +710,7 @@ object WifiSync {
                     val sent = sendFiles(out, store, wanted(store, theirFiles, role))
                     if (joining != null) {
                         store.markJoined(joining)
-                        if (invited != null) synchronized(personal) { invited.used = true }
+                        if (invited != null) synchronized(personalLock) { invited.used = true }
                         if (helperUntil != null) store.data.value.person(joining)?.let { p -> _helpers.value = _helpers.value.filter { it.id != p.id } + p }
                     }
                     store.noteShared(upTo, everything = role != Role.HELPER)
@@ -720,10 +729,10 @@ object WifiSync {
             } catch (e: Exception) {
                 // Let go of the invite before saying the join failed, so a retry made the moment the failure shows is not
                 // told the invite is in use.
-                mine?.let { synchronized(personal) { it.busy = false } }
+                mine?.let { synchronized(personalLock) { it.busy = false } }
                 onResult(Result(peer, letter, 0, 0, whatWentWrong(e, listsDone), peerPersonId = peerId, peerDevice = device))
             } finally {
-                mine?.let { synchronized(personal) { it.busy = false } }
+                mine?.let { synchronized(personalLock) { it.busy = false } }
             }
         }
 
@@ -734,7 +743,7 @@ object WifiSync {
             } catch (_: IOException) {
             }
             // Nobody is left to confirm a phone still waiting: it is told no.
-            synchronized(answers) { answers.values.toList() }.forEach { it.first.countDown() }
+            synchronized(answersLock) { answers.values.toList() }.forEach { it.first.countDown() }
         }
     }
 
@@ -753,7 +762,7 @@ object WifiSync {
      */
     fun host(
         store: Store,
-        clock: () -> Long = System::currentTimeMillis,
+        clock: () -> Long = ::currentTimeMillis,
         letNewPhonesIn: Boolean = true,
         confirmJoins: Boolean = false,
         onResult: (Result) -> Unit,
@@ -789,7 +798,7 @@ object WifiSync {
         for (host in invite.hosts) {
             val socket = Socket()
             try {
-                socket.connect(InetSocketAddress(host, invite.port), connectTimeoutMs)
+                socket.connect(host, invite.port, connectTimeoutMs)
             } catch (e: Exception) {
                 socket.close()
                 continue
@@ -804,8 +813,8 @@ object WifiSync {
                 socket.use { s ->
                     s.soTimeout = timeoutMs
                     s.tcpNoDelay = true
-                    val din = DataInputStream(s.getInputStream().buffered())
-                    val out = DataOutputStream(s.getOutputStream().buffered())
+                    val din = s.dataIn()
+                    val out = s.dataOut()
                     val claim = invite.personId
                     out.writeUTF(MAGIC)
                     out.writeUTF(invite.token)
@@ -992,16 +1001,16 @@ object WifiSync {
     private fun tellOlderPhone(store: Store, host: String, invite: Invite, connectTimeoutMs: Int): String? {
         return try {
             Socket().use { s ->
-                s.connect(InetSocketAddress(host, invite.port), connectTimeoutMs)
+                s.connect(host, invite.port, connectTimeoutMs)
                 s.soTimeout = 3000
-                val out = DataOutputStream(s.getOutputStream().buffered())
+                val out = s.dataOut()
                 out.writeUTF(MAGIC_1_3)
                 out.writeUTF(invite.token)
                 out.writeUTF(store.device.value.name)
                 out.writeUTF(store.device.value.letter)
                 out.writeInt(SCHEMA)
                 out.flush()
-                DataInputStream(s.getInputStream()).readUTF()
+                s.dataInUnbuffered().readUTF()
             }
         } catch (_: Exception) {
             null
@@ -1011,7 +1020,7 @@ object WifiSync {
     // ---- wire helpers ------------------------------------------------------
 
     private fun writeData(out: DataOutputStream, data: AppData) {
-        val bytes = AppJson.encodeToString(data).toByteArray()
+        val bytes = AppJson.encodeToString(data).toUtf8()
         out.writeInt(bytes.size)
         out.write(bytes)
         out.flush()
@@ -1022,7 +1031,7 @@ object WifiSync {
         if (n < 0 || n > MAX_JSON) throw IOException("Bad data size")
         val bytes = ByteArray(n)
         din.readFully(bytes)
-        return AppJson.decodeFromString<AppData>(bytes.decodeToString())
+        return AppJson.decodeFromString<AppData>(bytes.decodeUtf8())
     }
 
     /**
@@ -1059,7 +1068,7 @@ object WifiSync {
             if (!f.isFile) continue
             out.writeUTF(name)
             out.writeLong(f.length())
-            f.inputStream().use { it.copyTo(out) }
+            out.writeFile(f)
             count++
         }
         out.writeUTF("")

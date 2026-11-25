@@ -252,7 +252,9 @@ internal object GoldenMove {
             // The invite's one-time code is drawn at random; here it is set, so the bytes repeat.
             @Suppress("UNCHECKED_CAST")
             val personal = WifiSync.Host::class.java.getDeclaredField("personal").apply { isAccessible = true }.get(host) as HashMap<String, Any>
-            synchronized(personal) { personal[INVITE_CODE] = personal.remove(drawn.token)!! }
+            // The Host changes that map holding its personalLock (on the JVM a plain object's monitor).
+            val lock = WifiSync.Host::class.java.getDeclaredField("personalLock").apply { isAccessible = true }.get(host)
+            synchronized(lock) { personal[INVITE_CODE] = personal.remove(drawn.token)!! }
             val invite = drawn.copy(token = INVITE_CODE)
             val join = relay(host.port) { port -> WifiSync.join(p, invite.copy(port = port)) }
             val joined = results.poll(30, TimeUnit.SECONDS)

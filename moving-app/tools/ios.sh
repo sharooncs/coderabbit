@@ -8,6 +8,7 @@
 #   tools/ios.sh generate   make iosApp/HouseMove.xcodeproj from iosApp/project.yml
 #   tools/ios.sh measure    time linking the Kotlin framework, its memory, the app's size and the privacy APIs it calls
 #   tools/ios.sh sim        build and run the UI tests in an iPhone simulator; screenshots in iosApp/build/shots
+#   tools/ios.sh sim-id     the id of that simulator (for ./gradlew :shared:iosSimulatorArm64Test, see HM_SIMULATOR)
 #   tools/ios.sh archive    signed Release archive, then a local App Store export (registers app.housemove.ios)
 #   tools/ios.sh upload     sign for App Store Connect and upload the archive to TestFlight
 #   tools/ios.sh phone      build for the paired iPhone, install and open it (no TestFlight needed)
@@ -191,6 +192,8 @@ case "${1:-}" in
     fi
     ;;
   generate) generate ;;
+  # The simulator `sim` uses (made if there is none yet): CI runs the shared Kotlin tests on it first (housemove-ios.yml).
+  sim-id) sim_id ;;
   measure)
     # What the Kotlin side costs on this Mac, for the cloud session to read in the CI log: the time and memory of
     # compiling and linking HouseMoveKit, the size of the Release app for the iPhone, and which of Apple's
@@ -323,5 +326,5 @@ for test in json.load(open(os.path.join(d, "manifest.json"))):
     xcrun devicectl device install app --device "$id" build/dd/Build/Products/Debug-iphoneos/HouseMove.app
     xcrun devicectl device process launch --device "$id" app.housemove.ios
     ;;
-  *) sed -n '2,18p' "$0"; exit 1 ;;
+  *) sed -n '2,19p' "$0"; exit 1 ;;
 esac

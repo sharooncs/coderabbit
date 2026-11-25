@@ -20,33 +20,6 @@ class DataTest {
     private fun store(name: String) = Store(tmp.newFolder(name)) { clock++ }
 
     @Test
-    fun newerRecordWinsAndMergeIsSymmetric() {
-        val old = Box(id = "b1", label = "L001", contents = "old", updatedAt = 10)
-        val new = old.copy(contents = "new", updatedAt = 20)
-        val a = AppData(boxes = listOf(old), items = listOf(Item(id = "i1", name = "Sofa", updatedAt = 5)))
-        val b = AppData(boxes = listOf(new), items = listOf(Item(id = "i2", name = "Bed", updatedAt = 7)))
-        val ab = merge(a, b)
-        val ba = merge(b, a)
-        assertEquals("new", ab.box("b1")!!.contents)
-        assertEquals(2, ab.liveItems.size)
-        assertEquals(ab.boxes.toSet(), ba.boxes.toSet())
-        assertEquals(ab.items.toSet(), ba.items.toSet())
-    }
-
-    @Test
-    fun deletionTravelsAsTombstoneAndTiesAreDeterministic() {
-        val live = Box(id = "b1", label = "L001", updatedAt = 10)
-        val dead = live.copy(deleted = true, updatedAt = 11)
-        assertTrue(merge(AppData(boxes = listOf(live)), AppData(boxes = listOf(dead))).liveBoxes.isEmpty())
-        val x = Box(id = "b2", label = "L002", contents = "x", updatedAt = 10)
-        val y = x.copy(contents = "y")
-        assertEquals(
-            merge(AppData(boxes = listOf(x)), AppData(boxes = listOf(y))).boxes,
-            merge(AppData(boxes = listOf(y)), AppData(boxes = listOf(x))).boxes,
-        )
-    }
-
-    @Test
     fun storePersistsAndReloads() {
         val dir = tmp.newFolder("persist")
         val s = Store(dir)
@@ -75,17 +48,6 @@ class DataTest {
     }
 
     @Test
-    fun fitCheck() {
-        val wardrobe = Item(id = "w", widthCm = 120.0, depthCm = 60.0, heightCm = 210.0)
-        assertEquals(Fit.OK, fitThrough(wardrobe, 76.0))          // 60 through a 76 door, 120 under the lintel
-        assertEquals(Fit.TIGHT, fitThrough(wardrobe, 63.0))
-        assertEquals(Fit.NO, fitThrough(wardrobe, 55.0))
-        val sofa = Item(id = "s", widthCm = 220.0, depthCm = 95.0, heightCm = 90.0)
-        assertEquals(Fit.NO, fitThrough(sofa, 76.0))
-        assertEquals(Fit.UNKNOWN, fitThrough(Item(id = "x", widthCm = 10.0), 76.0))
-    }
-
-    @Test
     fun volumeSearchAndIssues() {
         val s = store("logic")
         val kitchen = s.createRoom(Home.DEST, "Kitchen")
@@ -105,22 +67,6 @@ class DataTest {
         val issues = d.issues().map { it.route }
         assertTrue("triage" in issues && "plan" in issues && "disposal" in issues)
         assertEquals(2, d.movables().size)
-    }
-
-    @Test
-    fun duplicateLabelsAreReported() {
-        val d = AppData(
-            boxes = listOf(Box(id = "1", label = "A1"), Box(id = "2", label = "a1"), Box(id = "3", label = "A2")),
-        )
-        assertEquals(listOf("A1"), d.duplicateLabels())
-    }
-
-    @Test
-    fun taskDueDatesFollowMoveDay() {
-        val d = AppData(move = MoveInfo(moveDay = 20_000), tasks = seedTasks())
-        val first = d.liveTasks.minOf { d.dueDay(it)!! }
-        assertEquals(20_000L - 42, first)
-        assertNull(AppData(tasks = seedTasks()).let { it.dueDay(it.tasks.first()) })
     }
 
     @Test

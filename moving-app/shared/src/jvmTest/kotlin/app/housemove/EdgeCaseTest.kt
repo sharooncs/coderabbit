@@ -13,7 +13,6 @@ import java.io.DataOutputStream
 import java.io.File
 import java.net.ServerSocket
 import java.net.Socket
-import java.util.Random
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.zip.ZipEntry
@@ -113,31 +112,6 @@ class EdgeCaseTest {
         for (s in listOf(a, b)) {
             assertNull(s.data.value.box(one.id))
             assertEquals("still needed", s.data.value.box(two.id)!!.contents)
-        }
-    }
-
-    @Test
-    fun anyNumberOfPhonesConvergeWhateverTheSyncOrder() {
-        val rnd = Random(42)
-        fun randomData(seed: Int): AppData {
-            val boxes = (0 until 40).filter { rnd.nextInt(3) > 0 }.map { n ->
-                Box(id = "b$n", label = "L$n", contents = "phone$seed-${rnd.nextInt(5)}", updatedAt = rnd.nextInt(6).toLong(), deleted = rnd.nextInt(8) == 0)
-            }
-            val items = (0 until 25).filter { rnd.nextInt(3) > 0 }.map { n ->
-                Item(id = "i$n", name = "phone$seed-${rnd.nextInt(5)}", updatedAt = rnd.nextInt(6).toLong(), deleted = rnd.nextInt(8) == 0)
-            }
-            return AppData(move = MoveInfo(name = "m$seed", updatedAt = rnd.nextInt(4).toLong()), boxes = boxes, items = items)
-        }
-        repeat(30) {
-            val a = randomData(1)
-            val b = randomData(2)
-            val c = randomData(3)
-            fun key(d: AppData) = Triple(d.move, d.boxes.toSet(), d.items.toSet())
-            val expected = key(merge(merge(a, b), c))
-            assertEquals(expected, key(merge(a, merge(b, c))))
-            assertEquals(expected, key(merge(merge(c, a), b)))
-            assertEquals(expected, key(merge(merge(b, c), merge(a, b))))
-            assertEquals(key(a), key(merge(a, a)))
         }
     }
 

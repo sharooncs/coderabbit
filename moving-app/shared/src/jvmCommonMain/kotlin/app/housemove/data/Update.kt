@@ -216,7 +216,7 @@ object Update {
         val mine = header.to.firstOrNull { it.phone == store.phone.id }
             ?: return Opened(false, if (header.from == store.phone.id) FROM_THIS_PHONE else NOT_FOR_THIS_PHONE)
         val key = try {
-            Sealing.unwrap(Sealing.Wrapped(b64d.decode(mine.epk), b64d.decode(mine.salt), b64d.decode(mine.iv), b64d.decode(mine.key)), store.phone.keys, store.phone.id, header.moveId)
+            Sealing.unwrap(Sealing.Wrapped(b64d.decode(mine.epk), b64d.decode(mine.salt), b64d.decode(mine.iv), b64d.decode(mine.key)), store.phone.keyPair, store.phone.id, header.moveId)
         } catch (_: Exception) {
             null
         } ?: return Opened(false, DAMAGED)
@@ -346,6 +346,29 @@ object Update {
         if (a.move != b.move) n++
         return n
     }
+}
+
+/**
+ * Open an update file ([Update]) into the move it is for, which need not be the one in use: the move is
+ * looked for by its ID before anything else. [read] opens the file; it is read twice. With
+ * [takeInRemoved], an Organiser takes in the work of someone removed from the move ([Update.open]).
+ * Android and the JVM only: the iPhone v1 has no update files.
+ */
+fun Moves.openUpdate(read: () -> InputStream, takeInRemoved: Boolean = false): Update.Opened {
+    val peek = try {
+        read().use { Update.peek(it) }
+    } catch (e: IllegalArgumentException) {
+        return Update.Opened(false, e.message ?: Update.NOT_AN_UPDATE)
+    } catch (_: Exception) {
+        return Update.Opened(false, Update.NOT_AN_UPDATE)
+    }
+    val held = card(peek.moveId) ?: peek.aliases.firstNotNullOfOrNull { card(it) } ?: return Update.Opened(false, Update.NOT_ON_PHONE)
+    val s = storeIn(held.folder)
+    return try {
+        read().use { Update.open(s, it, takeInRemoved) }
+    } catch (_: Exception) {
+        Update.Opened(false, Update.NOT_AN_UPDATE)
+    }.also { refresh() }
 }
 
 /**

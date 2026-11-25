@@ -5,9 +5,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
-import java.io.File
-import java.io.InputStream
-import java.time.LocalDate
+import kotlin.concurrent.Volatile
 
 /** One move on the phone, as the list of moves shows it. */
 @Serializable
@@ -65,7 +63,7 @@ class Moves(
     private val filesDir: File,
     private val noBackupDir: File,
     deviceName: () -> String = { "" },
-    private val clock: () -> Long = System::currentTimeMillis,
+    private val clock: () -> Long = ::currentTimeMillis,
 ) {
     val phone: Phone
 
@@ -73,7 +71,7 @@ class Moves(
     private val movesDir = File(filesDir, "moves")
     private val photosDir = File(filesDir, "photos")
     private val codesRoot = File(noBackupDir, "moves")
-    private val lock = Any()
+    private val lock = Lock()
     private val open = HashMap<String, Store>()
 
     private val _cards = MutableStateFlow<List<MoveCard>>(emptyList())
@@ -153,7 +151,7 @@ class Moves(
         }
     }
 
-    private fun card(moveId: String): MoveCard? = _cards.value.firstOrNull { it.matches(moveId) }
+    internal fun card(moveId: String): MoveCard? = _cards.value.firstOrNull { it.matches(moveId) }
 
     private fun cardOf(store: Store): MoveCard? = synchronized(lock) { open.entries.firstOrNull { it.value === store }?.key }?.let { f -> _cards.value.firstOrNull { it.folder == f } }
 
@@ -196,7 +194,7 @@ class Moves(
         return out.filter { !it.isEmpty() }
     }
 
-    private fun storeIn(folder: String): Store = synchronized(lock) {
+    internal fun storeIn(folder: String): Store = synchronized(lock) {
         open.getOrPut(folder) {
             Store(
                 dir = File(movesDir, folder).apply { mkdirs() },
@@ -478,28 +476,7 @@ class Moves(
     }
 
     // ---- working apart and safety nets --------------------------------------------------
-
-    /**
-     * Open an update file ([Update]) into the move it is for, which need not be the one in use: the move is
-     * looked for by its ID before anything else. [read] opens the file; it is read twice. With
-     * [takeInRemoved], an Organiser takes in the work of someone removed from the move ([Update.open]).
-     */
-    fun openUpdate(read: () -> InputStream, takeInRemoved: Boolean = false): Update.Opened {
-        val peek = try {
-            read().use { Update.peek(it) }
-        } catch (e: IllegalArgumentException) {
-            return Update.Opened(false, e.message ?: Update.NOT_AN_UPDATE)
-        } catch (_: Exception) {
-            return Update.Opened(false, Update.NOT_AN_UPDATE)
-        }
-        val held = card(peek.moveId) ?: peek.aliases.firstNotNullOfOrNull { card(it) } ?: return Update.Opened(false, Update.NOT_ON_PHONE)
-        val s = storeIn(held.folder)
-        return try {
-            read().use { Update.open(s, it, takeInRemoved) }
-        } catch (_: Exception) {
-            Update.Opened(false, Update.NOT_AN_UPDATE)
-        }.also { refresh() }
-    }
+    // Opening an update file into the move it is for is Moves.openUpdate, in Update.kt: Android and the JVM only.
 
     /** Where the daily small backup goes ([DailyBackup]): the folder this phone's person picked once, or null while there is none. The app sets this. */
     @Volatile
@@ -520,7 +497,7 @@ class Moves(
      * ([Store.whyLetGo]). Only moves already open are looked at. Returns what to tell the person, also kept in
      * [farewells].
      */
-    fun tidy(today: Long = LocalDate.now().toEpochDay()): List<String> = synchronized(checking) {
+    fun tidy(today: Long = localToday()): List<String> = synchronized(checking) {
         val gone = ArrayList<String>()
         for ((folder, s) in synchronized(lock) { open.toMap() }) {
             val why = s.whyLetGo(today) ?: continue
@@ -537,13 +514,13 @@ class Moves(
     }
 
     /** Taken by [tidy] and [dailyBackups]: the app's start, a sync and going to the background can come at once. */
-    private val checking = Any()
+    private val checking = Lock()
 
     /**
      * Write today's small backup of each open move that needs one ([DailyBackup.due]: a move with a single
      * Organiser, on that Organiser's phone, not yet today) to [backupPlace]. Returns how many were written.
      */
-    fun dailyBackups(today: Long = LocalDate.now().toEpochDay()): Int {
+    fun dailyBackups(today: Long = localToday()): Int {
         val place = try {
             backupPlace()
         } catch (_: Exception) {
@@ -557,7 +534,7 @@ class Moves(
     }
 
     /** When the app opens and when it goes to the background: the daily backup, and letting go of what is no longer needed. */
-    fun checkIn(today: Long = LocalDate.now().toEpochDay()) {
+    fun checkIn(today: Long = localToday()) {
         try {
             dailyBackups(today)
         } catch (_: Exception) {

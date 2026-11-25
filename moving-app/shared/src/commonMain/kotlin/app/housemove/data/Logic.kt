@@ -1,19 +1,14 @@
 package app.housemove.data
 
-import java.time.LocalDate
-import java.time.format.DateTimeFormatter
 import kotlin.math.ceil
 import kotlin.math.roundToInt
 
 // ---- dates -----------------------------------------------------------------
 
-fun today(): Long = LocalDate.now().toEpochDay()
+fun today(): Long = localToday()
 
-private val DAY_FMT = DateTimeFormatter.ofPattern("EEE d MMM yyyy")
-private val SHORT_FMT = DateTimeFormatter.ofPattern("d MMM")
-
-fun fmtDay(day: Long?): String = if (day == null) "No date" else LocalDate.ofEpochDay(day).format(DAY_FMT)
-fun fmtDayShort(day: Long?): String = if (day == null) "–" else LocalDate.ofEpochDay(day).format(SHORT_FMT)
+fun fmtDay(day: Long?): String = if (day == null) "No date" else dayText(day)
+fun fmtDayShort(day: Long?): String = if (day == null) "–" else dayShortText(day)
 
 /** "in 12 days", "today", "3 days ago". */
 fun relDay(day: Long?, now: Long = today()): String {
@@ -31,7 +26,7 @@ fun relDay(day: Long?, now: Long = today()): String {
 fun fmtNum(v: Double?): String = when {
     v == null -> ""
     v == v.toLong().toDouble() -> v.toLong().toString()
-    else -> ((v * 100).roundToInt() / 100.0).toString()
+    else -> ((v * 100).roundToInt() / 100.0).javaText()
 }
 
 // ---- room colours ----------------------------------------------------------

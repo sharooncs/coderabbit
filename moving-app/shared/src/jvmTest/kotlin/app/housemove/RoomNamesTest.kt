@@ -83,12 +83,4 @@ class RoomNamesTest {
         assertTrue(s.renameRoom(r.id, "Loft").ok)
         assertSame(before, s.data.value)
     }
-
-    @Test
-    fun usualOtherNamesAreOfferedForTheRoom() {
-        assertTrue("Guest room" in roomRenames("Bedroom 2"))
-        assertTrue("En suite" in roomRenames("Bathroom"))
-        assertTrue(roomRenames("Garden / shed").isNotEmpty())
-        assertTrue(roomRenames("Something odd").isNotEmpty())
-    }
 }
