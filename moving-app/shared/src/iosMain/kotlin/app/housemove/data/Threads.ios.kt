@@ -101,10 +101,14 @@ internal actual fun CountDownLatch.awaitMillis(ms: Long): Boolean {
     return true
 }
 
-/** A new NSThread called [name], running [block] (in an autorelease pool, as a thread of its own needs). */
+/**
+ * A new NSThread called [name], running [block] (in an autorelease pool, as a thread of its own needs), with a stack
+ * of 1 MB as the JVM's and Android's threads have (an NSThread's is 512 KB unless asked).
+ */
 internal actual fun startThread(name: String, block: () -> Unit) {
     val t = NSThread { autoreleasepool { block() } }
     t.name = name
+    t.stackSize = 1UL shl 20
     t.start()
 }
 
