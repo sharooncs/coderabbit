@@ -264,6 +264,7 @@ PY
     xcrun simctl boot "$id" 2>/dev/null || true
     xcrun simctl bootstatus "$id" -b >/dev/null
     rm -rf build/sim.xcresult build/shots
+    mkdir -p build
     # Build first (Gradle builds the Kotlin screens), then stop Gradle so its memory goes to the simulator.
     say "Building for the simulator"
     xcodebuild build-for-testing -project "$PROJECT" -scheme HouseMove -destination "id=$id" \
