@@ -5,10 +5,25 @@ unpacked box: list what you own, decide what happens to it, pack, load,
 unload, unpack. It works offline. There is no account and no server; phones
 share the move by syncing directly with each other.
 
-This is version 2.1.1. It adds renaming rooms where they are added: each room
-in setup has a pencil, and a new name is a tap (Guest room, Kids' room...), said
-or typed. More, Rooms does the same. A room's door-sign code follows its new
-name until a box or labelled item is marked with it.
+This is version 2.2. What is new in it:
+
+- **A fix for number boxes.** It fixes a rare problem: typing something that is
+  not a number, such as "NaN", into a box for a number (a price, a cost, a
+  size) made the app stop saving every change made after it, and those changes
+  were gone the next time the app was opened. Such a box now says it is not a
+  number, and nothing from it is saved. If a phone ever cannot save, the app now
+  says so and keeps trying, instead of saying nothing.
+- **Getting ready for the iPhone.** Behind the scenes, much of the app has been
+  rebuilt so that the coming iPhone version can share it. Nothing else looks or
+  works differently.
+- **A slightly bigger download.** The app is 17.2 MB, 1.5 MB more than 2.1.1
+  (15.7 MB).
+- **Install it over 2.1.1** as before: every move on the phone is kept.
+
+Version 2.1.1 added renaming rooms where they are added: each room in setup has
+a pencil, and a new name is a tap (Guest room, Kids' room...), said or typed.
+More, Rooms does the same. A room's door-sign code follows its new name until a
+box or labelled item is marked with it.
 
 What is new in 2.1:
 
@@ -36,7 +51,7 @@ screens that need almost no typing.
 
 ## Install
 
-Download `releases/HouseMove-2.1.1.apk` from this repository (or scan the
+Download `releases/HouseMove-2.2.apk` from this repository (or scan the
 install code that comes with each release), or build it (below). Copy it to the
 phone and open it. A phone that already has HouseMove can pass it on without
 internet: Who's helping, Share the app. Android will ask to allow
