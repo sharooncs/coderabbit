@@ -69,7 +69,17 @@ def xcresult(path):
         name = node.get("name", "")
         kind = node.get("nodeType", "")
         if kind == "Test Case" and node.get("result") == "Failed":
-            messages = [c.get("name", "") for c in node.get("children", []) if c.get("nodeType") == "Failure Message"]
+            # With retries the messages sit one level down, under each "Repetition"; collect them at any depth.
+            messages = []
+
+            def collect(n, where):
+                for c in n.get("children", []) or []:
+                    if c.get("nodeType") == "Failure Message":
+                        messages.append((where + ": " if where else "") + c.get("name", ""))
+                    else:
+                        collect(c, c.get("name", "") if c.get("nodeType") == "Repetition" else where)
+
+            collect(node, "")
             failed.append(("/".join(trail + [name]), messages))
         for c in node.get("children", []) or []:
             walk(c, trail + ([name] if kind in ("Test Suite", "Unit test bundle", "UI test bundle") else []))
