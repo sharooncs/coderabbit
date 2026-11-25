@@ -163,6 +163,33 @@ private fun mergeMove(a: MoveInfo, b: MoveInfo, roles: Roles, refusals: Refusals
     return if (from.updatedAt == newer.updatedAt && from.labelsPrinted == printed) from else from.copy(updatedAt = newer.updatedAt, labelsPrinted = printed)
 }
 
+/**
+ * The move's internet mailbox (from 2.5): the newest setting an Organiser made (or anyone while the move had no Organiser),
+ * by the time of its stamp. A setting nobody had the right to make counts for nothing. The same on every phone whichever
+ * copy is whose.
+ */
+private fun mergeMailbox(a: MailboxSetting, b: MailboxSetting, roles: Roles): MailboxSetting {
+    if (a == b) return a
+    fun good(m: MailboxSetting): Boolean {
+        val s = m.setBy
+        if (m == MailboxSetting()) return true
+        if (s.sum != m.settingSum()) return false
+        if (s.by.isEmpty()) return roles.nobodyToAsk(s.at)
+        return roles.organiserAt(s.by, s.at)
+    }
+    val ga = good(a)
+    val gb = good(b)
+    return when {
+        ga && gb -> when {
+            a.setBy.at != b.setBy.at -> if (a.setBy.at > b.setBy.at) a else b
+            else -> if (a.toString() >= b.toString()) a else b
+        }
+        ga -> a
+        gb -> b
+        else -> MailboxSetting()
+    }
+}
+
 private val CLASS = mapOf(
     ProposalState.WAITING to 0, ProposalState.OVERTAKEN to 1, ProposalState.NOT_CHOSEN to 1,
     ProposalState.APPROVED to 2, ProposalState.DECLINED to 2,
@@ -520,6 +547,7 @@ fun merge(a0: AppData, b0: AppData): AppData {
         collect = mergeCollect(a.collect, b.collect, roles, approvals, byId, refusals),
         damage = mergeDamage(a.damage, b.damage, roles, refusals),
         lines = mergeLines(a.lines, b.lines),
+        mailbox = mergeMailbox(a.mailbox, b.mailbox, roles),
     )
     val kept = keepDeletionsToTheRule(merged, roles, refusals)
     val settled = settle(kept)

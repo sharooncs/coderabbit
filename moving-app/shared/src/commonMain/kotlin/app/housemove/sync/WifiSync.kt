@@ -174,6 +174,14 @@ object WifiSync {
     @Volatile
     internal var olderPhone: (String) -> Boolean = { false }
 
+    /**
+     * Tests stand in a phone with HouseMove 2.4 by its phone ID: it syncs encrypted, as 2.4 does, but knows nothing of HPKE
+     * (from 2.5): it does not say it opens it after a sync, writes and opens update files of format 1 only, and has no
+     * mailbox. The app never sets it.
+     */
+    @Volatile
+    internal var phone24: (String) -> Boolean = { false }
+
     /** The two phones hold different moves. Nothing was exchanged. */
     const val WRONG_MOVE = "That phone is on a different move, so nothing was exchanged. Open the same move on both phones, then sync again."
 

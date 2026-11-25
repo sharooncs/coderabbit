@@ -147,12 +147,22 @@ internal object AutoSession {
 
     // ---- vouching -----------------------------------------------------------------------------------------------
 
+    /**
+     * What a phone says after an encrypted sync: the keys it vouches for ([keys]); from 2.5 also that it opens HPKE ([hpke]
+     * 1: update files of format 2 and the mailbox), and the internet mailbox's access when it has it ([access]: the house
+     * token, which therefore travels only inside an encrypted channel or a sealed message, never in the move's data). Phones
+     * on 2.4 read [keys] and pass the rest by, as they ignore what they do not know.
+     */
     @Serializable
-    private class Vouches(val keys: List<Vouch> = emptyList())
+    private class Vouches(val keys: List<Vouch> = emptyList(), val hpke: Int = 0, val access: MailboxAccess? = null, val hpkePhones: List<String> = emptyList())
 
     /** Sends what this phone vouches for after a sync with [peer]. */
     fun sendVouches(out: DataOutputStream, store: Store, peer: String) {
-        val bytes = AppJson.encodeToString(Vouches(store.pins.vouches(store.data.value, store.phone.id, peer).take(Pins.MAX_VOUCHES))).toUtf8()
+        val keys = store.pins.vouches(store.data.value, store.phone.id, peer).take(Pins.MAX_VOUCHES)
+        val newer = !WifiSync.phone24(store.phone.id)
+        val access = if (newer) store.data.value.mailbox.url.takeIf { it.isNotBlank() }?.let { store.mailboxState.access(it) } else null
+        val opening = if (newer) store.pins.hpkePhones(store.data.value, store.phone.id, peer).take(Pins.MAX_VOUCHES) else emptyList()
+        val bytes = AppJson.encodeToString(Vouches(keys, if (newer) 1 else 0, access, opening)).toUtf8()
         out.writeInt(bytes.size)
         out.write(bytes)
         out.flush()
@@ -163,12 +173,17 @@ internal object AutoSession {
         val n = din.readInt()
         if (n < 0 || n > MAX_VOUCHES_BYTES) throw IOException("bad vouches")
         val bytes = ByteArray(n).also { din.readFully(it) }
-        val list = try {
-            AppJson.decodeFromString<Vouches>(bytes.decodeUtf8()).keys
+        val said = try {
+            AppJson.decodeFromString<Vouches>(bytes.decodeUtf8())
         } catch (_: Exception) {
-            emptyList()
+            Vouches()
         }
-        store.pins.take(list, store.data.value, store.phone.id, peer, meeting)
+        store.pins.take(said.keys, store.data.value, store.phone.id, peer, meeting)
+        // The other phone proved who it is in this channel's handshake; a 2.4 stand-in knows nothing of what 2.5 added.
+        if (WifiSync.phone24(store.phone.id)) return
+        if (said.hpke == 1) store.pins.markHpke(peer)
+        store.pins.takeHpke(said.hpkePhones, store.data.value, store.phone.id, peer, meeting)
+        said.access?.let { store.mailboxState.offer(it, store.data.value.mailbox.url) }
     }
 
     private const val MAX_VOUCHES_BYTES = 1_000_000

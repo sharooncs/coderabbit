@@ -23,10 +23,19 @@ import kotlin.concurrent.Volatile
  * phone's public key as its entry carries it (X.509, Base64), and [how] says how it was learnt: [MET] in a code sync or
  * invite join with that phone (the code was seen on its screen, in person), or vouched for by a phone met in one; [MOVE]
  * first seen on the phone's entry in the move's data (trust on first use). [v2] is set once the two phones have synced
- * encrypted: that phone has HouseMove 2.4 or later, and is never again taken without encryption.
+ * encrypted: that phone has HouseMove 2.4 or later, and is never again taken without encryption. [hpke] is set once that
+ * phone has shown it opens HPKE (HouseMove 2.5 or later: it said so in an encrypted sync, or a message it sealed opened
+ * here): update files to it may then be of format 2.
  */
 @Serializable
-internal data class Pin(val phone: String, val key: String, val how: String = MOVE, val at: Long = 0, val v2: Boolean = false) {
+internal data class Pin(
+    val phone: String,
+    val key: String,
+    val how: String = MOVE,
+    val at: Long = 0,
+    val v2: Boolean = false,
+    val hpke: Boolean = false,
+) {
     companion object {
         const val MET = "met"
         const val MOVE = "move"
@@ -151,7 +160,7 @@ internal class Pins(private val file: File?, legacy: File?, private val identity
         val c = current()
         val was = c.pins.firstOrNull { it.phone == phoneId }
         if (was != null && was.key == keyText && was.how == Pin.MET && was.v2 && !c.newKey && c.mine == myKey) return@synchronized
-        val pin = Pin(phoneId, keyText, Pin.MET, clock(), v2 = true)
+        val pin = Pin(phoneId, keyText, Pin.MET, clock(), v2 = true, hpke = was?.hpke == true)
         // A code sync took this phone's key as it is now, too.
         write(c.copy(pins = c.pins.filter { it.phone != phoneId } + pin, older = c.older - phoneId, newKey = false, mine = myKey), changed = was?.key != keyText || was.how != Pin.MET)
     }
@@ -180,6 +189,33 @@ internal class Pins(private val file: File?, legacy: File?, private val identity
 
     /** Has [phoneId] ever synced encrypted with this phone? Then it has 2.4, and is never taken without encryption. */
     fun speaksV2(phoneId: String): Boolean = pinOf(phoneId)?.v2 == true
+
+    /** Has [phoneId] shown this phone that it opens HPKE (2.5 or later)? Then update files to it may be of format 2. */
+    fun opensHpke(phoneId: String): Boolean = pinOf(phoneId)?.hpke == true
+
+    /** The phones of the move, other than [peer], known here to open HPKE: vouched for after a sync, as keys are. */
+    fun hpkePhones(d: AppData, me: String, peer: String): List<String> = learn(d, me).values.filter { it.hpke && it.phone != peer }.map { it.phone }
+
+    /**
+     * Takes in the phones [peer] says open HPKE, with the rule of key vouches ([take]): in a meeting from any phone, in a
+     * sync by itself from an Organiser's or a Decider's. Only phones of the move other than the two. At worst a wrong one
+     * makes an update file of format 2 that phone cannot open, which it then says.
+     */
+    fun takeHpke(phones: List<String>, d: AppData, me: String, peer: String, meeting: Boolean) {
+        val by = d.memberPhone(peer) ?: return
+        if (!meeting && by.role != Role.ORGANISER && by.role != Role.DECIDER) return
+        for (p in phones.take(MAX_VOUCHES)) if (p != me && p != peer && d.memberPhone(p) != null) markHpke(p)
+    }
+
+    /**
+     * [phoneId] has shown it opens HPKE: it said so in an encrypted sync with this phone, or a message it sealed with HPKE
+     * opened here. Kept on its pin while there is one.
+     */
+    fun markHpke(phoneId: String) = synchronized(lock) {
+        val c = current()
+        if (c.pins.none { it.phone == phoneId && !it.hpke }) return@synchronized
+        write(c.copy(pins = c.pins.map { if (it.phone == phoneId) it.copy(hpke = true) else it }), changed = false)
+    }
 
     /** This phone has just synced, without encryption, with [phoneId], whose HouseMove is older. */
     fun older(phoneId: String) = synchronized(lock) {
@@ -211,7 +247,7 @@ internal class Pins(private val file: File?, legacy: File?, private val identity
             if (was != null && was.key == v.key && was.how == Pin.MET) continue
             synchronized(lock) {
                 val c = current()
-                val pin = Pin(v.phone, v.key, Pin.MET, clock(), v2 = was?.v2 == true && was.key == v.key)
+                val pin = Pin(v.phone, v.key, Pin.MET, clock(), v2 = was?.v2 == true && was.key == v.key, hpke = was?.hpke == true)
                 write(c.copy(pins = c.pins.filter { it.phone != v.phone } + pin), changed = true)
             }
             changed = true

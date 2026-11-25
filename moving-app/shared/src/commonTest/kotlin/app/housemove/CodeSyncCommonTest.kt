@@ -66,7 +66,8 @@ class CodeSyncCommonTest {
             // The invite carried the joining phone's key: it is on its new entry, and pinned, as met, on both phones.
             val priyaKey = priya.store.phone.keys.publicText
             assertEquals(priyaKey, asha.store.data.value.phoneEntry(priya.store.phone.id)!!.second.key)
-            assertEquals(Pin(priya.store.phone.id, priyaKey, Pin.MET, asha.store.pins.pinOf(priya.store.phone.id)!!.at, v2 = true), asha.store.pins.pinOf(priya.store.phone.id))
+            // From 2.5 the joining phone also said, inside the channel, that it opens HPKE (update files of format 2, the mailbox).
+            assertEquals(Pin(priya.store.phone.id, priyaKey, Pin.MET, asha.store.pins.pinOf(priya.store.phone.id)!!.at, v2 = true, hpke = true), asha.store.pins.pinOf(priya.store.phone.id))
             assertEquals(asha.store.phone.keys.publicText, priya.store.pins.pinOf(asha.store.phone.id)?.key)
             assertEquals(Pin.MET, priya.store.pins.pinOf(asha.store.phone.id)?.how)
             // Then a sync with the plain code shown: encrypted as well.

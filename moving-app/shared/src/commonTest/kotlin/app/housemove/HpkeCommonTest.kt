@@ -148,6 +148,14 @@ class HpkeCommonTest {
         assertTrue(!again.context.seal("a".toUtf8(), "first".toUtf8()).contentEquals(one))
     }
 
+    /** HouseMove's envelope and update file of format 2 with fixed keys, as the JVM recorded them, made again here byte for byte. */
+    @Test
+    fun theHouseMoveMessagesAreTheRecordedOnes() {
+        assertEquals(HpkeFiles.sha256.getValue("housemove.json"), sha256(HpkeFiles.text.getValue("housemove.json").toUtf8()).toHex())
+        val made = NoiseKat.PRETTY.encodeToString(JsonObject.serializer(), HpkeKat.make(crypto, ::keyFromScalar)) + "\n"
+        assertEquals(HpkeFiles.text.getValue("housemove.json"), made)
+    }
+
     @Test
     fun theNonceOfALaterMessage() {
         val c = Hpke.setupAuthS(crypto, key().point, ByteArray(0), key())!!.context

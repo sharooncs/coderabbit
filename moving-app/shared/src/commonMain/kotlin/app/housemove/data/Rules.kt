@@ -76,6 +76,9 @@ internal fun MoveInfo.settingsSum() =
     if (doneDay == null) seal(name, moveDay, originName, destName, vanCapacityM3, useInches, currency, kind, off.joinToString(","), setupDone)
     else seal(name, moveDay, originName, destName, vanCapacityM3, useInches, currency, kind, off.joinToString(","), setupDone, "done", doneDay)
 
+/** The check value of the move's internet mailbox setting (from 2.5): which mailbox. */
+internal fun MailboxSetting.settingSum() = seal("mailbox", url)
+
 internal fun Proposal.stateSum(): String {
     // What a suggestion to delete something proposes is part of it too; the extra parts are only there when set,
     // so the check value of every other suggestion stays as it was.

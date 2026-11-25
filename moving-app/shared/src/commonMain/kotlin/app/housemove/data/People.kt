@@ -249,7 +249,7 @@ internal fun mergePhones(a: List<PhoneEntry>, b: List<PhoneEntry>): List<PhoneEn
     for (x in a) out[x.id] = x
     for (y in b) out.mergeValue(y.id, y) { x, z ->
         val retired = listOf(x.retired, z.retired).filter { it.by.isNotEmpty() }.minWithOrNull(compareBy({ it.at }, { it.by })) ?: Stamp()
-        fun rest(e: PhoneEntry) = e.copy(retired = Stamp(), collected = false, key = "", keyAt = 0).toString()
+        fun rest(e: PhoneEntry) = e.copy(retired = Stamp(), collected = false, key = "", keyAt = 0, mailbox = null).toString()
         val details = if (rest(x) >= rest(z)) x else z
         // The newest key the phone made: a phone that had to make a new one (its old one was lost) is reached by that one.
         val key = when {
@@ -257,7 +257,9 @@ internal fun mergePhones(a: List<PhoneEntry>, b: List<PhoneEntry>): List<PhoneEn
             x.keyAt != z.keyAt -> if (x.keyAt > z.keyAt) x else z
             else -> if (x.key >= z.key) x else z
         }
-        details.copy(retired = retired, collected = x.collected || z.collected, key = key.key, keyAt = key.keyAt)
+        // Its newest mailbox (2.5): only the phone itself sets one, so the latest it registered is the one it reads.
+        val box = listOfNotNull(x.mailbox, z.mailbox).maxWithOrNull(compareBy({ it.at }, { it.toString() }))
+        details.copy(retired = retired, collected = x.collected || z.collected, key = key.key, keyAt = key.keyAt, mailbox = box)
     }
     return out.values.sortedWith(compareBy({ it.addedAt }, { it.id }))
 }

@@ -141,7 +141,8 @@ internal fun readInt(input: InputStream): Int {
 /**
  * Writes what goes through it ([write], or [stream] for a zip writer) to [out] sealed in chunks (see [Sealing]): each
  * chunk as its length (4 bytes, big-endian) and the sealed bytes. [close] seals the last chunk and flushes [out], which it
- * leaves open.
+ * leaves open. With [endMark] (update files of format 2), a length of 0 follows the last chunk, so that more can come
+ * after it; [onChunk] is given each sealed chunk as it goes (format 2 hashes them).
  */
 internal class SealedOut(
     private val crypto: PlatformCrypto,
@@ -149,6 +150,8 @@ internal class SealedOut(
     private val key: ByteArray,
     private val prefix: ByteArray,
     private val headerHash: ByteArray,
+    private val endMark: Boolean = false,
+    private val onChunk: ((ByteArray) -> Unit)? = null,
 ) {
     private val buf = ByteArray(Sealing.CHUNK)
     private var n = 0
@@ -173,6 +176,7 @@ internal class SealedOut(
         val c = Sealing.sealChunk(crypto, key, prefix, headerHash, index, last, buf.copyOf(n))
         writeInt(out, c.size)
         out.write(c, 0, c.size)
+        onChunk?.invoke(c)
         index++
         n = 0
     }
@@ -183,6 +187,7 @@ internal class SealedOut(
         if (closed) return
         seal(last = true)
         closed = true
+        if (endMark) writeInt(out, 0)
         out.flush()
     }
 
@@ -193,7 +198,8 @@ internal class SealedOut(
 /**
  * Reads what [SealedOut] wrote, chunk by chunk, each checked before any of it is given out ([read], or [stream] for a zip
  * reader). A chunk that does not open, a file cut short or with anything after its last chunk, all end in an IOException.
- * Read it to the end ([drain]) to be sure the whole file was as it was made.
+ * Read it to the end ([drain]) to be sure the whole file was as it was made. With [endMark] (format 2) the chunks end at a
+ * length of 0, not at the end of the bytes, and [input] is left just after it; [onChunk] is given each sealed chunk.
  */
 internal class SealedIn(
     private val crypto: PlatformCrypto,
@@ -201,6 +207,8 @@ internal class SealedIn(
     private val key: ByteArray,
     private val prefix: ByteArray,
     private val headerHash: ByteArray,
+    private val endMark: Boolean = false,
+    private val onChunk: ((ByteArray) -> Unit)? = null,
 ) {
     private var plain = ByteArray(0)
     private var pos = 0
@@ -210,12 +218,16 @@ internal class SealedIn(
 
     private fun lengthOrEnd(): Int? {
         val a = readByte(input)
-        if (a < 0) return null
+        if (a < 0) {
+            if (endMark) throw EOFException("cut short")
+            return null
+        }
         val b = readByte(input)
         val c = readByte(input)
         val d = readByte(input)
         if ((b or c or d) < 0) throw EOFException("cut short")
-        return (a shl 24) or (b shl 16) or (c shl 8) or d
+        val n = (a shl 24) or (b shl 16) or (c shl 8) or d
+        return if (endMark && n == 0) null else n
     }
 
     private fun fill(): Boolean {
@@ -225,6 +237,7 @@ internal class SealedIn(
             if (len < Sealing.TAG || len > Sealing.CHUNK + Sealing.TAG) throw IOException("bad chunk")
             val sealed = ByteArray(len)
             readFully(input, sealed)
+            onChunk?.invoke(sealed)
             nextLength = lengthOrEnd()
             val last = nextLength == null
             plain = try {

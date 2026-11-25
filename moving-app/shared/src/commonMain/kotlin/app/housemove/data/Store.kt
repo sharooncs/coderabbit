@@ -195,6 +195,14 @@ class Store internal constructor(
     internal val pins: app.housemove.sync.Pins =
         app.housemove.sync.Pins(File(codesDir, "pins.json"), File(codesDir, "ring.json"), { _identity.value }, { clock() })
 
+    /**
+     * This phone's dealings with the move's internet mailbox (from 2.5; design/encryption.md, "Mailbox as built"): the house
+     * token, this phone's own mailbox and its read secret, and what it sent to and heard from the others. Beside the pins,
+     * in the no-backup folder: no backup, update file or sync carries it.
+     */
+    internal val mailboxState: app.housemove.sync.MailboxState =
+        app.housemove.sync.MailboxState(File(codesDir, "mailbox.json"), { _identity.value })
+
     private fun load(): AppData {
         var damaged = false
         for (f in listOf(dataFile, backupFile)) {
@@ -293,6 +301,7 @@ class Store internal constructor(
         )) {
             for (r in list) if (r.updatedAt > m) m = r.updatedAt
         }
+        if (d.mailbox.setBy.at > m) m = d.mailbox.setBy.at
         return m
     }
 
@@ -612,6 +621,38 @@ class Store internal constructor(
     fun changeMove(f: (MoveInfo) -> MoveInfo): Outcome<MoveInfo> = act(Action.MOVE_SETTINGS) {
         d = d.copy(move = actor.guard(d.move, f(d.move), t).copy(updatedAt = t))
         Outcome.Ok(d.move)
+    }
+
+    /**
+     * The move's internet mailbox (from 2.5; design/encryption.md, "Mailbox as built"): [url] is the address of the mailbox
+     * program, or blank for none. Only an Organiser may set it; it then reaches every phone of the move with the data.
+     */
+    fun setMailbox(url: String): Outcome<MailboxSetting> = act(Action.MOVE_SETTINGS) {
+        val clean = url.trim()
+        if (clean == d.mailbox.url) return@act Outcome.Ok(d.mailbox)
+        val m = MailboxSetting(clean)
+        d = d.copy(mailbox = m.copy(setBy = actor.stamp(t, m.settingSum())))
+        Outcome.Ok(d.mailbox)
+    }
+
+    /**
+     * This phone's own mailbox (from 2.5), on its entry in the move, so the other phones post to it: [address], or an empty
+     * one (with the time) once this phone has stopped reading it. Only this phone sets it.
+     */
+    internal fun noteMyMailbox(address: MailboxAddress) {
+        synchronized(lock) {
+            val d = _data.value
+            val p = d.person(_device.value.personId) ?: return
+            val mine = p.phones.firstOrNull { it.id == phone.id } ?: return
+            val was = mine.mailbox
+            if (was != null && was.url == address.url && was.id == address.id) return
+            if (was == null && address.id.isEmpty()) return
+            val t = now()
+            val entry = mine.copy(mailbox = address.copy(at = maxOf(address.at, t)))
+            val saved = p.copy(phones = p.phones.map { if (it.id == phone.id) entry else it }, updatedAt = t)
+            _data.value = d.copy(people = d.people.map { if (it.id == p.id) saved else it })
+        }
+        scheduleSave()
     }
 
     /** Save a room. Deleting one this phone's person may not delete ([mayDelete]) saves nothing. */

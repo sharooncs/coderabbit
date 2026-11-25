@@ -464,7 +464,36 @@ data class PhoneEntry(
     /** Its public key for update files (X.509, Base64; see [UpdateKeyPair]), and when that key was made. Empty for a phone from before. */
     val key: String = "",
     val keyAt: Long = 0,
-)
+    /**
+     * From 2.5: where the other phones of the move post this phone's sealed messages over the internet (design/encryption.md,
+     * "Mailbox as built"): its mailbox on the move's mailbox ([AppData.mailbox]). Null while it has none (or the switch is
+     * off on it). Only the phone itself sets it; the newest wins at a merge.
+     */
+    val mailbox: MailboxAddress? = null,
+) {
+    /**
+     * As a data class writes itself, without [mailbox] while there is none: merges tell copies apart by this text
+     * (Merge.kt), so it stays what 2.4 and earlier write, and the golden fixtures (records.json) stand.
+     */
+    override fun toString(): String =
+        "PhoneEntry(id=$id, name=$name, letter=$letter, labelsFrom=$labelsFrom, labelsTo=$labelsTo, addedAt=$addedAt, retired=$retired, " +
+            "collected=$collected, key=$key, keyAt=$keyAt" + (if (mailbox != null) ", mailbox=$mailbox" else "") + ")"
+}
+
+/**
+ * A phone's mailbox (from 2.5): [id] (128 random bits, 32 hex digits) on the mailbox at [url], registered at [at]. Anyone who
+ * knows it can post a sealed envelope to it; only the phone, with a secret it keeps to itself, can read and delete them.
+ */
+@Serializable
+data class MailboxAddress(val url: String = "", val id: String = "", val at: Long = 0)
+
+/**
+ * The move's internet mailbox (from 2.5): the address of the mailbox program on the owner's always-on laptop, set by an
+ * Organiser ([setBy], with a check value over [url]). Empty while the move has none. The house token it takes to register a
+ * mailbox there is never in the data: it travels between phones only inside an encrypted sync or a sealed message.
+ */
+@Serializable
+data class MailboxSetting(val url: String = "", val setBy: Stamp = Stamp())
 
 /**
  * Someone taking part in the move. [role] and [removed] are worked out from
@@ -683,6 +712,8 @@ data class AppData(
     val damage: List<Damage> = emptyList(),
     val lines: List<ContentsLine> = emptyList(),
     val refused: List<RefusedChange> = emptyList(),
+    /** The move's internet mailbox, from 2.5 (an Organiser sets it); empty, and not written, while there is none. */
+    val mailbox: MailboxSetting = MailboxSetting(),
 ) {
     /** Look-ups over the records that belong to items and boxes, made once per dataset. Not saved or compared. */
     internal val index: RecordIndex by lazy { RecordIndex(this) }

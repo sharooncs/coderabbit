@@ -16,6 +16,8 @@ data class PhoneSettings(
     val backupFolder: String = "",
     /** "Sync by itself on Wi-Fi": phones of the same move find each other and sync while HouseMove is open (design/auto-sync.md). */
     val autoSync: Boolean = true,
+    /** "Internet mailbox" (from 2.5): this phone keeps up to date through the move's mailbox, when it has one (design/encryption.md). */
+    val mailbox: Boolean = true,
 )
 
 /**
