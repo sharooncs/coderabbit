@@ -14,6 +14,8 @@ data class PhoneSettings(
     val bookLookup: Boolean? = null,
     /** The folder the daily small backup is written to: a tree picked once through the system's folder picker (see DailyBackup). */
     val backupFolder: String = "",
+    /** "Sync by itself on Wi-Fi": phones of the same move find each other and sync while HouseMove is open (design/auto-sync.md). */
+    val autoSync: Boolean = true,
 )
 
 /**

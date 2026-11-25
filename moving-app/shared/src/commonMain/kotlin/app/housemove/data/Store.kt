@@ -36,6 +36,8 @@ data class DeviceInfo(
     val currentTripId: String? = null,
     val lastSyncAt: Long = 0,
     val lastBackupAt: Long = 0,
+    /** The phone this phone last synced with, as its person's name ("Asha"), for "Up to date with Asha's phone". */
+    val lastSyncWith: String = "",
     /** May book titles be fetched online from their barcode? Null until the person has been asked. */
     val bookLookup: Boolean? = null,
     /**
@@ -183,6 +185,12 @@ class Store internal constructor(
     /** Which move this is (see [MoveIdentity]). */
     val identity: StateFlow<MoveIdentity> = _identity
     val moveId: String get() = _identity.value.id
+
+    /**
+     * This move's keys for syncing by itself on the same Wi-Fi (design/auto-sync.md): kept beside the codes, in the
+     * no-backup folder, so no backup, update file or sync ever carries them. A ring of another move counts as empty.
+     */
+    internal val ring: app.housemove.sync.Ring by lazy { app.housemove.sync.Ring(File(codesDir, "ring.json")) { _identity.value } }
 
     private fun load(): AppData {
         var damaged = false
@@ -1741,7 +1749,7 @@ class Store internal constructor(
             val letter = AppData().freeLetter(avoid = lettersElsewhere() + was.lettersUsed + was.lettersGiven + _device.value.letter.uppercase())
             writeDevice(_device.value.copy(letter = letter))
             replaceAll(AppData())
-            setDevice { it.copy(currentRoomId = null, currentTripId = null, lastSyncAt = 0, lastBackupAt = 0, sharedUpTo = 0, sharedAllUpTo = 0) }
+            setDevice { it.copy(currentRoomId = null, currentTripId = null, lastSyncAt = 0, lastSyncWith = "", lastBackupAt = 0, sharedUpTo = 0, sharedAllUpTo = 0) }
             saveIdentity(MoveIdentity(id = _data.value.derivedMoveId()))
             // This phone founds the new move. Nothing it printed or handed out is given out again (see [Codes]): it keeps the
             // letters it gave, and a founder's block of label numbers it already had, or one it prints from in none of its
@@ -2377,7 +2385,7 @@ data class Unshared(val changes: Int, val photos: Int, val things: List<String>)
 /** The settings for one move as a phone starts out in another one. */
 internal fun DeviceInfo.forAnotherMove(personId: String) = copy(
     personId = personId, letter = "", nextSeq = 1, currentRoomId = null, currentTripId = null,
-    lastSyncAt = 0, lastBackupAt = 0, sharedUpTo = 0, sharedAllUpTo = 0, removedSeenAt = 0, dailyBackupDay = 0, secondOrganiserDeclined = false,
+    lastSyncAt = 0, lastSyncWith = "", lastBackupAt = 0, sharedUpTo = 0, sharedAllUpTo = 0, removedSeenAt = 0, dailyBackupDay = 0, secondOrganiserDeclined = false,
     rolesRead = emptyMap(),
 )
 
