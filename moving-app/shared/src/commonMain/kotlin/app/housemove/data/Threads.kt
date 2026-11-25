@@ -5,7 +5,8 @@ package app.housemove.data
  *
  * On Android and the JVM each is what the code used before it was shared (Threads.jvm.kt): a lock is a plain object
  * and synchronized is the JVM's monitor; the atomics, the latch and the writer are java.util.concurrent's. On the
- * iPhone the lock and the atomics are real (Threads.ios.kt); the writer, the latch and threads come in step 1b.
+ * iPhone (Threads.ios.kt) the lock is an NSRecursiveLock, the atomics Kotlin's, the latch a dispatch semaphore, threads
+ * NSThreads and the writer a serial dispatch queue, each with the ordering the JVM's class gives.
  */
 
 /** What [synchronized] takes: on Android and the JVM a plain object (`Any()`), whose monitor is the lock. */
