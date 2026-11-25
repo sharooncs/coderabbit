@@ -217,9 +217,11 @@ Still on the JVM only: the rest of the Store, sync and simulation suites (`DataT
 - [x] **Whatever the first simulator run of `commonTest` shows**: step 1a's 26 common tests passed on the simulator
   (Kotlin/Native's Double.toString, case rules, toDoubleOrNull and Regex matched the fixtures). The 1b tests' first
   run is next.
-- [ ] **Phone keys**: an iPhone that admits an Android phone keeps no key on its entry (`updateCrypto` is null, so
-  `isPublicKey` is false); the phone puts its own key back on its next sync. A check of the key's shape alone (an X.509
-  P-256 public key in Base64, no crypto) would keep it; to be decided with the update files.
+- [x] **Phone keys** (branch `crypto`, `design/encryption.md`): the update files are common Kotlin now, on a small
+  crypto interface (`Crypto.kt`, which replaced `UpdateKeys.kt`'s `updateCrypto` with `platformCrypto`): the JCA on
+  Android and the JVM, CryptoKit in Swift on the iPhone, registered at start-up, with the private key in the Keychain.
+  An iPhone that admits an Android phone keeps its key on its entry, and its own entry carries a real key. The
+  simulator's Kotlin tests use a reference crypto in commonTest (`ReferenceCrypto`) where the key-text stand-in was.
 - [ ] **Double text on Android**: the fixtures were recorded on JDK 21, Android phones run ART. Checking ART's
   `Double.toString` against `JavaText.doubleText` on random values, in an instrumented test on the emulator, would
   say whether the iPhone should copy ART's choice on the rare values where the two could differ.

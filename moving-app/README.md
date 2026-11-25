@@ -331,9 +331,11 @@ Three Gradle modules. `shared/` is a Kotlin Multiplatform module with the move's
 data and sync in common Kotlin (`src/commonMain/kotlin/app/housemove/`), built for
 Android, for a plain JVM, where its tests run (`src/jvmTest/`, and `src/commonTest/`,
 which also runs on the iPhone simulator), and for the iPhone. What it needs of the
-platform is behind small seams (`Files.kt`, `Threads.kt`, `Platform.kt`, `sync/Net.kt`),
-whose Android/JVM side is in `src/jvmCommonMain/` with the update-file crypto and
-zxing, and whose iPhone side is in `src/iosMain/` (`design/ios-step1.md`).
+platform is behind small seams (`Files.kt`, `Threads.kt`, `Platform.kt`, `sync/Net.kt`,
+`Crypto.kt`), whose Android/JVM side is in `src/jvmCommonMain/` with the JCA and
+zxing, and whose iPhone side is in `src/iosMain/` (`design/ios-step1.md`). The update
+files are common; their crypto is the JCA on Android and CryptoKit, in Swift, on the
+iPhone (`design/encryption.md`).
 `app/` is the Android app (`src/main/java/app/housemove/`): the screens, the PDFs and
 the activity, with the tests that need simulated Android (`src/test/`) or a device
 (`src/androidTest/`). `sharedUi/` (Compose Multiplatform) holds what the iPhone app
@@ -346,7 +348,7 @@ there later; the Android app does not use it yet.
   volume, search). `People.kt`, `Rules.kt` and `Changes.kt` hold who may do what.
   `Moves.kt` holds the moves on a phone, `Phone.kt` the phone's ID, letters and
   label ranges; `Hidden.kt`, `Records.kt` and `Where.kt` the records Helpers are
-  not sent, damage and contents lines, and where things are; `Keys.kt`,
+  not sent, damage and contents lines, and where things are; `Crypto.kt`,
   `Sealed.kt` and `Update.kt` the update files; `DailyBackup.kt` the daily
   backup; `Numbers.kt` how every typed or spoken number is read, and what is refused
 - `sync/` (in `shared/`) – phone-to-phone sync over a local socket, and invites;

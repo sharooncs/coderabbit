@@ -256,7 +256,9 @@ HMAC are not required-reason APIs, and nothing is collected or tracked.
 **Crypto and export.** HMAC-SHA256 is written in common Kotlin on top of the platform's SHA-256 (CommonCrypto's
 `CC_SHA256` on the iPhone, `MessageDigest` on Android), and nonces and keys come from the platform's secure random
 (`SecRandomCopyBytes`). That is authentication only, not encryption, so the iPhone keeps
-`ITSAppUsesNonExemptEncryption` = NO. Nothing in commonMain or iosMain encrypts.
+`ITSAppUsesNonExemptEncryption` = NO. Since branch `crypto` the update files are common too, and the iPhone encrypts them
+with CryptoKit (Apple's own encryption); `design/encryption.md` has what that means for the declaration (still NO), and
+the design that replaces this section's Wi-Fi keys with the phones' own keys and encrypts the sync itself.
 
 ## 8. How it is checked
 
