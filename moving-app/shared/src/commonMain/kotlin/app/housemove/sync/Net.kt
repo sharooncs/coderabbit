@@ -8,8 +8,9 @@ import app.housemove.data.IOException
  * and the strings and numbers of the sync wire written as java.io.DataOutputStream writes them.
  *
  * On Android and the JVM these are java.net's and java.io's own classes (typealiases), and each function is the call
- * WifiSync made before it was shared (Net.jvm.kt). The iPhone's sockets (POSIX, with getifaddrs for its addresses)
- * come in step 1b; its DataInputStream and DataOutputStream are already the common ones in Wire.kt (Net.ios.kt).
+ * WifiSync made before it was shared (Net.jvm.kt). The iPhone's sockets are POSIX ones with the same behaviour, its
+ * addresses come from getifaddrs (Addresses.kt picks them), and its DataInputStream and DataOutputStream are the
+ * common ones in Wire.kt (Net.ios.kt).
  */
 
 /** A listening TCP socket: java.net.ServerSocket on Android and the JVM. */
