@@ -56,6 +56,18 @@ class CryptoCheckIosTest {
             return KeychainAnswer(KeychainStatus.OK, Handle(d))
         }
 
+        /** CryptoKit's own HPKE stands in as HouseMove's HPKE on the reference crypto: here it checks the check, not Apple's. */
+        override fun hpkeSealAuth(recipientX963: ByteArray, senderRaw: ByteArray, info: ByteArray, aad: ByteArray, plain: ByteArray): ByteArray? {
+            val sender = app.housemove.sync.NoiseCheck.keyOf(ReferenceCrypto.keyOf(senderRaw))
+            val s = app.housemove.sync.Hpke.setupAuthS(ReferenceCrypto, recipientX963, info, sender) ?: return null
+            return s.enc + s.context.seal(aad, plain)
+        }
+
+        override fun hpkeOpenAuth(recipientRaw: ByteArray, senderX963: ByteArray, info: ByteArray, aad: ByteArray, enc: ByteArray, sealed: ByteArray): ByteArray? {
+            val recipient = app.housemove.sync.NoiseCheck.keyOf(ReferenceCrypto.keyOf(recipientRaw))
+            return app.housemove.sync.Hpke.setupAuthR(ReferenceCrypto, enc, recipient, info, senderX963)?.open(aad, sealed)
+        }
+
         override fun keychainForget(service: String): Int {
             if (refusing != 0) return refusing
             keychain.keys.removeAll { it.startsWith("$service/") }
@@ -68,7 +80,7 @@ class CryptoCheckIosTest {
         inTempFolder { dir ->
             val lines = CryptoCheck.run(StandIn(), File(dir, "check"))
             for (l in lines) println(l.text)
-            assertTrue(lines.size >= 8, "every check ran: ${lines.map { it.text }}")
+            assertTrue(lines.size >= 12, "every check ran: ${lines.map { it.text }}")
             assertTrue(lines.all { it.ok == true }, lines.filter { it.ok != true }.joinToString("\n") { it.text })
             assertEquals("Crypto check passed", CryptoCheck.summary(lines))
         }

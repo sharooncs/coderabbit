@@ -80,6 +80,7 @@ object CryptoCheck {
             registeredCrypto = before
         }
         noiseChecks(crypto, ::check)
+        hpkeChecks(kit, crypto, ::check)
         keychainChecks(kit, crypto, scratch, ::check)
         scratch.deleteRecursively()
         return lines
@@ -105,6 +106,29 @@ object CryptoCheck {
         }
         check("Noise IK and XXpsk0 between keys CryptoKit makes now; a changed message does not open") {
             app.housemove.sync.NoiseCheck.live(crypto)
+        }
+    }
+
+    /**
+     * HPKE through CryptoKit (design/encryption.md, "Mailbox as built"): the CFRG's vectors for HouseMove's suite, HouseMove's
+     * mailbox envelope and update file of format 2 the JVM recorded (hpke/housemove.json), byte for byte, and HouseMove's HPKE
+     * against CryptoKit's own.
+     */
+    private fun hpkeChecks(kit: AppleCryptoKit, crypto: IosCrypto, check: (String, () -> Boolean?) -> Unit) {
+        val vectors = Json.parseToJsonElement(CryptoCheckFiles.text.getValue("vectors.json")).jsonObject
+        val kat = Json.parseToJsonElement(CryptoCheckFiles.text.getValue("housemove.json")).jsonObject
+        fun keyOf(raw: ByteArray): AgreementKey = crypto.importKey(raw) ?: throw IllegalStateException("CryptoKit did not take a fixed key")
+        check("HPKE through CryptoKit: the CFRG's vectors for DHKEM(P-256), HKDF-SHA256 and AES-256-GCM, mode_auth and mode_base (hpke/vectors.json)") {
+            app.housemove.sync.HpkeCheck.vectors(crypto, vectors, ::keyOf)
+        }
+        check("HouseMove's mailbox envelope through CryptoKit is the JVM's byte for byte, and opens (hpke/housemove.json)") {
+            app.housemove.sync.HpkeCheck.envelope(crypto, kat, ::keyOf)
+        }
+        check("HouseMove's update file of format 2 through CryptoKit is the JVM's byte for byte (hpke/housemove.json)") {
+            app.housemove.sync.HpkeCheck.update(crypto, kat, ::keyOf)
+        }
+        check("CryptoKit's own HPKE opens what HouseMove's HPKE seals, and the other way round") {
+            app.housemove.sync.HpkeCheck.againstCryptoKit(kit, crypto, kat, ::keyOf)
         }
     }
 

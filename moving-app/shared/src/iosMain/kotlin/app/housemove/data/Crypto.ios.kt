@@ -66,6 +66,16 @@ interface AppleCryptoKit {
 
     /** Removes every key kept under [service]: an OSStatus, 0 when done (or there was none). */
     fun keychainForget(service: String): Int
+
+    /**
+     * CryptoKit's own HPKE (`HPKE.Sender`, iOS 17), mode_auth, `P256_SHA256_AES_GCM_256`: [plain] sealed to the point
+     * [recipientX963] by the key of the scalar [senderRaw], with [info] and [aad]; the encapsulated key, then the sealed
+     * message. Null when it cannot. For the crypto check only: HouseMove seals with its own HPKE on CryptoKit's primitives.
+     */
+    fun hpkeSealAuth(recipientX963: ByteArray, senderRaw: ByteArray, info: ByteArray, aad: ByteArray, plain: ByteArray): ByteArray?
+
+    /** CryptoKit's own HPKE (`HPKE.Recipient`): what [hpkeSealAuth] (or HouseMove's HPKE) sealed, or null when it does not open. */
+    fun hpkeOpenAuth(recipientRaw: ByteArray, senderX963: ByteArray, info: ByteArray, aad: ByteArray, enc: ByteArray, sealed: ByteArray): ByteArray?
 }
 
 /** A P-256 key pair CryptoKit holds: the public point, and ECDH with its private key. */

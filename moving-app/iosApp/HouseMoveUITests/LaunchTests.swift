@@ -42,6 +42,12 @@ final class LaunchTests: XCTestCase {
         XCTAssertTrue(lines.contains { $0.hasPrefix("Check passed: Noise IK through CryptoKit") }, report)
         XCTAssertTrue(lines.contains { $0.hasPrefix("Check passed: Noise XXpsk0 through CryptoKit") }, report)
         XCTAssertTrue(lines.contains { $0.hasPrefix("Check passed: Noise IK and XXpsk0 between keys CryptoKit makes now") }, report)
+        // HPKE, for the mailbox and update files of format 2 (2.5): the CFRG's vectors, HouseMove's messages the JVM recorded,
+        // and CryptoKit's own HPKE against HouseMove's.
+        XCTAssertTrue(lines.contains { $0.hasPrefix("Check passed: HPKE through CryptoKit") }, report)
+        XCTAssertTrue(lines.contains { $0.hasPrefix("Check passed: HouseMove's mailbox envelope through CryptoKit") }, report)
+        XCTAssertTrue(lines.contains { $0.hasPrefix("Check passed: HouseMove's update file of format 2 through CryptoKit") }, report)
+        XCTAssertTrue(lines.contains { $0.hasPrefix("Check passed: CryptoKit's own HPKE opens what HouseMove's HPKE seals") }, report)
         if lines.contains(where: { $0.hasPrefix("Check skipped: the Keychain") }) {
             // CI builds with code signing off: the simulator may then refuse the Keychain (errSecMissingEntitlement).
             print("Note: the Keychain was not checked in this unsigned build: \(report)")

@@ -46,6 +46,16 @@ interface AppleCrypto {
 
     /** Removes every key kept under [service]: the OSStatus, 0 when done or when there was none. */
     fun keychainForget(service: String): Int
+
+    /**
+     * CryptoKit's own HPKE, for the crypto check only (HouseMove's HPKE is Kotlin on the calls above): `HPKE.Sender` with
+     * ciphersuite `P256_SHA256_AES_GCM_256`, sealing [plain] to the point [recipientX963], authenticated by the key of the
+     * scalar [senderRaw], with [info] and [aad]. The encapsulated key (65 bytes), then the sealed message; nil if it cannot.
+     */
+    fun hpkeSealAuth(recipientX963: NSData, senderRaw: NSData, info: NSData, aad: NSData, plain: NSData): NSData?
+
+    /** `HPKE.Recipient`, the same ciphersuite and mode: what was sealed to the scalar [recipientRaw] by [senderX963], or nil. */
+    fun hpkeOpenAuth(recipientRaw: NSData, senderX963: NSData, info: NSData, aad: NSData, enc: NSData, sealed: NSData): NSData?
 }
 
 /** A P-256 key pair CryptoKit holds. */
@@ -99,4 +109,10 @@ internal class SwiftCrypto(private val swift: AppleCrypto) : AppleCryptoKit {
     }
 
     override fun keychainForget(service: String): Int = swift.keychainForget(service)
+
+    override fun hpkeSealAuth(recipientX963: ByteArray, senderRaw: ByteArray, info: ByteArray, aad: ByteArray, plain: ByteArray): ByteArray? =
+        swift.hpkeSealAuth(recipientX963.toData(), senderRaw.toData(), info.toData(), aad.toData(), plain.toData())?.toBytes()
+
+    override fun hpkeOpenAuth(recipientRaw: ByteArray, senderX963: ByteArray, info: ByteArray, aad: ByteArray, enc: ByteArray, sealed: ByteArray): ByteArray? =
+        swift.hpkeOpenAuth(recipientRaw.toData(), senderX963.toData(), info.toData(), aad.toData(), enc.toData(), sealed.toData())?.toBytes()
 }

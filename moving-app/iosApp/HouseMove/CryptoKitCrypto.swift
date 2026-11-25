@@ -87,6 +87,27 @@ final class CryptoKitCrypto: NSObject, AppleCrypto {
         let status = SecItemDelete(query as CFDictionary)
         return status == errSecItemNotFound ? errSecSuccess : status
     }
+
+    /// CryptoKit's own HPKE (iOS 17), for the crypto check only: HouseMove's HPKE, which seals the mailbox's messages and
+    /// update files of format 2, is the shared Kotlin on the calls above (ECDH and AES-GCM), and the check compares the two.
+    /// mode_auth with ciphersuite P256_SHA256_AES_GCM_256: the encapsulated key, then the sealed message.
+    func hpkeSealAuth(recipientX963: Data, senderRaw: Data, info: Data, aad: Data, plain: Data) -> Data? {
+        guard let recipient = try? P256.KeyAgreement.PublicKey(x963Representation: recipientX963),
+              let sender = try? P256.KeyAgreement.PrivateKey(rawRepresentation: senderRaw),
+              var hpke = try? HPKE.Sender(recipientKey: recipient, ciphersuite: .P256_SHA256_AES_GCM_256, info: info, authenticatedBy: sender),
+              let sealed = try? hpke.seal(plain, authenticating: aad)
+        else { return nil }
+        return hpke.encapsulatedKey + sealed
+    }
+
+    /// The other side: what `hpkeSealAuth` (or HouseMove's HPKE) sealed to `recipientRaw`'s key by `senderX963`'s, or nil.
+    func hpkeOpenAuth(recipientRaw: Data, senderX963: Data, info: Data, aad: Data, enc: Data, sealed: Data) -> Data? {
+        guard let recipient = try? P256.KeyAgreement.PrivateKey(rawRepresentation: recipientRaw),
+              let sender = try? P256.KeyAgreement.PublicKey(x963Representation: senderX963),
+              var hpke = try? HPKE.Recipient(privateKey: recipient, ciphersuite: .P256_SHA256_AES_GCM_256, info: info, encapsulatedKey: enc, authenticatedBy: sender)
+        else { return nil }
+        return try? hpke.open(sealed, authenticating: aad)
+    }
 }
 
 /// A P-256 key pair CryptoKit holds; the private key never leaves it.
