@@ -28,6 +28,7 @@ internal actual fun File.delete(): Boolean = delete()
 internal actual fun File.mkdirs(): Boolean = mkdirs()
 internal actual fun File.renameTo(dest: File): Boolean = renameTo(dest)
 internal actual fun File.length(): Long = length()
+internal actual fun File.lastModified(): Long = lastModified()
 internal actual fun File.listFiles(): Array<File>? = listFiles()
 internal actual fun File.readText(): String = ioReadText()
 internal actual fun File.writeText(text: String) = ioWriteText(text)
@@ -41,6 +42,7 @@ actual typealias InputStream = java.io.InputStream
 actual typealias OutputStream = java.io.OutputStream
 
 internal actual fun OutputStream.write(b: ByteArray, off: Int, len: Int) = write(b, off, len)
+internal actual fun InputStream.read(b: ByteArray, off: Int, len: Int): Int = read(b, off, len)
 
 actual typealias IOException = java.io.IOException
 actual typealias EOFException = java.io.EOFException

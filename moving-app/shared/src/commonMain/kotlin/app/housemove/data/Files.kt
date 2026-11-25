@@ -5,8 +5,9 @@ package app.housemove.data
  *
  * On Android and the JVM, File, InputStream, OutputStream, IOException and EOFException are java.io's own classes
  * (typealiases), and every function here is the java.io, kotlin.io or java.util.zip call the code made before it was
- * shared (Files.jvm.kt): Android runs what it ran. The iPhone's versions come in step 1b; until then they throw
- * NotImplementedError (Files.ios.kt).
+ * shared (Files.jvm.kt): Android runs what it ran. On the iPhone (Files.ios.kt) files and folders are POSIX calls with
+ * the same behaviour, and zips are the common writer and reader in Zip.kt, which write what java.util.zip writes and
+ * read what it reads.
  */
 
 /** A file or folder on this phone: java.io.File on Android and the JVM. A null [parent] makes [child] a path of its own. */
@@ -22,6 +23,9 @@ internal expect fun File.delete(): Boolean
 internal expect fun File.mkdirs(): Boolean
 internal expect fun File.renameTo(dest: File): Boolean
 internal expect fun File.length(): Long
+
+/** When the file was last changed, in milliseconds since 1970; 0 when there is nothing there (java.io.File.lastModified). */
+internal expect fun File.lastModified(): Long
 internal expect fun File.listFiles(): Array<File>?
 
 /** The whole file as UTF-8 text (kotlin.io's readText). */
@@ -46,6 +50,9 @@ expect abstract class OutputStream : AutoCloseable {
 }
 
 internal expect fun OutputStream.write(b: ByteArray, off: Int, len: Int)
+
+/** Up to [len] bytes into [b] from [off]: how many were read (at least one when [len] is not 0), or -1 at the end. */
+internal expect fun InputStream.read(b: ByteArray, off: Int, len: Int): Int
 
 /** java.io.IOException on Android and the JVM. */
 expect open class IOException : Exception {
