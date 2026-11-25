@@ -1,6 +1,7 @@
 package app.housemove.data
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.encodeToString
 
 /**
@@ -87,6 +88,10 @@ object Backup {
                 }
             }
         } catch (e: IOException) {
+            throw IOException(COULD_NOT_WRITE, e)
+        } catch (e: SerializationException) {
+            // Data the JSON cannot hold (NaN or an infinity) ended 2.1.1's backups with this exception, raw. The Store
+            // no longer takes such a number in ([firstNonFinite]); should one be there all the same, this says it in words.
             throw IOException(COULD_NOT_WRITE, e)
         }
     }

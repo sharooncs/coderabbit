@@ -147,4 +147,32 @@ class NumbersCommonTest {
         assertEquals(listOf(TOO_BIG), spokenNumbers("about 20000 centimetres", NumberKind.LENGTH).map { it.refusal })
         assertTrue(spokenNumbers("a big one", NumberKind.LENGTH).isEmpty())
     }
+
+    @Test
+    fun theStoreFindsEveryNonFiniteNumberInTheData() {
+        assertNull(AppData().firstNonFinite())
+        val finite = AppData(
+            move = MoveInfo(vanCapacityM3 = 1e21),
+            items = listOf(Item(id = "i", widthCm = -0.0, price = Double.MAX_VALUE)),
+            expenses = listOf(Expense(id = "e", amount = 1e21)),
+        )
+        // Large and odd numbers are not the Store's business: the data has always held them, and sync and backups carry them.
+        assertNull(finite.firstNonFinite())
+        val cases = listOf(
+            "the load space" to AppData(move = MoveInfo(vanCapacityM3 = Double.NaN)),
+            "a door's width" to AppData(rooms = listOf(Room(id = "r", home = Home.DEST, name = "Hall", doorWidthCm = Double.POSITIVE_INFINITY))),
+            "an item's width" to AppData(items = listOf(Item(id = "i", widthCm = Double.NaN))),
+            "an item's depth" to AppData(items = listOf(Item(id = "i", depthCm = Double.NEGATIVE_INFINITY))),
+            "an item's height" to AppData(items = listOf(Item(id = "i", heightCm = Double.NaN))),
+            "an item's asking price" to AppData(hidden = listOf(Hidden(id = "i", price = Double.NaN))),
+            "what an item is worth" to AppData(hidden = listOf(Hidden(id = "i", value = Double.POSITIVE_INFINITY))),
+            "what an item sold for" to AppData(hidden = listOf(Hidden(id = "i", soldFor = Double.NaN))),
+            "a cost's amount" to AppData(expenses = listOf(Expense(id = "e", amount = Double.NaN))),
+            "a suggested asking price" to AppData(proposals = listOf(Proposal(id = "p", price = Double.NaN))),
+            "a suggested cost's amount" to AppData(proposals = listOf(Proposal(id = "p", expense = Expense(id = "e", amount = Double.NaN)))),
+            "an amount to collect" to AppData(collect = listOf(Collect(id = "c", amount = Double.NEGATIVE_INFINITY))),
+        )
+        for ((what, d) in cases) assertEquals(what, d.firstNonFinite())
+        assertEquals("Not saved: a cost's amount is not a number.", notANumberRefusal("a cost's amount"))
+    }
 }

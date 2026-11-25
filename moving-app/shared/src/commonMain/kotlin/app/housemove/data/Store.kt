@@ -129,6 +129,19 @@ class Store internal constructor(
     private val io = SerialWorker("store-io")
     private val dirty = AtomicBoolean(false)
 
+    private val _saveProblem = MutableStateFlow<String?>(null)
+
+    /**
+     * [SAVE_FAILED] while the move's data could not be written to the phone, null once it has been. Nothing is
+     * lost meanwhile: the data stays in memory, and writing it is tried again soon ([SAVE_RETRY_MS]).
+     * The screens show it, so a save never fails without the person knowing.
+     */
+    val saveProblem: StateFlow<String?> = _saveProblem
+
+    /** How soon a failed save is tried again; tests make it short. */
+    @Volatile
+    internal var saveRetryMs: Long = SAVE_RETRY_MS
+
     /** Everything that changes the data or the device settings takes this, so each change is seen whole. */
     private val lock = Lock()
 
@@ -290,9 +303,9 @@ class Store internal constructor(
 
     // ---- persistence -------------------------------------------------------
 
-    private fun scheduleSave() {
+    private fun scheduleSave(delayMs: Long = 250) {
         if (dirty.compareAndSet(false, true)) {
-            io.schedule(250) { writeNow() }
+            io.schedule(delayMs) { writeNow() }
         }
     }
 
@@ -306,8 +319,16 @@ class Store internal constructor(
                 tmp.copyTo(dataFile, overwrite = true)
                 tmp.delete()
             }
+            _saveProblem.value = null
         } catch (_: Exception) {
-            dirty.set(true)
+            // Until 2.2 this only left a flag set, which also stopped every later change from being written until the
+            // app went to the background, and said nothing. Now it says so, and tries again soon.
+            _saveProblem.value = SAVE_FAILED
+            try {
+                scheduleSave(saveRetryMs)
+            } catch (_: Exception) {
+                // The store has been closed.
+            }
         }
     }
 
@@ -518,10 +539,31 @@ class Store internal constructor(
 
     // ---- mutations ---------------------------------------------------------
 
-    /** Replace the data with [f] of it. This is the raw write: nothing is checked, stamped or logged. */
-    fun update(f: (AppData) -> AppData) {
-        synchronized(lock) { _data.value = f(_data.value) }
+    /**
+     * Replace the data with [f] of it. This is the raw write: nothing is checked, stamped or logged, except that a
+     * change that would put NaN or an infinity into the data is refused and nothing of it is kept ([firstNonFinite]):
+     * the data could not be saved with it. Ok holds the data as it is now.
+     */
+    fun update(f: (AppData) -> AppData): Outcome<AppData> {
+        synchronized(lock) {
+            val d = _data.value
+            val next = f(d)
+            unsavable(d, next)?.let { return Outcome.Refused(it) }
+            _data.value = next
+        }
         scheduleSave()
+        return Outcome.Ok(_data.value)
+    }
+
+    /**
+     * Why [next] may not replace [d]: it holds a number that is not finite, which kotlinx.serialization refuses to
+     * write, so no later change could be saved either (as in 2.1.1). Null when it may. Data that already held one
+     * (it cannot, since nothing reads one in) is not held up by it.
+     */
+    private fun unsavable(d: AppData, next: AppData): String? {
+        if (next === d) return null
+        val bad = next.firstNonFinite() ?: return null
+        return if (d.firstNonFinite() == null) notANumberRefusal(bad) else null
     }
 
     /** One change by this phone's person, with the rules, the container logic and the activity log applied. */
@@ -535,7 +577,9 @@ class Store internal constructor(
         val draft = Draft(d, a, now())
         val out = draft.block()
         if (out.ok) {
-            _data.value = draft.finish()
+            val next = draft.finish()
+            unsavable(d, next)?.let { return Outcome.Refused(it) }
+            _data.value = next
             scheduleSave()
             mirrorMe()
         }
@@ -644,6 +688,8 @@ class Store internal constructor(
 
     /** The same as [saveOrSuggest] for a cost: saved for an Organiser, suggested for a Decider. */
     fun saveOrSuggest(x: Expense, note: String = ""): Outcome<Rec> = synchronized(lock) {
+        // Neither can hold an amount that is not a number: said as the cost's, not as a suggestion's.
+        if (!x.amount.isFinite()) return Outcome.Refused(notANumberRefusal("a cost's amount"))
         val direct = saveCost(x)
         if (direct.ok || !actor(_data.value).may(Action.SUGGEST)) return direct
         val old = _data.value.expense(x.id)
@@ -1953,6 +1999,12 @@ class Store internal constructor(
          * there would count on no phone ([Roles]), and the person would be gone again once the move is read back.
          */
         const val NOBODY_TO_ADD = "This move has no Organiser, so nobody can be added yet. Turn off helper mode in Settings first: you are then its Organiser."
+
+        /** What the screens say while the move's data cannot be written to the phone ([saveProblem]). */
+        const val SAVE_FAILED = "Your latest changes could not be saved on this phone. HouseMove keeps them while it is open and keeps trying. Check the phone has free space."
+
+        /** How soon a save that failed is tried again, in milliseconds. */
+        const val SAVE_RETRY_MS = 5_000L
     }
 
     // ==== 2.1: records, merges and privacy =========================================================

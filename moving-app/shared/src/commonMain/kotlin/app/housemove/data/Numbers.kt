@@ -9,6 +9,8 @@ package app.housemove.data
  * NaN, the infinities (typed, or a number too long for a Double, such as 1e309), and a number beyond the bounds of
  * its kind of field. kotlinx.serialization will not write NaN or an infinity, so in 2.1.1 one of them in the data
  * stopped every later save, and the change was lost when the app was opened again.
+ *
+ * The Store refuses a non-finite number all the same ([firstNonFinite]), whatever the screen did.
  */
 
 /**
@@ -78,3 +80,44 @@ private val SPOKEN_NUMBER = Regex("\\d+(?:[.,]\\d+)?")
  */
 fun spokenNumbers(said: String, kind: NumberKind): List<TypedNumber> =
     SPOKEN_NUMBER.findAll(said).map { readNumber(it.value, kind) }.toList()
+
+// ---- the Store's safety net ------------------------------------------------------------------------------------------
+
+/** What the Store says when a change would put NaN or an infinity into the move: nothing of it is saved. */
+fun notANumberRefusal(what: String): String = "Not saved: $what is not a number."
+
+private fun Double?.bad(): Boolean = this != null && !isFinite()
+
+/**
+ * The first Double in this data that is NaN or an infinity, said as a part of the move ("a cost's amount"), or
+ * null when every one is finite. These are every Double in [AppData] (a test walks the data's serial descriptor
+ * to keep this list whole); kotlinx.serialization will not write any of them otherwise.
+ */
+internal fun AppData.firstNonFinite(): String? {
+    if (move.vanCapacityM3.bad()) return "the load space"
+    for (r in rooms) if (r.doorWidthCm.bad()) return "a door's width"
+    for (i in items) {
+        when {
+            i.widthCm.bad() -> return "an item's width"
+            i.depthCm.bad() -> return "an item's depth"
+            i.heightCm.bad() -> return "an item's height"
+            i.price.bad() -> return "an item's asking price"
+            i.value.bad() -> return "what an item is worth"
+            i.soldFor.bad() -> return "what an item sold for"
+        }
+    }
+    for (h in hidden) {
+        when {
+            h.value.bad() -> return "what an item is worth"
+            h.price.bad() -> return "an item's asking price"
+            h.soldFor.bad() -> return "what an item sold for"
+        }
+    }
+    for (e in expenses) if (e.amount.bad()) return "a cost's amount"
+    for (p in proposals) {
+        if (p.price.bad()) return "a suggested asking price"
+        if (p.expense?.amount.bad()) return "a suggested cost's amount"
+    }
+    for (c in collect) if (c.amount.bad()) return "an amount to collect"
+    return null
+}
