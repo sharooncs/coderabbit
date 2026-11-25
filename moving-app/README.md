@@ -5,28 +5,39 @@ unpacked box: list what you own, decide what happens to it, pack, load,
 unload, unpack. It works offline. There is no account and no server; phones
 share the move by syncing directly with each other.
 
-This is version 2.3. What is new in it:
+This is version 2.4. What is new in it:
 
-- **Phones sync by themselves.** Once a phone has joined a move, the phones of
-  that move find each other on the same Wi-Fi and sync while HouseMove is open:
-  when it is opened, every couple of minutes, and a few seconds after a change.
-  Nobody shows or scans a sync code for that. More, Sync and backup says how it
-  stands ("Up to date with Asha's phone · 2 min ago") and has a switch, **Sync
-  by itself on Wi-Fi**, which is on.
-- **One code sync after updating.** A phone that joined before 2.3 syncs once
-  by code with a phone of the move that has 2.3; from then on it syncs by
-  itself. When someone is taken out of the move, the phones that have synced by
-  themselves before carry on; one that never has needs one code sync too.
-- **Older phones keep working.** Phones still on 2.2 or 2.1.1 sync by code with
-  every phone, as before. They sync by themselves once they are updated.
-- **Only while HouseMove is open.** When it is closed, nothing syncs; it catches
-  up the next time it is opened. Some Wi-Fi keeps devices apart (many guest
-  networks); there the code, or a phone's hotspot, still works.
-- **Nothing to allow.** No new permission. What a phone says on the Wi-Fi to be
-  found holds no names, only a code that changes every hour and that only the
-  phones of the move can work out.
-- **The same size.** The app is 17.2 MB, as 2.2 was.
-- **Install it over 2.2** as before: every move on the phone is kept.
+- **Syncing is private.** When two phones with 2.4 sync, by themselves or by a
+  code, everything between them is encrypted: someone else on the same Wi-Fi
+  (a guest, or anyone on an open network) cannot read the move, the photos or
+  any key, and cannot change what goes across. Each phone checks that the other
+  is a phone of the move, with that phone's own key, before anything is sent.
+- **Nothing to do after updating.** Phones that have 2.4 sync by themselves
+  with each other straight away, as they did: each phone already knows the
+  others' keys from the move. (A phone whose key is not in the move yet, such
+  as one that has not synced since 2.0, syncs once by code first.)
+- **Codes are a little longer.** A phone with 2.4 shows codes of ten letters
+  and numbers, beginning with E2. Scanning one, a phone with 2.4 syncs only
+  encrypted, never the old way.
+- **Older phones keep working, and the app says so.** Phones on 2.3, 2.2 or
+  2.1.1 still sync by code with every phone, as before, but not encrypted: both
+  phones then say "Priya's phone has an older HouseMove, so this sync was not
+  encrypted", and Sync and backup says "Syncing by itself needs HouseMove 2.4 on
+  Priya's phone too." Update every phone to make every sync private.
+- **Someone taken out of the move is shut out at once.** As soon as a phone
+  knows a person was removed (or a phone retired), it no longer syncs with their
+  phone in any way.
+- **If a phone gets a new key** (rare: only if the file that holds it is lost),
+  the others say "Asha's phone has a new key. Sync once with a code to go on
+  syncing by itself." One code sync with any phone of the move puts it right.
+- **Nothing to allow.** No new permission; what a phone says on the Wi-Fi to be
+  found is still only a code that changes every hour.
+- **About the same size.** The app is 17.3 MB, 16 KB more than 2.3.
+- **Install it over 2.3** as before: every move on the phone is kept.
+
+Version 2.3 made the phones of a move find each other on the same Wi-Fi and
+sync by themselves while HouseMove is open, with a line on Sync and backup and
+the switch **Sync by itself on Wi-Fi**.
 
 Version 2.2 fixed number boxes that took "NaN" and then stopped saving every
 change made after it; a phone that cannot save now says so and keeps trying.
@@ -62,7 +73,7 @@ screens that need almost no typing.
 
 ## Install
 
-Download `releases/HouseMove-2.3.apk` from this repository (or scan the
+Download `releases/HouseMove-2.4.apk` from this repository (or scan the
 install code that comes with each release), or build it (below). Copy it to the
 phone and open it. A phone that already has HouseMove can pass it on without
 internet: Who's helping, Share the app. Android will ask to allow
@@ -217,11 +228,13 @@ Each phone holds a full copy. On the same Wi-Fi, the phones of a move find
 each other and sync by themselves while HouseMove is open (from 2.3; More,
 Sync and backup says how it stands and has the switch). Otherwise one phone
 shows a code (More, Sync and backup, Show sync code) and the other scans it:
-for the first sync after an update, with a phone on an older HouseMove, or on
-Wi-Fi that keeps devices apart. Both must be on the same Wi-Fi, or one on the
+for joining, with a phone on an older HouseMove, for a phone with a new key, or
+on Wi-Fi that keeps devices apart. Both must be on the same Wi-Fi, or one on the
 other's hotspot. Data and photos go both ways; if the same record was changed
-on both, the most recent change by someone allowed to make it wins. How phones
-find and trust each other without a code is in `design/auto-sync.md`.
+on both, the most recent change by someone allowed to make it wins. From 2.4,
+two phones that both have it sync encrypted, each checking the other's own key
+(`design/encryption.md`, Part 2); how phones find each other without a code is
+in `design/auto-sync.md`.
 
 - Set the move up on one phone only. Other phones join with an invite.
 - A phone can hold several moves. Each has its own ID, checked before any data
@@ -235,7 +248,9 @@ find and trust each other without a code is in `design/auto-sync.md`.
 - Keep every phone on the same version of the app. Phones on different versions
   refuse to sync, so newer details are never lost on an older phone.
 - Sync whenever the phones are together, and the evening before move day.
-- The sync connection is not encrypted, so use a network you trust.
+- Between phones with 2.4 the sync is encrypted. With a phone on an older
+  HouseMove it is not, and both phones say so: sync on a network you trust, or
+  update that phone first.
 
 A backup file (zip of data and photos) can be saved or shared from the same
 screen by an Organiser or a Decider (Helpers cannot make backups). Restoring
@@ -291,7 +306,12 @@ Four layers, all free to run:
 Syncing by itself is tested with two to four phones in one process that find
 each other through a stand-in for Bonjour and sync over real sockets
 (`AutoSyncCommonTest`, `AutoHandshakeCommonTest`, `AutoSyncOldPhonesTest`), and a
-third of the seven-phone simulation's syncs are by themselves.
+third of the seven-phone simulation's syncs are by themselves. The encryption of
+2.4 is checked against recorded handshakes (`NoiseCommonTest`, on the JVM, the
+iPhone simulator and through the iPhone's CryptoKit; `tools/noise_check.py`
+checks the recording with Python), by a relay that records every byte between
+two phones and finds nothing of the move in it (`SniffingTest`), and by the
+simulation, whose phones run 2.2, 2.3 and 2.4 side by side.
 
 What no simulation covers: a physical camera reading a printed sticker in real
 light, a physical printer's scaling, speech recognition, and two phones on one
@@ -352,8 +372,9 @@ there later; the Android app does not use it yet.
   `Sealed.kt` and `Update.kt` the update files; `DailyBackup.kt` the daily
   backup; `Numbers.kt` how every typed or spoken number is read, and what is refused
 - `sync/` (in `shared/`) – phone-to-phone sync over a local socket, and invites;
-  syncing by itself (`AutoSync`, `AutoSession`, `Ring`, `Discovery`: Bonjour, the
-  handshake, the keys)
+  syncing by itself (`AutoSync`, `AutoSession`, `Discovery`: Bonjour, the
+  handshake); the encryption from 2.4 (`Noise`, `SecureChannel`: the handshakes
+  and the encrypted channel; `Pins`: the keys each phone accepts)
 - `pdf/` – QR label sheets, door signs, inventory and damage reports
 - `ui/` – the kit: `Theme.kt` (colours, type), `Glass.kt` (panels, pills, orbs),
   `Visual.kt` and `Common.kt` (tiles, buttons, inputs), `Dock.kt` (the dome at

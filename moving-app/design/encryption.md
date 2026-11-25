@@ -2,9 +2,10 @@
 
 Two parts. **Part 1 is built** (branch `crypto`): the iPhone has the same update-file crypto as Android, byte for byte,
 through a small interface whose Android side is the JCA code Android has run since 2.1 and whose iPhone side is
-CryptoKit. **Part 2 is a design**, not built: an encrypted, mutually authenticated channel for phone-to-phone sync from
-2.4, which replaces 2.3's Wi-Fi keys and pair keys, and serves the internet mailbox on the owner's always-on Windows
-laptop later.
+CryptoKit. **Part 2 is built** (branch `enc-sync`, Android 2.4, versionCode 12; the iPhone build stays 0.1): an
+encrypted, mutually authenticated channel for phone-to-phone sync, which replaces 2.3's Wi-Fi keys and pair keys. The
+mailbox on the owner's always-on Windows laptop (HPKE) is not built; the design below keeps it, and "Part 2 as built"
+says what is ready for it.
 
 ## Part 1: crypto on the iPhone, byte-compatible with Android
 
@@ -244,8 +245,8 @@ Android (the APK on GitHub) uses Android's own JCA provider in the same way; App
 
 ## Part 2: design for encrypted sync (2.4 and later)
 
-Not built. It needs Part 1 (CryptoKit on the iPhone) and changes the sync on both platforms; it should be its own branch
-with its own golden transcripts.
+Built on branch `enc-sync` (Android 2.4). The design is kept as it was reviewed; what was built, the wire formats, the
+choices the design left open and where the build differs are in "Part 2 as built", below it.
 
 ### Goals
 
@@ -410,6 +411,161 @@ The always-on laptop stores and forwards sealed messages; it never holds a key t
 
 While any phone of the move is still on 2.3, the "before" column holds for the syncs that phone takes part in.
 
+## Part 2 as built (2.4)
+
+### In short
+
+- **Where.** All common Kotlin in `shared` (`app.housemove.sync`), on Part 1's `PlatformCrypto` and nothing else:
+  `Noise.kt` (Noise's CipherState, SymmetricState and HandshakeState for IK and XXpsk0, about 300 lines),
+  `SecureChannel.kt` (the encrypted frames), `Pins.kt` (`pins.json`), `AutoSession.kt` (IK for syncing by itself),
+  `WifiSync.kt` (XXpsk0 for E2 codes; the plain path untouched) and `AutoSync.kt` (per-phone tags, the new hints). No
+  primitive was added to the interface and no Swift was needed: ECDH is `AgreementKey.agree`, one-use keys are
+  `generateKey`, AES-GCM is `sealGcm`/`openGcm`, HMAC, HKDF and SHA-256 are common. The iPhone therefore encrypts only
+  through CryptoKit, and `ITSAppUsesNonExemptEncryption` stays `NO` (the answers in Part 1 hold: Noise is a way of
+  using CryptoKit's ECDH and AES-GCM, not another cipher).
+- **Gone from the app:** 2.3's `ring.json` (deleted when a move is opened), its meetings and its handshake (HMAUTO1).
+  A 2.4 phone neither advertises `HM-…` nor answers HMAUTO1. The tests keep a faithful copy of a 2.3 phone (`Old23.kt`,
+  jvmTest) to play beside 2.4 phones.
+- **Unchanged:** the sync's own exchange (`WifiSync`'s hello, admission, Helper filtering, merge, photos) runs inside
+  the channel byte for byte as before; the hello has no new field; the merge, the data layout (`SCHEMA` 5) and update
+  files (format 1) are as in 2.3. The golden fixtures are untouched and pass.
+
+### Wire formats
+
+Strings are `writeUTF` (two-byte length, modified UTF-8). `[a, b]` is a list of parts, each a four-byte big-endian
+length and its bytes (as 2.3's `|`). A *frame* is a two-byte big-endian length and that many bytes (at most 65,535).
+
+**Discovery.** `_housemove._tcp`, instance name `HN-<tag>-<four random letters and digits>`, TXT `v=2`. `tag` = the first 16 hex
+digits of HMAC-SHA256(key `"housemove-discovery-2:" + moveId`, `"phone:" + hour + ":" + phoneId`), `hour` = whole hours
+since 1970 (UTC), `moveId` = the lowest ID the move is known by. A phone works out every pinned phone's tag for every ID
+of the move, an hour either way, so it knows which phone advertises (`AutoSession.whoAdvertises`); a tag of 2.3's form
+(`HM-<move tag>-…`) of this move only tells it a 2.3 phone is on the Wi-Fi (the hint below).
+
+**Syncing by itself: `Noise_IK_P256_AESGCM_SHA256`.** The dialler D knows the answerer A's key from its pin.
+
+```
+prologue  ["HouseMove sync 2", moveId]   (moveId: the one A's tag was made with; A tries each ID it knows)
+D → A     writeUTF "HMAUTO2", then frame( e (65) | AEAD(s) (65+16) | AEAD([D's phone ID]) )        e, es, s, ss
+A → D     frame( e (65) | AEAD([A's phone ID, "OK" | "BUSY"]) )                                        e, ee, se
+then frames of the channel: WifiSync's exchange (D's hello, with AUTO for the code), D's vouches, A's vouches
+```
+
+A answers only a phone of the move (on someone's list, not retired, person not removed) whose key is A's pin for the
+phone ID in the payload; anything else is closed without a word. A treats D as proved only once D's first frame opens
+(it needs D's private key: key-compromise impersonation with A's stolen key gets nothing). BUSY: one sync by itself at
+a time, as 2.3.
+
+**Code syncs and invite joins: `Noise_XXpsk0_P256_AESGCM_SHA256`.**
+
+```
+psk       HKDF-SHA256(ikm = code, salt = "HouseMove code 2", info = moveId), one block (as Sealing.hkdf)
+prologue  ["HouseMove code 2", moveId]   (the invite's move ID; the hosting phone uses its own)
+J → H     writeUTF "HMSYNC4", then frame( e (65) | tag (16) )                                    psk, e
+H → J     frame( e (65) | AEAD(s) (65+16) | AEAD([H's phone ID]) )                               e, ee, s, es
+J → H     frame( AEAD(s) (65+16) | AEAD([J's phone ID]) ), then frames: WifiSync's exchange      s, se
+          (J's hello with the code), J's vouches, H's vouches
+```
+
+The hosting phone tries each code it shows (the plain code, its invites and Helper codes, a handful) on the first
+message's tag; none opens it: closed, and its screen says a wrong code was tried. The hello's code must be the one whose
+key opened the handshake, and each hello's phone ID and key (`Hello.key`) must be the ones the handshake proved (so
+the joining phone's key, which goes on its new entry, is the one it proved). **Codes:** a 2.4 phone shows `E2` and eight
+of `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` (ten characters; older phones' are eight, so never mistaken). Scanning an E2 code
+a 2.4 phone speaks only HMSYNC4: a failed handshake is "The sync code was not accepted", never a plain hello (which
+would send the code in the clear).
+
+**Old phones.** A hosting 2.4 phone answers a plain `HMSYNC3` hello (any of its codes) exactly as 2.3 does. A 2.4 phone
+scanning an eight-character code says the plain hello exactly as 2.3 does. Both say the sync was not encrypted
+(`WifiSync.Result.plain`).
+
+**The channel (`SecureChannel`).** Each direction its own key (Noise's Split), the nonce Noise's (four zero bytes and the
+frame count, big-endian), empty additional data. A frame holds at most 65,519 bytes of the sync (65,535 with the tag);
+one goes on each flush or when full, so photos go in many. A frame that is changed, repeated, reordered, cut or
+dropped does not open and the channel ends (the sync then says what a failed connection says). Every 2^20 frames in a
+direction (64 GB) both sides apply Noise's Rekey; after 2^40 frames a channel refuses to go on, far before a nonce
+could repeat. A sync is a few frames; neither limit is ever reached in practice, and the tests check both with small
+values.
+
+**Vouches.** An `int` length and UTF-8 JSON `{"keys":[{"phone":"p…","key":"MFkw…"}]}`: the pins the sender has *met*,
+of phones of the move other than the two (at most 500).
+
+**`pins.json`** (the move's no-backup folder, beside the codes):
+`{"move":"m…","pins":[{"phone":"p…","key":"MFkw…","how":"met"|"move","at":…,"v2":true}],"older":{"p…":at},"mine":"MFkw…","newKey":false}`.
+
+### Trust, as built
+
+- **Seeding.** Every phone of the move with a usable key on its entry is pinned *from the move* the first time it is
+  seen (the first start of 2.4 included). Joining pins the inviting phone and the joining phone each other as *met*.
+- **Met.** A code sync or invite join over XXpsk0 pins the other phone's proved key as met, in place of any other (the
+  code was seen on its screen). The phone met vouches for the keys it has met: taken as met in that meeting; in a sync
+  by itself, only from an Organiser's or a Decider's phone. A vouch is taken only when the key is the one on the
+  phone's entry in the data just merged.
+- **Never silently.** When an entry's key differs from its pin, the pin stays; the phone is not synced with by itself,
+  and Sync and backup says "Asha's phone has a new key. Sync once with a code to go on syncing by itself." The phone
+  that made a new key knows it (`pins.json`'s `mine`), and says "This phone has a new key. …" until a phone takes it.
+- **Removed or retired.** Unpinned as soon as this phone's data says so; every handshake checks membership against the
+  data of that moment, so the refusal is immediate.
+- **Downgrade.** E2 codes are Noise only (above). And a hosting 2.4 phone refuses a plain hello carrying one of its E2
+  codes from a phone that has synced encrypted with it before (`v2`): HouseMove 2.4 never does that, so it is someone
+  who saw the code, posing as that phone.
+
+### Where the build differs from the design, and why
+
+1. **The merge is unchanged.** The design adds "2.4's merge also refuses a change of an existing entry's key unless it
+   comes from such a meeting". Changing what a merge keeps would make 2.4 phones and 2.3 phones (which keep the newest
+   key) end up with different data and never agree. The same protection is in the pins instead: a key on an entry
+   counts for syncing by itself only through a met pin, a vouch from an Organiser's or Decider's phone, or first use;
+   it is never taken silently in place of a pin. (Update files still seal to the entry's key, as in 2.3; their format 2
+   is the mailbox step.)
+2. **No warning for update files from older phones yet.** Update files are still format 1 on every version (HPKE format
+   2 belongs to the mailbox step, out of scope), so no update file can show its sender yet, from any phone; the warning
+   comes with format 2. The hook: `WifiSync.Result.plain` and `Pins.olderPhones` say which phones are older.
+3. **"Both phones say" a new key without a word on the wire.** The design wants both phones to say so; the answering
+   phone closes without an answer (as the design also says), so each phone says it from what it knows: the others
+   from the data (entry key ≠ pin), the phone itself from its own key having changed.
+4. **One rule added:** the downgrade refusal on the hosting phone (above).
+5. **Demo mode's keys are in memory** (`useAppleCryptoInMemory`), made by CryptoKit, not kept in the Keychain: an unsigned
+   build in CI may be refused the Keychain (-34018), which would leave the demo's phones without keys and unable to
+   sync encrypted. The Keychain is still checked by the crypto check.
+6. **What the design left open** is fixed as above: the magic words, XXpsk0's prologue, the payloads, BUSY, the
+   vouches, the rekey interval and the frame limits, and that the answering phone tries every ID the move is known by.
+7. **A 2.4 phone without a usable key** (an iPhone whose Keychain refuses it) cannot sync encrypted: it shows
+   eight-character codes and speaks plain, and the other phone then says it has "an older HouseMove". Android always has
+   its key.
+
+### Ready for the mailbox
+
+The identities (each phone's static key on its entry), the pins and the vouches are the trust the mailbox needs; HPKE's
+`mode_auth` is ECDH, HKDF and AES-GCM, all on `PlatformCrypto`. `Pins.olderPhones` and `Result.plain` name the phones
+that would still need format 1. Nothing is sent anywhere but the local network.
+
+### How it is checked
+
+- **Known answers** (`noise/handshakes.json`, recorded by `NoiseFixtureTest` with the JCA): an IK and an XXpsk0 handshake
+  with fixed keys, every message, the handshake hash, both directions' keys, and the channel's frames both ways with a
+  rekey. `NoiseCommonTest` makes them again byte for byte on the JVM and, with the reference crypto, on the simulator;
+  the iPhone app's `CryptoCheck` with CryptoKit (UI test `testCryptoKitOpensAndSealsAsAndroidDoes`); and
+  `tools/noise_check.py` with Python's `cryptography` and a Noise written apart (it agrees on every byte).
+- **Common tests (JVM and simulator):** `NoiseCommonTest` (both patterns with fresh keys; a changed, cut or longer
+  message; another prologue, pre-shared key or responder key; a point off the curve; a replayed first message opens no
+  channel; frames changed, repeated, reordered, dropped or cut; the frame and rekey limits; message sizes),
+  `AutoHandshakeCommonTest` (a pinned phone let in; a stranger, a removed phone, a retired phone, a phone with a new
+  key, another move, 2.3's handshake and a code hello not answered; BUSY; the proved phone must say it is that phone;
+  key-compromise impersonation gets nothing; the tags, checked against Python's hmac), `CodeSyncCommonTest` (join and
+  sync encrypted with pins met and the joining key on the entry; a wrong code; an E2 code never falls back, whatever
+  answers; the downgrade refusal; vouches), `AutoSyncCommonTest` (two and four phones by themselves; a new key taken only
+  from a meeting or an Organiser's or Decider's vouch; a removed phone left out; an older phone named; the words).
+- **JVM:** `NoiseFixtureTest`; `MigrationTest` (2.3 phones on their keys, one updates: ring.json gone, pins from the move,
+  HMAUTO1 unanswered, plain code sync with both saying so; the other updates: by themselves at once, encrypted);
+  `AutoSyncOldPhonesTest` (code sync with a 2.2 or 2.3 phone both ways is 2.1.1's eight messages, plain, said);
+  `SniffingTest` (below); the seven-phone simulation with phones on 2.2, 2.3 and 2.4 and the invariant "between two
+  phones with 2.4 nothing goes in the clear".
+- **Sniffing.** A relay between two 2.4 phones records every byte of an invite join, a code sync and a sync by itself,
+  and searches it for the move's ID and name, things' names, a serial number in a note, a photo's bytes, people's
+  names, both phone IDs, the hello's words, `HMSYNC3`, each phone's public key (point, X.509, Base64) and private key,
+  the code and its pre-shared key, and all six session keys: none is there. The same search over a sync with a 2.3
+  phone finds the move, the code and the public keys (private keys never travel), so the search works.
+
 ## Risks
 
 - **CryptoKit in CI is checked only in the UI test.** The Kotlin tests on the simulator use the reference crypto. If the
@@ -430,10 +586,61 @@ While any phone of the move is still on 2.3, the "before" column holds for the s
 - **Export compliance** rests on CryptoKit counting as "encryption within Apple's operating system" (Apple's pages do
   not name it) and on the 2021 BIS rule as summarised by law firms (bis.gov could not be fetched here). The owner
   declares.
-- **Part 2 is a design.** Pinning and key changes add states the phones must explain in plain words; the first version
-  should be tested with the seven-phone simulation (strangers, removed phones, a phone with a new key) before it ships.
+- **Part 2 (2.4): Noise over P-256 is not one of Noise's named suites.** The choices are written down above and the
+  recorded transcripts agree with a separate implementation (Python's `cryptography`), but no third party has
+  interoperated with it. Both ends are always HouseMove's own code, so that matters only for review.
+- **Part 2: the real CryptoKit runs the handshakes only in the crypto check** (the UI test), as for update files; the
+  demo's sync (UI test) runs them too, between two CryptoKit keys. A failure there that the simulator's tests do not show
+  is CryptoKit's.
+- **Part 2: only real phones show** NSD and Bonjour across a router with the new `HN-…` names and `v=2`, a phone that
+  loses its key file (Android: Clear storage) and the new-key words, and a 2.3 phone beside 2.4 phones on one Wi-Fi.
+  The owner's list is in `design/ios-plan.md` (1e).
+- **Part 2: a phone's static key is in a file on Android** (`no_backup/phone-key.json`, as since 2.1, out of backups):
+  whoever can read the app's private files (a rooted phone) can pose as that phone until it is removed. Moving it to the
+  Android Keystore is a later step (the iPhone's is in the Keychain).
+- **Part 2: a member acting badly** can still change another phone's entry key in the data (as any member can change
+  records today); the pins do not follow it silently, so syncing by itself with that phone stops (and says so) rather
+  than trusting the forged key; a code sync puts it right.
+- **Part 2: a plain hello with an E2 code from a phone not known to speak 2.4** is still taken (the older phone it says
+  it is might be one): someone who saw the code on the screen can join or sync as a new phone that way, as anyone with
+  the code could in 2.3. The code is shown in person, lasts ten minutes, and an invite works once.
 
-## Verify (2026-11-25, on Linux)
+## Verify, Part 2 (2026-11-25, on Linux, branch `enc-sync`)
+
+- `tools/test.sh`: 556 tests, 0 failed (shared 380, app 161, sharedUi 15). New or rewritten: `NoiseCommonTest` (11),
+  `CodeSyncCommonTest` (5), `AutoHandshakeCommonTest` (10), `AutoSyncCommonTest` (7) (all four also on the simulator),
+  `NoiseFixtureTest` (1), `MigrationTest` (1), `SniffingTest` (2), `AutoSyncOldPhonesTest` (2), `AutoSyncScreenTest`
+  (5, two new); on the simulator also `CryptoCheckIosTest`, which now plays the Noise transcripts.
+  `tools/noise_check.py`: the recorded transcripts agree with Python's `cryptography` on every message, hash, key and
+  frame.
+- The golden fixtures are byte for byte as at a0fa6ee and ecf69e2 (`git diff ecf69e2 -- shared/src/jvmTest/resources/golden`
+  is empty); none was recorded again. 2.1.1's code sync between a 2.4 phone and an older one is still its eight
+  messages with 2.1's hello fields, both ways round (`AutoSyncOldPhonesTest`).
+- `tools/simulate.sh 100`: 0 seeds broke an invariant, the new one included ("between two phones with 2.4 nothing goes
+  in the clear"): phones on 2.2 (123), 2.3 (223) and 2.4 (354); 7,657 code syncs (1,598 encrypted, 6,059 plain with an
+  older phone) and 618 by themselves (422 encrypted, 196 between two 2.3 phones on 2.3's keys); the relay read every
+  encrypted sync with the session keys, so each merge was checked as before. The 10 seeds with phones working while
+  they sync, and 50 more such seeds (`HM_SIM_LOOSE=50 HM_SIM_LOOSE_JOBS=2 tools/simulate.sh 0`), held every invariant.
+- `tools/checks.sh` (0 findings but the one text field on search, as before) and `tools/roles.sh` (nothing found on
+  core screens; the same "alone" notes as before) pass.
+- `:app:assembleRelease`: versionCode 12, versionName 2.4, the same signing certificate (SHA-256 afc48c1a…ab00a3);
+  `aapt dump badging` differs from 2.3's only in the version (the same permissions: camera and internet).
+  `classes.dex` and `classes2.dex` are byte for byte 2.3's; `classes3.dex` is 46 KB larger: `Noise`, `NoiseKey`,
+  `CipherState`, `SymmetricState`, `Handshake`, `SecureChannel`, `Pins`, `Pin`, `PinsSaved`, `Vouch` and their
+  serializers and lambdas in, `Ring`, `RingSaved`, `WifiKey`, `Meetings` and HMAUTO1's credentials out; no test class
+  (no `NoiseKat`, `ReferenceCrypto`, `Old23`, `SessionKeys`) and no `HMAUTO1`. The APK is 17,255,228 bytes (2.3:
+  17,238,844), in `releases/HouseMove-2.4.apk` and `HouseMove-latest.apk`.
+- iOS: `:shared:compileKotlinIosArm64`, `:shared:compileKotlinIosSimulatorArm64`, `:shared:compileTestKotlinIosSimulatorArm64`,
+  `:sharedUi:compileKotlinIosArm64` and `:sharedUi:compileKotlinIosSimulatorArm64` succeed. The Swift (unchanged but for
+  the UI tests' new assertions), the simulator tests and the UI tests run in CI only.
+- **The iPhone encrypts only through `PlatformCrypto`:** in `shared/src/commonMain`, `shared/src/iosMain` and
+  `sharedUi/src/{commonMain,iosMain}` there is no `javax.crypto`, `java.security` (one comment), `KeyAgreement` (comments
+  naming CryptoKit's types), CommonCrypto cipher call, S-box, GHASH or other block-cipher code; every `sealGcm`,
+  `openGcm`, `agree` and `generateKey` call is on the interface (`Sealed.kt`, `Update.kt`, `Noise.kt`, the checks). The
+  reference P-256 and AES-GCM (`ReferenceCrypto.kt`) are in `commonTest` only, used by tests in commonTest, iosTest
+  and jvmTest.
+
+## Verify, Part 1 (2026-11-25, on Linux)
 
 - `tools/test.sh`: 534 tests, 0 failed (shared 360, app 159, sharedUi 15). New: `UpdateCommonTest` (4, also on the
   simulator), `ReferenceCryptoJvmTest` (4), `SealingFixtureTest` (1); on the simulator also `CryptoCheckIosTest` (4).

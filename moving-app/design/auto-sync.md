@@ -1,5 +1,11 @@
 # Syncing by itself on the same Wi-Fi (HouseMove 2.3)
 
+**From 2.4** the engine, the timings, the status line and the platforms' discovery below stay, but what is advertised
+and how phones trust each other changed: each phone advertises a tag of its own (`HN-…`, TXT `v=2`), the handshake is
+Noise IK with the phones' own keys and the sync runs encrypted, and the Wi-Fi keys, pair keys, meetings and HMAUTO1 of
+sections 1 and 2 are gone (a 2.4 phone deletes `ring.json`). See `design/encryption.md`, Part 2 and "Part 2 as built".
+What follows is 2.3 as it was built.
+
 Today two phones sync when one shows a code and the other scans it. That stays, but it should no longer be the
 everyday way. From 2.3, once a phone has joined a move (with the invite QR code, as today), the phones of that move
 find each other on the Wi-Fi and sync by themselves while HouseMove is open. Nobody shows or scans a code for that.
