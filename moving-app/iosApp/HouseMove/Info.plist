@@ -59,5 +59,27 @@
 	<string>HouseMove uses the camera to scan box labels and barcodes and to take photos of your things.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>HouseMove shares your move with the other phones in it over your Wi-Fi.</string>
+	<!-- HouseMove's own Bonjour type, only to ask iOS whether the local network is allowed (IosHooks.kt,
+	     LocalNetworkCheck): the app advertises it briefly on this iPhone and looks for itself. Phones do not find
+	     each other this way; they meet through the address in a code. -->
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_housemove._tcp</string>
+	</array>
+	<!-- An Android phone's invite and sync code are QR codes holding HMSYNC:…, a link of this kind: the iPhone's
+	     Camera offers to open it in HouseMove (HouseMoveApp.swift, onOpenURL). -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>app.housemove.ios.code</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>hmsync</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>
