@@ -39,6 +39,12 @@ internal expect class BytesOut() {
  */
 internal expect fun useTestCryptoIfNone(): () -> Unit
 
+/**
+ * The key pair whose private key is the scalar [d] (32 bytes), in the crypto the tests use on this platform (the JCA on the
+ * JVM, the reference crypto on the simulator): for sealing with fixed keys.
+ */
+internal expect fun keyFromScalar(d: ByteArray): app.housemove.data.AgreementKey
+
 /** Waits [ms] milliseconds. */
 internal fun sleepMillis(ms: Long) {
     CountDownLatch(1).awaitMillis(ms)

@@ -76,7 +76,7 @@ internal object JavaBase64 {
                 out[dp++] = (bits shr 16).toByte()
                 out[dp++] = (bits shr 8).toByte()
             }
-            12 -> throw IllegalArgumentException("Last unit does not have enough valid characters")
+            12 -> throw IllegalArgumentException("Last unit does not have enough valid bits")
         }
         if (sp < sl) throw IllegalArgumentException("Input byte array has incorrect ending byte at $sp")
         return out.copyOf(dp)

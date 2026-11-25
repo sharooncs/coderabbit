@@ -12,6 +12,17 @@ import java.util.UUID
 
 // The JVM side of the common tests' needs (TestPlatform.kt).
 
+/** A JCA key pair from the scalar [d]. Its public point is worked out with the reference code; the JCA checks it is on the curve. */
+internal actual fun keyFromScalar(d: ByteArray): app.housemove.data.AgreementKey {
+    val params = java.security.AlgorithmParameters.getInstance("EC")
+        .apply { init(java.security.spec.ECGenParameterSpec("secp256r1")) }
+        .getParameterSpec(java.security.spec.ECParameterSpec::class.java)
+    val f = java.security.KeyFactory.getInstance("EC")
+    val private = f.generatePrivate(java.security.spec.ECPrivateKeySpec(java.math.BigInteger(1, d), params))
+    val public = f.generatePublic(java.security.spec.X509EncodedKeySpec(app.housemove.data.P256Der.of(RefP256.publicOf(d))))
+    return app.housemove.data.JcaAgreementKey(public, private)
+}
+
 internal actual fun newTempFolder(): File = java.nio.file.Files.createTempDirectory("hm-test").toFile()
 
 /** Inherited, so the threads a run starts (a sync host's) take their ids from the same counter, and no other thread does. */

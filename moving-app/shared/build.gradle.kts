@@ -20,15 +20,26 @@ plugins {
 }
 
 /**
- * The golden fixtures (src/jvmTest/resources/golden, see its README) as a Kotlin object, GoldenFiles, for the common
- * tests: on the iPhone simulator there are no Java resources to read them from. Each file's text goes in with every
- * character that is not plain ASCII as a \u escape, beside the SHA-256 of the file's bytes, which the tests check, so
- * what they read is the file exactly. The files are only read: nothing here records or changes them.
+ * Fixture files as a Kotlin object ([objectName] in [packageName]): the golden fixtures (src/jvmTest/resources/golden, see
+ * its README) as GoldenFiles for the common tests, since on the iPhone simulator there are no Java resources to read them
+ * from; the sealing known-answer file as SealingFiles; and, for the iPhone app's crypto check, golden/update.json and that
+ * file as CryptoCheckFiles. Each file's text goes in with every character that is not plain ASCII as a \u escape, beside
+ * the SHA-256 of the file's bytes, which the tests check, so what they read is the file exactly. The files are only read:
+ * nothing here records or changes them.
  */
 abstract class GoldenSources : DefaultTask() {
-    @get:InputDirectory
+    @get:InputFiles
     @get:PathSensitive(PathSensitivity.RELATIVE)
-    abstract val fixtures: DirectoryProperty
+    abstract val fixtures: ConfigurableFileCollection
+
+    @get:Input
+    abstract val objectName: Property<String>
+
+    @get:Input
+    abstract val packageName: Property<String>
+
+    @get:Input
+    abstract val about: Property<String>
 
     @get:OutputDirectory
     abstract val output: DirectoryProperty
@@ -44,11 +55,11 @@ abstract class GoldenSources : DefaultTask() {
 
     @TaskAction
     fun write() {
-        val files = fixtures.get().asFile.listFiles { f -> f.name.endsWith(".json") }!!.sortedBy { it.name }
+        val files = fixtures.files.filter { it.name.endsWith(".json") }.sortedBy { it.name }
         val out = StringBuilder()
-        out.append("// Made by the Gradle task :shared:goldenSources from src/jvmTest/resources/golden. Not to be edited.\n")
-        out.append("package app.housemove\n\n")
-        out.append("internal object GoldenFiles {\n")
+        out.append("// Made by the Gradle task :shared:${name} from ${about.get()}. Not to be edited.\n")
+        out.append("package ${packageName.get()}\n\n")
+        out.append("internal object ${objectName.get()} {\n")
         out.append("    /** The text of each fixture, by file name. */\n")
         out.append("    val text: Map<String, String> by lazy {\n        mapOf(\n")
         for ((i, f) in files.withIndex()) out.append("            ${literal(f.name)} to file$i(),\n")
@@ -69,16 +80,43 @@ abstract class GoldenSources : DefaultTask() {
             out.append("    ).joinToString(\"\")\n")
         }
         out.append("}\n")
-        val dir = output.get().asFile.resolve("app/housemove")
-        dir.deleteRecursively()
+        val root = output.get().asFile
+        root.deleteRecursively()
+        val dir = root.resolve(packageName.get().replace('.', '/'))
         dir.mkdirs()
-        dir.resolve("GoldenFiles.kt").writeText(out.toString())
+        dir.resolve("${objectName.get()}.kt").writeText(out.toString())
     }
 }
 
 val goldenSources = tasks.register<GoldenSources>("goldenSources") {
-    fixtures.set(layout.projectDirectory.dir("src/jvmTest/resources/golden"))
+    fixtures.from(layout.projectDirectory.dir("src/jvmTest/resources/golden").asFileTree.matching { include("*.json") })
+    objectName.set("GoldenFiles")
+    packageName.set("app.housemove")
+    about.set("src/jvmTest/resources/golden")
     output.set(layout.buildDirectory.dir("generated/golden/kotlin"))
+}
+
+// The update file sealed with fixed keys and random bytes (src/jvmTest/resources/sealing, SealingFixtureTest), for the
+// common tests: the JVM, the reference crypto on the simulator and CryptoKit in the app must all write it byte for byte.
+val sealingSources = tasks.register<GoldenSources>("sealingSources") {
+    fixtures.from(layout.projectDirectory.dir("src/jvmTest/resources/sealing").asFileTree.matching { include("*.json") })
+    objectName.set("SealingFiles")
+    packageName.set("app.housemove")
+    about.set("src/jvmTest/resources/sealing")
+    output.set(layout.buildDirectory.dir("generated/sealing/kotlin"))
+}
+
+// What the iPhone app's crypto check opens and seals (CryptoCheck.kt, iosMain): Android's update file from the golden
+// fixtures and the sealing known-answer file. Only the app run with -HMCryptoCheck YES (the UI tests) reads them.
+val cryptoCheckSources = tasks.register<GoldenSources>("cryptoCheckSources") {
+    fixtures.from(
+        layout.projectDirectory.file("src/jvmTest/resources/golden/update.json"),
+        layout.projectDirectory.file("src/jvmTest/resources/sealing/update-sealed.json"),
+    )
+    objectName.set("CryptoCheckFiles")
+    packageName.set("app.housemove.data")
+    about.set("golden/update.json and sealing/update-sealed.json")
+    output.set(layout.buildDirectory.dir("generated/cryptoCheck/kotlin"))
 }
 
 kotlin {
@@ -128,9 +166,14 @@ kotlin {
                 api("com.google.zxing:core:3.5.3")
             }
         }
+        named("iosMain") {
+            // What the app's crypto check opens and seals (cryptoCheckSources, above).
+            kotlin.srcDir(cryptoCheckSources)
+        }
         commonTest {
             // The golden fixtures as Kotlin (goldenSources, above), for the tests that also run on the iPhone simulator.
             kotlin.srcDir(goldenSources)
+            kotlin.srcDir(sealingSources)
             dependencies {
                 implementation(kotlin("test"))
             }

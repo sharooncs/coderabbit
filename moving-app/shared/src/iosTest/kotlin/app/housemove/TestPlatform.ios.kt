@@ -66,3 +66,5 @@ internal actual fun useTestCryptoIfNone(): () -> Unit {
     registeredCrypto = ReferenceCrypto
     return { registeredCrypto = null }
 }
+
+internal actual fun keyFromScalar(d: ByteArray): app.housemove.data.AgreementKey = ReferenceCrypto.keyOf(d)
