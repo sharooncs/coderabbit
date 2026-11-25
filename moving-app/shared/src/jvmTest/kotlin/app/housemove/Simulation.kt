@@ -1,7 +1,13 @@
 package app.housemove
 
 import app.housemove.data.*
+import app.housemove.sync.AutoListener
+import app.housemove.sync.AutoSession
+import app.housemove.sync.AutoSlot
+import app.housemove.sync.Meetings
+import app.housemove.sync.Strong
 import app.housemove.sync.WifiSync
+import app.housemove.sync.memberPhone
 import java.io.File
 import java.util.Random
 import java.util.TreeMap
@@ -46,8 +52,21 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
     class Phone(val sim: Simulation, val index: Int, val tag: String, val name: String, val role: Role, val offset: Long) {
         val rnd = Random(sim.seed * 1_000_003 + index * 7919L + 17)
         private val ids = SimIds(sim.seed * 104_729 + index)
-        val ui: ExecutorService = Executors.newSingleThreadExecutor { r -> Thread({ SimIds.local.set(ids); r.run() }, "ui-$tag").apply { isDaemon = true } }
-        val net: ExecutorService = Executors.newSingleThreadExecutor { r -> Thread({ SimIds.local.set(ids); r.run() }, "net-$tag").apply { isDaemon = true } }
+        private val bytes = Random(sim.seed * 7_919 + index * 31L + 5)
+        val ui: ExecutorService = Executors.newSingleThreadExecutor { r -> Thread({ SimIds.local.set(ids); SimBytes.local.set(bytes); r.run() }, "ui-$tag").apply { isDaemon = true } }
+        val net: ExecutorService = Executors.newSingleThreadExecutor { r -> Thread({ SimIds.local.set(ids); SimBytes.local.set(bytes); r.run() }, "net-$tag").apply { isDaemon = true } }
+
+        /** Syncing by itself: this phone's listening socket, for the move it has open, and its one sync by itself at a time. */
+        lateinit var auto: AutoListener
+        val slot = AutoSlot()
+
+        /** What the listener did with each connection, in turn: what was synced, if anything ([Heard.answered] null: nothing). */
+        val autoHeard = LinkedBlockingQueue<Heard>()
+
+        @Volatile
+        var lastAnswer: AutoSession.Answered? = null
+
+        val phoneId: String get() = store.phone.id
 
         /** Has this phone ever been more than a Helper's phone, under whichever person? Then it may hold what Helpers are not sent. */
         @Volatile
@@ -299,6 +318,10 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
             } catch (_: Exception) {
             }
             try {
+                p.auto.stop()
+            } catch (_: Exception) {
+            }
+            try {
                 p.onUi { if (p.opened) p.stores().forEach { it.close() } }
             } catch (_: Exception) {
             }
@@ -322,8 +345,9 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
      */
     private fun outsiderTriesOn(m: Phone) {
         val before = m.data
-        val how = rnd.nextInt(3)
+        val how = rnd.nextInt(5)
         val said: String = when (how) {
+            3, 4 -> outsiderTriesByItself(m, how == 4)
             0 -> {
                 val heard = LinkedBlockingQueue<WifiSync.Result>()
                 val h = m.onUi { WifiSync.host(m.store, m.clock, letNewPhonesIn = false) { heard.add(it) } }
@@ -370,6 +394,9 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
             Triple("O1", "Asha", Role.ORGANISER), Triple("O2", "Omar", Role.ORGANISER), Triple("D1", "Dee", Role.DECIDER), Triple("D2", "Dan", Role.DECIDER),
             Triple("H1", "Hal", Role.HELPER), Triple("H2", "Hana", Role.HELPER), Triple("H3", "Hugo", Role.HELPER),
         )
+        // This seed's phones may have been played before in this process (the same seed, run again): their meetings, which
+        // are kept in memory for ten minutes, are not this run's.
+        Meetings.forget { it.endsWith("-$seed-phone") && it.startsWith("psim-") }
         for ((i, w) in who.withIndex()) {
             val p = Phone(this, i, w.first, w.second, w.third, errors[i])
             // Each phone keeps its moves as the app does ([Moves]). Its phone ID is made at random the first time; here it is
@@ -381,6 +408,10 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
             p.onUi {
                 p.moves = p.openMoves()
                 p.hands = Hands(p)
+                // Started on the phone's own thread, so that the threads that answer take its seeded ids and bytes.
+                p.auto = AutoListener(true, { p.moves.current.value }, p.slot, {}, { _, a -> p.lastAnswer = a }) {
+                    p.autoHeard.add(Heard(p.lastAnswer.also { p.lastAnswer = null }))
+                }.also { it.start() }
             }
             phones += p
         }
@@ -478,6 +509,11 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
         handedOver(p, beforeJoin, by)
         p.say("!joined as ${p.name} (${p.role.label}, letter ${p.store.device.value.letter}) from ${by.tag}'s invite")
         if (p.store.myRole != p.role) broke(RUN, "${p.tag} joined as ${p.store.myRole}, not ${p.role}")
+        // The join was a meeting: as the engine does at once, the new phone syncs by itself with the one it joined, and so
+        // gets the move's keys for syncing by itself.
+        if (!autoSync(by, p, null, false, Random(seed + p.index), retry = false)) {
+            broke(AUTO, "${p.tag} could not start syncing by itself with ${by.tag}, whose invite it had just used")
+        }
         // Someone who photographed the invite tries it after it has been used.
         val hostWas = by.data
         val again = asOutsider { WifiSync.join(outsider, invite) }
@@ -501,15 +537,18 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
             val h = free.removeAt(0)
             val j = free.removeAt(0)
             // A phone syncs the move it has open. When either has another move open, that is what they sync, or try to.
+            // A sync by itself or by code: the two phones of a pair either find each other on the Wi-Fi or one scans the other's code.
+            val byItself = rnd.nextInt(3) == 0
             if (!h.inMaple || !j.inMaple) {
-                jobs += pool.submit { crossSync(h, j) }
+                jobs += pool.submit { if (byItself) crossByItself(h, j) else crossSync(h, j) }
                 return@repeat
             }
-            val cut = if (rnd.nextInt(6) == 0) Wire.Cut(1 + rnd.nextInt(8), listOf(0, 1, 7, 60, 900, 5000, 30_000)[rnd.nextInt(7)]) else null
+            // A sync by itself has two more phases at its end, the offers of keys, which may be cut off too.
+            val cut = if (rnd.nextInt(6) == 0) Wire.Cut(1 + rnd.nextInt(if (byItself) 10 else 8), listOf(0, 1, 7, 60, 900, 5000, 30_000)[rnd.nextInt(7)]) else null
             val busy = rnd.nextInt(3) == 0
             val plan = rnd.nextLong()
             val retry = cut != null && rnd.nextInt(4) != 0
-            jobs += pool.submit { sync(h, j, cut, busy, Random(plan), retry) }
+            jobs += pool.submit { if (byItself) autoSync(h, j, cut, busy, Random(plan), retry) else sync(h, j, cut, busy, Random(plan), retry) }
         }
         for (p in if (loose) phones else free) {
             if (rnd.nextInt(5) == 0) continue
@@ -866,7 +905,161 @@ internal class Simulation(val seed: Long, private val root: File, private val ro
         return ok
     }
 
+    // ---- syncing by itself --------------------------------------------------------------
+
+    /** What a phone's listener for syncing by itself did with one connection. */
+    class Heard(val answered: AutoSession.Answered?)
+
+    /**
+     * [j] finds [h] on the Wi-Fi and syncs with it by itself (AutoSession), through a [Wire] whose phases are those of a
+     * code sync once the handshake is over, so that everything [sync] checks is checked here too. Whether it may at all
+     * is each phone's to say from what it knew before: a phone whose person was removed, or one the other does not know
+     * as a phone of the move, must get nothing. Returns true when both phones say it went through.
+     */
+    fun autoSync(h: Phone, j: Phone, cut: Wire.Cut?, busy: Boolean, plan: Random, retry: Boolean): Boolean {
+        val x = Exchange(h, j)
+        x.hostAtStart = h.data
+        x.joinerAtStart = j.data
+        val hostTakes = x.hostAtStart!!.memberPhone(j.phoneId) != null
+        val joinerTakes = x.joinerAtStart!!.memberPhone(h.phoneId) != null
+        fun meanwhile(p: Phone, where: String) {
+            if (loose || !busy || plan.nextInt(100) >= 30) return
+            x.quiet = false
+            synchronized(stats) { stats.midSync++ }
+            p.onUi { repeat(1 + plan.nextInt(2)) { p.act(" [while syncing by itself with ${(if (p === h) j else h).tag}: $where]") } }
+        }
+        val wire = Wire(h.auto.port, cut, skip = AUTO_HANDSHAKE) { phase ->
+            when (phase) {
+                2 -> { meanwhile(h, "before any data"); meanwhile(j, "before any data") }
+                3 -> { x.joinerSent = j.data; meanwhile(j, "after sending its data"); meanwhile(h, "before merging"); x.hostBefore = h.data; x.hostWas = h.personId }
+                4 -> { x.hostAfter = h.data; meanwhile(h, "after merging"); meanwhile(j, "before merging"); x.joinerBefore = j.data; x.joinerWas = j.personId }
+                5 -> { x.joinerAfter = j.data; meanwhile(j, "after merging"); meanwhile(h, "after merging") }
+                6 -> { meanwhile(h, "before the photos"); meanwhile(j, "before the photos") }
+                7 -> meanwhile(h, "while receiving photos")
+                8 -> meanwhile(j, "while receiving photos")
+            }
+        }
+        val d: AutoSession.Dialled
+        var heard: Heard? = null
+        try {
+            d = j.net.submit(Callable { AutoSession.dial(j.store, "127.0.0.1", wire.port) }).get(120, TimeUnit.SECONDS)
+            // The answering phone is done with the connection before either phone does anything more.
+            if (wire.connections > 0) heard = h.autoHeard.poll(60, TimeUnit.SECONDS) ?: throw IllegalStateException("${h.tag} never finished answering ${j.tag}")
+        } finally {
+            wire.close()
+        }
+        val r = d.result
+        val answered = heard?.answered?.result
+        val ok = d.word == "OK" && r != null && r.ok && answered?.ok == true
+        synchronized(stats) {
+            stats.autoSyncs++
+            if (ok) stats.autoOk++
+            if (d.word == "NO" || (d.word == "LOST" && wire.phases == 0 && wire.cutAt == 0)) stats.autoRefused++
+            if (wire.cutAt > 0) stats.autoCut++
+            for (e in listOfNotNull(r?.error, answered?.error).toSet()) stats.syncErrors.merge(SimStats.rule(e), 1, Int::plus)
+        }
+        // Only phones of the move, as each knew it then, sync by themselves: never one taken out, nor a stranger. Phones that
+        // keep working while they sync may let a phone back in meanwhile: then it counts if it was in at the start or the end.
+        val hostTakesNow = h.data.memberPhone(j.phoneId) != null
+        val joinerTakesNow = j.data.memberPhone(h.phoneId) != null
+        val outside = if (loose) (!hostTakes && !hostTakesNow) || (!joinerTakes && !joinerTakesNow) else !hostTakes || !joinerTakes
+        if ((d.word == "OK" || heard?.answered != null) && outside) {
+            broke(AUTO, "${j.tag} synced by itself with ${h.tag}, though ${if (!hostTakes) "${h.tag} did not count ${j.tag}" else "${j.tag} did not count ${h.tag}"} as a phone of the move", listOf(h.personId, j.personId))
+        }
+        if (!loose && (d.word == "OK" || heard?.answered != null)) SimChecks(this).exchange(x, wire, ok)
+        wrote(x.hostAtStart!!, h.data, onlyNewStamps = true)
+        wrote(x.joinerAtStart!!, j.data, onlyNewStamps = true)
+        letIn(h, x.hostAtStart!!)
+        letIn(j, x.joinerAtStart!!)
+        h.hold(); j.hold()
+        handedOver(h, x.hostAtStart!!, j)
+        handedOver(j, x.joinerAtStart!!, h)
+        val how = when {
+            ok -> "ok by ${d.via?.name?.lowercase()} key, ${r!!.photosSent} photos out, ${r.photosReceived} in"
+            wire.cutAt > 0 -> "cut off in phase ${wire.cutAt}: ${r?.error ?: d.word} / ${answered?.error ?: "the answering phone noticed nothing"}"
+            else -> "not synced: ${d.word}${r?.error?.let { ", $it" } ?: ""} / ${answered?.error ?: "-"}"
+        }
+        j.say("synced by itself with ${h.tag}: $how")
+        h.say("was found by ${j.tag} and synced by itself: $how")
+        if (!ok && retry && d.word != "NO") {
+            synchronized(stats) { stats.retried++ }
+            return autoSync(h, j, null, false, plan, retry = false)
+        }
+        return ok
+    }
+
+    /**
+     * [j] dials [h] by itself while either has another move than Maple Road open: on different moves the tags differ and
+     * nothing is exchanged; on the same one (a move beside Maple Road both are in) it is that move's sync. Nothing of
+     * any other move on either phone changes.
+     */
+    private fun crossByItself(h: Phone, j: Phone) {
+        val hs = h.current
+        val js = j.current
+        val same = hs.identity.value.matches(js.identity.value)
+        val hBefore = if (loose) null else h.onUi { h.snapshot() }
+        val jBefore = if (loose) null else j.onUi { j.snapshot() }
+        // Through a wire, which counts whether the dialling phone connected at all (with no key to prove with, it does not).
+        val wire = Wire(h.auto.port, null, skip = AUTO_HANDSHAKE)
+        val d = try {
+            j.net.submit(Callable { AutoSession.dial(js, "127.0.0.1", wire.port) }).get(120, TimeUnit.SECONDS).also {
+                if (wire.connections > 0) h.autoHeard.poll(60, TimeUnit.SECONDS)
+            }
+        } finally {
+            wire.close()
+        }
+        val names = "${j.tag} in ${js.data.value.move.name} and ${h.tag} in ${hs.data.value.move.name}"
+        synchronized(stats) { stats.crossSyncs++; stats.autoCross++ }
+        if (!same && d.word == "OK") broke(CROSS, "$names synced by themselves, though they are on different moves")
+        if (hBefore != null && jBefore != null) {
+            for ((p, before, open) in listOf(Triple(h, hBefore, hs), Triple(j, jBefore, js))) {
+                val after = p.onUi { p.snapshot() }
+                for ((id, was) in before) {
+                    if (same && id == open.moveId) continue
+                    if (after[id] != was) broke(CROSS, "$names ${if (same) "synced their move by themselves" else "tried to sync by themselves"}, and ${p.tag}'s ${others[id] ?: "Maple Road"} changed")
+                }
+            }
+        }
+        j.say("tried to sync ${js.data.value.move.name} by itself with ${h.tag}, which has ${hs.data.value.move.name} open: ${d.word}")
+    }
+
+    /**
+     * The outsider on the same Wi-Fi tries [m]'s listener for syncing by itself: with the tag [m] advertises (anyone on the
+     * network can read it) and made-up proofs, or ([own]) with its own move and keys. It must be told no, or not answered.
+     */
+    private fun outsiderTriesByItself(m: Phone, own: Boolean): String {
+        val word = if (own) {
+            asOutsider {
+                outsider.ring.mintIfNone(outsider.data.value)
+                AutoSession.dial(outsider, "127.0.0.1", m.auto.port).word
+            }
+        } else {
+            try {
+                java.net.Socket("127.0.0.1", m.auto.port).use { s ->
+                    s.soTimeout = 10_000
+                    val out = java.io.DataOutputStream(s.getOutputStream().buffered())
+                    val din = java.io.DataInputStream(s.getInputStream())
+                    out.writeUTF(AutoSession.MAGIC); out.writeUTF(AutoSession.advertisedTag(m.current.identity.value, System.currentTimeMillis())); out.writeUTF("")
+                    out.write(ByteArray(32) { it.toByte() }); out.flush()
+                    din.readFully(ByteArray(32))
+                    out.writeInt(3)
+                    repeat(3) { n -> out.write(ByteArray(32) { (n * 7 + it).toByte() }) }
+                    out.flush()
+                    din.readUTF()
+                }
+            } catch (e: Exception) {
+                "nothing (${e.javaClass.simpleName})"
+            }
+        }
+        m.autoHeard.poll(30, TimeUnit.SECONDS)
+        if (word == "OK" || word == "SYNC") broke(OUTSIDERS, "a phone outside the move was let in by ${m.tag} to sync by itself (${if (own) "its own move's keys" else "made-up proofs"})")
+        return if (own) "syncing by itself with its own move's keys: $word" else "syncing by itself with made-up proofs: $word"
+    }
+
     companion object {
+        /** The direction changes of the handshake of syncing by itself before its sync begins (AutoSession). */
+        const val AUTO_HANDSHAKE = 6
+        const val AUTO = "Only phones of the move, as each knew it, sync by themselves: never a removed person's phone or a stranger, and every phone that joins can start"
         const val MOVE = "move:"
         const val REFUSED = "→ no: "
         const val RUN = "The run finished and the phones went quiet"
@@ -899,6 +1092,21 @@ internal class SimIds(seed: Long) {
     }
 }
 
+/** Seeded bytes for the nonces and keys of syncing by itself, one source per phone thread, so that a run repeats exactly. */
+internal object SimBytes {
+    /** Inherited, as [SimIds.local] is. */
+    val local = InheritableThreadLocal<Random?>()
+    private val strong: (Int) -> ByteArray = Strong.bytes
+
+    fun install() {
+        Strong.bytes = { n -> local.get()?.let { r -> ByteArray(n).also { b -> synchronized(r) { r.nextBytes(b) } } } ?: strong(n) }
+    }
+
+    fun uninstall() {
+        Strong.bytes = strong
+    }
+}
+
 /** What happened over one run or many. */
 internal class SimStats {
     var actions = 0
@@ -911,6 +1119,13 @@ internal class SimStats {
 
     /** Syncs tried between phones of which one or both had another move than Maple Road open. */
     var crossSyncs = 0
+
+    /** Syncs by themselves (AutoSession) of Maple Road: tried, went through, refused at the handshake, cut off; and tried with another move open. */
+    var autoSyncs = 0
+    var autoOk = 0
+    var autoRefused = 0
+    var autoCut = 0
+    var autoCross = 0
     val refusals = TreeMap<String, Int>()
     val syncErrors = TreeMap<String, Int>()
     val notes = TreeMap<String, Int>()
@@ -921,6 +1136,7 @@ internal class SimStats {
     fun add(o: SimStats) {
         actions += o.actions; accepted += o.accepted; midSync += o.midSync; syncs += o.syncs; syncsOk += o.syncsOk; cut += o.cut; retried += o.retried
         crossSyncs += o.crossSyncs
+        autoSyncs += o.autoSyncs; autoOk += o.autoOk; autoRefused += o.autoRefused; autoCut += o.autoCut; autoCross += o.autoCross
         for ((k, v) in o.refusals) refusals.merge(k, v, Int::plus)
         for ((k, v) in o.syncErrors) syncErrors.merge(k, v, Int::plus)
         for ((k, v) in o.notes) notes.merge(k, v, Int::plus)

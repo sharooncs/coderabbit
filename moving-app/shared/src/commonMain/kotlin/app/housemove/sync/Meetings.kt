@@ -37,7 +37,10 @@ internal object Meetings {
         synchronized(lock) {
             list.removeAll { it.at + MINUTES * 60_000L < now || (it.me == me && it.peer == peer) }
             list += Meeting(me, moves.filter { it.isNotEmpty() }, peer, code, now)
-            while (list.size > 32) list.removeAt(0)
+            // At most 16 of one phone's, the oldest let go first, and a thousand in all (tests run many phones in one process).
+            val mine = list.filter { it.me == me }
+            if (mine.size > 16) list.remove(mine.first())
+            while (list.size > 1000) list.removeAt(0)
             version++
         }
     }
@@ -56,5 +59,10 @@ internal object Meetings {
     /** Forget every meeting (tests). */
     fun clear() {
         synchronized(lock) { list.clear() }
+    }
+
+    /** Forget the meetings of the phones [mine] says are its own (a test that plays the same phones again). */
+    fun forget(mine: (String) -> Boolean) {
+        synchronized(lock) { list.removeAll { mine(it.me) } }
     }
 }

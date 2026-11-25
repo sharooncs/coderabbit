@@ -33,6 +33,8 @@ import kotlin.concurrent.thread
 internal class Wire(
     private val targetPort: Int,
     private val cut: Cut? = null,
+    /** Phases passed on before the sync's first (the handshake of syncing by itself, AutoSession): not counted, never cut. */
+    private val skip: Int = 0,
     private val onPhase: (phase: Int) -> Unit = {},
 ) : Closeable {
     data class Cut(val phase: Int, val after: Int)
@@ -157,17 +159,30 @@ internal class Wire(
             }
         }
 
+        /** Direction changes so far, the handshake's among them. */
+        private var turns = 0
+
         private fun pass(dir: Int, buf: ByteArray, n: Int, to: Socket) {
             if (lost) return
             if (dir != lastDir) {
                 lastDir = dir
-                phase++
+                turns++
+                if (turns > skip) phase++
                 inPhase = 0
-                if (planned) {
+                if (planned && turns > skip) {
                     phases = phase
                     if (cut != null && cut.phase < phase) return lose(to)
                     onPhase(phase)
                 }
+            }
+            if (turns <= skip) {
+                // The handshake: passed on as it is.
+                try {
+                    to.getOutputStream().apply { write(buf, 0, n); flush() }
+                } catch (_: IOException) {
+                    lost = true
+                }
+                return
             }
             val cutHere = planned && cut != null && cut.phase == phase
             val len = if (cutHere) minOf(n, cut!!.after - inPhase) else n

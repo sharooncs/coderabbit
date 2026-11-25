@@ -86,7 +86,7 @@ class PhonesTogetherTest {
     /** A sync over a wire that can be cut, or that lets something happen in the middle. What the host showed (if anything), then the joiner. */
     private fun syncVia(host: Store, joiner: Store, cut: Wire.Cut? = null, onPhase: (Int) -> Unit = {}): Pair<WifiSync.Result, WifiSync.Result> {
         val h = hosting(host)
-        val wire = Wire(h.host.port, cut, onPhase).also { wires += it }
+        val wire = Wire(h.host.port, cut, onPhase = onPhase).also { wires += it }
         val r = WifiSync.join(joiner, h.host.invite(local).copy(port = wire.port))
         val first = h.result()
         repeat(wire.connections - 1) { h.result() }

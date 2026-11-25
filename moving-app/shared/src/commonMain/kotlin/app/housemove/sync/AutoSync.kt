@@ -465,6 +465,8 @@ internal class AutoListener(
     private val slot: AutoSlot,
     private val onProven: (String) -> Unit,
     private val onEnded: (Store, AutoSession.Answered?) -> Unit,
+    /** Each connection, whatever came of it, once its thread is done with it (the tests wait for it). */
+    private val onClosed: () -> Unit = {},
 ) {
     private val server = listeningSocket(loopbackOnly)
     val port: Int get() = server.localPort
@@ -502,6 +504,7 @@ internal class AutoListener(
                     } finally {
                         handling.decrementAndGet()
                         if (proven && st != null) onEnded(st, answered)
+                        onClosed()
                     }
                 }
             }
