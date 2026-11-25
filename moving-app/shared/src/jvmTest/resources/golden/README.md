@@ -3,7 +3,8 @@
 These files record values and bytes that the released Android app, 2.1.1, makes. The code they were recorded from is the
 2.1.1 release on branch `claude/intelligent-brown-mk8754` (commit 4e77f9a). An iPhone must sync with 2.1.1 phones and work
 out the same check values, ids, merge winners and bytes. So every later version, and the Kotlin Multiplatform port on the
-JVM and on iOS, must reproduce these files. This is step 0a of `design/ios-plan.md`.
+JVM and on iOS, must reproduce these files. This is step 0a of `design/ios-plan.md`. One part was recorded again on purpose
+for 2.2: `numberInput` in `doubles.json`, what a number field takes (see that file below).
 
 `GoldenFixturesTest` (`shared/src/jvmTest/kotlin/app/housemove/`) makes every file again from today's code and compares it with
 the recorded file, character for character. `GoldenMove.kt` beside it plays the fixed move described below.
@@ -18,6 +19,8 @@ the recorded file, character for character. `GoldenMove.kt` beside it plays the 
     on to the test JVM, which is why there are two ways.
   - Recording plays the fixed move twice and writes nothing if the second run differs. The key pairs are constants in
     `GoldenMove.kt`, so they never change. Commit the diff, and say in the commit message what changed and why.
+  - To record one file, name its test, e.g. `GOLDEN_RECORD=true tools/test.sh --tests 'app.housemove.GoldenFixturesTest.doubles'`.
+    Recording everything also records new samples of `backup.json` and `update.json`, whose random bytes then all change.
 
 ## Conventions
 
@@ -99,8 +102,20 @@ For each Double, including 0.1, 1e7, 1e-3, 1e-4, -0.0, 1e21 and NaN, it gives:
   1e21 as "2.147483647E7" (because `roundToInt` clamps), and NaN throws.
 - `expenseToString`: the record's `toString` with that Double in it.
 
-`numberInput` shows what the number fields (`ui/Common.kt`, `NumberInput`) make of typed or pasted text. "NaN",
-"Infinity", "0x1p4", "5d" and a 310-digit number are all accepted. Arabic-Indic and full-width digits are not.
+`numberInput` shows what a number field of each kind (`money`, `length`, `volume`, `count`) makes of typed or pasted text:
+a number, `empty`, or `refused:` and the words the field shows under it. This part is 2.2's. Every number field
+(`ui/Common.kt`, `NumberInput`) and every spoken size reads its text with `readNumber` in `data/Numbers.kt`:
+- the reading is 2.1.1's: a comma as the decimal point, trimmed, then `toDoubleOrNull`. So "12,5", "+5", "-0", "1E-4",
+  "0x1p4" and "5d" mean what they meant, and Arabic-Indic and full-width digits are still not read;
+- refused: "NaN" and the infinities ("Infinity", "-Infinity", or a number too long for a Double, such as 1e309 or 310
+  digits), and a number beyond the kind's bounds (money ±10^15, lengths and volumes ±10,000, counts 0 to a million).
+
+**The bug this fixes.** In 2.1.1 the number fields took "NaN", "Infinity" and a 310-digit number (an infinity), as the
+2.1.1 recording of this part showed. kotlinx.serialization refuses to write NaN and the infinities, so from then on the
+Store saved nothing, and said nothing: a backup threw a raw `JsonEncodingException`, a sync failed, and the next change
+was gone when the app was opened again. Besides the fields, the Store now refuses any change that would put such a number
+into the data, and says so if a save fails for any reason; AppJson has never read one from another phone, a backup or an
+update file (`NotANumberTest`). A port must refuse the same texts with the same words, and take the rest as these.
 
 ### seal.json: check values
 

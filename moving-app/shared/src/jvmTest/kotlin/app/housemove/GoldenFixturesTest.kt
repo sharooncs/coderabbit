@@ -456,7 +456,8 @@ class GoldenFixturesTest {
             "about",
             "Doubles as 2.1.1 writes them: Double.toString (in record text, which merges compare), doubleToLongBits (what seal() hashes), " +
                 "AppJson (kotlinx.serialization, as the Store saves and the sync sends), and fmtNum (what the screens show). " +
-                "numberInput: what a number field makes of typed or pasted text (text.replace(',', '.').trim().toDoubleOrNull()).",
+                "numberInput: what a number field of each kind makes of typed or pasted text (data/Numbers.kt, readNumber, since 2.2): " +
+                "2.1.1's reading, text.replace(',', '.').trim().toDoubleOrNull(), with NaN, the infinities and numbers beyond the kind's bounds refused.",
         )
         putJsonArray("doubles") {
             for ((name, d) in DOUBLES) addJsonObject {
@@ -470,17 +471,26 @@ class GoldenFixturesTest {
                 put("expenseToString", Expense(id = "e", amount = d).toString())
             }
         }
-        // What the number fields (ui/Common.kt, NumberInput) make of what is typed or pasted. NaN and infinities get in this way.
+        // What the number fields (ui/Common.kt, NumberInput) make of what is typed or pasted, for each kind of field: a number, an empty
+        // field, or refused with the words the field shows. In 2.1.1 NaN and the infinities got in this way, and nothing could be saved after.
         putJsonArray("numberInput") {
             val typed = listOf(
                 "12.5", "12,5", " 7 ", "1e7", "1E-4", "-0", ".5", "5.", "+5", "1,000.5", "1 000", "NaN", "nan", "Infinity", "-Infinity", "1" + "0".repeat(309),
                 "0x10", "0x1p4", "5d", "5f", "5L", "١٢", "12٫5", "１２", "", "-",
+                "1e309", "1e5", "  12.50 ", "-12.5", "-1", "10000", "10000.5", "1000000", "1e15", "1000000000000001",
             )
             for (t in typed) addJsonObject {
                 text("typed", t)
-                val v = t.replace(',', '.').trim().toDoubleOrNull()
-                put("value", v?.toString() ?: "null")
-                if (v != null) put("rawBits", java.lang.Long.toHexString(v.toRawBits()).padStart(16, '0'))
+                var bits: Double? = null
+                for (k in NumberKind.entries) {
+                    val read = readNumber(t, k)
+                    put(k.name.lowercase(), when (read) {
+                        TypedNumber.Empty -> "empty"
+                        is TypedNumber.Number -> read.value.toString().also { bits = read.value }
+                        is TypedNumber.Refused -> "refused: " + read.reason
+                    })
+                }
+                bits?.let { put("rawBits", java.lang.Long.toHexString(it.toRawBits()).padStart(16, '0')) }
             }
         }
     }

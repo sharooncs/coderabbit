@@ -198,14 +198,21 @@ class GoldenCommonTest {
         }
     }
 
-    /** What a number field makes of typed text (ui/Common.kt's NumberInput, which step 2 shares): toDoubleOrNull. */
+    /** What a number field of each kind makes of typed text (ui/Common.kt's NumberInput, through the shared data/Numbers.kt): readNumber. */
     @Test
     fun typedNumbersReadAsOnAndroid() {
         for (c in fixture("doubles.json").objects("numberInput")) {
             val typed = c.str("typed")
-            val v = typed.replace(',', '.').trim().toDoubleOrNull()
-            assertEquals(c.str("value"), v?.let { JavaText.doubleText(it) } ?: "null", "typed '$typed'")
-            c.strOrNull("rawBits")?.let { assertEquals(it, v!!.toRawBits().toULong().toString(16).padStart(16, '0'), "typed '$typed'") }
+            for (k in NumberKind.entries) {
+                val read = readNumber(typed, k)
+                val said = when (read) {
+                    TypedNumber.Empty -> "empty"
+                    is TypedNumber.Number -> JavaText.doubleText(read.value)
+                    is TypedNumber.Refused -> "refused: " + read.reason
+                }
+                assertEquals(c.str(k.name.lowercase()), said, "typed '$typed' as $k")
+                if (read is TypedNumber.Number) assertEquals(c.str("rawBits"), read.value.toRawBits().toULong().toString(16).padStart(16, '0'), "typed '$typed' as $k")
+            }
         }
     }
 
