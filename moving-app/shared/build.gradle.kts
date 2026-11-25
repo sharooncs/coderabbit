@@ -148,4 +148,9 @@ tasks.named<Test>("jvmTest") {
     useJUnit()
     // As much memory as the app's unit tests had when these tests ran there (the seven-phone simulation needs it).
     maxHeapSize = "1536m"
+    // A failure in CI says which test and why in the job log itself (reports there cannot be fetched).
+    testLogging {
+        events(org.gradle.api.tasks.testing.logging.TestLogEvent.FAILED)
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
 }

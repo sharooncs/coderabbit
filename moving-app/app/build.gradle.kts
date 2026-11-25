@@ -53,6 +53,11 @@ android {
                 it.systemProperty("roborazzi.test.record", "true")
                 it.systemProperty("robolectric.graphicsMode", "NATIVE")
                 it.maxHeapSize = "1536m"
+                // A failure in CI says which test and why in the job log itself.
+                it.testLogging {
+                    events(org.gradle.api.tasks.testing.logging.TestLogEvent.FAILED)
+                    exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+                }
             }
         }
     }
