@@ -241,11 +241,21 @@ func run(_ args: [String]) async throws {
         try need(1, "BUILD")
         let app = try await appId(t)
         let b = try await build(t, app, rest[0])
-        _ = try await call(t, "POST", "betaAppReviewSubmissions", ["data": [
+        let made = try await call(t, "POST", "betaAppReviewSubmissions", ["data": [
             "type": "betaAppReviewSubmissions",
             "relationships": ["build": ["data": ["type": "builds", "id": id(b)]]],
         ]])
-        print("Build \(text(attrs(b)["version"])) is waiting for Beta App Review (usually about a day).")
+        // Apple answers at once for a new build of a version it has already approved; otherwise it takes a while.
+        let state = attrs(made["data"] as? JSON ?? [:])["betaReviewState"] as? String
+        switch state {
+        case "APPROVED":
+            print("Build \(text(attrs(b)["version"])) is approved for external testers already.")
+        case "REJECTED":
+            print("Build \(text(attrs(b)["version"])) was turned down by Beta App Review; see App Store Connect for why.")
+        default:
+            print("Build \(text(attrs(b)["version"])) is waiting for Beta App Review (\(state ?? "submitted")); " +
+                  "a first build of a version usually takes about a day. `asc status` shows when it changes.")
+        }
     case "public-link":
         try need(2, "GROUP on|off")
         let app = try await appId(t)
