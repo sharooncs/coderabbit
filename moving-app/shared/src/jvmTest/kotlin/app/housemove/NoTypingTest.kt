@@ -51,19 +51,6 @@ class NoTypingTest {
     }
 
     @Test
-    fun aKindAndSizeOfContainerIsSuggested() {
-        assertEquals(ContainerSuggestion(ContainerKind.CARTON, BoxSize.M), suggestContainer("Kitchen"))
-        assertEquals(ContainerSuggestion(ContainerKind.CARTON, BoxSize.S), suggestContainer("Office", "books")) // heavy: small box
-        assertEquals(ContainerSuggestion(ContainerKind.CARTON, BoxSize.S), suggestContainer("Study"))
-        assertEquals(ContainerSuggestion(ContainerKind.CARTON, BoxSize.L), suggestContainer("Bedroom 2")) // light and bulky: large box
-        assertEquals(ContainerSuggestion(ContainerKind.WARDROBE, BoxSize.L), suggestContainer("Bedroom", "winter coats, dresses"))
-        assertEquals(ContainerSuggestion(ContainerKind.BAG, BoxSize.L), suggestContainer("Bedroom", "duvet and pillows"))
-        assertEquals(ContainerSuggestion(ContainerKind.CRATE, BoxSize.M), suggestContainer("Garage"))
-        assertEquals(ContainerSuggestion(ContainerKind.CARTON, BoxSize.M), suggestContainer(null))
-        assertEquals(ContainerSuggestion(ContainerKind.CARTON, BoxSize.S), suggestContainer("Lounge", category = "Books"))
-    }
-
-    @Test
     fun aDestinationRoomIsSuggestedFromTheRoomSomethingComesFrom() {
         val s = store()
         val newKitchen = s.createRoom(Home.DEST, "Kitchen / diner")
@@ -194,22 +181,6 @@ class NoTypingTest {
         assertEquals("Mugs", removeContents(box.contents, "plates"))
         s.put(box.copy(category = "Books"))
         assertEquals("Novels", s.data.value.contentsChips(s.data.value.box(box.id)!!).first())
-    }
-
-    @Test
-    fun spokenOrScannedTextBecomesContentsLines() {
-        assertEquals(listOf("Plates", "bowls", "the big pans"), contentsLines("Plates, bowls and the big pans"))
-        assertEquals(
-            listOf("Plates", "bowls", "Mugs", "cups", "tea towels"),
-            contentsLines("Plates, bowls and plates\n  Mugs & cups;BOWLS,, and tea towels. "),
-        )
-        assertEquals(listOf("candles", "handbags"), contentsLines("candles and handbags")) // "and" inside a word is left alone
-        assertEquals(listOf("books", "games", "toys"), contentsLines("books plus games And toys"))
-        assertTrue(contentsLines("").isEmpty())
-        assertTrue(contentsLines(" , ;\n and ").isEmpty())
-        assertEquals("Plates, bowls, Mugs", addContents("Plates, bowls", "Mugs", "plates"))
-        assertEquals("Mugs", addContents("", "Mugs"))
-        assertEquals("Plates", removeContents("Plates, Mugs", " mugs "))
     }
 
     @Test

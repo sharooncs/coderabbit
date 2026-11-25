@@ -1,7 +1,8 @@
 #!/bin/bash
 # Runs the JVM tests and prints a short summary. Extra arguments go to Gradle,
 # e.g.  tools/test.sh --tests 'app.housemove.FlowsTest'
-# The tests are in three modules: shared/ (the data and sync code, on a plain JVM), app/ (screens and PDFs,
+# The tests are in three modules: shared/ (the data and sync code, on a plain JVM: its jvmTest, and its commonTest,
+# which CI also runs on the iPhone simulator), app/ (screens and PDFs,
 # on simulated Android) and sharedUi/ (the screens shared with the iPhone, rendered on a plain JVM).
 # Without --tests all run; with it, only the modules holding the tests it names.
 cd "$(dirname "$0")/.." || exit 1
@@ -24,6 +25,8 @@ for a in "$@"; do
   IFS=. read -ra parts <<< "$pattern"
   for part in "${parts[@]}"; do
     compgen -G "shared/src/jvmTest/kotlin/app/housemove/$part.kt" > /dev/null && shared=1 found=1
+    # The common tests (shared/src/commonTest) run on the JVM in the same task, and on the iPhone simulator in CI.
+    compgen -G "shared/src/commonTest/kotlin/app/housemove/$part.kt" > /dev/null && shared=1 found=1
     compgen -G "app/src/test/java/app/housemove/$part.kt" > /dev/null && app=1 found=1
     [ -n "$(find sharedUi/src/desktopTest -name "$part.kt" 2>/dev/null | head -1)" ] && ui=1 found=1
   done
