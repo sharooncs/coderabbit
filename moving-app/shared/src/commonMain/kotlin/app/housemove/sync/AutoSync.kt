@@ -268,7 +268,7 @@ class AutoSync(
 
         val identity = store.identity.value
         val tag = AutoSession.advertisedTag(identity, now)
-        synchronized(lock) {
+        val myPort = synchronized(lock) {
             if (!running) return
             val l = listener ?: AutoListener(loopbackOnly, { forStore }, slot, ::answerProven, ::answerEnded).also {
                 listener = it
@@ -284,11 +284,14 @@ class AutoSync(
                 discovery.browse()
                 browsing = true
             }
+            l.port
         }
 
-        // The phones of this move on the network now. One newly found (or found again) is synced with at once.
+        // The phones of this move on the network now. One newly found (or found again) is synced with at once. This phone's
+        // own service is left out, also when the network renamed it (on one of its addresses, at its port).
         val tags = AutoSession.tagsOf(identity, now)
-        val seen = discovery.found().filter { it.name != advertised && AutoSession.tagOfService(it.name) in tags }
+        val mine = (lastAddresses ?: emptyList()) + "127.0.0.1"
+        val seen = discovery.found().filter { it.name != advertised && AutoSession.tagOfService(it.name) in tags && !(it.port == myPort && it.host in mine) }
         peers.keys.retainAll(seen.map { it.name }.toSet())
         for (f in seen) {
             val p = peers.getOrPut(f.name) { Peer(f.name, now) }

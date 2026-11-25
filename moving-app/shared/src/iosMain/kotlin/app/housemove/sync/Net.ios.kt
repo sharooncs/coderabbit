@@ -136,7 +136,7 @@ private fun sockaddr_in.port(): Int {
 }
 
 /** The address's four bytes, in the order dotted text writes them. */
-private fun sockaddr_in.addressBytes(): ByteArray {
+internal fun sockaddr_in.addressBytes(): ByteArray {
     val p = ptr.reinterpret<ByteVar>()
     return ByteArray(4) { p[ADDRESS_AT + it] }
 }
