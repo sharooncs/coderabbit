@@ -167,7 +167,7 @@ final class LaunchTests: XCTestCase {
         let code = invite.label
         let field = textField(app, "Invite")
         XCTAssertTrue(reveal(app, field), "the invite field comes into view")
-        field.tap()
+        focus(app, field)
         app.typeText(code)
         app.typeText("\n")
         let question = labelled(app, "label BEGINSWITH 'Join Sample move as Alex'")
@@ -190,6 +190,19 @@ final class LaunchTests: XCTestCase {
         let field = app.textFields.firstMatch
         if field.waitForExistence(timeout: 5) { return field }
         return app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", label)).firstMatch
+    }
+
+    /// Taps [field] until the keyboard is up. A tap while the list is still gliding from a swipe only stops the
+    /// list, so it waits for the glide to end first and taps again if no keyboard came.
+    @MainActor
+    private func focus(_ app: XCUIApplication, _ field: XCUIElement) {
+        for attempt in 0..<3 {
+            Thread.sleep(forTimeInterval: attempt == 0 ? 1.0 : 1.5)
+            if attempt < 2 { field.tap() } else { field.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap() }
+            if app.keyboards.firstMatch.waitForExistence(timeout: 5) { return }
+            _ = reveal(app, field)
+        }
+        XCTFail("the keyboard never came up for the invite field")
     }
 
     /// Swipes the screen up until [element] can be tapped; false when it never can.
