@@ -82,7 +82,7 @@ sync. A meeting is used once, to start syncing by itself.
 Phone D dials phone A (the one it found advertising). Strings are `writeUTF`, as in code sync.
 
 ```
-D → A   "HMAUTO1", tag, nD (32 random bytes)
+D → A   "HMAUTO1", tag, D's service name, nD (32 random bytes)
 A → D   nA (32 random bytes)
 D → A   n, then n proofs: HMAC(k, "HMAUTO1 dialler" | tag | nD | nA | idD) for each key k D holds (n ≤ 64, shuffled)
 A → D   "OK" + HMAC(k, "HMAUTO1 answerer" | tag | nD | nA | idD | idA)     or "NO" or "BUSY"
@@ -93,6 +93,8 @@ D → A   ring offer       A → D   ring offer
 ```
 
 `|` is a length-prefixed concatenation (each part as a four-byte length and its UTF-8 bytes; nonces as raw bytes).
+D's service name is the one it advertises (public anyway): it lets A know, once the proofs are through, which advertised
+phone it has just synced with, so that A does not dial it again at once.
 `idD` and `idA` are phone IDs. They are never sent: each side finds the other's by trying the phone IDs of the move it
 knows (a few dozen HMACs at most). So a stranger who connects learns no phone ID, and the proofs are still bound to
 both. The keys D proves with are its Wi-Fi keys, its pair keys and its meeting codes; A tries each of its own against
@@ -120,8 +122,9 @@ person it gives must be that phone's owner in the move. New phones are never let
   phone's own proof cannot be sent back to it.
 - **A stranger on the same Wi-Fi** holds no key: none of its proofs match, and it is told "NO" before anything of the
   move is sent. It learns that the phone runs HouseMove (the service type says so anyway), never a name or a phone ID.
-  A phone answers one connection at a time ("BUSY" to more) and gives each step five seconds, so a stranger cannot
-  hold it up for long.
+  A phone syncs by itself with one phone at a time ("BUSY" to more), handles at most four connections at once, and
+  gives each step of the handshake five seconds, so a stranger cannot hold it up for long. A phone of another move
+  (another tag), or anything that does not begin with `HMAUTO1`, is not answered at all.
 - **A phone that left or was removed.** Three things keep it out:
   1. *The move's own rules, at once.* A phone retired by an Organiser, or one whose person was removed, is not a phone
      of the move: no key is accepted for it, and today's sync refuses it as well. A phone that took the move off
@@ -198,7 +201,8 @@ everyone afresh.
   code, sends and expects exactly what 2.2 does. The golden fixtures (`sync-join.json`, `sync-plain.json`,
   `sync-refusals.json`, `invites.json`) are unchanged and still pass byte for byte.
 - A 2.3 phone notes a meeting with a 2.2 phone like any other; it is never used and lapses after ten minutes.
-- The status line says it: phones on older versions sync by code only.
+- Sync and backup's "How syncing works" says when the code is still needed: the first sync after an update, a phone
+  with an older HouseMove, and Wi-Fi that keeps devices apart.
 
 ## 5. What the person sees
 
@@ -206,8 +210,9 @@ Android, More, Sync and backup, at the top:
 
 - a line, for example **"Up to date with Asha's phone · 2 min ago"**, **"Syncing with Asha's phone…"**,
   **"Looking for the family's phones on this Wi-Fi"**, **"Not on Wi-Fi"** or **"Sync by itself is off"**;
-- under it, when it applies, one hint: "Sync once with a code to start syncing by itself." (no key yet), or the last
-  sync ("Last synced with Asha's phone 3 hours ago");
+- under it, when it applies, one hint: "Sync once with a code to start syncing by itself." (no key yet), the last
+  sync ("Last synced with Asha's phone 3 hours ago."), or, with the switch off, "Phones sync when one shows its code
+  and the other scans it.";
 - a switch, **"Sync by itself on Wi-Fi"**, on by default (a setting of the phone, for all its moves);
 - below, as now, Show sync code and Scan sync code, which stay for everything else: joining, old phones, phones
   whose Wi-Fi keeps devices apart (guest networks), and the first sync after an update.
@@ -256,11 +261,14 @@ HMAC are not required-reason APIs, and nothing is collected or tracked.
 ## 8. How it is checked
 
 - JVM (`:shared:jvmTest`, which also runs the common tests): two to four phones in one process find each other through
-  `LocalDiscovery` and sync over real sockets on 127.0.0.1; the handshake's successes and failures (a wrong key, a
-  replayed message, a removed phone, a retired phone, a stranger, a phone of another move); the key ring (a removal
-  changes the key, pair keys carry on, a phone that joined before 2.3 gets its keys at its next code sync); old phones
-  (code sync byte for byte, nobody dials a phone that does not advertise); and the seven-phone simulation with syncs
-  by itself among its syncs, so that every invariant is checked under them.
+  `LocalDiscovery` and sync over real sockets on 127.0.0.1 (`AutoSyncCommonTest`); the handshake's successes and
+  failures: a wrong key, a replayed proof, a removed person's phone even with the key, a retired phone, a stranger, a
+  phone of another move, BUSY, a phone that says it is another than it proved (`AutoHandshakeCommonTest`); the key ring
+  (a removal changes the key, pair keys carry on, a phone that joined before 2.3 gets its keys at its next code sync);
+  old phones (nobody dials a phone that does not advertise, code sync both ways, and the code sync of phones that hold
+  keys is still 2.1.1's eight messages: `AutoSyncOldPhonesTest`); HMAC against RFC 4231 and javax.crypto.Mac; and the
+  seven-phone simulation, where a third of the syncs are by themselves, every joining phone must be able to start, a
+  stranger tries the handshake, and a new invariant says only phones of the move, as each knew it, sync by themselves.
 - iPhone simulator (CI): the common tests, among them the handshake, the tags, HMAC (RFC 4231) and a fixed handshake
   whose bytes are written down. The UI tests: demo mode's in-app phone answers syncs by itself, so a test sees "Up to
   date with Sam's phone" on "Get fresh data" without typing a code.

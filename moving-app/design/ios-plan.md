@@ -53,6 +53,22 @@ After three audit rounds (Kotlin side, Apple delivery, what the agent can verify
      18. Settings, Accessibility, Display & Text Size, Larger Text: the largest size. Everything can still be read and reached by scrolling; nothing is cut off.
      19. Nothing sits under the Dynamic Island or the home bar.
    - What the Android phone shows about the iPhone: under People, the person you made is no longer waiting to join, and lists a phone called "iPhone" with the day it joined. That is all the iPhone ever adds: it changes nothing else in the move (the sample move's tests check this).
+1d Syncing by itself (in the repo, branch `auto-sync`; Android 2.3, versionCode 11; the iPhone still 0.1): `design/auto-sync.md`. Once a phone has joined a move, the phones of that move on the same Wi-Fi find each other (Bonjour, `_housemove._tcp`, already in NSBonjourServices) and sync while HouseMove is open, with no code: Android's More, Sync and backup and the iPhone's "Get fresh data" say "Up to date with Asha's phone · 2 min ago" or "Looking for the family's phones on this Wi-Fi", with the switch "Sync by itself on Wi-Fi" (on). The code stays for joining, for a phone's first sync after updating, for phones on 2.2 or 2.1.1, and for Wi-Fi that keeps devices apart. No new Android permission; the iPhone's local-network question is the one it already asks. Demo mode's sample move syncs by itself too, so the UI tests check "Up to date with Sam's phone" with no code typed.
+
+   **What to test (Android 2.3 and the iPhone test build, all on the home Wi-Fi).** Reply pass or fail for each number; for a fail, a screenshot and what the other phone showed.
+   - Before you start: install HouseMove 2.3 on two Android phones (over 2.2: the moves are kept) and the new iPhone test build; all three in one move (the iPhone joined as in 1c), all on the home Wi-Fi, HouseMove open on each.
+     1. On each Android phone: More, Sync and backup. Expect within a minute or two "Up to date with (the other)'s phone". A phone that joined before 2.3 says first "Sync once with a code to start syncing by itself": show the code on one and scan it with the other, once. Expect "Up to date" by itself after that.
+     2. On one Android phone, add a thing in a room. Keep HouseMove open on both. Expect it on the other phone within about ten seconds, with no code.
+     3. On the iPhone: Get fresh data. If it asks whether HouseMove may find devices on your local network, tap Allow. Expect "Up to date with (a name)'s phone" within a minute, and the new thing in its room, with no code.
+     4. On one phone, switch "Sync by itself on Wi-Fi" off. Add a thing on another phone: it should not arrive. Switch it on again: it should arrive within a minute.
+     5. Swipe HouseMove away on one Android phone. Add a thing on the other. Open HouseMove again: expect the thing within a minute.
+     6. Lock the iPhone for a few minutes, add a thing on an Android phone, unlock and open HouseMove: expect it within a minute.
+     7. Turn Wi-Fi off on one phone: its line says "Not on Wi-Fi". Turn it on again: it syncs by itself again within a minute or two.
+     8. If you can: put one phone on a guest Wi-Fi or another network. It should never say "Up to date with" the others; with both on one phone's hotspot, the code still works.
+     9. If a phone still has 2.2: it keeps syncing by code with a 2.3 phone, both ways (Show sync code on one, Scan sync code on the other).
+     10. Add a test person on one Android phone and join with a third phone (or the iPhone). Then remove that person under People. Expect: their phone no longer syncs by itself with the others, and the others still sync by themselves with each other.
+     11. iPhone: Settings, Privacy & Security, Local Network, HouseMove off. Get fresh data says "HouseMove may not use your Wi-Fi" with Open Settings, which leads to the switch. Switch it back on.
+     12. Leave all phones open on one table for ten minutes: they should stay "Up to date" and the phones should not get warm or slow.
 4 Cross-platform sync in CI (2): simulator ↔ JVM peer on released 2.1.1 code. Gate G1 (agent-only).
 2 Screens shared (8–12): one group at a time; icons as source; Coil 3; JetBrains navigation/lifecycle; fonts via resources; desktop target for local rendering and audits. Gate G2.
 3 iPhone features (6–10): scanner, camera, label PDF, share sheet/AirDrop, Keychain (ThisDeviceOnly) with reinstall marker and backup exclusion, local-network denial handling with a Settings link, idle timer off while syncing, background task for transfers; JPEG photos. Gate G3, then real cross-platform sync Gate G4.
@@ -82,7 +98,7 @@ If the session can drive the Mac's browser (Claude desktop app's browser or Comp
 ### Gates later (I send the checklist each time; reply pass/fail per line, screenshots welcome)
 - G2 screens: every tab, scrolling, back swipe, typing, largest text size, VoiceOver.
 - G3 features: camera and torch; a printed label sheet at 100 %; an ISBN, an EAN and a serial barcode in dim light; backup by AirDrop; delete and reinstall, then "Lost your phone?".
-- G4 real sync: iPhone + an Android phone on home Wi-Fi, an Android hotspot and an iPhone hotspot; refuse then allow local network; 200 photos with auto-lock on; a Helper joining.
+- G4 real sync: iPhone + an Android phone on home Wi-Fi, an Android hotspot and an iPhone hotspot; refuse then allow local network; 200 photos with auto-lock on; a Helper joining; syncing by itself across a real router (1d's list), and on a mesh Wi-Fi if the family has one.
 - G5 family: in the app's TestFlight → Test Information you type your feedback email and the review contact yourself (I prepare the description); I create the external group, submit for Beta App Review and make the public link through the App Manager key; you send relatives the link; a relative's oldest supported iPhone installs it.
 
 ### At the end of the move
