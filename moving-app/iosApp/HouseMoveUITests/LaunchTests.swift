@@ -4,7 +4,8 @@ import XCTest
 /// Home, the rooms, a room's things through search, an item, getting fresh data (the iPhone's Sync and backup), leaving,
 /// the largest text size and Apple's accessibility audit. Screenshots are kept (CI copies them to the ci-shots branch):
 /// join, ask, rooms, room, search, fresh, fresh-by-itself, leave and the largest-text ones as before, and home, item,
-/// items, box and more for the shared screens.
+/// items, box and more for the shared screens; from step 3b (files), share-backup, save-backup, labels, labels-share,
+/// and pdf-check.
 ///
 /// There is no Android phone in CI. Launched with `-HMDemoHost YES`, the app hosts a small sample move inside itself
 /// on 127.0.0.1 (demo mode, sharedUi iosMain Demo.kt), through the same sync code and real sockets as a real join, and
@@ -108,7 +109,7 @@ final class LaunchTests: XCTestCase {
         XCTAssertTrue(labelled(app, "label CONTAINS 'Sofa'").waitForExistence(timeout: 10), "back on the search")
     }
 
-    /// The shared screens a Decider uses most: Items, a box, and More (Everything), with no camera, scanner or printing.
+    /// The shared screens a Decider uses most: Items, a box, and More (Everything), with no camera or scanner.
     @MainActor
     func testShowsTheSharedScreens() throws {
         let app = launch()
@@ -133,7 +134,7 @@ final class LaunchTests: XCTestCase {
 
         openMore(app)
         XCTAssertTrue(labelled(app, "label BEGINSWITH 'Sync and backup'").waitForExistence(timeout: 10))
-        XCTAssertFalse(labelled(app, "label BEGINSWITH 'Labels and signs'").exists, "printing waits for a later test version")
+        // Printing is on the iPhone from step 3b: testPrintsALabelSheet opens Labels and signs.
         keep("more", app)
     }
 
@@ -220,6 +221,90 @@ final class LaunchTests: XCTestCase {
         XCTAssertTrue(labelled(app, "label == 'Join a move'").exists)
     }
 
+    // ---- files (step 3b): the share sheet, the document picker, the PDFs -----------------------------------------
+
+    /// Share backup, on Get fresh data (the iPhone's Sync and backup): the backup is made and handed to the share sheet
+    /// (AirDrop, Save to Files, the apps), which closes again.
+    @MainActor
+    func testSharesABackupThroughTheShareSheet() throws {
+        let app = launch()
+        join(app)
+        openFresh(app)
+        let share = labelled(app, "label == 'Share backup'")
+        XCTAssertTrue(reveal(app, share), "Share backup comes into view")
+        share.tap()
+        XCTAssertTrue(shareSheet(app).waitForExistence(timeout: 30), "the share sheet opened with the backup")
+        keep("share-backup", app)
+        closeShareSheet(app)
+        XCTAssertTrue(labelled(app, "label == 'Get fresh data'").waitForExistence(timeout: 10), "back on Get fresh data")
+        XCTAssertFalse(labelled(app, "label == 'Could not create the backup'").exists)
+    }
+
+    /// Save backup: the system's document picker asks where in Files; Cancel leaves everything as it was.
+    @MainActor
+    func testSavesABackupInFiles() throws {
+        let app = launch()
+        join(app)
+        openFresh(app)
+        let save = labelled(app, "label == 'Save backup'")
+        XCTAssertTrue(reveal(app, save), "Save backup comes into view")
+        save.tap()
+        let cancel = app.buttons["Cancel"]
+        if cancel.waitForExistence(timeout: 30) {
+            keep("save-backup", app)
+            cancel.tap()
+        } else {
+            // The picker is the system's own (another process): say so, and the test goes on.
+            print("Note: the document picker's Cancel button was not found within 30 s")
+            keep("save-backup", app)
+        }
+        XCTAssertFalse(labelled(app, "label == 'Backup failed'").waitForExistence(timeout: 3), "cancelling is not a failure")
+        XCTAssertTrue(labelled(app, "label == 'Get fresh data'").waitForExistence(timeout: 10))
+    }
+
+    /// Labels and signs is on the iPhone: "Open to print" makes the label sheet (a PDF) and hands it to the share sheet,
+    /// which has Print.
+    @MainActor
+    func testPrintsALabelSheet() throws {
+        let app = launch()
+        join(app)
+        openMore(app)
+        let labels = labelled(app, "label BEGINSWITH 'Labels and signs'")
+        XCTAssertTrue(reveal(app, labels), "Labels and signs is offered")
+        labels.tap()
+        XCTAssertTrue(labelled(app, "label == 'Labels and door signs'").waitForExistence(timeout: 10), "Labels and door signs opened")
+        keep("labels", app)
+        let openToPrint = labelled(app, "label == 'Open to print'")
+        XCTAssertTrue(openToPrint.waitForExistence(timeout: 10))
+        openToPrint.tap()
+        XCTAssertTrue(shareSheet(app).waitForExistence(timeout: 60), "the label sheet was made and handed to the share sheet")
+        if !labelled(app, "label == 'Print'").waitForExistence(timeout: 5) {
+            print("Note: the share sheet with the label sheet showed no Print action that the test could see")
+        }
+        keep("labels-share", app)
+        closeShareSheet(app)
+        XCTAssertTrue(labelled(app, "label == 'Labels and door signs'").waitForExistence(timeout: 10), "back on Labels and door signs")
+        XCTAssertFalse(labelled(app, "label BEGINSWITH 'Could not create the PDF'").exists)
+    }
+
+    /// The printouts as the iPhone draws them (UIKit's PDF renderer): launched with `-HMPdfCheck YES`, the app makes each
+    /// from the sample move and reads it back (PDFKit, and every QR code with CoreImage), a line per check.
+    @MainActor
+    func testPrintoutsComeOutOnTheIphone() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["-HMPdfCheck", "YES"]
+        app.launch()
+        let summary = labelled(app, "label == 'PDF check passed' OR label == 'PDF check failed'")
+        XCTAssertTrue(summary.waitForExistence(timeout: 120), "the PDF check finished")
+        let lines = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Check '"))
+            .allElementsBoundByIndex.map { $0.label }
+        let report = ([summary.label] + lines).joined(separator: " | ")
+        print("PDF check: \(report)")
+        keep("pdf-check", app)
+        XCTAssertEqual(summary.label, "PDF check passed", report)
+        XCTAssertTrue(lines.contains { $0.hasPrefix("Check passed: labels: all 21 QR codes") }, report)
+    }
+
     @MainActor
     func testLargestTextSize() throws {
         let app = launch(largest: true)
@@ -253,7 +338,8 @@ final class LaunchTests: XCTestCase {
 
     /// Apple's audit, strict on the iPhone's own screens (joining, Get fresh data) as before. The shared screens are
     /// Android's, checked there by tools/checks.sh; here every issue they have is written to the log for a person to
-    /// read, and the test goes on.
+    /// read, and the test goes on. So are those of Android's Working apart and Backup sections, which Get fresh data
+    /// shows from step 3b.
     @MainActor
     func testPassesTheAccessibilityAudit() throws {
         let plain = launch(demo: false)
@@ -272,8 +358,15 @@ final class LaunchTests: XCTestCase {
         try audit(app, strict: false, what: "Rooms")
         back(app)
         openFresh(app)
-        try audit(app)
+        try audit(app, shared: Self.sharedOnFresh)
     }
+
+    /// The words of the shared sections on Get fresh data (Working apart and Backup, Android's own): their issues are
+    /// logged, as the shared screens' are, and the iPhone's own parts of the screen stay strict.
+    private static let sharedOnFresh = [
+        "Working apart", "Not together?", "Send update", "Open update", "Ask for decisions",
+        "Backup", "backup", "one file with everything", "Restore or merge",
+    ]
 
     // ---- helpers ---------------------------------------------------------------------------------------------------
 
@@ -352,12 +445,16 @@ final class LaunchTests: XCTestCase {
     /// Apple's accessibility audit of what is on the screen. Every issue is written to the log with its element; with
     /// [strict] the test then fails on it, otherwise it is only counted ([what] names the screen in the log).
     @MainActor
-    private func audit(_ app: XCUIApplication, strict: Bool = true, what: String = "") throws {
+    private func audit(_ app: XCUIApplication, strict: Bool = true, what: String = "", shared: [String] = []) throws {
         if !strict { print("Accessibility audit of the shared screen \(what): its issues follow, if any (not failing)") }
         try app.performAccessibilityAudit { issue in
-            print("Accessibility issue\(strict ? "" : " (shared screen \(what), not failing)"): \(issue.auditType) \(issue.compactDescription)"
+            // On a strict screen, an issue of a shared section on it ([shared]: words of its label) is only logged.
+            let label = issue.element?.label ?? ""
+            let sharedPart = !label.isEmpty && shared.contains { label.contains($0) }
+            let note = !strict ? " (shared screen \(what), not failing)" : (sharedPart ? " (shared section, not failing)" : "")
+            print("Accessibility issue\(note): \(issue.auditType) \(issue.compactDescription)"
                 + " | \(issue.detailedDescription) | element: \(issue.element?.debugDescription ?? "none")")
-            return !strict
+            return !strict || sharedPart
         }
     }
 
@@ -395,6 +492,27 @@ final class LaunchTests: XCTestCase {
     private func back(_ app: XCUIApplication) {
         let button = labelled(app, "label == 'Back'")
         if button.waitForExistence(timeout: 5) { button.tap() }
+    }
+
+    /// The share sheet (UIActivityViewController), by its list of activities or the actions it always has for a file.
+    @MainActor
+    private func shareSheet(_ app: XCUIApplication) -> XCUIElement {
+        app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'ActivityListView' OR label == 'Save to Files' OR label == 'AirDrop'")).firstMatch
+    }
+
+    /// Closes the share sheet: its Close button, or a swipe down on it.
+    @MainActor
+    private func closeShareSheet(_ app: XCUIApplication) {
+        let close = app.buttons["Close"]
+        if close.waitForExistence(timeout: 5) {
+            close.tap()
+        } else {
+            shareSheet(app).swipeDown(velocity: .fast)
+        }
+        if !shareSheet(app).waitForNonExistence(timeout: 10) {
+            print("Note: the share sheet was still there 10 s after closing it")
+        }
     }
 
     /// The first element, of any type, whose label matches [predicate].

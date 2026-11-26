@@ -52,6 +52,9 @@ internal class DesktopHooks(
     }
     override fun discovery() = lan?.let { LocalDiscovery(it) }
     override val loopbackOnly = true
+
+    /** The share sheet, the document picker and the printouts, as the iPhone has them from step 3b. */
+    override val files = DesktopFiles(File(root, "files"))
 }
 
 /** The Android phone: the sample move, hosting. With a [lan], it syncs by itself too, as a phone on 2.3 does. */

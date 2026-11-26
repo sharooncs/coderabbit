@@ -29,7 +29,10 @@ private var waitingLink: String? = null
  */
 fun MainViewController(buildLabel: String, crypto: AppleCrypto): UIViewController {
     if (cryptoCheckRequested()) return ComposeUIViewController { CryptoCheckScreen(crypto) }
+    if (pdfCheckRequested()) return ComposeUIViewController { PdfCheckScreen() }
     val m = model ?: run {
+        // What the last run left to hand on or had opened (IosFiles.kt), before any file link of this run is taken in.
+        IosFiles.clean()
         val demo = demoRequested()
         val hooks = if (demo) {
             val (data, noBackup) = demoFolders()

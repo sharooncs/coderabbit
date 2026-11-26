@@ -35,6 +35,9 @@ interface PhoneHooks {
     /** Deletes [folder] and everything in it. Used to take a move off this phone when [app.housemove.data.Moves.remove] may not. */
     fun deleteFolder(folder: File) {}
 
+    /** Files: the share sheet, opening and saving them, "Open in HouseMove", the printouts (step 3b). Null: none of it. */
+    val files: PhoneFiles? get() = null
+
     /**
      * How this phone finds the other phones of its move on the Wi-Fi, to sync by itself (design/auto-sync.md): Bonjour on
      * the iPhone, an in-process stand-in in demo mode and tests. Null: this phone does not sync by itself.

@@ -8,6 +8,7 @@ import app.housemove.sync.DnsSdDiscovery
 import app.housemove.sync.LocalDiscovery
 import app.housemove.sync.LocalLan
 import app.housemove.ui.iphone.LocalNetwork
+import app.housemove.ui.iphone.PhoneFiles
 import app.housemove.ui.iphone.PhoneHooks
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.toKString
@@ -89,6 +90,9 @@ class IosHooks(override val dataDir: File, override val noBackupDir: File, priva
     override fun deleteFolder(folder: File) {
         NSFileManager.defaultManager.removeItemAtPath(folder.path, error = null)
     }
+
+    /** The share sheet, the document picker, "Open in HouseMove" and the printouts (IosFiles.kt). */
+    override val files: PhoneFiles get() = IosFiles
 
     /** Bonjour (dns_sd); in demo mode, the phones inside this app only: it and the sample move it hosts. */
     override fun discovery(): Discovery = if (demo) LocalDiscovery(LocalLan.shared) else DnsSdDiscovery()

@@ -16,13 +16,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import app.housemove.data.Action
-import app.housemove.data.Backup
 import app.housemove.sync.WifiSync
 import app.housemove.ui.*
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.IO
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
  * Phones meeting, and backups. [code] is a sync code or invite scanned somewhere else in
@@ -68,39 +64,6 @@ fun SyncScreen(code: String? = null) {
         if (code != null && !codeUsed) {
             codeUsed = true
             use(code)
-        }
-    }
-
-    val saveBackup = context.rememberSaveFile("application/zip") { target ->
-        if (target != null) scope.launch {
-            working = true
-            val error = withContext(Dispatchers.IO) {
-                try {
-                    target.open()!!.use { Backup.export(store, it) }
-                    null
-                } catch (e: Exception) {
-                    e.message ?: "unknown error"
-                }
-            }
-            working = false
-            if (error == null) store.setDevice { it.copy(lastBackupAt = nowMillis()) }
-            say(if (error == null) SyncReport(true, "Backup saved", "") else SyncReport(false, "Backup failed", error))
-        }
-    }
-    val openBackup = context.rememberOpenFile { file ->
-        if (file != null) scope.launch {
-            working = true
-            val report = withContext(Dispatchers.IO) {
-                try {
-                    val r = file.open()!!.use { Backup.import(store, it) }
-                    SyncReport(true, "Backup merged in", "${r.photos} new photo(s) added.")
-                } catch (e: Exception) {
-                    // Includes the Store's own reason when this person may not restore a backup.
-                    SyncReport(false, "Could not restore that file", e.message ?: "")
-                }
-            }
-            say(report)
-            working = false
         }
     }
 
@@ -194,50 +157,8 @@ fun SyncScreen(code: String? = null) {
             // Phones that are not together: update files, and asking family who never visit.
             WorkingApartSection()
 
-            Section("Backup") {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(Icons.Default.Backup, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Hint(
-                        (if (device.lastBackupAt == 0L) "No backup yet" else "Last backup ${agoText(device.lastBackupAt)}") +
-                            " · one file with everything, ${data.livePhotos.size} photos",
-                    )
-                }
-                // Saving and sharing the file: where the phone can (Android; the iPhone's share sheet waits for step 3).
-                if (saveBackup != null && context.shareFiles) Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    PillButton(
-                        "Save backup", onClick = { saveBackup("housemove-backup-${isoToday()}.zip") },
-                        modifier = Modifier.weight(1f).fillMaxHeight(), icon = Icons.Default.SaveAlt, enabled = !busy,
-                    )
-                    PillButton(
-                        "Share backup", modifier = Modifier.weight(1f).fillMaxHeight(), icon = Icons.Default.Share, primary = false, enabled = !busy,
-                        onClick = {
-                            scope.launch {
-                                working = true
-                                val file = withContext(Dispatchers.IO) {
-                                    try {
-                                        context.outFile("housemove-backup-${isoToday()}.zip").also { f ->
-                                            f.outputStream().use { Backup.export(store, it) }
-                                        }
-                                    } catch (_: Exception) {
-                                        null
-                                    }
-                                }
-                                working = false
-                                if (file != null) context.share(file, "application/zip") else say(SyncReport(false, "Could not create the backup", ""))
-                            }
-                        },
-                    )
-                }
-                // Restoring is for Organisers; nobody else is shown a button that would only refuse.
-                if (allowed(Action.RESTORE_BACKUP) && openBackup != null) {
-                    PillButton(
-                        "Restore or merge a backup file", onClick = { openBackup(listOf("application/zip", "application/octet-stream", "*/*")) },
-                        modifier = Modifier.fillMaxWidth(), icon = Icons.Default.Restore, primary = false, enabled = !busy,
-                    )
-                }
-                // The daily small backup of a move with a single Organiser: where it goes.
-                DailyBackupRow()
-            }
+            // One file with everything: saved, shared, restored (BackupParts.kt, which the iPhone's Get fresh data shows too).
+            BackupSection(busy, onWorking = { working = it }, say = ::say)
 
             Fold("How syncing works", Icons.Default.HelpOutline) {
                 Text("Each phone keeps its own full copy and works without internet. Syncing swaps the changes both ways, photos included.")

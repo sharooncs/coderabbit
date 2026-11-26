@@ -380,6 +380,8 @@ lives on an Android phone, get fresh data, leave it). What the screens need of t
 (the camera and scanner, photos already on it, speech, files to share, open and save, the
 backup folder, the PDFs, toasts) is one interface, `ui/Platform.kt`: the Android app
 implements it with the code it always ran, and the iPhone leaves out what waits for step 3.
+On the iPhone, files (the share sheet, the document picker, "Open in HouseMove", the PDFs) are
+`ui/iphone/PhoneFiles.kt`, done with UIKit from Kotlin in `src/iosMain/` (`IosFiles.kt`, `pdf/IosDraw.kt`).
 `app/` is the Android app (`src/main/java/app/housemove/`): the activity, the screens' Android
 side (`ui/AndroidPlatform.kt`: CameraX, the system's pickers and share sheet, speech, Toast;
 `ui/AppRoot.kt`), the PDFs, with the tests that need simulated Android (`src/test/`) or a

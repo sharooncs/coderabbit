@@ -46,10 +46,11 @@ import kotlinx.coroutines.delay
 
 /**
  * What the shared screens ask of the phone ([Platform]), on the iPhone: its Settings and its own small store through
- * [hooks], and the few words it says through [toasts]. What waits for step 3 of design/ios-plan.md is not offered, so
- * the screens leave it out: the camera and scanning, choosing photos, speech, the share sheet and opening or saving
- * files, the daily backup folder and the PDFs. A photo already in the move shows. The desktop tests render the shared
- * screens with this too, so their pictures are what the iPhone shows.
+ * [hooks], and the few words it says through [toasts]. Files (the share sheet, opening and saving them, "Open in
+ * HouseMove", the PDFs) are [PhoneFiles], from step 3b. What waits for the rest of step 3 of design/ios-plan.md is not
+ * offered, so the screens leave it out: the camera and scanning, choosing photos, speech and the daily backup folder.
+ * A photo already in the move shows. The desktop tests render the shared screens with this too, so their pictures are
+ * what the iPhone shows.
  */
 class IphonePlatform(private val hooks: PhoneHooks, private val toasts: Toasts) : Platform {
     override fun toast(text: String) = toasts.say(text)
@@ -96,24 +97,36 @@ class IphonePlatform(private val hooks: PhoneHooks, private val toasts: Toasts) 
     @Composable
     override fun rememberDictation(onText: (String) -> Unit): (() -> Unit)? = null
 
-    override val shareFiles: Boolean get() = false
+    // ---- files (step 3b): the share sheet, the document picker, "Open in HouseMove" ([PhoneFiles]) ----------------
 
-    override fun outFile(name: String): File = File(hooks.noBackupDir, name)
+    private val files: PhoneFiles? = hooks.files
 
-    override fun share(file: File, mime: String) {}
+    override val shareFiles: Boolean get() = files != null
 
-    override fun open(file: File, mime: String) {}
+    override fun outFile(name: String): File = File(files?.outDir ?: hooks.noBackupDir, name)
+
+    override fun share(file: File, mime: String) {
+        files?.share(file, mime)
+    }
+
+    /** The iPhone opens nothing in another app by itself: the share sheet offers Print, Save to Files and the apps. */
+    override fun open(file: File, mime: String) {
+        files?.share(file, mime)
+    }
 
     @Composable
-    override fun rememberOpenFile(onPicked: (PickedFile?) -> Unit): ((List<String>) -> Unit)? = null
+    override fun rememberOpenFile(onPicked: (PickedFile?) -> Unit): ((List<String>) -> Unit)? = files?.rememberOpenFile(onPicked)
 
     @Composable
-    override fun rememberSaveFile(mime: String, onPicked: (SaveFile?) -> Unit): ((String) -> Unit)? = null
+    override fun rememberSaveFile(mime: String, onPicked: (SaveFile?) -> Unit): ((String) -> Unit)? = files?.rememberSaveFile(mime, onPicked)
 
+    /** An update file opened with HouseMove; a backup opened with it is the iPhone's own ([IncomingFiles]). */
     @Composable
-    override fun incomingUpdate(): PickedFile? = null
+    override fun incomingUpdate(): PickedFile? = files?.incoming?.takeIf { !it.backup }?.file
 
-    override fun incomingUpdateTaken() {}
+    override fun incomingUpdateTaken() {
+        if (files?.incoming?.backup == false) files.incomingTaken()
+    }
 
     @Composable
     override fun rememberFolderPicker(onPicked: (PickedFolder?) -> Unit): (() -> Unit)? = null
@@ -125,7 +138,8 @@ class IphonePlatform(private val hooks: PhoneHooks, private val toasts: Toasts) 
     /** The iPhone holds the one move it joined (its own join screens), and leaves it from Get fresh data. */
     override val moreMoves: Boolean get() = false
 
-    override val papers: Papers? get() = null
+    /** The printouts, drawn with the same layout as Android's (pdf/Printouts.kt) where the phone can share them. */
+    override val papers: Papers? get() = files?.papers
 
     override val shareTheApp: ((CoroutineScope) -> Unit)? get() = null
 

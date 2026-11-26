@@ -85,6 +85,8 @@ kotlin {
             implementation(kotlin("test"))
             // Skia for this machine, which renders the screens in the tests.
             implementation(compose.desktop.currentOs)
+            // A main dispatcher for the screens' coroutines that run on it (Dispatchers.Main), as the phones have.
+            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
         }
     }
 }

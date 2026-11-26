@@ -44,8 +44,14 @@ import app.housemove.data.Store
 import app.housemove.data.Action
 import app.housemove.sync.AutoSync
 import app.housemove.sync.MailboxSync
+import androidx.compose.material3.LinearProgressIndicator
+import app.housemove.ui.LocalPlatform
 import app.housemove.ui.Night
 import app.housemove.ui.Screen
+import app.housemove.ui.screens.BackupSection
+import app.housemove.ui.screens.SyncReport
+import app.housemove.ui.screens.SyncReportCard
+import app.housemove.ui.screens.WorkingApartSection
 import app.housemove.ui.screens.unsharedWork
 import app.housemove.ui.icons.filled.PhonelinkErase
 import app.housemove.ui.icons.Icons
@@ -166,6 +172,10 @@ fun FreshScreen(model: AppModel, store: Store, code: String? = null) {
             }
             Hint(if (device.lastSyncAt == 0L) "Not synced yet." else "Last synced ${Words.ago(device.lastSyncAt)}.")
 
+            // Files (step 3b), as on Android's Sync and backup: update files and Ask for decisions for phones that are
+            // not together, and the backup, through the share sheet and Files. Where files cannot be handed on, none of it.
+            if (LocalPlatform.current.shareFiles) FilesPart()
+
             // Leaving the move on this iPhone: the Android phone keeps it.
             Heading("This iPhone", Modifier.padding(top = 8.dp))
             Hint(Words.LATER)
@@ -183,6 +193,21 @@ fun FreshScreen(model: AppModel, store: Store, code: String? = null) {
             onLeave = { model.leave() }, onKeep = { model.askToLeave(false) },
         )
     }
+}
+
+/**
+ * Android's Working apart and Backup sections (ApartParts.kt, BackupParts.kt), on the iPhone's Sync and backup: Send update
+ * and Open update, Ask for decisions, and saving, sharing and (for an Organiser) merging a backup. What came of a backup
+ * is said above it.
+ */
+@Composable
+private fun FilesPart() {
+    var note by remember { mutableStateOf<SyncReport?>(null) }
+    var working by remember { mutableStateOf(false) }
+    WorkingApartSection()
+    if (working) LinearProgressIndicator(Modifier.fillMaxWidth(), color = Night.Mint)
+    note?.let { SyncReportCard(it) }
+    BackupSection(working, onWorking = { working = it }, say = { note = it })
 }
 
 /**
