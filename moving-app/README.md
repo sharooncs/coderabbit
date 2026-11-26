@@ -272,7 +272,7 @@ fetches Gradle 9.7.0 the first time.
 ./gradlew :app:testDebugUnitTest          # the screens and PDFs on simulated Android, about 5 minutes
 ./gradlew :app:assembleRelease            # app/build/outputs/apk/release/app-release.apk
 ./gradlew :app:connectedDebugAndroidTest  # on a connected phone or running emulator
-./gradlew :sharedUi:desktopTest           # the iPhone's screens and their model, rendered to sharedUi/build/screens/*.png
+./gradlew :sharedUi:desktopTest           # the screens as the iPhone shows them, and its model, rendered to sharedUi/build/screens/*.png
 ```
 
 The iPhone app (`iosApp/`) is built on a Mac with `tools/ios.sh`; see `design/ios-plan.md`.
@@ -373,13 +373,17 @@ platform is behind small seams (`Files.kt`, `Threads.kt`, `Platform.kt`, `sync/N
 zxing, and whose iPhone side is in `src/iosMain/` (`design/ios-step1.md`). The update
 files are common; their crypto is the JCA on Android and CryptoKit, in Swift, on the
 iPhone (`design/encryption.md`).
-`app/` is the Android app (`src/main/java/app/housemove/`): the screens, the PDFs and
-the activity, with the tests that need simulated Android (`src/test/`) or a device
-(`src/androidTest/`). `sharedUi/` (Compose Multiplatform) holds what the iPhone app
-shows: the shared theme, fonts and icons, and the first iPhone build's screens
-(`ui/iphone`: join a move that lives on an Android phone, look at it read-only, get
-fresh data, leave it; `design/ios-plan.md`, step 1c). The Android app's screens move
-there later; the Android app does not use it yet.
+`sharedUi/` (Compose Multiplatform) holds the screens, shared by the Android app and the
+iPhone app (`design/ios-plan.md`, step 2): the theme, fonts and icons, the kit and every
+screen (`ui/`, `ui/screens/`), and the iPhone's own screens (`ui/iphone`: join a move that
+lives on an Android phone, get fresh data, leave it). What the screens need of the phone
+(the camera and scanner, photos already on it, speech, files to share, open and save, the
+backup folder, the PDFs, toasts) is one interface, `ui/Platform.kt`: the Android app
+implements it with the code it always ran, and the iPhone leaves out what waits for step 3.
+`app/` is the Android app (`src/main/java/app/housemove/`): the activity, the screens' Android
+side (`ui/AndroidPlatform.kt`: CameraX, the system's pickers and share sheet, speech, Toast;
+`ui/AppRoot.kt`), the PDFs, with the tests that need simulated Android (`src/test/`) or a
+device (`src/androidTest/`).
 
 - `data/` (in `shared/`) – the model, the JSON store, merge, backup, move logic (fit check,
   volume, search). `People.kt`, `Rules.kt` and `Changes.kt` hold who may do what.
@@ -394,13 +398,14 @@ there later; the Android app does not use it yet.
   and the encrypted channel; `Pins`: the keys each phone accepts); the internet mailbox
   from 2.5 (`Hpke`: the sealing; `Mailbox`: the code, the envelopes and the laptop's API;
   `MailboxSync`: registering, sending and reading; `Http`: HTTPS on each platform)
-- `pdf/` – QR label sheets, door signs, inventory and damage reports
-- `ui/` – the kit: `Theme.kt` (colours, type), `Glass.kt` (panels, pills, orbs),
+- `pdf/` (in `app/`) – QR label sheets, door signs, inventory and damage reports, drawn by Android; the
+  sheets' sizes and the Helper card's and Ask for decisions' words are shared (`sharedUi` `pdf/`)
+- `ui/` (in `sharedUi/`) – the kit: `Theme.kt` (colours, type), `Glass.kt` (panels, pills, orbs),
   `Visual.kt` and `Common.kt` (tiles, buttons, inputs), `Dock.kt` (the dome at
   the bottom), `Iso.kt` (the house drawings), `PeopleKit.kt` (people and roles
   on screen), `Speak.kt` (the microphone), `Camera.kt` (photos and scanners),
-  `Journey.kt` (the phases of a move), `Nav.kt` (the routes)
-- `ui/screens/` – one file per screen or group of screens
+  `Journey.kt` (the phases of a move), `Nav.kt` (the routes), `Platform.kt` (what the screens ask of the phone)
+- `ui/screens/` (in `sharedUi/`) – one file per screen or group of screens
 - `tools/` – the scripts above
 - `mailbox/` – the internet mailbox for the family's laptop (Go): it keeps sealed messages for the phones of a move. Its
   README says how to run it and its API; `design/asus-session.md` how a Claude Code session on the laptop sets it up
