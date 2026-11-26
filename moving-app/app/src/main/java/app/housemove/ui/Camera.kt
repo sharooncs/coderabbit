@@ -73,7 +73,7 @@ import app.housemove.data.Qr
 import app.housemove.data.ScanFormats
 import app.housemove.data.canDelete
 import app.housemove.data.labelCodeOf
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
 import java.io.File
 import java.util.concurrent.Executors
 
@@ -593,7 +593,7 @@ fun PhotoHero(
             val first = photos.firstOrNull()
             if (first != null) {
                 AsyncImage(
-                    model = store.photoFile(first),
+                    model = store.photoFile(first).path,
                     contentDescription = label,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize().clickable { viewing = first },
@@ -647,7 +647,7 @@ private fun PhotoTile(icon: androidx.compose.ui.graphics.vector.ImageVector, des
 fun PhotoThumb(photo: Photo, modifier: Modifier = Modifier) {
     val store = LocalStore.current
     AsyncImage(
-        model = store.photoFile(photo),
+        model = store.photoFile(photo).path,
         contentDescription = photo.kind.label,
         contentScale = ContentScale.Crop,
         modifier = modifier.clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
@@ -680,7 +680,7 @@ fun PhotoViewer(photo: Photo, onClose: () -> Unit) {
         Surface(Modifier.fillMaxSize(), color = Color.Black) {
             Box(Modifier.fillMaxSize()) {
                 AsyncImage(
-                    model = store.photoFile(photo),
+                    model = store.photoFile(photo).path,
                     contentDescription = photo.kind.label,
                     contentScale = ContentScale.Fit,
                     modifier = Modifier.fillMaxSize(),

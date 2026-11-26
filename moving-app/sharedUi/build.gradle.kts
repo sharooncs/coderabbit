@@ -18,6 +18,9 @@ plugins {
 // Material 3 1.4.0, the versions in the app's Compose BOM (2026.09.00).
 val composeVersion = "1.12.2"
 val material3Version = "1.9.0"
+val navigationVersion = "2.10.0"
+val lifecycleVersion = "2.11.0"
+val coilVersion = "3.6.3"
 
 kotlin {
     android {
@@ -51,6 +54,15 @@ kotlin {
             implementation("org.jetbrains.compose.components:components-resources:$composeVersion")
             // BackHandler: on the iPhone, the swipe from the left edge goes back, as the Back button does.
             implementation("org.jetbrains.compose.ui:ui-backhandler:$composeVersion")
+            // The screens' navigation and lifecycle: JetBrains' builds of androidx Navigation 2.10.0 and Lifecycle 2.11.0,
+            // the versions Compose Multiplatform 1.12.2 is released with (its notes name Navigation 2.10.0-rc01, based on
+            // Jetpack Navigation 2.10.0; this is that release, built against Compose 1.11). On Android they are androidx's
+            // own artifacts, so the app's NavHostController is the one it always had.
+            api("org.jetbrains.androidx.navigation:navigation-compose:$navigationVersion")
+            api("org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose:$lifecycleVersion")
+            // Photos from files on both phones (Coil 3, built against Compose Multiplatform 1.12.0). No network part: it
+            // only reads the move's own photo files.
+            api("io.coil-kt.coil3:coil-compose:$coilVersion")
         }
         named("desktopTest").dependencies {
             implementation(kotlin("test"))
