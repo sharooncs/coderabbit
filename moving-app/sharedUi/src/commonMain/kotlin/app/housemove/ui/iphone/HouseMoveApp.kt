@@ -91,5 +91,7 @@ private fun TheMove(model: AppModel, store: Store, startRoute: String?, onNav: (
             nav = it
             onNav(it)
         })
+        // An update file or a backup opened with HouseMove from another app (step 3b).
+        IncomingFiles(model, store)
     }
 }

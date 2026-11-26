@@ -29,7 +29,10 @@ private var waitingLink: String? = null
  */
 fun MainViewController(buildLabel: String, crypto: AppleCrypto): UIViewController {
     if (cryptoCheckRequested()) return ComposeUIViewController { CryptoCheckScreen(crypto) }
+    if (pdfCheckRequested()) return ComposeUIViewController { PdfCheckScreen() }
     val m = model ?: run {
+        // What the last run left to hand on or had opened (IosFiles.kt), before any file link of this run is taken in.
+        IosFiles.clean()
         val demo = demoRequested()
         val hooks = if (demo) {
             val (data, noBackup) = demoFolders()
@@ -47,11 +50,13 @@ fun MainViewController(buildLabel: String, crypto: AppleCrypto): UIViewControlle
         AppModel(hooks, buildLabel, MainScope(), demo = if (demo) startDemoHost() else null).also {
             model = it
             followTheApp(it)
+            // Demo mode with -HMDemoUpdate YES (the UI tests): the sample move's phone sends this iPhone an update file.
+            if (demo && demoUpdateRequested()) sendDemoUpdate(it)
         }
     }
     waitingLink?.let {
         waitingLink = null
-        m.use(it)
+        openLink(it)
     }
     // The screens make room for the keyboard themselves (the safe area includes it, and the shared screens' imePadding),
     // and scroll the field being typed in into view; Compose's own lift of the whole screen would add to that and slide
@@ -72,9 +77,14 @@ private fun followTheApp(m: AppModel) {
 /**
  * A link opened with HouseMove: an invite or a sync code (`HMSYNC:…`, which iOS hands over as an `hmsync:` link when
  * the Camera reads an Android phone's QR code and the person taps Open in HouseMove). The SwiftUI app calls it from
- * onOpenURL (in Swift: `MainViewControllerKt.openLink(text:)`), on the main thread.
+ * onOpenURL (in Swift: `MainViewControllerKt.openLink(text:)`), on the main thread. A file link is a file another app
+ * asked HouseMove to open (an update file or a backup, Info.plist's document types): IosFiles takes it in.
  */
 fun openLink(text: String) {
     val m = model
-    if (m == null) waitingLink = text else m.use(text)
+    when {
+        m == null -> waitingLink = text
+        IosFiles.isFileLink(text) -> IosFiles.receive(text, m)
+        else -> m.use(text)
+    }
 }

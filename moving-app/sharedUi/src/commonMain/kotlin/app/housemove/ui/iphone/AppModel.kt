@@ -298,7 +298,7 @@ class AppModel(
                 welcome = Report(
                     true,
                     if (who != null && who.name.isNotBlank()) "You are ${who.name}, ${role.label}, in $name" else "You are in $name",
-                    Words.roleLine(role) + " " + Words.LATER + Words.plainNote(r.result),
+                    Words.roleLine(role) + Words.plainNote(r.result),
                 )
             }
             // Last: whoever sees the move here (the screens, a test on another thread) sees its welcome with it.

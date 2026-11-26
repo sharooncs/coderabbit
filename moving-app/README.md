@@ -380,6 +380,8 @@ lives on an Android phone, get fresh data, leave it). What the screens need of t
 (the camera and scanner, photos already on it, speech, files to share, open and save, the
 backup folder, the PDFs, toasts) is one interface, `ui/Platform.kt`: the Android app
 implements it with the code it always ran, and the iPhone leaves out what waits for step 3.
+On the iPhone, files (the share sheet, the document picker, "Open in HouseMove", the PDFs) are
+`ui/iphone/PhoneFiles.kt`, done with UIKit from Kotlin in `src/iosMain/` (`IosFiles.kt`, `pdf/IosDraw.kt`).
 `app/` is the Android app (`src/main/java/app/housemove/`): the activity, the screens' Android
 side (`ui/AndroidPlatform.kt`: CameraX, the system's pickers and share sheet, speech, Toast;
 `ui/AppRoot.kt`), the PDFs, with the tests that need simulated Android (`src/test/`) or a
@@ -398,8 +400,10 @@ device (`src/androidTest/`).
   and the encrypted channel; `Pins`: the keys each phone accepts); the internet mailbox
   from 2.5 (`Hpke`: the sealing; `Mailbox`: the code, the envelopes and the laptop's API;
   `MailboxSync`: registering, sending and reading; `Http`: HTTPS on each platform)
-- `pdf/` (in `app/`) – QR label sheets, door signs, inventory and damage reports, drawn by Android; the
-  sheets' sizes and the Helper card's and Ask for decisions' words are shared (`sharedUi` `pdf/`)
+- `pdf/` (in `sharedUi/`) – what is printed and its layout, for both phones: QR label sheets and hang tags,
+  door signs, inventory (and its spreadsheet) and damage reports (`Printouts.kt`), the Helper card and Ask for
+  decisions, drawn through a small interface (`Draw.kt`): Android's PdfDocument canvas in `app` `pdf/`
+  (`AndroidDraw.kt`), UIKit's PDF renderer on the iPhone (`src/iosMain/.../pdf/IosDraw.kt`)
 - `ui/` (in `sharedUi/`) – the kit: `Theme.kt` (colours, type), `Glass.kt` (panels, pills, orbs),
   `Visual.kt` and `Common.kt` (tiles, buttons, inputs), `Dock.kt` (the dome at
   the bottom), `Iso.kt` (the house drawings), `PeopleKit.kt` (people and roles

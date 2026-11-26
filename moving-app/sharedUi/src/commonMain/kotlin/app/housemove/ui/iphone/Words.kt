@@ -33,8 +33,6 @@ object Words {
     const val LOCAL_NETWORK_ASK =
         "Your iPhone may ask if HouseMove can find devices on your local network. Tap Allow: that is how it reaches the Android phone."
 
-    /** What this test version for iPhone does not do yet (step 3 of design/ios-plan.md). */
-    const val LATER = "Taking photos, scanning and printing come in a later test version for iPhone."
 
     /** Where the switch is, said the way the person will see it. */
     const val WHERE_LOCAL_NETWORK = "Tap Open Settings and switch on Local Network. (It is also in Settings, Privacy & Security, Local Network.)"
