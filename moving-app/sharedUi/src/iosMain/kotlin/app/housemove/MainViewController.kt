@@ -1,5 +1,6 @@
 package app.housemove
 
+import androidx.compose.ui.uikit.OnFocusBehavior
 import androidx.compose.ui.window.ComposeUIViewController
 import app.housemove.data.AppFolders
 import app.housemove.data.KeychainServices
@@ -52,7 +53,10 @@ fun MainViewController(buildLabel: String, crypto: AppleCrypto): UIViewControlle
         waitingLink = null
         m.use(it)
     }
-    return ComposeUIViewController { HouseMoveApp(m) }
+    // The screens make room for the keyboard themselves (the safe area includes it, and the shared screens' imePadding),
+    // and scroll the field being typed in into view; Compose's own lift of the whole screen would add to that and slide
+    // the top bar under the clock.
+    return ComposeUIViewController(configure = { onFocusBehavior = OnFocusBehavior.DoNothing }) { HouseMoveApp(m) }
 }
 
 /**
