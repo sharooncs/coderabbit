@@ -109,8 +109,9 @@ internal fun sendDemoUpdate(m: AppModel) {
         false
     }
     MainScope().launch {
-        // Until the sample phone can seal an update for this iPhone (it has synced with it by itself).
-        while (m.store == null || !withContext(Dispatchers.Default) { write() }) delay(1_500)
+        // Until the sample phone can seal an update for this iPhone (it has synced with it by itself). Writing one is
+        // work (the move and its photos), so not too often beside the syncing it waits for.
+        while (m.store == null || !withContext(Dispatchers.Default) { write() }) delay(4_000)
         // Nothing more by itself from now, so what the update brings is new to this iPhone.
         demoEngine?.pause()
         sample.createItem("Garden bench", sample.data.value.roomsOf(Home.ORIGIN).firstOrNull()?.id)

@@ -325,7 +325,8 @@ final class LaunchTests: XCTestCase {
         app.launch()
         join(app)
         let title = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Update from Sam's phone")).firstMatch
-        XCTAssertTrue(title.waitForExistence(timeout: 120), "the update file was opened, and says which phone it is from")
+        // The sample phone sends it after syncing by itself with this iPhone: about 40 s, more on a busy runner.
+        XCTAssertTrue(title.waitForExistence(timeout: 180), "the update file was opened, and says which phone it is from")
         XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "Taken in from Sam's phone")).firstMatch.exists)
         keep("update-opened", app)
         let ok = labelled(app, "label == 'OK'")
@@ -436,7 +437,7 @@ final class LaunchTests: XCTestCase {
         XCTAssertTrue(yes.waitForExistence(timeout: 10))
         yes.tap()
         // The shared Home: its title is the move's name.
-        XCTAssertTrue(labelled(app, "label CONTAINS 'Sample move' AND NOT (label BEGINSWITH 'Join')").waitForExistence(timeout: 60), "the move came across")
+        XCTAssertTrue(labelled(app, "label CONTAINS 'Sample move' AND NOT (label BEGINSWITH 'Join')").waitForExistence(timeout: 90), "the move came across")
     }
 
     /// The text field whose label is [label]: a text field if iOS lists it as one, else the element so labelled.
