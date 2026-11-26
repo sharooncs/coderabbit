@@ -87,7 +87,7 @@ private fun mdAllIn(data: AppData): Boolean {
  * is getting the rest off; with more still at the old home it is the next load. So a step
  * that was skipped, such as the photos of the old home, is not asked for all day.
  */
-internal fun mdCurrentStep(data: AppData, routes: List<String>, finished: List<Boolean>, now: Long = today()): Int {
+fun mdCurrentStep(data: AppData, routes: List<String>, finished: List<Boolean>, now: Long = today()): Int {
     val firstOpen = finished.indexOf(false)
     if (firstOpen < 0) return -1
     fun open(vararg wanted: String): Int? = wanted.firstNotNullOfOrNull { r -> routes.indexOf(r).takeIf { it >= 0 && !finished[it] } }

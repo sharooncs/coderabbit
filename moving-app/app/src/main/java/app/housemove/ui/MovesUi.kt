@@ -1,6 +1,5 @@
 package app.housemove.ui
 
-import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -9,12 +8,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import app.housemove.data.*
-import app.housemove.pdf.Share
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.File
 
 /**
  * The moves on this phone ([Moves]): listed, opened, started, joined, restored and removed by the
@@ -122,37 +116,10 @@ fun otherMovesNeedingYou(): List<MoveCard> {
 
 // ---- sharing the app ------------------------------------------------------------------------
 
-private const val APK = "application/vnd.android.package-archive"
-
-/** Where the installed app is read from. Tests put a small file in its place. */
-@Volatile
-internal var installedApk: (Context) -> File = { File(it.applicationInfo.sourceDir) }
-
-/** What hands a file to the share sheet. Tests see what would be sent. */
-@Volatile
-internal var shareSheet: (Context, File, String) -> Unit = { context, file, type -> Share.send(context, file, type) }
-
 /**
- * Send this phone's copy of the app through the share sheet, which reaches Quick Share (no
- * internet needed), for a phone that has an older HouseMove or none. The installed file is
- * copied to the shared cache folder first, which the app's FileProvider serves.
+ * Send this phone's copy of the app to a phone that has an older HouseMove or none ([Platform.shareTheApp]: Android's
+ * share sheet, which reaches Quick Share with no internet). Nothing on a phone that cannot, where the button is not shown.
  */
-fun shareTheApp(context: Context, scope: CoroutineScope) {
-    // The share sheet and any message are on the main thread, whatever thread the scope resumes on.
-    scope.launch(Dispatchers.Main) {
-        val file = withContext(Dispatchers.IO) {
-            try {
-                Share.outFile(context, "HouseMove.apk").also { out -> installedApk(context).copyTo(out, overwrite = true) }
-            } catch (_: Exception) {
-                null
-            }
-        }
-        val sent = file != null && try {
-            shareSheet(context, file, APK)
-            true
-        } catch (_: Exception) {
-            false
-        }
-        if (!sent) toast(context, "This phone could not get the app ready to share. Try again in a moment.")
-    }
+fun shareTheApp(context: Platform, scope: CoroutineScope) {
+    context.shareTheApp?.invoke(scope)
 }

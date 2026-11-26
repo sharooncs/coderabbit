@@ -20,7 +20,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role as SemanticsRole
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -142,7 +141,7 @@ internal fun PeopleRow(data: AppData, device: DeviceInfo, modifier: Modifier = M
 @Composable
 internal fun RefusedSection(data: AppData) {
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val refused = data.refusedChanges()
     if (refused.isEmpty()) return
     var all by rememberSaveable { mutableStateOf(false) }
@@ -247,14 +246,14 @@ internal fun DeciderSections(data: AppData, device: DeviceInfo) {
 // ---- a Helper ---------------------------------------------------------------------------------
 
 /** One thing a Helper can do now with their hands, from where the things are. */
-internal data class PhysicalStep(val icon: ImageVector, val title: String, val detail: String, val route: String, val bringBack: Boolean = false)
+data class PhysicalStep(val icon: ImageVector, val title: String, val detail: String, val route: String, val bringBack: Boolean = false)
 
 /**
  * What is physically next for the things, in the order they travel: packing, loading, the old home's meters,
  * the sweep, unloading, the new home's meters, bringing things back from storage, unpacking. Worked out from
  * where the things are ([placeOf], their stages), never from the date.
  */
-internal fun AppData.physicalNext(currentRoomId: String?): List<PhysicalStep> {
+fun AppData.physicalNext(currentRoomId: String?): List<PhysicalStep> {
     val out = ArrayList<PhysicalStep>()
     val vehicle = vehicle()
     val mv = movables()
@@ -310,7 +309,7 @@ internal fun AppData.physicalNext(currentRoomId: String?): List<PhysicalStep> {
 internal fun HelperSections(data: AppData, device: DeviceInfo) {
     val nav = LocalNav.current
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val me = data.me(device)
     var asking by remember { mutableStateOf(false) }
 
@@ -377,7 +376,7 @@ internal fun HelperSections(data: AppData, device: DeviceInfo) {
 @Composable
 internal fun AskDialog(onClose: () -> Unit) {
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val data = appData()
     var words by remember { mutableStateOf("") }
     var scanning by remember { mutableStateOf(false) }
@@ -422,7 +421,7 @@ internal fun AskDialog(onClose: () -> Unit) {
                 modifier = Modifier.weight(1f),
             )
         }
-        BigAction(Icons.Default.QrCodeScanner, "Scan its label", onClick = { scanning = true }, primary = false)
+        if (LocalPlatform.current.camera) BigAction(Icons.Default.QrCodeScanner, "Scan its label", onClick = { scanning = true }, primary = false)
         Column(Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             things.forEach { i ->
                 Row(

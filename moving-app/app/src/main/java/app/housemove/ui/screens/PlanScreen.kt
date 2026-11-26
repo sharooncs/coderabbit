@@ -18,16 +18,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.housemove.data.*
 import app.housemove.ui.*
-import java.util.Locale
 
-private fun oneDecimal(v: Double): String = String.format(Locale.US, "%.1f", v)
+private fun oneDecimal(v: Double): String = decimals(v, 1)
 
 /**
  * Give every moving item a room in the new home and check it will get through the door.
@@ -40,7 +37,7 @@ private fun oneDecimal(v: Double): String = String.format(Locale.US, "%.1f", v)
 fun PlanScreen() {
     val store = LocalStore.current
     val nav = LocalNav.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val data = appData()
     deviceInfo() // whose phone this is decides what is offered below
     val mayDecide = store.can(Action.DECIDE)
@@ -83,7 +80,7 @@ fun PlanScreen() {
                     EmptyState(
                         Icons.Default.Map, "Nothing to place yet",
                         text = "Things you mark Move appear here to be given a room.",
-                        action = if (data.uses(Part.TRIAGE)) "Decide what moves" else "Start the walk-through",
+                        action = if (data.uses(Part.TRIAGE)) "Decide what moves" else "Start the walk-through".takeIf { "walk" !in unavailableRoutes() },
                         onAction = { nav.open(if (data.uses(Part.TRIAGE)) "triage" else "walk") },
                     )
                 }

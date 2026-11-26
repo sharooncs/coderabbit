@@ -1,11 +1,5 @@
 package app.housemove.ui
 
-import android.app.Activity
-import android.content.ActivityNotFoundException
-import android.content.Intent
-import android.speech.RecognizerIntent
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.heightIn
@@ -17,10 +11,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -39,11 +31,6 @@ fun interface Speech {
 /** Set in tests to stand in for the phone's speech service. Null means: use the phone's. */
 val LocalSpeech = staticCompositionLocalOf<Speech?> { null }
 
-private fun speechIntent(prompt: String) = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-    putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-    putExtra(RecognizerIntent.EXTRA_PROMPT, prompt)
-}
-
 /**
  * Can this phone take spoken words? When it cannot, [SpeakButton] draws nothing, so words
  * beside it ("Say their name") should say "type" instead.
@@ -51,8 +38,7 @@ private fun speechIntent(prompt: String) = Intent(RecognizerIntent.ACTION_RECOGN
 @Composable
 fun canSpeak(): Boolean {
     if (LocalSpeech.current != null) return true
-    val context = LocalContext.current
-    return remember { speechIntent("").resolveActivity(context.packageManager) != null }
+    return LocalPlatform.current.canSpeak()
 }
 
 /**
@@ -81,22 +67,9 @@ fun SpeakButton(
         Microphone(label, contentDescription, modifier, size) { fake.listen(prompt, onText) }
         return
     }
-    val context = LocalContext.current
-    val available = remember { speechIntent("").resolveActivity(context.packageManager) != null }
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-                ?.firstOrNull()?.trim()?.takeIf { it.isNotEmpty() }?.let(onText)
-        }
-    }
-    if (!available) return
-    Microphone(label, contentDescription, modifier, size) {
-        try {
-            launcher.launch(speechIntent(prompt))
-        } catch (e: ActivityNotFoundException) {
-            // The speech service vanished between the check and the tap; typing still works.
-        }
-    }
+    // The phone's own speech sheet, where it has one (Android's; the iPhone's waits for step 3).
+    val listen = LocalPlatform.current.rememberSpeech(onText) ?: return
+    Microphone(label, contentDescription, modifier, size) { listen(prompt) }
 }
 
 /** The button itself: an orb, or with a [label] a pill that says what to say. */

@@ -13,7 +13,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.housemove.data.*
@@ -49,7 +48,7 @@ internal fun AppData.handoverWho(itemId: String, me: Person?): String {
 internal fun HandoverCard(item: Item, modifier: Modifier = Modifier) {
     if (!item.forHandover()) return
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val data = appData()
     val me = store.me
     val mayArrange = data.mayArrangeHandover(me, item) && !item.handedOver
@@ -118,7 +117,7 @@ internal fun HandoverCard(item: Item, modifier: Modifier = Modifier) {
 internal fun HandoverRow(item: Item, modifier: Modifier = Modifier) {
     val store = LocalStore.current
     val nav = LocalNav.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val data = appData()
     val me = store.me
     GlassCard(modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp)) {

@@ -11,7 +11,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -19,6 +18,7 @@ import app.housemove.data.title
 import app.housemove.pdf.Decisions
 import app.housemove.ui.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -31,7 +31,7 @@ import kotlinx.coroutines.withContext
 fun AskDecisionsScreen() {
     val store = LocalStore.current
     val nav = LocalNav.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val data = appData()
     val scope = rememberCoroutineScope()
     val items = remember(data) { Decisions.toAsk(data) }
@@ -64,20 +64,21 @@ fun AskDecisionsScreen() {
                     }
                     if (items.size > 8) Hint("and ${items.size - 8} more, all on the list")
                 }
-                BigAction(
+                // The list is a PDF for other apps: where a phone makes none yet (the iPhone, until step 3), it is left out.
+                if (context.papers != null && context.shareFiles) BigAction(
                     Icons.Default.Share, "Share the list", enabled = !working,
                     onClick = {
                         working = true
                         scope.launch(Dispatchers.Main) {
                             val file = withContext(Dispatchers.IO) {
                                 try {
-                                    Decisions.pdf(context, store)
+                                    context.papers!!.decisions(store)
                                 } catch (_: Exception) {
                                     null
                                 }
                             }
                             working = false
-                            if (file != null) shareSheet(context, file, "application/pdf") else toast(context, "The list could not be made. Try again in a moment.")
+                            if (file != null) context.share(file, "application/pdf") else toast(context, "The list could not be made. Try again in a moment.")
                         }
                     },
                 )

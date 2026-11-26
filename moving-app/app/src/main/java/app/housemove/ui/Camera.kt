@@ -1,31 +1,5 @@
 package app.housemove.ui
 
-import android.Manifest
-import android.content.Context
-import android.content.pm.PackageManager
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.Matrix
-import android.media.AudioManager
-import android.media.ExifInterface
-import android.media.ToneGenerator
-import android.net.Uri
-import android.util.Size
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.camera.core.Camera
-import androidx.camera.core.CameraSelector
-import androidx.camera.core.ImageAnalysis
-import androidx.camera.core.ImageCapture
-import androidx.camera.core.ImageCaptureException
-import androidx.camera.core.ImageProxy
-import androidx.camera.core.Preview
-import androidx.camera.core.UseCase
-import androidx.camera.core.resolutionselector.ResolutionSelector
-import androidx.camera.core.resolutionselector.ResolutionStrategy
-import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -53,7 +27,6 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -62,56 +35,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.core.content.ContextCompat
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import app.housemove.data.Photo
 import app.housemove.data.PhotoKind
-import app.housemove.data.Qr
-import app.housemove.data.ScanFormats
 import app.housemove.data.canDelete
 import app.housemove.data.labelCodeOf
 import coil3.compose.AsyncImage
-import java.io.File
-import java.util.concurrent.Executors
-
-// ---- image files -----------------------------------------------------------
-
-/** Decode a photo no larger than [maxPx] on its long side, upright. Null if unreadable. */
-fun loadScaledBitmap(file: File, maxPx: Int): Bitmap? = try {
-    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    BitmapFactory.decodeFile(file.path, bounds)
-    var sample = 1
-    while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= maxPx) sample *= 2
-    val bmp = BitmapFactory.decodeFile(file.path, BitmapFactory.Options().apply { inSampleSize = sample })
-    val degrees = when (ExifInterface(file.path).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
-        ExifInterface.ORIENTATION_ROTATE_90 -> 90f
-        ExifInterface.ORIENTATION_ROTATE_180 -> 180f
-        ExifInterface.ORIENTATION_ROTATE_270 -> 270f
-        else -> 0f
-    }
-    if (bmp != null && degrees != 0f) {
-        Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, Matrix().apply { postRotate(degrees) }, true)
-    } else bmp
-} catch (_: Exception) {
-    null
-}
-
-/** Copy a picture chosen from the gallery into [dest] as a reasonably sized JPEG. */
-fun importImage(context: Context, uri: Uri, dest: File): Boolean = try {
-    val tmp = File(dest.parentFile, dest.name + ".import")
-    context.contentResolver.openInputStream(uri)!!.use { input -> tmp.outputStream().use { input.copyTo(it) } }
-    val bmp = loadScaledBitmap(tmp, 1600)
-    tmp.delete()
-    if (bmp == null) false else {
-        dest.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 82, it) }
-        true
-    }
-} catch (_: Exception) {
-    false
-}
+import app.housemove.data.File
 
 /** The dark, see-through fill of everything that sits on a photograph or the live camera. */
 private val OnPhoto = Color(0xB8081220)
@@ -156,13 +87,11 @@ private fun CameraOrb(description: String, modifier: Modifier = Modifier, onClic
 /** Shows [content] once the camera permission is granted; otherwise explains and asks. */
 @Composable
 fun CameraPermission(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    val context = LocalContext.current
-    var granted by remember {
-        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
-    }
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
-    LaunchedEffect(Unit) { if (!granted) launcher.launch(Manifest.permission.CAMERA) }
-    if (granted) content() else {
+    // A phone whose camera HouseMove cannot use yet (the iPhone, until step 3) neither shows a camera nor asks for one.
+    if (!LocalPlatform.current.camera) return
+    val permission = LocalPlatform.current.rememberCameraPermission()
+    LaunchedEffect(Unit) { if (!permission.granted) permission.ask() }
+    if (permission.granted) content() else {
         Column(
             modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -172,51 +101,10 @@ fun CameraPermission(modifier: Modifier = Modifier, content: @Composable () -> U
                 Icon(Icons.Default.PhotoCamera, contentDescription = null, tint = Night.Mint, modifier = Modifier.size(32.dp))
             }
             Text("The camera is needed to take photos and scan labels.", color = Night.TextSoft, textAlign = TextAlign.Center)
-            PillButton("Allow camera", onClick = { launcher.launch(Manifest.permission.CAMERA) })
+            PillButton("Allow camera", onClick = { permission.ask() })
             Hint("If nothing happens, allow the camera for HouseMove in the phone's app settings.")
         }
     }
-}
-
-// ---- camera preview shared by photo capture and scanning -------------------
-
-@Composable
-private fun CameraPreview(
-    useCases: List<UseCase>,
-    modifier: Modifier = Modifier,
-    onCamera: (Camera?) -> Unit = {},
-) {
-    val context = LocalContext.current
-    val owner = LocalLifecycleOwner.current
-    val previewView = remember {
-        PreviewView(context).apply {
-            implementationMode = PreviewView.ImplementationMode.COMPATIBLE
-            scaleType = PreviewView.ScaleType.FILL_CENTER
-        }
-    }
-    DisposableEffect(owner) {
-        var provider: ProcessCameraProvider? = null
-        val future = ProcessCameraProvider.getInstance(context)
-        future.addListener({
-            try {
-                val p = future.get()
-                provider = p
-                val preview = Preview.Builder().build().also { it.surfaceProvider = previewView.surfaceProvider }
-                p.unbindAll()
-                val camera = p.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, preview, *useCases.toTypedArray())
-                onCamera(camera)
-            } catch (_: Exception) {
-                onCamera(null)
-            }
-        }, ContextCompat.getMainExecutor(context))
-        onDispose {
-            try {
-                provider?.unbindAll()
-            } catch (_: Exception) {
-            }
-        }
-    }
-    AndroidView(factory = { previewView }, modifier = modifier)
 }
 
 // ---- taking photos ---------------------------------------------------------
@@ -232,58 +120,48 @@ fun CameraDialog(
     onPhoto: (File) -> Unit,
     onClose: () -> Unit,
 ) {
+    // Nothing offers the camera where HouseMove cannot use it yet; should something still open it, it closes at once.
+    if (!LocalPlatform.current.camera) {
+        LaunchedEffect(Unit) { onClose() }
+        return
+    }
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize(), color = Color.Black, contentColor = Night.Text) {
             CameraPermission(Modifier.fillMaxSize().drawBehind { drawNightGround() }) {
-                val context = LocalContext.current
+                val context = LocalPlatform.current
                 val haptic = LocalHapticFeedback.current
                 var taken by remember { mutableIntStateOf(0) }
                 var busy by remember { mutableStateOf(false) }
                 var torch by remember { mutableStateOf(false) }
-                var camera by remember { mutableStateOf<Camera?>(null) }
-                val capture = remember {
-                    ImageCapture.Builder()
-                        .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-                        .setJpegQuality(82)
-                        .setResolutionSelector(
-                            ResolutionSelector.Builder().setResolutionStrategy(
-                                ResolutionStrategy(Size(1600, 1200), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER)
-                            ).build()
-                        ).build()
-                }
+                var camera by remember { mutableStateOf<LiveCamera?>(null) }
                 Box(Modifier.fillMaxSize()) {
-                    CameraPreview(listOf(capture), Modifier.fillMaxSize()) { camera = it }
+                    context.PhotoCameraView(Modifier.fillMaxSize()) { camera = it }
                     CameraControls(
                         hint, taken, busy, torch,
                         onClose = onClose,
                         onTorch = {
                             torch = !torch
-                            try {
-                                camera?.cameraControl?.enableTorch(torch)
-                            } catch (_: Exception) {
-                            }
+                            camera?.torch(torch)
                         },
                         onShoot = {
                             busy = true
                             val file = newFile()
-                            capture.takePicture(
-                                ImageCapture.OutputFileOptions.Builder(file).build(),
-                                ContextCompat.getMainExecutor(context),
-                                object : ImageCapture.OnImageSavedCallback {
-                                    override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                                        busy = false
-                                        taken++
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        onPhoto(file)
-                                    }
-
-                                    override fun onError(e: ImageCaptureException) {
-                                        busy = false
-                                        file.delete()
-                                        toast(context, "Could not take the photo: ${e.message}")
-                                    }
-                                },
-                            )
+                            val shooting = camera
+                            if (shooting == null) {
+                                busy = false
+                                return@CameraControls
+                            }
+                            shooting.shoot(file) { e ->
+                                busy = false
+                                if (e == null) {
+                                    taken++
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onPhoto(file)
+                                } else {
+                                    file.delete()
+                                    toast(context, "Could not take the photo: ${e.message}")
+                                }
+                            }
                         },
                     )
                 }
@@ -298,7 +176,7 @@ fun CameraDialog(
  * looked at without one (AuditShotsTest draws it over a still picture).
  */
 @Composable
-internal fun CameraControls(
+fun CameraControls(
     hint: String, taken: Int, busy: Boolean, torch: Boolean,
     onClose: () -> Unit, onTorch: () -> Unit, onShoot: () -> Unit, modifier: Modifier = Modifier,
 ) {
@@ -339,98 +217,24 @@ internal fun CameraControls(
 
 // ---- scanning --------------------------------------------------------------
 
-private class QrAnalyzer(formats: ScanFormats, private val onText: (String) -> Unit) : ImageAnalysis.Analyzer {
-    private val decoder = Qr.Decoder(formats)
-
-    override fun analyze(image: ImageProxy) {
-        try {
-            val plane = image.planes[0]
-            val w = image.width
-            val h = image.height
-            val stride = plane.rowStride
-            val buf = plane.buffer
-            val data = ByteArray(w * h)
-            if (stride == w) {
-                buf.get(data, 0, minOf(data.size, buf.remaining()))
-            } else {
-                for (row in 0 until h) {
-                    buf.position(row * stride)
-                    buf.get(data, row * w, minOf(w, buf.remaining()))
-                }
-            }
-            decoder.decode(data, w, h)?.let(onText)
-        } catch (_: Exception) {
-        } finally {
-            image.close()
-        }
-    }
-}
-
 /**
  * Live QR scanner. Reports the raw QR text; the same code is not reported
  * again for a couple of seconds so holding the phone still does not re-trigger.
  */
 @Composable
-fun QrScanner(onText: (String) -> Unit, modifier: Modifier = Modifier, formats: ScanFormats = ScanFormats.LABELS) {
+fun QrScanner(onText: (String) -> Unit, modifier: Modifier = Modifier, formats: ScanKind = ScanKind.LABELS) {
     CameraPermission(modifier) {
-        val context = LocalContext.current
-        val haptic = LocalHapticFeedback.current
+        val context = LocalPlatform.current
         val callback by rememberUpdatedState(onText)
-        val executor = remember { Executors.newSingleThreadExecutor() }
-        val tone = remember {
-            try {
-                ToneGenerator(AudioManager.STREAM_NOTIFICATION, 70)
-            } catch (_: Exception) {
-                null
-            }
-        }
         var torch by remember { mutableStateOf(false) }
-        var camera by remember { mutableStateOf<Camera?>(null) }
-        val analysis = remember {
-            var last = ""
-            var lastAt = 0L
-            val main = ContextCompat.getMainExecutor(context)
-            ImageAnalysis.Builder()
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .setResolutionSelector(
-                    ResolutionSelector.Builder().setResolutionStrategy(
-                        ResolutionStrategy(Size(1280, 720), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER)
-                    ).build()
-                ).build().also {
-                    it.setAnalyzer(executor, QrAnalyzer(formats) { text ->
-                        val now = System.currentTimeMillis()
-                        if (text != last || now - lastAt > 2500) {
-                            last = text
-                            lastAt = now
-                            main.execute {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                try {
-                                    tone?.startTone(ToneGenerator.TONE_PROP_ACK, 120)
-                                } catch (_: Exception) {
-                                }
-                                callback(text)
-                            }
-                        }
-                    })
-                }
-        }
-        DisposableEffect(Unit) {
-            onDispose {
-                analysis.clearAnalyzer()
-                executor.shutdown()
-                tone?.release()
-            }
-        }
+        var camera by remember { mutableStateOf<LiveCamera?>(null) }
         Box(modifier) {
-            CameraPreview(listOf(analysis), Modifier.fillMaxSize()) { camera = it }
+            context.ScannerView(formats, { callback(it) }, Modifier.fillMaxSize()) { camera = it }
             AimMarks(Modifier.matchParentSize())
             OverlayIconButton(
                 onClick = {
                     torch = !torch
-                    try {
-                        camera?.cameraControl?.enableTorch(torch)
-                    } catch (_: Exception) {
-                    }
+                    camera?.torch(torch)
                 },
                 modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
             ) { Icon(if (torch) Icons.Default.FlashOn else Icons.Default.FlashOff, contentDescription = "Torch") }
@@ -440,7 +244,7 @@ fun QrScanner(onText: (String) -> Unit, modifier: Modifier = Modifier, formats: 
 
 /** Four corner marks in the middle of the scanner's picture: where to hold the label. Decoration only. */
 @Composable
-internal fun AimMarks(modifier: Modifier = Modifier) {
+fun AimMarks(modifier: Modifier = Modifier) {
     Canvas(modifier) {
         val side = minOf(size.width, size.height) * 0.62f
         val left = (size.width - side) / 2f
@@ -472,7 +276,7 @@ fun ScanDialog(
     onCode: (String) -> Unit,
     onClose: () -> Unit,
     raw: Boolean = false,
-    formats: ScanFormats = ScanFormats.LABELS,
+    formats: ScanKind = ScanKind.LABELS,
     typeLabel: String = "Or type the code",
     typingFolded: Boolean = false,
 ) {
@@ -485,14 +289,16 @@ fun ScanDialog(
                     Spacer(Modifier.width(12.dp))
                     Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
-                QrScanner(
+                // Where the camera cannot be used yet (the iPhone, until step 3) the code is typed, so the field is always open.
+                val camera = LocalPlatform.current.camera
+                if (camera) QrScanner(
                     onText = { onCode(if (raw) it else labelCodeOf(it)) },
                     modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 16.dp).scannerFrame(),
                     formats = formats,
                 )
                 var typed by remember { mutableStateOf("") }
-                var typing by remember { mutableStateOf(!typingFolded) }
-                if (typingFolded) {
+                var typing by remember { mutableStateOf(!typingFolded || !camera) }
+                if (typingFolded && camera) {
                     Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = if (typing) 0.dp else 12.dp), horizontalArrangement = Arrangement.End) {
                         GlassChip("Type the code", icon = Icons.Default.Keyboard, selected = typing, onClick = { typing = !typing })
                     }
@@ -528,16 +334,13 @@ fun Modifier.scannerFrame(): Modifier = clip(RoundedCornerShape(26.dp)).backgrou
 @Composable
 fun PhotoStrip(ownerId: String, kind: PhotoKind, modifier: Modifier = Modifier, label: String = kind.label) {
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val photos = appData().photosOf(ownerId, kind)
     var camera by remember { mutableStateOf(false) }
     var viewing by remember { mutableStateOf<Photo?>(null) }
-    val gallery = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { uris ->
-        uris.forEach { uri ->
-            val f = store.newPhotoFile()
-            if (importImage(context, uri, f)) store.addPhoto(ownerId, kind, f)
-        }
-    }
+    val gallery = context.rememberPhotoPicker({ store.newPhotoFile() }, { f -> store.addPhoto(ownerId, kind, f) }, {})
+    // A phone that can neither take nor choose photos yet (the iPhone, until step 3) shows the ones there are, if any.
+    if (photos.isEmpty() && !context.camera && gallery == null) return
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
             label + if (photos.isNotEmpty()) " (${photos.size})" else "",
@@ -545,13 +348,11 @@ fun PhotoStrip(ownerId: String, kind: PhotoKind, modifier: Modifier = Modifier, 
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            item {
+            if (context.camera) item {
                 PhotoTile(Icons.Default.PhotoCamera, "Take $label photo") { camera = true }
             }
-            item {
-                PhotoTile(Icons.Default.PhotoLibrary, "Add $label from gallery") {
-                    gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                }
+            if (gallery != null) item {
+                PhotoTile(Icons.Default.PhotoLibrary, "Add $label from gallery") { gallery() }
             }
             items(photos, key = { it.id }) { p ->
                 PhotoThumb(p, Modifier.size(72.dp).clip(RoundedCornerShape(14.dp)).clickable { viewing = p })
@@ -578,16 +379,11 @@ fun PhotoHero(
     emptyText: String = "Take a photo",
 ) {
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val photos = appData().photosOf(ownerId, kind)
     var camera by remember { mutableStateOf(false) }
     var viewing by remember { mutableStateOf<Photo?>(null) }
-    val gallery = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { uris ->
-        uris.forEach { uri ->
-            val f = store.newPhotoFile()
-            if (importImage(context, uri, f)) store.addPhoto(ownerId, kind, f)
-        }
-    }
+    val gallery = context.rememberPhotoPicker({ store.newPhotoFile() }, { f -> store.addPhoto(ownerId, kind, f) }, {})
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Box(Modifier.fillMaxWidth().height(height).glass(RoundedCornerShape(20.dp), sheen = true, shadow = 6.dp)) {
             val first = photos.firstOrNull()
@@ -600,7 +396,7 @@ fun PhotoHero(
                 )
             } else {
                 Column(
-                    Modifier.fillMaxSize().clickable { camera = true },
+                    Modifier.fillMaxSize().then(if (context.camera) Modifier.clickable { camera = true } else Modifier),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
                 ) {
@@ -608,7 +404,8 @@ fun PhotoHero(
                         Icon(Icons.Default.PhotoCamera, contentDescription = null, tint = Night.Mint, modifier = Modifier.size(30.dp))
                     }
                     Spacer(Modifier.height(8.dp))
-                    Text(emptyText, style = MaterialTheme.typography.titleMedium, color = Night.MintPale)
+                    // Where the camera cannot be used yet, there is nothing to tap: it only says so.
+                    Text(if (context.camera) emptyText else "No photo yet", style = MaterialTheme.typography.titleMedium, color = Night.MintPale)
                 }
             }
             Row(
@@ -617,10 +414,10 @@ fun PhotoHero(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (photos.size > 1) OnPhotoLabel("${photos.size} photos")
-                OverlayIconButton(onClick = { gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
+                if (gallery != null) OverlayIconButton(onClick = { gallery() }) {
                     Icon(Icons.Default.PhotoLibrary, contentDescription = "Add $label from gallery")
                 }
-                CameraOrb("Take $label photo") { camera = true }
+                if (context.camera) CameraOrb("Take $label photo") { camera = true }
             }
         }
         if (photos.size > 1) {
@@ -672,7 +469,7 @@ fun OwnerThumb(ownerId: String, modifier: Modifier = Modifier, isBox: Boolean = 
 @Composable
 fun PhotoViewer(photo: Photo, onClose: () -> Unit) {
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     // Deleting a photo is by the Store's rule: whoever took it, while nobody else has worked on it, or an Organiser.
     val mayDelete = appData().canDelete(myPerson(), photo)
     var confirm by remember { mutableStateOf(false) }

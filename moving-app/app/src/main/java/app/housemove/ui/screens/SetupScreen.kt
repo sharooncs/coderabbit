@@ -13,8 +13,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -45,7 +43,7 @@ fun Part.icon(): ImageVector = when (this) {
 @Composable
 fun KindPicker(modifier: Modifier = Modifier, large: Boolean = false) {
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val move = appData().move
     IconChoice(
         MoveKind.entries.map { Choice(it, it.label, it.icon()) },
@@ -89,7 +87,7 @@ internal fun MoveKind.onePerson(): Boolean = this == MoveKind.INVENTORY || this 
 fun SetupScreen() {
     val store = LocalStore.current
     val nav = LocalNav.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val moves = LocalMoves.current
     val state = appState()
     val data = appData()
@@ -138,7 +136,7 @@ fun SetupScreen() {
             when (at) {
                 0 -> {
                     // A tall phone opens on the lit house, as Home does, instead of on empty ground; a short one goes straight to the choice.
-                    if (LocalConfiguration.current.let { it.screenHeightDp / it.fontScale >= 780f }) {
+                    if (screenDp().let { it.screenHeightDp / it.fontScale >= 780f }) {
                         IsoHouse(Modifier.widthIn(max = 300.dp).align(Alignment.CenterHorizontally), boxes = 1)
                     }
                     KindPicker(large = true)
@@ -180,7 +178,7 @@ fun SetupScreen() {
 @Composable
 private fun MoveDetails(inventoryOnly: Boolean) {
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val data = appData()
     val device = deviceInfo()
     val move = data.move
@@ -324,7 +322,7 @@ internal fun RoomAdder(home: Home, modifier: Modifier = Modifier) {
 @Composable
 private fun RoomSetup(home: Home) {
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val data = appData()
     val me = myPerson()
     val rooms = data.roomsOf(home)

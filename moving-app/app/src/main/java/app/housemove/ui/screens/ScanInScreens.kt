@@ -14,7 +14,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -26,9 +25,10 @@ import androidx.compose.ui.window.DialogProperties
 import app.housemove.data.*
 import app.housemove.ui.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.IOException
+import app.housemove.data.IOException
 
 /** What the strip under the camera says, and how: something went in, something to know, or nothing yet. */
 private data class ScanNote(val text: String, val tone: GlassTone = GlassTone.Plain)
@@ -51,7 +51,7 @@ fun ScanInDialog(box: Box, onClose: () -> Unit) {
     val scope = rememberCoroutineScope()
     val entries = data.entriesOf(box.id)
     val me = myPerson()
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     var note by remember { mutableStateOf(ScanNote("Point the camera at the barcode on a book or product")) }
     var typed by remember { mutableStateOf("") }
     // The keyboard is the last resort: its field only shows once it is asked for.
@@ -123,7 +123,7 @@ fun ScanInDialog(box: Box, onClose: () -> Unit) {
                         onText = { add(it) },
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().weight(if (entries.isEmpty()) 3f else 1.3f)
                             .clip(window).border(1.dp, Night.GlassRim, window),
-                        formats = ScanFormats.PRODUCTS,
+                        formats = ScanKind.PRODUCTS,
                     )
                     Row(
                         Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().glass(RoundedCornerShape(18.dp), note.tone, shadow = 4.dp)

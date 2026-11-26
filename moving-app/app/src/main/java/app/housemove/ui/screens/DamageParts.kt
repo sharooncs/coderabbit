@@ -14,7 +14,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.housemove.data.*
@@ -49,7 +48,7 @@ internal fun AppData.damagePhotos(thingId: String): Map<String, List<Photo>> {
 @Composable
 internal fun DamagePanel(thingId: String, title: String, onClose: () -> Unit, modifier: Modifier = Modifier) {
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val data = appData()
     // The photos taken while this is open are this report's.
     val before = remember(thingId) { store.data.value.photosOf(thingId, PhotoKind.DAMAGE).map { it.id }.toSet() }
@@ -74,18 +73,19 @@ internal fun DamagePanel(thingId: String, title: String, onClose: () -> Unit, mo
             val last = fresh.lastOrNull()
             if (last == null) {
                 Column(
-                    Modifier.fillMaxSize().clip(RoundedCornerShape(20.dp)).clickable(onClickLabel = "Photograph the damage") { camera = true },
+                    Modifier.fillMaxSize().clip(RoundedCornerShape(20.dp))
+                        .then(if (LocalPlatform.current.camera) Modifier.clickable(onClickLabel = "Photograph the damage") { camera = true } else Modifier),
                     horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
                 ) {
                     GlassOrb(Icons.Default.PhotoCamera, null, size = 56.dp)
                     Spacer(Modifier.height(8.dp))
-                    Text("Photograph it", style = MaterialTheme.typography.titleMedium, color = Night.MintPale)
+                    Text(if (LocalPlatform.current.camera) "Photograph it" else "No photo yet", style = MaterialTheme.typography.titleMedium, color = Night.MintPale)
                 }
             } else {
                 PhotoThumb(last, Modifier.fillMaxSize().clickable { viewing = last })
                 Row(Modifier.align(Alignment.BottomEnd).padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (fresh.size > 1) GlassChip(countOf(fresh.size, "photo"))
-                    GlassOrb(Icons.Default.PhotoCamera, "Take another photo of the damage", kind = OrbKind.Selected, size = 48.dp) { camera = true }
+                    if (LocalPlatform.current.camera) GlassOrb(Icons.Default.PhotoCamera, "Take another photo of the damage", kind = OrbKind.Selected, size = 48.dp) { camera = true }
                 }
             }
         }
@@ -116,7 +116,7 @@ internal fun DamagePanel(thingId: String, title: String, onClose: () -> Unit, mo
 @Composable
 internal fun DamageSection(thingId: String, title: String, modifier: Modifier = Modifier) {
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val data = appData()
     val all = data.damageOf(thingId, open = false)
     val open = all.filter { !it.cleared }

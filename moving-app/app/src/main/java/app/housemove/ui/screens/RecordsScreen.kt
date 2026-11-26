@@ -1,12 +1,8 @@
 package app.housemove.ui.screens
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyRow
 import app.housemove.ui.icons.filled.PhotoLibrary
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -239,17 +235,12 @@ private fun MdReadingEditor(r: Reading, onDelete: () -> Unit) {
 @Composable
 private fun MdRecordStrip(ownerId: String, name: String) {
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val photos = appData().photosOf(ownerId, PhotoKind.ROOM)
     val done = photos.isNotEmpty()
     var camera by remember { mutableStateOf(false) }
     var viewing by remember { mutableStateOf<Photo?>(null) }
-    val gallery = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { uris ->
-        uris.forEach { uri ->
-            val f = store.newPhotoFile()
-            if (importImage(context, uri, f)) store.addPhoto(ownerId, PhotoKind.ROOM, f)
-        }
-    }
+    val gallery = context.rememberPhotoPicker({ store.newPhotoFile() }, { f -> store.addPhoto(ownerId, PhotoKind.ROOM, f) }, {})
     GlassCard(Modifier.fillMaxWidth(), tone = if (done) GlassTone.Mint else GlassTone.Plain, shape = RoundedCornerShape(22.dp)) {
         Row(Modifier.padding(start = 14.dp, end = 8.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(
@@ -261,11 +252,11 @@ private fun MdRecordStrip(ownerId: String, name: String) {
                 Text(name, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(if (done) countOf(photos.size, "photo") else "No photos yet", style = MaterialTheme.typography.bodySmall, color = Night.TextDim)
             }
-            GlassOrb(Icons.Default.PhotoLibrary, "Add photos of $name from the gallery", size = 40.dp, onClick = {
-                gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-            })
-            Spacer(Modifier.width(4.dp))
-            GlassOrb(Icons.Default.PhotoCamera, "Photograph $name", kind = if (done) OrbKind.Plain else OrbKind.Selected, onClick = { camera = true })
+            if (gallery != null) {
+                GlassOrb(Icons.Default.PhotoLibrary, "Add photos of $name from the gallery", size = 40.dp, onClick = { gallery() })
+                Spacer(Modifier.width(4.dp))
+            }
+            if (context.camera) GlassOrb(Icons.Default.PhotoCamera, "Photograph $name", kind = if (done) OrbKind.Plain else OrbKind.Selected, onClick = { camera = true })
         }
         if (done) {
             LazyRow(contentPadding = PaddingValues(start = 14.dp, end = 14.dp, bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -1,7 +1,5 @@
 package app.housemove.ui.screens
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -15,20 +13,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import app.housemove.data.Action
 import app.housemove.data.Backup
-import app.housemove.pdf.Share
-import app.housemove.pdf.qrBitmap
 import app.housemove.sync.WifiSync
 import app.housemove.ui.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.time.LocalDate
 
 /**
  * Phones meeting, and backups. [code] is a sync code or invite scanned somewhere else in
@@ -38,7 +32,7 @@ import java.time.LocalDate
 fun SyncScreen(code: String? = null) {
     val store = LocalStore.current
     val nav = LocalNav.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val device = deviceInfo()
     val data = appData()
     val scope = rememberCoroutineScope()
@@ -77,28 +71,28 @@ fun SyncScreen(code: String? = null) {
         }
     }
 
-    val saveBackup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
-        if (uri != null) scope.launch {
+    val saveBackup = context.rememberSaveFile("application/zip") { target ->
+        if (target != null) scope.launch {
             working = true
             val error = withContext(Dispatchers.IO) {
                 try {
-                    context.contentResolver.openOutputStream(uri)!!.use { Backup.export(store, it) }
+                    target.open()!!.use { Backup.export(store, it) }
                     null
                 } catch (e: Exception) {
                     e.message ?: "unknown error"
                 }
             }
             working = false
-            if (error == null) store.setDevice { it.copy(lastBackupAt = System.currentTimeMillis()) }
+            if (error == null) store.setDevice { it.copy(lastBackupAt = nowMillis()) }
             say(if (error == null) SyncReport(true, "Backup saved", "") else SyncReport(false, "Backup failed", error))
         }
     }
-    val openBackup = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) scope.launch {
+    val openBackup = context.rememberOpenFile { file ->
+        if (file != null) scope.launch {
             working = true
             val report = withContext(Dispatchers.IO) {
                 try {
-                    val r = context.contentResolver.openInputStream(uri)!!.use { Backup.import(store, it) }
+                    val r = file.open()!!.use { Backup.import(store, it) }
                     SyncReport(true, "Backup merged in", "${r.photos} new photo(s) added.")
                 } catch (e: Exception) {
                     // Includes the Store's own reason when this person may not restore a backup.
@@ -156,7 +150,7 @@ fun SyncScreen(code: String? = null) {
                             // Only a move with a single person lets an unknown phone in by this code; see Joiner.
                             host = WifiSync.host(store, letNewPhonesIn = store.isAlone()) { r ->
                                 scope.launch {
-                                    if (r.listsSynced()) store.setDevice { it.copy(lastSyncAt = System.currentTimeMillis(), lastSyncWith = r.peerName) }
+                                    if (r.listsSynced()) store.setDevice { it.copy(lastSyncAt = nowMillis(), lastSyncWith = r.peerName) }
                                     say(syncReport(r.copy(joinedAs = null), store))
                                 }
                             }
@@ -166,14 +160,14 @@ fun SyncScreen(code: String? = null) {
                         }
                     },
                 )
-                BigAction(Icons.Default.QrCodeScanner, "Scan sync code", onClick = { scanning = true }, primary = false, enabled = !busy)
+                if (context.camera) BigAction(Icons.Default.QrCodeScanner, "Scan sync code", onClick = { scanning = true }, primary = false, enabled = !busy)
             } else {
                 val addresses = remember(h) { addressesNow() }
                 if (addresses.isEmpty()) {
                     Section(tone = GlassTone.Red) { Text(WifiSync.NO_NETWORK) }
                 } else {
                     val code = remember(h) { h.invite(addresses).encode() }
-                    val qr = remember(code) { qrBitmap(code, 640).asImageBitmap() }
+                    val qr = remember(code) { context.qrImage(code, 640) }
                     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Image(
                             qr, contentDescription = "Sync code",
@@ -208,9 +202,10 @@ fun SyncScreen(code: String? = null) {
                             " · one file with everything, ${data.livePhotos.size} photos",
                     )
                 }
-                Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Saving and sharing the file: where the phone can (Android; the iPhone's share sheet waits for step 3).
+                if (saveBackup != null && context.shareFiles) Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     PillButton(
-                        "Save backup", onClick = { saveBackup.launch("housemove-backup-${LocalDate.now()}.zip") },
+                        "Save backup", onClick = { saveBackup("housemove-backup-${isoToday()}.zip") },
                         modifier = Modifier.weight(1f).fillMaxHeight(), icon = Icons.Default.SaveAlt, enabled = !busy,
                     )
                     PillButton(
@@ -220,7 +215,7 @@ fun SyncScreen(code: String? = null) {
                                 working = true
                                 val file = withContext(Dispatchers.IO) {
                                     try {
-                                        Share.outFile(context, "housemove-backup-${LocalDate.now()}.zip").also { f ->
+                                        context.outFile("housemove-backup-${isoToday()}.zip").also { f ->
                                             f.outputStream().use { Backup.export(store, it) }
                                         }
                                     } catch (_: Exception) {
@@ -228,15 +223,15 @@ fun SyncScreen(code: String? = null) {
                                     }
                                 }
                                 working = false
-                                if (file != null) Share.send(context, file, "application/zip") else say(SyncReport(false, "Could not create the backup", ""))
+                                if (file != null) context.share(file, "application/zip") else say(SyncReport(false, "Could not create the backup", ""))
                             }
                         },
                     )
                 }
                 // Restoring is for Organisers; nobody else is shown a button that would only refuse.
-                if (allowed(Action.RESTORE_BACKUP)) {
+                if (allowed(Action.RESTORE_BACKUP) && openBackup != null) {
                     PillButton(
-                        "Restore or merge a backup file", onClick = { openBackup.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) },
+                        "Restore or merge a backup file", onClick = { openBackup(listOf("application/zip", "application/octet-stream", "*/*")) },
                         modifier = Modifier.fillMaxWidth(), icon = Icons.Default.Restore, primary = false, enabled = !busy,
                     )
                 }
@@ -251,7 +246,7 @@ fun SyncScreen(code: String? = null) {
                 Text("A new phone joins with an invite from People. All phones must be on the same version of the app.")
                 Text("A phone with no HouseMove, or an older one, can get this phone's copy: Quick Share sends it without internet.")
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    PillButton("Share the app", onClick = { shareTheApp(context, scope) }, icon = Icons.Default.Share, primary = false)
+                    if (context.shareTheApp != null) PillButton("Share the app", onClick = { shareTheApp(context, scope) }, icon = Icons.Default.Share, primary = false)
                     DownloadCodeButton()
                 }
             }

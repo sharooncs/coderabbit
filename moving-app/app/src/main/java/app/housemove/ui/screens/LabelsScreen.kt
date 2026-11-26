@@ -1,6 +1,5 @@
 package app.housemove.ui.screens
 
-import android.content.Context
 import androidx.compose.foundation.layout.*
 import app.housemove.ui.icons.Icons
 import app.housemove.ui.icons.filled.*
@@ -10,48 +9,26 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.housemove.data.*
 import app.housemove.pdf.HelperCard
 import app.housemove.pdf.LabelSheet
-import app.housemove.pdf.Pdf
-import app.housemove.pdf.Share
 import app.housemove.pdf.TagSheet
 import app.housemove.pdf.labelCode
 import app.housemove.ui.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
-import java.util.Locale
+import app.housemove.data.File
 import kotlin.math.ceil
 
 private const val PDF_MIME = "application/pdf"
 
 /** Countries that print on Letter paper; everywhere else it is A4. */
 private val LETTER_COUNTRIES = setOf("US", "CA", "MX", "PH", "CL", "CO", "VE", "PA", "GT", "SV", "CR", "DO", "PR")
-
-/**
- * Makes the sheet of hang tags. The app draws a PDF; tests put their own in its place,
- * because Android's PDF writer does not exist where they run.
- */
-fun interface TagPrinter {
-    /** [moveTag] goes into each QR code, as on the box labels. */
-    fun make(context: Context, codes: List<String>, sheet: TagSheet, moveTag: String): File
-}
-
-val LocalTagPrinter = staticCompositionLocalOf { TagPrinter { context, codes, sheet, moveTag -> Pdf.hangTags(context, codes, sheet, moveTag = moveTag) } }
-
-/** Makes the Helper card. The app draws a PDF; tests put their own in its place, as for [TagPrinter]. */
-fun interface CardPrinter {
-    fun make(context: Context, data: AppData, paper: HelperCard.Paper): File
-}
-
-val LocalCardPrinter = staticCompositionLocalOf { CardPrinter { context, data, paper -> HelperCard.make(context, data, paper) } }
 
 /**
  * The number the next printed code gets: one after the last made, and after any printed-style
@@ -99,13 +76,13 @@ internal fun AppData.hangTagRun(sheet: TagSheet, first: Int = nextLabelNumber())
 fun LabelsScreen() {
     val store = LocalStore.current
     val nav = LocalNav.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val data = appData()
     val scope = rememberCoroutineScope()
-    val tagPrinter = LocalTagPrinter.current
-    val cardPrinter = LocalCardPrinter.current
+    // The PDFs: Android draws them; where a phone makes none yet (the iPhone, until step 3), the print buttons are left out.
+    val papers = context.papers
 
-    var letter by rememberSaveable { mutableStateOf(Locale.getDefault().country in LETTER_COUNTRIES) }
+    var letter by rememberSaveable { mutableStateOf(context.country() in LETTER_COUNTRIES) }
     var plain by rememberSaveable { mutableStateOf(false) }
     val sheet = when {
         letter && plain -> LabelSheet.LETTER_PLAIN
@@ -145,7 +122,7 @@ fun LabelsScreen() {
             } else {
                 after()
                 try {
-                    if (share) Share.send(context, file, PDF_MIME) else Share.open(context, file, PDF_MIME)
+                    if (share) context.share(file, PDF_MIME) else context.open(file, PDF_MIME)
                 } catch (_: Exception) {
                     toast(context, "The PDF was made, but no app could open it.")
                 }
@@ -185,8 +162,8 @@ fun LabelsScreen() {
                 PrintButtons(
                     enabled = ready && busy == null,
                     busy = busy == "labels",
-                    onPrint = { produce("labels", share = false, after = markPrinted) { Pdf.labels(context, codes, sheet, copies, store.moveTag) } },
-                    onShare = { produce("labels", share = true, after = markPrinted) { Pdf.labels(context, codes, sheet, copies, store.moveTag) } },
+                    onPrint = { produce("labels", share = false, after = markPrinted) { papers!!.labels(codes, sheet, copies, store.moveTag) } },
+                    onShare = { produce("labels", share = true, after = markPrinted) { papers!!.labels(codes, sheet, copies, store.moveTag) } },
                 )
                 if (s != null && s < next) {
                     GlassChip(
@@ -278,8 +255,8 @@ fun LabelsScreen() {
                 PrintButtons(
                     enabled = codes.isNotEmpty() && busy == null,
                     busy = busy == "tags",
-                    onPrint = { produce("tags", share = false, after = markPrinted) { tagPrinter.make(context, codes, tagSheet, store.moveTag) } },
-                    onShare = { produce("tags", share = true, after = markPrinted) { tagPrinter.make(context, codes, tagSheet, store.moveTag) } },
+                    onPrint = { produce("tags", share = false, after = markPrinted) { papers!!.hangTags(codes, tagSheet, store.moveTag) } },
+                    onShare = { produce("tags", share = true, after = markPrinted) { papers!!.hangTags(codes, tagSheet, store.moveTag) } },
                 )
                 if (run.fresh.isNotEmpty() && first < next) {
                     GlassChip(
@@ -307,8 +284,8 @@ fun LabelsScreen() {
                     PrintButtons(
                         enabled = busy == null,
                         busy = busy == "signs",
-                        onPrint = { produce("signs", share = false) { Pdf.doorSigns(context, data, letter) } },
-                        onShare = { produce("signs", share = true) { Pdf.doorSigns(context, data, letter) } },
+                        onPrint = { produce("signs", share = false) { papers!!.doorSigns(data, letter) } },
+                        onShare = { produce("signs", share = true) { papers!!.doorSigns(data, letter) } },
                     )
                 }
             }
@@ -327,8 +304,8 @@ fun LabelsScreen() {
                 PrintButtons(
                     enabled = busy == null,
                     busy = busy == "card",
-                    onPrint = { produce("card", share = false) { cardPrinter.make(context, data, paper) } },
-                    onShare = { produce("card", share = true) { cardPrinter.make(context, data, paper) } },
+                    onPrint = { produce("card", share = false) { papers!!.helperCard(data, paper) } },
+                    onShare = { produce("card", share = true) { papers!!.helperCard(data, paper) } },
                 )
             }
 
@@ -357,5 +334,6 @@ private fun Printout(icon: ImageVector, title: String, sub: String) {
 
 @Composable
 private fun PrintButtons(enabled: Boolean, busy: Boolean, onPrint: () -> Unit, onShare: () -> Unit) {
+    if (LocalPlatform.current.papers == null) return
     FileButtons("Open to print", enabled, onOpen = onPrint, onShare = onShare, openIcon = Icons.Default.Print, busy = busy)
 }

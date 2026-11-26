@@ -22,7 +22,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -106,7 +105,7 @@ private fun AddRoom(home: Home) {
 @Composable
 internal fun RoomNameEditor(room: Room, modifier: Modifier = Modifier) {
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val data = appData()
     // Suggestions come from the name the room had when the editor opened, so they stay put while it changes.
     val first = remember(room.id) { room.name }
@@ -152,7 +151,7 @@ private val DOOR_WIDTHS = listOf(60.0, 70.0, 76.0, 80.0, 90.0)
 @Composable
 private fun RoomDialog(room: Room, onClose: () -> Unit) {
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val data = appData()
     val right = deleteRight(room)
     var confirmDelete by remember { mutableStateOf(false) }

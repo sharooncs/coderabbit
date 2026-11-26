@@ -1,5 +1,6 @@
 package app.housemove.ui
 
+import kotlin.concurrent.Volatile
 import app.housemove.data.*
 
 /*

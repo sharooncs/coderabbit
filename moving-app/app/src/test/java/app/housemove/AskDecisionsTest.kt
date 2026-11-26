@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import app.housemove.data.*
 import app.housemove.pdf.Decisions
+import app.housemove.pdf.drawPage
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Rule

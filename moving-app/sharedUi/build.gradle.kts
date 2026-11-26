@@ -1,10 +1,13 @@
+import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.plugin.KotlinPlatformType
 
 // The screens shared by the Android app and the iPhone app (Compose Multiplatform), step 0e of design/ios-plan.md.
-// It holds the shared look (theme, Outfit fonts, the app's Material icons as source) and the first iPhone build's
-// screens (ui/iphone: join a move from an Android phone, look at it read-only, get fresh data, leave it); the Android
-// app's screens move here in step 2. The Android app does not depend on it yet.
-//   android    the Android library the app will use (step 2); the same androidx Compose as the app's BOM
+// It holds the shared look (theme, Outfit fonts, the app's Material icons as source), what the screens ask of the phone
+// (ui/Platform.kt, which the app implements for Android) and the first iPhone build's screens (ui/iphone: join a move
+// from an Android phone, look at it read-only, get fresh data, leave it). The Android app's screens move here in step 2;
+// the app uses the theme, fonts and icons already.
+//   android    the Android library the app uses; the same androidx Compose as the app's BOM
 //   desktop    a plain JVM, to render the screens to PNG on Linux (desktopTest)
 //   iosArm64, iosSimulatorArm64   a static framework, HouseMoveKit, that Xcode links into the iPhone app
 plugins {
@@ -42,6 +45,21 @@ kotlin {
         }
     }
 
+    // jvmCommonMain holds what Android and the desktop JVM share (java.time and java.io: the calls the screens made on
+    // Android before they were shared), and iosMain what the two iPhone targets share; as in the shared module.
+    @OptIn(ExperimentalKotlinGradlePluginApi::class)
+    applyDefaultHierarchyTemplate {
+        common {
+            group("jvmCommon") {
+                withJvm()
+                withCompilations { it.target.platformType == KotlinPlatformType.androidJvm }
+            }
+            group("ios") {
+                withIos()
+            }
+        }
+    }
+
     sourceSets {
         commonMain.dependencies {
             implementation(project(":shared"))
@@ -75,6 +93,22 @@ kotlin {
 compose.resources {
     packageOfResClass = "app.housemove.ui.res"
     generateResClass = always
+}
+
+// The same as the app had for its screens: the Material and layout APIs they use, and how Compose sees the shared
+// module's data classes (see the file).
+kotlin {
+    compilerOptions {
+        optIn.addAll(
+            "androidx.compose.material3.ExperimentalMaterial3Api",
+            "androidx.compose.foundation.layout.ExperimentalLayoutApi",
+            "androidx.compose.foundation.ExperimentalFoundationApi",
+        )
+    }
+}
+
+composeCompiler {
+    stabilityConfigurationFiles.add(rootProject.layout.projectDirectory.file("compose-stability.conf"))
 }
 
 tasks.named<Test>("desktopTest") {

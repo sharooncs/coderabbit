@@ -354,7 +354,7 @@ data class IsoRoom(val id: String, val name: String, val state: RoomState, val s
 const val ISO_MAX_ROOMS = 12
 
 /** A room's patch of the floor grid, which is 8 wide (x) and 6 deep (y). */
-internal class RoomCell(val room: IsoRoom, val x0: Float, val y0: Float, val x1: Float, val y1: Float) {
+class RoomCell(val room: IsoRoom, val x0: Float, val y0: Float, val x1: Float, val y1: Float) {
     val w get() = x1 - x0
     val d get() = y1 - y0
 }
@@ -368,7 +368,7 @@ private const val MID = 3f
  * rest along the front. A single room has the whole floor. Where both rows have the
  * same few rooms, the front row's walls are shifted so the plan does not look like a grid.
  */
-internal fun layoutRooms(rooms: List<IsoRoom>): List<RoomCell> {
+fun layoutRooms(rooms: List<IsoRoom>): List<RoomCell> {
     val shown = rooms.take(ISO_MAX_ROOMS)
     if (shown.isEmpty()) return emptyList()
     if (shown.size == 1) return listOf(RoomCell(shown[0], 0f, 0f, GRID_W, GRID_D))

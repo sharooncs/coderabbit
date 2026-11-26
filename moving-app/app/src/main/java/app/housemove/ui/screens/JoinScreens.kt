@@ -1,7 +1,5 @@
 package app.housemove.ui.screens
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -16,8 +14,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role as SemanticsRole
 import androidx.compose.ui.semantics.heading
@@ -29,6 +25,7 @@ import app.housemove.data.*
 import app.housemove.sync.WifiSync
 import app.housemove.ui.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -42,7 +39,7 @@ import kotlinx.coroutines.withContext
 fun WelcomeScreen() {
     val moves = LocalMoves.current
     val nav = LocalNav.current
-    val roomy = LocalConfiguration.current.let { it.screenHeightDp / it.fontScale >= 700f }
+    val roomy = screenDp().let { it.screenHeightDp / it.fontScale >= 700f }
     // No top bar: the app's mark and name lead, over the lit house.
     Frame(tab = null, topBar = { Spacer(Modifier.statusBarsPadding().height(12.dp)) }) {
         Column(
@@ -110,7 +107,7 @@ fun JoinScreen(inMove: Boolean) {
     val single = if (moves == null) LocalStore.current else null
     val here = if (inMove) LocalStore.current else null
     val nav = LocalNav.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val state = appState()
     var step by remember { mutableStateOf<JoinStep>(JoinStep.Scanning) }
     var note by remember { mutableStateOf<String?>(null) }
@@ -163,7 +160,7 @@ fun JoinScreen(inMove: Boolean) {
             }
             // The move this phone is now in: the one it joined (Moves opened it), or the one shown on its own.
             val s = moves?.current?.value ?: single!!
-            s.setDevice { it.copy(lastSyncAt = System.currentTimeMillis(), lastSyncWith = r.peerName) }
+            s.setDevice { it.copy(lastSyncAt = nowMillis(), lastSyncWith = r.peerName) }
             val d = s.data.value
             val who = r.joinedAs ?: s.me
             val role = who?.role ?: s.myRole
@@ -360,7 +357,7 @@ fun LostPhoneScreen(inMove: Boolean) {
     val single = if (moves == null) LocalStore.current else null
     val here = if (inMove) LocalStore.current else null
     val nav = LocalNav.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val state = appState()
     var working by remember { mutableStateOf(false) }
     var problem by remember { mutableStateOf<String?>(null) }
@@ -368,7 +365,7 @@ fun LostPhoneScreen(inMove: Boolean) {
     DisposableEffect(Unit) { onDispose { showing[0] = false } }
 
     // A backup file chosen on its own, or the daily backup from the folder it is saved to: [read] opens it (twice).
-    fun restore(read: () -> java.io.InputStream) {
+    fun restore(read: () -> InputStream) {
         working = true
         problem = null
         state.scope.launch(Dispatchers.Main) {
@@ -397,9 +394,9 @@ fun LostPhoneScreen(inMove: Boolean) {
             }
         }
     }
-    val open = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        restore { context.contentResolver.openInputStream(uri) ?: throw IllegalArgumentException(Backup.NOT_A_BACKUP) }
+    val open = context.rememberOpenFile { file ->
+        if (file == null) return@rememberOpenFile
+        restore { file.open() ?: throw IllegalArgumentException(Backup.NOT_A_BACKUP) }
     }
 
     Screen("Lost your phone?") {
@@ -414,9 +411,9 @@ fun LostPhoneScreen(inMove: Boolean) {
             )
             // The folder the daily small backup went to (ApartParts): its newest backup of each move.
             DailyBackupChooser(working, onRestore = { read -> restore(read) })
-            BigAction(
+            if (open != null) BigAction(
                 Icons.Default.FolderOpen, "Choose a backup file", enabled = !working, primary = false,
-                onClick = { open.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) },
+                onClick = { open(listOf("application/zip", "application/octet-stream", "*/*")) },
             )
             problem?.let { SyncReportCard(SyncReport(false, "Could not restore that file", it)) }
             Section {

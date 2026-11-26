@@ -1,6 +1,5 @@
 package app.housemove.ui.screens
 
-import android.net.Uri
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -15,7 +14,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -37,8 +35,10 @@ fun MoreScreen() {
             // two on a narrow screen or with large text, so titles and statuses stay whole.
             val columns = if (tightScreen()) 2 else 3
             val seen = HashSet<String>()
+            // Screens this phone cannot offer yet are left out (unavailableRoutes; none on Android).
+            val unavailable = unavailableRoutes()
             shownPhases(data).forEach { (_, phase) ->
-                val skip = phase.steps.map { it.route }.filter { !seen.add(it) }.toSet()
+                val skip = phase.steps.map { it.route }.filter { !seen.add(it) }.toSet() + unavailable
                 // A phase none of whose screens are for this person is left out, heading and all.
                 if (phase.steps.none { it.route !in skip && it.shownFor(data, device) }) return@forEach
                 Row(Modifier.semantics(mergeDescendants = true) { heading() }, verticalAlignment = Alignment.CenterVertically) {
@@ -72,7 +72,7 @@ private val CURRENCIES = listOf("£", "$", "€", "")
 fun SettingsScreen() {
     val store = LocalStore.current
     val nav = LocalNav.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val data = appData()
     val device = deviceInfo()
     val move = data.move
@@ -367,7 +367,7 @@ fun ScanScreen() {
     fun handle(text: String) {
         if (WifiSync.Invite.parse(text) != null) {
             // A sync code or an invite: the sync screen uses it straight away, so it is not scanned twice.
-            nav.open("sync?code=" + Uri.encode(text.trim()))
+            nav.open("sync?code=" + uriEncode(text.trim()))
             return
         }
         val code = labelCodeOf(text)
@@ -393,7 +393,7 @@ fun ScanScreen() {
         QrScanner(
             onText = { if (unknown == null && notRecorded == null && which == null) handle(it) },
             modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 16.dp).scannerFrame(),
-            formats = ScanFormats.ANY,
+            formats = ScanKind.ANY,
         )
         Row(
             Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = if (typing) 4.dp else 14.dp),

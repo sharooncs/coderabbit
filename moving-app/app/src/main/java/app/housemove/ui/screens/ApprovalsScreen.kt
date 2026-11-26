@@ -19,7 +19,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -45,7 +44,7 @@ fun ApprovalsScreen() {
 @Composable
 private fun Inbox() {
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val data = appData()
     val waiting = data.waitingProposals()
     // Questions are answered by deciding; everything else, requests to delete included, is approved.
@@ -135,7 +134,7 @@ private fun WaitingCard(
     onApprove: () -> Unit,
 ) {
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val data = appData()
     val question = p.isQuestion
     val what = data.describe(p)
@@ -190,7 +189,7 @@ private fun WaitingCard(
 @Composable
 private fun DeclinePanel(p: Proposal, onDone: () -> Unit) {
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     var words by rememberSaveable(p.id) { mutableStateOf("") }
     var typing by rememberSaveable(p.id) { mutableStateOf(false) }
     var spoken by rememberSaveable(p.id) { mutableIntStateOf(0) }
@@ -379,7 +378,7 @@ private fun Mine() {
 private fun OutcomeCard(p: Proposal, me: Person?) {
     val nav = LocalNav.current
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val data = appData()
     val question = p.isQuestion
     GlassCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(26.dp), sheen = p.state == ProposalState.WAITING) {

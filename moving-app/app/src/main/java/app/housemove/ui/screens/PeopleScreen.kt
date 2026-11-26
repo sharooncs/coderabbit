@@ -21,29 +21,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.housemove.data.*
-import app.housemove.pdf.qrBitmap
 import app.housemove.sync.WifiSync
 import app.housemove.ui.*
 import kotlinx.coroutines.launch
-import java.time.Instant
-import java.time.LocalTime
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 
 /** Roles in the order they are offered: the one most people get first. */
 private val ROLE_CHOICES = listOf(Role.HELPER, Role.DECIDER, Role.ORGANISER).map { Choice(it, it.label, it.icon()) }
-
-internal val CLOCK: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
 /**
  * A wide glass pill for the way on from a screen: a glowing ball with a picture, two
@@ -212,7 +202,7 @@ private fun ActivityLine(a: Activity, data: AppData, time: String, modifier: Mod
 fun AddPersonScreen() {
     val store = LocalStore.current
     val nav = LocalNav.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val data = appData()
     var name by rememberSaveable { mutableStateOf("") }
     var role by rememberSaveable { mutableStateOf(Role.HELPER) }
@@ -229,7 +219,7 @@ fun AddPersonScreen() {
         val standIn = role.label + " " + (data.people.count { it.role == role } + 1)
         val letter = data.freeLetter()
         // On a tall phone the person is drawn large and the page sits in the middle; on a short one everything is smaller and scrolls.
-        val roomy = LocalConfiguration.current.let { it.screenHeightDp / it.fontScale >= 700 }
+        val roomy = screenDp().let { it.screenHeightDp / it.fontScale >= 700 }
         Column(
             Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(if (roomy) 16.dp else 12.dp, Alignment.CenterVertically),
@@ -320,7 +310,7 @@ internal class ShownInvite(val text: String, val until: String)
 @Composable
 fun PersonScreen(id: String, showInvite: Boolean = false) {
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val data = appData()
     val device = deviceInfo()
     val scope = rememberCoroutineScope()
@@ -358,7 +348,7 @@ fun PersonScreen(id: String, showInvite: Boolean = false) {
             // An Organiser's or a Decider's phone waits for Right on this phone before anything is sent.
             val h = host ?: WifiSync.host(store, letNewPhonesIn = false, confirmJoins = true) { r ->
                 scope.launch {
-                    if (r.listsSynced()) store.setDevice { it.copy(lastSyncAt = System.currentTimeMillis(), lastSyncWith = r.peerName) }
+                    if (r.listsSynced()) store.setDevice { it.copy(lastSyncAt = nowMillis(), lastSyncWith = r.peerName) }
                     if (r.ok && r.joinedAs?.id == id) {
                         joined = true
                         joinedPlain = plainNote(r).trim()
@@ -368,7 +358,7 @@ fun PersonScreen(id: String, showInvite: Boolean = false) {
                 }
             }.also { host = it }
             when (val made = h.inviteFor(id, addresses)) {
-                is Outcome.Ok -> invite = ShownInvite(made.value.encode(), LocalTime.now().plusMinutes(WifiSync.INVITE_MINUTES.toLong()).format(CLOCK))
+                is Outcome.Ok -> invite = ShownInvite(made.value.encode(), clockIn(WifiSync.INVITE_MINUTES.toLong()))
                 is Outcome.Refused -> problem = made.reason
             }
         } catch (_: Exception) {
@@ -482,7 +472,7 @@ fun PersonScreen(id: String, showInvite: Boolean = false) {
 @Composable
 private fun PhonesOf(p: Person) {
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     var retiring by remember { mutableStateOf<PhoneEntry?>(null) }
     val name = p.shownName()
     Section(if (p.phones.size == 1) "Phone" else "Phones") {
@@ -499,7 +489,7 @@ private fun PhonesOf(p: Person) {
                         when {
                             ph.id == store.phone.id -> "This phone"
                             ph.isRetired -> "Retired" + if (ph.collected) ", its last work taken in" else ""
-                            ph.addedAt > 0 -> "Joined " + fmtDay(Math.floorDiv(ph.addedAt, 86_400_000L))
+                            ph.addedAt > 0 -> "Joined " + fmtDay(ph.addedAt.floorDiv(86_400_000L))
                             else -> "In use"
                         },
                     )
@@ -524,7 +514,7 @@ private fun PhonesOf(p: Person) {
 /** The invite as a code to scan, saying plainly that it works once and for how long. */
 @Composable
 internal fun InviteCard(name: String, isMe: Boolean, invite: ShownInvite, inner: Boolean = false) {
-    val qr = remember(invite.text) { qrBitmap(invite.text, 640).asImageBitmap() }
+    val qr = LocalPlatform.current.let { phone -> remember(invite.text) { phone.qrImage(invite.text, 640) } }
     val body: @Composable () -> Unit = {
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(if (isMe) "Invite for your new phone" else "$name's invite", style = MaterialTheme.typography.titleMedium)
@@ -563,10 +553,9 @@ fun ActivityScreen() {
             EmptyState(Icons.Default.History, "Nothing yet", text = "Sealing, loading, decisions and changes to people show up here.")
             return@Screen
         }
-        val zone = remember { ZoneId.systemDefault() }
         val now = today()
         // One glass panel for each day. The log is short (the newest 100 lines), so a day is built whole.
-        val days = remember(log, zone) { log.groupBy { Instant.ofEpochMilli(it.at).atZone(zone).toLocalDate().toEpochDay() } }
+        val days = remember(log) { log.groupBy { localDayOf(it.at) } }
         LazyColumn(
             Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -590,7 +579,7 @@ fun ActivityScreen() {
                                 else -> null
                             }
                             ActivityLine(
-                                a, data, time = Instant.ofEpochMilli(a.at).atZone(zone).toLocalTime().format(CLOCK),
+                                a, data, time = clockAt(a.at),
                                 onClick = route?.let { r -> { nav.open(r) } },
                             )
                         }

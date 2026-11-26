@@ -1,5 +1,6 @@
 package app.housemove.ui.screens
 
+import kotlin.math.roundToLong
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -228,7 +229,7 @@ fun OverviewScreen() {
     }
 }
 
-private fun oneDecimal(v: Double): String = (Math.round(v * 10) / 10.0).let { if (it == it.toLong().toDouble()) it.toLong().toString() else it.toString() }
+private fun oneDecimal(v: Double): String = ((v * 10).roundToLong() / 10.0).let { if (it == it.toLong().toDouble()) it.toLong().toString() else it.toString() }
 
 /**
  * Rough volume of what leaves each old-home room, the same way the load estimate counts it:
@@ -236,8 +237,8 @@ private fun oneDecimal(v: Double): String = (Math.round(v * 10) / 10.0).let { if
  */
 private fun AppData.loadByRoom(): Map<String?, Double> {
     val out = HashMap<String?, Double>()
-    topBoxes().forEach { out.merge(it.originRoomId, it.volumeM3(), Double::plus) }
-    looseItems().forEach { out.merge(it.originRoomId, it.volumeM3() ?: DEFAULT_ITEM_M3, Double::plus) }
+    topBoxes().forEach { b -> out[b.originRoomId] = out[b.originRoomId]?.plus(b.volumeM3()) ?: b.volumeM3() }
+    looseItems().forEach { x -> (x.volumeM3() ?: DEFAULT_ITEM_M3).let { v -> out[x.originRoomId] = out[x.originRoomId]?.plus(v) ?: v } }
     return out
 }
 

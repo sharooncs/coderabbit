@@ -49,7 +49,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
@@ -272,6 +271,8 @@ internal fun MdMainAction(icon: ImageVector, label: String, onClick: () -> Unit,
 /** The scan button of Load and Unload: the main action while the camera is closed, quieter once it is open. */
 @Composable
 internal fun MdScanAction(scanning: Boolean, label: String, onToggle: () -> Unit) {
+    // Scanning needs the camera: where HouseMove cannot use it yet (the iPhone, until step 3), things are ticked off by tapping.
+    if (!LocalPlatform.current.camera && LocalMdScans.current == null) return
     if (scanning) BigAction(Icons.Default.QrCodeScanner, "Hide the scanner", onToggle, Modifier.padding(horizontal = 16.dp, vertical = 4.dp), primary = false)
     else MdMainAction(Icons.Default.QrCodeScanner, label, onToggle, Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
 }
@@ -288,7 +289,7 @@ internal fun MdIconTab(selected: Boolean, onClick: () -> Unit, label: String, ic
 
 /** Height of the live scanner: about a fifth of the screen, so the result and the list keep most of it. */
 @Composable
-internal fun mdScannerHeight(): Dp = (LocalConfiguration.current.screenHeightDp * 0.22f).dp.coerceIn(130.dp, 200.dp)
+internal fun mdScannerHeight(): Dp = (screenDp().screenHeightDp * 0.22f).dp.coerceIn(130.dp, 200.dp)
 
 /** Something that hands over codes as they are scanned. The app uses the camera; tests provide a fake. */
 fun interface MdScans {

@@ -1,6 +1,5 @@
 package app.housemove.ui
 
-import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,8 +40,6 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.semantics.contentDescription
@@ -121,16 +118,16 @@ fun Person.shownName(): String = name.ifBlank { if (letter.isBlank()) "No name y
 
 /** True on a narrow screen or with large text, where things side by side would break words: stack them instead. */
 @Composable
-fun tightScreen(): Boolean = LocalConfiguration.current.let { it.screenWidthDp / it.fontScale < 380f }
+fun tightScreen(): Boolean = screenDp().let { it.screenWidthDp / it.fontScale < 380f }
 
 /** Shows why the Store refused, and hands back what it saved when it did not. Never fails silently. */
-fun <T> Outcome<T>.orSay(context: Context): T? {
+fun <T> Outcome<T>.orSay(context: Platform): T? {
     if (this is Outcome.Refused) toast(context, reason)
     return valueOrNull()
 }
 
 /** Shows why the Store refused. True when the call went through. */
-fun <T> Outcome<T>.okOrSay(context: Context): Boolean {
+fun <T> Outcome<T>.okOrSay(context: Platform): Boolean {
     if (this is Outcome.Refused) toast(context, reason)
     return ok
 }
@@ -154,7 +151,7 @@ private val PERSON_TINTS = listOf(
 /** The colour that stands for a person, from their letter, so it is the same on every phone. */
 fun personTint(p: Person?): Color {
     val key = p?.letter?.trim()?.firstOrNull()?.uppercaseChar()?.let { it - 'A' } ?: (p?.id?.hashCode() ?: 0)
-    return PERSON_TINTS[Math.floorMod(key, PERSON_TINTS.size)]
+    return PERSON_TINTS[key.mod(PERSON_TINTS.size)]
 }
 
 /** A glass ball in one colour, lit from the upper left like the orbs in Glass.kt. */
@@ -321,7 +318,7 @@ fun WaitingTag(proposal: Proposal, modifier: Modifier = Modifier, compact: Boole
         return
     }
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     Row(
         modifier.glass(RoundedCornerShape(24.dp), shadow = 8.dp).padding(start = 6.dp, top = 6.dp, bottom = 6.dp, end = if (mine) 6.dp else 16.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),

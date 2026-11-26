@@ -22,6 +22,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.navigation.NavHostController
 import app.housemove.data.*
 import app.housemove.pdf.HelperCard
+import app.housemove.pdf.drawPage
 import app.housemove.ui.AppRoot
 import app.housemove.ui.LocalSpeech
 import app.housemove.ui.Speech

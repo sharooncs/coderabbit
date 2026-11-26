@@ -1,16 +1,5 @@
 package app.housemove.ui.screens
 
-import android.Manifest
-import android.content.ActivityNotFoundException
-import android.content.Context
-import android.content.Intent
-import android.content.pm.PackageManager
-import android.net.Uri
-import android.provider.Settings
-import android.speech.RecognizerIntent
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -29,8 +18,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -41,10 +28,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import androidx.core.content.ContextCompat
 import app.housemove.data.*
 import app.housemove.ui.*
-import java.io.File
+import app.housemove.data.File
 
 /*
  * What the item, packing and move-day screens all use, so that the same thing looks and
@@ -70,8 +56,8 @@ import java.io.File
 
 /** "£ 80", "£ 62.50", or "80" when the move has no currency. Pence are shown in full once there are any. */
 internal fun money(currency: String, amount: Double): String {
-    val whole = amount == Math.rint(amount)
-    val number = if (whole) fmtNum(amount) else String.format(java.util.Locale.ROOT, "%.2f", amount)
+    val whole = amount == kotlin.math.round(amount)
+    val number = if (whole) fmtNum(amount) else decimals(amount, 2)
     return (currency.trim() + " " + number).trim()
 }
 
@@ -102,13 +88,13 @@ internal fun AppData.carriedCounts(): Map<String, Int> {
     for (b in live) {
         val p = parentOf(b) ?: continue
         outer[b.id] = p.id
-        out.merge(p.id, 1, Int::plus)
+        out[p.id] = (out[p.id] ?: 0) + 1
     }
     val ids = live.map { it.id }.toSet()
     for (i in liveItems) {
         val b = i.boxId?.takeIf { it in ids } ?: continue
-        out.merge(b, 1, Int::plus)
-        outer[b]?.let { out.merge(it, 1, Int::plus) }
+        out[b] = (out[b] ?: 0) + 1
+        outer[b]?.let { out[it] = (out[it] ?: 0) + 1 }
     }
     return out
 }
@@ -125,7 +111,7 @@ internal fun InsideChip(n: Int, modifier: Modifier = Modifier) {
  * below which that happens.
  */
 @Composable
-internal fun narrowScreen(limit: Float = 340f): Boolean = LocalConfiguration.current.let { it.screenWidthDp / it.fontScale < limit }
+internal fun narrowScreen(limit: Float = 340f): Boolean = screenDp().let { it.screenWidthDp / it.fontScale < limit }
 
 // ---- saying it, with the keyboard to fall back on -------------------------------------------
 
@@ -133,8 +119,7 @@ internal fun narrowScreen(limit: Float = 340f): Boolean = LocalConfiguration.cur
 @Composable
 internal fun canSpeak(): Boolean {
     if (LocalSpeech.current != null) return true
-    val context = LocalContext.current
-    return remember { Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).resolveActivity(context.packageManager) != null }
+    return LocalPlatform.current.canSpeak()
 }
 
 /**
@@ -225,19 +210,12 @@ internal fun QuickAdd(
 @Composable
 internal fun PhotoCamera(hint: String, onPhoto: (File) -> Unit, onClose: () -> Unit) {
     val store = LocalStore.current
-    val context = LocalContext.current
-    var granted by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) }
-    val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
-    val gallery = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { uris ->
-        uris.forEach { uri ->
-            val f = store.newPhotoFile()
-            if (importImage(context, uri, f)) onPhoto(f)
-        }
-        if (uris.isNotEmpty()) onClose()
-    }
-    LaunchedEffect(Unit) { if (!granted) ask.launch(Manifest.permission.CAMERA) }
+    val context = LocalPlatform.current
+    val permission = context.rememberCameraPermission()
+    val gallery = context.rememberPhotoPicker({ store.newPhotoFile() }, onPhoto) { chosen -> if (chosen > 0) onClose() }
+    LaunchedEffect(Unit) { if (!permission.granted) permission.ask() }
     // The phone asks once by itself. Until the answer is yes, this is what is behind its question.
-    if (granted) {
+    if (permission.granted) {
         CameraDialog(hint = hint, newFile = { store.newPhotoFile() }, onPhoto = onPhoto, onClose = onClose)
         return
     }
@@ -256,22 +234,13 @@ internal fun PhotoCamera(hint: String, onPhoto: (File) -> Unit, onClose: () -> U
                 "You can still add photos you have already taken. To use the camera here, allow it for HouseMove in the phone's settings.",
                 style = MaterialTheme.typography.bodyMedium, color = Night.TextSoft,
             )
-            BigAction(Icons.Default.PhotoLibrary, "Choose photos instead", onClick = {
-                gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-            })
+            if (gallery != null) BigAction(Icons.Default.PhotoLibrary, "Choose photos instead", onClick = { gallery() })
             BigAction(Icons.Default.Settings, "Open the phone's settings", primary = false, onClick = {
-                try {
-                    context.startActivity(
-                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null))
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    )
-                } catch (_: ActivityNotFoundException) {
-                    toast(context, "Open Settings, then Apps, HouseMove, Permissions.")
-                }
+                if (!context.openAppSettings()) toast(context, "Open Settings, then Apps, HouseMove, Permissions.")
                 onClose()
             })
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                RowButton("Ask again", onClick = { ask.launch(Manifest.permission.CAMERA) }, modifier = Modifier.weight(1f), forward = false)
+                RowButton("Ask again", onClick = { permission.ask() }, modifier = Modifier.weight(1f), forward = false)
                 RowButton("Not now", onClick = onClose, modifier = Modifier.weight(1f), forward = false)
             }
         }
@@ -362,7 +331,7 @@ internal fun DeleteOrAsk(
 @Composable
 private fun AskToDelete(targetId: String, why: String, modifier: Modifier = Modifier) {
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     var typing by rememberSaveable(targetId) { mutableStateOf(false) }
     fun ask(note: String = "") {
         if (store.askToDelete(targetId, note).okOrSay(context)) toast(context, "Asked. An Organiser decides.")
@@ -716,7 +685,7 @@ internal fun AppData.proposalWords(p: Proposal): String = proposalText(p, amount
 @Composable
 internal fun ProposalReview(p: Proposal, data: AppData, modifier: Modifier = Modifier, what: String? = data.proposalText(p)) {
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     // A question is answered by deciding; a request to delete is approved or declined like any suggestion.
     val question = p.isQuestion
     val (title, value) = waitingLines(p, data, store.me?.id, what)
@@ -782,21 +751,20 @@ private const val SEEN_KEY = "seen"
  * suggestion is shown, with its reason, until they tap "OK"; this is where that tap is
  * remembered. It is kept on the phone only: it is about what this person has seen.
  */
-internal class SeenAnswers(private val context: Context) {
-    private val prefs get() = context.getSharedPreferences(SEEN_PREFS, Context.MODE_PRIVATE)
-    var ids by mutableStateOf<Set<String>>(prefs.getStringSet(SEEN_KEY, emptySet())?.toSet() ?: emptySet())
+internal class SeenAnswers(private val context: Platform) {
+    var ids by mutableStateOf<Set<String>>(context.readSet(SEEN_PREFS, SEEN_KEY))
         private set
 
     fun mark(id: String) {
         // Only the latest few hundred are worth keeping: older answers are long read.
         ids = (ids + id).toList().takeLast(400).toSet()
-        prefs.edit().putStringSet(SEEN_KEY, ids).apply()
+        context.writeSet(SEEN_PREFS, SEEN_KEY, ids)
     }
 }
 
 @Composable
 internal fun rememberSeenAnswers(): SeenAnswers {
-    val context = LocalContext.current.applicationContext
+    val context = LocalPlatform.current
     return remember(context) { SeenAnswers(context) }
 }
 

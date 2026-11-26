@@ -25,7 +25,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.VectorPath
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -80,7 +79,7 @@ private const val USUAL_KEPT = 3
 fun BoxScreen(id: String) {
     val store = LocalStore.current
     val nav = LocalNav.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val data = appData()
     deviceInfo() // whose phone this is decides whether deleting, or asking for it, is offered
     val box = data.box(id)
@@ -208,7 +207,7 @@ fun BoxScreen(id: String) {
                     SpeakButton("What is in the $word?", contentDescription = "Say what's inside", size = 40.dp) { said ->
                         addLines(*contentsLines(said).map { l -> l.replaceFirstChar(Char::uppercase) }.toTypedArray())
                     }
-                    GlassOrb(Icons.Default.QrCodeScanner, "Scan barcodes of books and products", size = 40.dp) { scanIn = true }
+                    if (LocalPlatform.current.camera) GlassOrb(Icons.Default.QrCodeScanner, "Scan barcodes of books and products", size = 40.dp) { scanIn = true }
                     GlassOrb(Icons.Default.Edit, "Edit what's inside", kind = if (typing) OrbKind.Selected else OrbKind.Plain, size = 40.dp) { typing = !typing }
                 }
                 // What is in it already, ticked; then the usual things for this category, one tap each.
@@ -240,14 +239,14 @@ fun BoxScreen(id: String) {
                     Icon(Pic.Item, contentDescription = null, tint = Night.Mint)
                     Spacer(Modifier.width(14.dp))
                     Text("Put an item in", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                    Icon(Icons.Default.QrCodeScanner, contentDescription = null, tint = Night.TextDim, modifier = Modifier.size(20.dp))
+                    Icon(if (LocalPlatform.current.camera) Icons.Default.QrCodeScanner else Icons.Default.Keyboard, contentDescription = null, tint = Night.TextDim, modifier = Modifier.size(20.dp))
                 }
                 itemTrouble?.let { ContainerRefusal(it) { itemTrouble = null } }
             } else if (items.isNotEmpty() || anyLoose) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         ListHeading(if (items.isEmpty()) "Items inside" else "Items inside (${items.size})", Modifier.weight(1f))
-                        GlassOrb(Icons.Default.QrCodeScanner, "Scan an item's label to put it in", size = 40.dp) { scanItem = true }
+                        if (LocalPlatform.current.camera) GlassOrb(Icons.Default.QrCodeScanner, "Scan an item's label to put it in", size = 40.dp) { scanItem = true }
                     }
                     items.forEach { i ->
                         ContainerItemRow(i, onOpen = { nav.open("item/${i.id}") }) {
@@ -295,7 +294,7 @@ fun BoxScreen(id: String) {
                         Icon(Icons.Default.MoveToInbox, contentDescription = null, tint = Night.Mint)
                         Spacer(Modifier.width(14.dp))
                         Text("Put in another container", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                        Icon(Icons.Default.QrCodeScanner, contentDescription = null, tint = Night.TextDim, modifier = Modifier.size(20.dp))
+                        Icon(if (LocalPlatform.current.camera) Icons.Default.QrCodeScanner else Icons.Default.Keyboard, contentDescription = null, tint = Night.TextDim, modifier = Modifier.size(20.dp))
                     }
                 }
                 if (parent == null) nestTrouble?.let { ContainerRefusal(it) { nestTrouble = null } }

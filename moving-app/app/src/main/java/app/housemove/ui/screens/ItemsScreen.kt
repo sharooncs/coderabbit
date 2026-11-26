@@ -16,7 +16,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.housemove.data.*
@@ -86,7 +85,8 @@ fun ItemsScreen() {
                 EmptyState(
                     Pic.Camera, "Nothing listed yet",
                     text = "Go room by room and photograph each big thing.",
-                    action = "Start the walk-through", onAction = { nav.open("walk") },
+                    // The walk-through needs the camera (none on the iPhone until step 3).
+                    action = "Start the walk-through".takeIf { "walk" !in unavailableRoutes() }, onAction = { nav.open("walk") },
                 )
             }
         } else LazyColumn(
@@ -95,7 +95,9 @@ fun ItemsScreen() {
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item(key = "shortcuts") {
-                val tiles = shortcuts(data, store.can(Action.SUGGEST), store.can(Action.APPROVE))
+                // Less the screens this phone cannot offer yet (the walk-through needs the camera).
+                val hidden = unavailableRoutes()
+                val tiles = shortcuts(data, store.can(Action.SUGGEST), store.can(Action.APPROVE)).filter { it.route !in hidden }
                 if (narrowScreen(300f)) {
                     // A small phone with large text: tiles side by side would break their names in two, so they
                     // are rows of one panel, which is also shorter.

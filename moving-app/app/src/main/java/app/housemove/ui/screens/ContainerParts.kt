@@ -332,14 +332,14 @@ internal fun ContainerPhoto(ownerId: String, kind: PhotoKind, emptyText: String,
         if (first == null) {
             Column(
                 Modifier.fillMaxSize().glass(shape, shadow = 4.dp)
-                    .clickable(role = Role.Button) { camera = true }
-                    .semantics { contentDescription = "Take a photo of what's inside" }
+                    // Where the camera cannot be used yet (the iPhone, until step 3), there is nothing to tap.
+                    .then(if (LocalPlatform.current.camera) Modifier.clickable(role = Role.Button) { camera = true }.semantics { contentDescription = "Take a photo of what's inside" } else Modifier)
                     .padding(6.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
             ) {
                 Icon(Pic.Camera, contentDescription = null, tint = Night.Mint, modifier = Modifier.size(30.dp))
-                Text(emptyText, style = MaterialTheme.typography.labelMedium, color = Night.MintPale, textAlign = TextAlign.Center, maxLines = 2)
+                Text(if (LocalPlatform.current.camera) emptyText else "No photo yet", style = MaterialTheme.typography.labelMedium, color = Night.MintPale, textAlign = TextAlign.Center, maxLines = 2)
             }
         } else {
             PhotoThumb(first, Modifier.fillMaxSize().clip(shape).border(1.dp, Night.GlassRim, shape).clickable { viewing = first })
@@ -351,7 +351,7 @@ internal fun ContainerPhoto(ownerId: String, kind: PhotoKind, emptyText: String,
                 )
             }
             // A full 48dp to touch in the corner of the photo, though the disc drawn in it is smaller.
-            Box(
+            if (LocalPlatform.current.camera) Box(
                 Modifier.align(Alignment.BottomEnd).size(48.dp).clip(CircleShape)
                     .clickable(role = Role.Button) { camera = true }
                     .semantics { contentDescription = "Take another photo of what's inside" },

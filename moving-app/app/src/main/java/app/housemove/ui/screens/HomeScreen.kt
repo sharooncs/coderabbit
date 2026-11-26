@@ -31,7 +31,6 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -166,12 +165,16 @@ fun HomeScreen() {
     val role = if (data.move.setupDone) homeRole(data, device) else MoveRole.ORGANISER
 
     val packing = data.uses(Part.BOXES)
-    val next = nextStep(data, suggests = !data.can(device, Action.DECIDE) && data.can(device, Action.SUGGEST))
+    val hidden = unavailableRoutes()
+    val next = nextStep(data, suggests = !data.can(device, Action.DECIDE) && data.can(device, Action.SUGGEST)).let {
+        // The walk-through needs the camera: where HouseMove cannot use it yet (the iPhone, until step 3), things are added on Items.
+        if (it.route in hidden) NextStep("List the big things, room by room.", "Add things", "items", Pic.Item) else it
+    }
     // The one big button: packing a box whenever boxes are in use, otherwise the next step.
     val action = if (packing) DockAction("Pack a box", Icons.Outlined.Inventory2) { nav.open("pack") }
     else DockAction(next.button, next.icon) { nav.open(next.route) }
     // On a short screen the tall dock would leave too little room, so the button moves into the page.
-    val roomy = LocalConfiguration.current.screenHeightDp >= 700
+    val roomy = screenDp().screenHeightDp >= 700
 
     Frame(tab = "home", topBar = { HomeTopBar(device) }, dockAction = if (roomy) action else null) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -220,6 +223,8 @@ private fun RoleDetails(data: AppData, device: DeviceInfo, inPageAction: DockAct
 @Composable
 private fun HomeHero(data: AppData, device: DeviceInfo, packing: Boolean, modifier: Modifier = Modifier) {
     val nav = LocalNav.current
+    // A key number that leads to a screen this phone cannot offer yet (the walk-through, on the iPhone) leads nowhere.
+    val unavailable = unavailableRoutes()
     val store = LocalStore.current
     val move = data.move
     Column(modifier) {
@@ -253,8 +258,8 @@ private fun HomeHero(data: AppData, device: DeviceInfo, packing: Boolean, modifi
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             // On a narrow screen, or with large text, the little orbs go so the words fit.
-            val tight = LocalConfiguration.current.let { it.screenWidthDp / it.fontScale < 340f }
-            keyNumbers(data, device).forEach { k -> KeyNumberView(k, !tight, Modifier.weight(1f, fill = false)) { nav.open(k.route) } }
+            val tight = screenDp().let { it.screenWidthDp / it.fontScale < 340f }
+            keyNumbers(data, device).forEach { k -> KeyNumberView(k, !tight, Modifier.weight(1f, fill = false)) { if (k.route !in unavailable) nav.open(k.route) } }
         }
 
         val oldRooms = data.roomsOf(Home.ORIGIN)
@@ -438,7 +443,7 @@ private fun count(n: Int, one: String) = "$n $one" + if (n == 1) "" else "s"
  * their own suggestions and questions stand, while any wait or were answered in the last
  * few days. Null on a move where nobody has suggested anything.
  */
-internal fun suggestionStrip(data: AppData, device: DeviceInfo, now: Long = System.currentTimeMillis()): SuggestionStrip? {
+internal fun suggestionStrip(data: AppData, device: DeviceInfo, now: Long = nowMillis()): SuggestionStrip? {
     if (data.can(device, Action.APPROVE)) {
         val waiting = data.waitingProposals()
         if (waiting.isEmpty()) return null
@@ -551,7 +556,7 @@ private fun HomeTopBar(device: DeviceInfo) {
         ) {
             TopAction(Icons.Default.Search, "Find anything") { nav.open("search") }
             Box(Modifier.weight(1f).padding(horizontal = 8.dp), contentAlignment = Alignment.Center) { MoveSwitch() }
-            TopAction(Icons.Default.QrCodeScanner, "Scan a label") { nav.open("scan") }
+            if (LocalPlatform.current.camera) TopAction(Icons.Default.QrCodeScanner, "Scan a label") { nav.open("scan") }
             Spacer(Modifier.width(8.dp))
             val initial = device.name.trim().firstOrNull()?.uppercaseChar()
             // Sized to the orb, which does not grow with the phone's text size.
@@ -587,7 +592,7 @@ private fun KeyNumberView(k: KeyNumber, withOrb: Boolean, modifier: Modifier = M
     }
 }
 
-fun agoText(millis: Long, now: Long = System.currentTimeMillis()): String {
+fun agoText(millis: Long, now: Long = nowMillis()): String {
     val mins = ((now - millis) / 60_000).coerceAtLeast(0)
     return when {
         mins < 1 -> "just now"

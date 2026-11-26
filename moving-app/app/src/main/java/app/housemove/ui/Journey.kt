@@ -423,7 +423,9 @@ fun JourneyStrip(data: AppData, selected: Int, current: Int, onSelect: (Int) -> 
 @Composable
 fun PhaseTiles(phase: JourneyPhase, data: AppData, device: DeviceInfo, modifier: Modifier = Modifier, columns: Int = 2, skipRoutes: Set<String> = emptySet()) {
     val nav = LocalNav.current
-    TileGrid(phase.steps.filter { it.route !in skipRoutes && it.shownFor(data, device) }, modifier, columns) { step, m ->
+    // Screens this phone cannot offer yet are left out too (unavailableRoutes; none on Android).
+    val skip = skipRoutes + unavailableRoutes()
+    TileGrid(phase.steps.filter { it.route !in skip && it.shownFor(data, device) }, modifier, columns) { step, m ->
         Tile(
             step.icon, step.title(data, device), onClick = { nav.open(step.route) }, modifier = m,
             status = step.status(data, device), done = step.done(data), alert = step.alerts(data, device), waiting = step.waiting(data, device),

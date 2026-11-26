@@ -452,7 +452,7 @@ fun BigAction(
 }
 
 /** The body of a primary button: a glossy mint pill with a soft mint glow beneath it. */
-internal fun Modifier.mintPill(): Modifier = this
+fun Modifier.mintPill(): Modifier = this
     .drawBehind {
         val r = CornerRadius(size.height / 2f)
         // The glow, in widening faint layers.

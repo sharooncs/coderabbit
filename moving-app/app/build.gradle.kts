@@ -93,7 +93,7 @@ kotlin {
 
 // Keeps Compose's view of the shared module's data classes as it was before the split (see the file).
 composeCompiler {
-    stabilityConfigurationFiles.add(layout.projectDirectory.file("compose-stability.conf"))
+    stabilityConfigurationFiles.add(rootProject.layout.projectDirectory.file("compose-stability.conf"))
 }
 
 dependencies {

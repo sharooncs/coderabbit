@@ -1,5 +1,7 @@
 package app.housemove.ui.screens
 
+import app.housemove.ui.nowMillis
+import app.housemove.ui.LocalPlatform
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -24,7 +26,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -44,6 +45,7 @@ import app.housemove.ui.line
 import app.housemove.ui.shareTheApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -137,7 +139,7 @@ fun plainNote(r: WifiSync.Result): String = if (r.plain && r.listsSynced()) "\n"
 @Composable
 fun SyncReportCard(report: SyncReport, modifier: Modifier = Modifier) {
     val tone = if (report.ok) GlassTone.Mint else GlassTone.Red
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val scope = rememberCoroutineScope()
     GlassCard(modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite }, tone = tone, shape = RoundedCornerShape(26.dp)) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -155,7 +157,7 @@ fun SyncReportCard(report: SyncReport, modifier: Modifier = Modifier) {
             }
         }
         if (report.shareApp) {
-            PillButton(
+            if (context.shareTheApp != null) PillButton(
                 "Share the app", onClick = { shareTheApp(context, scope) }, icon = Icons.Default.Share,
                 modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
             )
@@ -183,7 +185,7 @@ class Joiner(private val store: Store, private val scope: CoroutineScope) {
         report = null
         scope.launch {
             val r = withContext(Dispatchers.IO) { WifiSync.join(store, invite, letNewPhonesIn = store.isAlone()) }
-            if (r.listsSynced()) store.setDevice { it.copy(lastSyncAt = System.currentTimeMillis(), lastSyncWith = r.peerName) }
+            if (r.listsSynced()) store.setDevice { it.copy(lastSyncAt = nowMillis(), lastSyncWith = r.peerName) }
             report = syncReport(r, store)
             busy = false
         }

@@ -33,7 +33,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -46,9 +45,6 @@ import app.housemove.data.fmtNum
 import app.housemove.data.movables
 import app.housemove.data.movingItems
 import app.housemove.data.uses
-import app.housemove.pdf.Csv
-import app.housemove.pdf.Pdf
-import app.housemove.pdf.Share
 import app.housemove.ui.LocalNav
 import app.housemove.ui.LocalStore
 import app.housemove.ui.PhotoThumb
@@ -63,9 +59,10 @@ import app.housemove.ui.deviceInfo
 import app.housemove.ui.open
 import app.housemove.ui.toast
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
+import app.housemove.data.File
 import app.housemove.data.*
 import app.housemove.ui.*
 
@@ -74,7 +71,7 @@ import app.housemove.ui.*
 fun ReportsScreen() {
     val store = LocalStore.current
     val nav = LocalNav.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val scope = rememberCoroutineScope()
     val data = appData()
     var busy by remember { mutableStateOf(false) }
@@ -106,8 +103,8 @@ fun ReportsScreen() {
             busy = false
             when {
                 file == null -> toast(context, "Could not create the file. Please try again.")
-                open -> Share.open(context, file, mime)
-                else -> Share.send(context, file, mime)
+                open -> context.open(file, mime)
+                else -> context.share(file, mime)
             }
         }
     }
@@ -133,22 +130,22 @@ fun ReportsScreen() {
             MdReport(
                 Icons.Default.PictureAsPdf, "Inventory", "Every item and box, with its room and size.",
                 enabled = !busy,
-                onOpen = { produce("application/pdf", open = true) { Pdf.inventory(context, data) } },
-                onShare = { produce("application/pdf", open = false) { Pdf.inventory(context, data) } },
+                onOpen = { produce("application/pdf", open = true) { context.papers!!.inventory(data) } },
+                onShare = { produce("application/pdf", open = false) { context.papers!!.inventory(data) } },
             )
             MdReport(
                 Icons.Default.TableChart, "Inventory spreadsheet", "The same list for Excel or Google Sheets.",
                 enabled = !busy,
                 onOpen = null,
-                onShare = { produce("text/csv", open = false) { Csv.inventory(context, data) } },
+                onShare = { produce("text/csv", open = false) { context.papers!!.inventoryCsv(data) } },
             )
             MdReport(
                 Pic.Damage, "Damage report",
                 if (damaged.isEmpty()) "Nothing is marked as damaged."
                 else "${damaged.size} damaged, with before and after photos.",
                 enabled = !busy,
-                onOpen = { produce("application/pdf", open = true) { Pdf.damageReport(context, store) } },
-                onShare = { produce("application/pdf", open = false) { Pdf.damageReport(context, store) } },
+                onOpen = { produce("application/pdf", open = true) { context.papers!!.damageReport(store) } },
+                onShare = { produce("application/pdf", open = false) { context.papers!!.damageReport(store) } },
                 // Led by a real photo of the damage when there is one.
                 picture = if (damagePhoto == null) null else {
                     { PhotoThumb(damagePhoto, Modifier.size(56.dp).clip(RoundedCornerShape(16.dp))) }
@@ -221,6 +218,8 @@ private fun MdReport(
     onShare: () -> Unit,
     picture: (@Composable () -> Unit)? = null,
 ) {
+    // The reports are files for other apps: where a phone makes none yet (the iPhone, until step 3), they are left out.
+    if (LocalPlatform.current.papers == null) return
     GlassCard(Modifier.fillMaxWidth(), sheen = true) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {

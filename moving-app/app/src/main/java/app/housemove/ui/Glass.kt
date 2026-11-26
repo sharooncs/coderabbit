@@ -1,5 +1,6 @@
 package app.housemove.ui
 
+import kotlin.math.pow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -142,7 +143,7 @@ internal fun DrawScope.softShadow(outline: Outline, radius: Float, dy: Float = r
     val corner = rr.topLeftCornerRadius.x
     val steps = 7
     // Per-layer alpha so the layers together reach [strength] next to the shape.
-    val a = 1f - Math.pow(1.0 - strength, 1.0 / steps).toFloat()
+    val a = 1f - (1.0 - strength).pow(1.0 / steps).toFloat()
     clipPath(Path().apply { addRoundRect(rr) }, ClipOp.Difference) {
         for (i in steps downTo 1) {
             val grow = radius * i / steps
@@ -321,7 +322,7 @@ fun OrbKind.content(): Color = when (this) {
  * [halo] is what the ball throws around itself (shadow or glow); [ring] is the wide
  * faint ring round a primary ball, for the one big button of a screen.
  */
-internal fun DrawScope.drawOrb(kind: OrbKind, halo: Boolean = true, ring: Boolean = true) {
+fun DrawScope.drawOrb(kind: OrbKind, halo: Boolean = true, ring: Boolean = true) {
     val d = size.minDimension
     val r = d / 2f
     val c = Offset(size.width / 2f, size.height / 2f)
@@ -558,4 +559,4 @@ fun Modifier.bottomBar(tone: GlassTone = GlassTone.Plain): Modifier = drawBehind
 }
 
 /** Dims a control that cannot be used right now. */
-internal fun Modifier.enabledLook(enabled: Boolean): Modifier = if (enabled) this else alpha(0.45f)
+fun Modifier.enabledLook(enabled: Boolean): Modifier = if (enabled) this else alpha(0.45f)

@@ -11,14 +11,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import androidx.savedstate.read
 import app.housemove.data.Home
 import app.housemove.data.Moves
 import app.housemove.data.Store
@@ -29,11 +31,11 @@ import app.housemove.ui.screens.*
 /**
  * The app on a phone: the move used last, or, on a phone with no move yet, the first-open
  * screens ("Start a new move", "Join a move"). Opening another move replaces every screen
- * with that move's, starting at its Home.
+ * with that move's, starting at its Home. The phone's own root gives [LocalPlatform] (Android's
+ * AppRoot, in the app).
  */
 @Composable
-fun AppRoot(moves: Moves, onNav: (NavHostController) -> Unit = {}, autoSync: AutoSync? = null, mailbox: MailboxSync? = null) {
-    SystemBars()
+fun MovesRoot(moves: Moves, onNav: (NavHostController) -> Unit = {}, autoSync: AutoSync? = null, mailbox: MailboxSync? = null) {
     HouseMoveTheme {
         val scope = rememberCoroutineScope()
         val state = remember { AppState(scope) }
@@ -41,7 +43,7 @@ fun AppRoot(moves: Moves, onNav: (NavHostController) -> Unit = {}, autoSync: Aut
         CompositionLocalProvider(LocalMoves provides moves, LocalAppState provides state, LocalAutoSync provides autoSync, LocalMailbox provides mailbox) {
             val store = current
             if (store == null) FirstOpen(onNav)
-            else key(store) { AppRoot(store, onNav = onNav) }
+            else key(store) { MoveRoot(store, onNav = onNav) }
             // An update file opened from another app, and what the phone says after letting go of a move by itself.
             IncomingUpdates(moves)
             Farewells(moves)
@@ -70,6 +72,13 @@ private fun FirstOpen(onNav: (NavHostController) -> Unit) {
     LaunchedEffect(nav) { state.takeRoute()?.takeIf { it in FIRST_OPEN_ROUTES }?.let { nav.navigate(it) } }
 }
 
+/**
+ * A phone's own screen for syncing and backup in place of [SyncScreen], where it has one: the iPhone's "Get fresh data"
+ * (iphone/FreshScreen.kt), with its sync code, syncing by itself, the internet mailbox and leaving the move. It is given
+ * the code that came with the route, if any.
+ */
+val LocalSyncScreen = staticCompositionLocalOf<(@Composable (code: String?) -> Unit)?> { null }
+
 private val FIRST_OPEN_ROUTES = setOf("welcome", "join", "lost")
 
 /** The first-open screens. They are in every move's screens too, so a phone with moves can join or restore another. */
@@ -82,11 +91,12 @@ private fun NavGraphBuilder.firstOpenRoutes(inMove: Boolean) {
 /**
  * One move's screens. [startRoute] is where they open; by default Home, or the first-run
  * wizard for a move that is not set up yet. Shown on its own (in tests), it works on that
- * one move; inside [AppRoot] for the phone's moves, the screens for moves use those.
+ * one move; inside [MovesRoot] for the phone's moves, the screens for moves use those. The phone's
+ * own root gives [LocalPlatform] (Android's AppRoot; the iPhone's HouseMoveApp, which also gives
+ * [LocalSyncScreen]).
  */
 @Composable
-fun AppRoot(store: Store, startRoute: String? = null, onNav: (NavHostController) -> Unit = {}) {
-    SystemBars()
+fun MoveRoot(store: Store, startRoute: String? = null, onNav: (NavHostController) -> Unit = {}) {
     HouseMoveTheme {
         val nav = rememberNavController()
         LaunchedEffect(nav) { onNav(nav) }
@@ -110,7 +120,9 @@ fun AppRoot(store: Store, startRoute: String? = null, onNav: (NavHostController)
                     composable("rooms") { RoomsScreen() }
                     // A sync code or invite scanned elsewhere in the app arrives as "sync?code=…" and is used at once.
                     composable("sync?code={code}", arguments = listOf(navArgument("code") { type = NavType.StringType; nullable = true; defaultValue = null })) {
-                        SyncScreen(it.arguments?.getString("code"))
+                        val code = it.arguments?.read { getStringOrNull("code") }
+                        val own = LocalSyncScreen.current
+                        if (own != null) own(code) else SyncScreen(code)
                     }
                     composable("people") { PeopleScreen() }
                     composable("people/add") { AddPersonScreen() }
@@ -118,7 +130,7 @@ fun AppRoot(store: Store, startRoute: String? = null, onNav: (NavHostController)
                     composable(
                         "person/{id}?invite={invite}",
                         arguments = listOf(navArgument("id") { type = NavType.StringType }, navArgument("invite") { type = NavType.BoolType; defaultValue = false }),
-                    ) { PersonScreen(it.arguments?.getString("id") ?: "", it.arguments?.getBoolean("invite") == true) }
+                    ) { PersonScreen(it.arguments?.read { getStringOrNull("id") } ?: "", it.arguments?.read { getBooleanOrNull("invite") } == true) }
                     composable("approvals") { ApprovalsScreen() }
                     composable("activity") { ActivityScreen() }
                     composable("settings") { SettingsScreen() }
@@ -129,7 +141,7 @@ fun AppRoot(store: Store, startRoute: String? = null, onNav: (NavHostController)
                     firstOpenRoutes(inMove = true)
 
                     composable("items") { ItemsScreen() }
-                    composable("item/{id}") { ItemScreen(it.arguments?.getString("id") ?: "") }
+                    composable("item/{id}") { ItemScreen(it.arguments?.read { getStringOrNull("id") } ?: "") }
                     composable("walk") { WalkScreen() }
                     composable("triage") { TriageScreen() }
                     composable("plan") { PlanScreen() }
@@ -137,7 +149,7 @@ fun AppRoot(store: Store, startRoute: String? = null, onNav: (NavHostController)
                     composable("electronics") { ElectronicsScreen() }
 
                     composable("boxes") { BoxesScreen() }
-                    composable("box/{id}") { BoxScreen(it.arguments?.getString("id") ?: "") }
+                    composable("box/{id}") { BoxScreen(it.arguments?.read { getStringOrNull("id") } ?: "") }
                     composable("pack") { PackScreen() }
                     composable("labels") { LabelsScreen() }
                     composable("lists") { ListsScreen() }
@@ -150,7 +162,7 @@ fun AppRoot(store: Store, startRoute: String? = null, onNav: (NavHostController)
                     composable("reconcile") { ReconcileScreen() }
                     composable("sweep") { SweepScreen() }
                     composable("records/{home}") {
-                        RecordsScreen(if (it.arguments?.getString("home") == "DEST") Home.DEST else Home.ORIGIN)
+                        RecordsScreen(if (it.arguments?.read { getStringOrNull("home") } == "DEST") Home.DEST else Home.ORIGIN)
                     }
                     composable("unpack") { UnpackScreen() }
                     composable("budget") { BudgetScreen() }
@@ -160,6 +172,27 @@ fun AppRoot(store: Store, startRoute: String? = null, onNav: (NavHostController)
             // Opened from another move (a label scanned there, "Sync" on its card): where to go on from here.
             LaunchedEffect(nav) { state.takeRoute()?.let { r -> runCatching { nav.navigate(r) } } }
             SaveProblems(store)
+            NotOnThisPhone(nav)
+        }
+    }
+}
+
+/**
+ * A screen this phone cannot offer yet ([unavailableRoutes]: the iPhone's camera, scanner and PDF screens until step 3)
+ * is left out of the lists of screens; should a link still lead to one, the phone goes back and says so. Android offers
+ * every screen, so there this does nothing.
+ */
+@Composable
+private fun NotOnThisPhone(nav: NavHostController) {
+    val hidden = unavailableRoutes()
+    if (hidden.isEmpty()) return
+    val context = LocalPlatform.current
+    val entry by nav.currentBackStackEntryAsState()
+    val route = entry?.destination?.route?.substringBefore('?')?.substringBefore('/')
+    LaunchedEffect(route) {
+        if (route != null && route in hidden) {
+            toast(context, "That is not on this phone yet.")
+            nav.popBackStack()
         }
     }
 }
@@ -170,7 +203,7 @@ fun AppRoot(store: Store, startRoute: String? = null, onNav: (NavHostController)
  */
 @Composable
 private fun SaveProblems(store: Store) {
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val problem by store.saveProblem.collectAsState()
     LaunchedEffect(problem) { problem?.let { toast(context, it) } }
 }

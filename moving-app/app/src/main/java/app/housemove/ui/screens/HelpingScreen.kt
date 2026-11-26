@@ -17,8 +17,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
@@ -27,13 +25,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.housemove.data.*
-import app.housemove.pdf.qrBitmap
 import app.housemove.sync.WifiSync
 import app.housemove.ui.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import java.time.LocalTime
 
 /** What the code panel of Who's helping shows: one person's invite, or the Helper code. */
 private const val HELPER_CODE_TAB = "*helpers"
@@ -51,7 +47,7 @@ private const val HELPER_CODE_TAB = "*helpers"
 fun HelpingScreen() {
     val store = LocalStore.current
     val nav = LocalNav.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val data = appData()
     val device = deviceInfo()
     val scope = rememberCoroutineScope()
@@ -81,7 +77,7 @@ fun HelpingScreen() {
                 // Nobody gets in through this screen except with a code shown on it, and an Organiser's or a Decider's phone waits for Right.
                 WifiSync.host(store, letNewPhonesIn = false, confirmJoins = true) { r ->
                     scope.launch {
-                        if (r.listsSynced()) store.setDevice { it.copy(lastSyncAt = System.currentTimeMillis(), lastSyncWith = r.peerName) }
+                        if (r.listsSynced()) store.setDevice { it.copy(lastSyncAt = nowMillis(), lastSyncWith = r.peerName) }
                         val who = r.joinedAs
                         heard = when {
                             who != null -> SyncReport(true, "${who.shownName()}'s phone has joined", "It is now ${who.shownName()}, ${who.role.label}." + plainNote(r))
@@ -149,7 +145,7 @@ fun HelpingScreen() {
 
             Hint("No HouseMove on their phone? Send it this one's, or show a code to download it.")
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                GlassChip("Share the app", icon = Icons.Default.Share, onClick = { shareTheApp(context, scope) })
+                if (context.shareTheApp != null) GlassChip("Share the app", icon = Icons.Default.Share, onClick = { shareTheApp(context, scope) })
                 DownloadCodeButton(chip = true)
             }
         }
@@ -265,7 +261,7 @@ private fun CodePanel(
     modifier: Modifier = Modifier,
 ) {
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val data = appData()
     Section(if (toJoin.isEmpty()) "Helper code" else "Invites", modifier) {
         // Each person's invite is made when it is shown, and lasts ten minutes; the Helper code likewise.
@@ -275,7 +271,7 @@ private fun CodePanel(
                 HELPER_CODE_TAB -> host.helperCode(addresses)
                 else -> host.inviteFor(shown, addresses)
             }
-            made?.valueOrNull()?.let { ShownInvite(it.encode(), LocalTime.now().plusMinutes(WifiSync.INVITE_MINUTES.toLong()).format(CLOCK)) }
+            made?.valueOrNull()?.let { ShownInvite(it.encode(), clockIn(WifiSync.INVITE_MINUTES.toLong())) }
         }
         // A chip for each code there is to choose between; with nobody waiting to join there is only the Helper code.
         if (toJoin.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -330,7 +326,7 @@ private fun CodePanel(
 /** A code to scan, large on white, with what it says kept for tests and the audit. */
 @Composable
 internal fun CodeImage(text: String, description: String) {
-    val qr = remember(text) { qrBitmap(text, 640).asImageBitmap() }
+    val qr = LocalPlatform.current.let { phone -> remember(text) { phone.qrImage(text, 640) } }
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         Image(
             qr, contentDescription = description,

@@ -1,8 +1,5 @@
 package app.housemove.ui.screens
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -58,7 +55,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -384,7 +380,7 @@ private fun MdSuggestedCost(p: Proposal, onSeen: (() -> Unit)? = null) {
 @Composable
 private fun MdCostRow(e: Expense, changes: List<Proposal>, onOpen: () -> Unit, declined: Proposal? = null, onSeen: (Proposal) -> Unit = {}) {
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val data = appData()
     val vehicle = data.vehicle()
     val currency = data.move.currency
@@ -418,7 +414,7 @@ private fun MdCostRow(e: Expense, changes: List<Proposal>, onOpen: () -> Unit, d
         if (e.planned && mayPay) {
             Row(Modifier.padding(start = 8.dp, end = 8.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 RowButton("Mark paid", onClick = { store.markPaid(e.id).okOrSay(context) }, icon = Icons.Default.Check)
-                RowButton("Receipt", onClick = { camera = true }, forward = false, icon = Icons.Default.PhotoCamera)
+                if (LocalPlatform.current.camera) RowButton("Receipt", onClick = { camera = true }, forward = false, icon = Icons.Default.PhotoCamera)
             }
         }
     }
@@ -435,21 +431,18 @@ private fun MdCostRow(e: Expense, changes: List<Proposal>, onOpen: () -> Unit, d
 @Composable
 private fun MdReceipts(expenseId: String, saved: Boolean, modifier: Modifier = Modifier) {
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val photos = appData().photosOf(expenseId, PhotoKind.RECEIPT)
     var camera by remember { mutableStateOf(false) }
     var viewing by remember { mutableStateOf<Photo?>(null) }
-    fun keep(file: java.io.File) {
+    fun keep(file: File) {
         if (saved) store.attachReceipt(expenseId, file).okOrSay(context) else store.addPhoto(expenseId, PhotoKind.RECEIPT, file)
     }
-    val gallery = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { uris ->
-        uris.forEach { uri ->
-            val f = store.newPhotoFile()
-            if (importImage(context, uri, f)) keep(f)
-        }
-    }
+    val gallery = context.rememberPhotoPicker({ store.newPhotoFile() }, { f -> keep(f) }, {})
+    // A phone that can neither photograph nor choose a receipt yet (the iPhone, until step 3) shows those there are.
+    if (!context.camera && gallery == null && photos.isEmpty()) return
     Row(modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Row(
+        if (context.camera) Row(
             Modifier.glass(RoundedCornerShape(18.dp), GlassTone.Mint, shadow = 0.dp).clickable { camera = true }
                 .heightIn(min = 60.dp).padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -458,9 +451,7 @@ private fun MdReceipts(expenseId: String, saved: Boolean, modifier: Modifier = M
             Spacer(Modifier.width(10.dp))
             Text(if (photos.isEmpty()) "Photograph the receipt" else "Another photo", style = MaterialTheme.typography.labelLarge, color = Night.MintPale)
         }
-        GlassOrb(Icons.Default.PhotoLibrary, "Add a receipt from the gallery", onClick = {
-            gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-        })
+        if (gallery != null) GlassOrb(Icons.Default.PhotoLibrary, "Add a receipt from the gallery", onClick = { gallery() })
         photos.forEach { p -> PhotoThumb(p, Modifier.size(60.dp).clip(RoundedCornerShape(16.dp)).clickable { viewing = p }) }
     }
     if (camera) PhotoCamera(hint = "Receipt", onPhoto = { keep(it) }, onClose = { camera = false })
@@ -476,7 +467,7 @@ private fun MdReceipts(expenseId: String, saved: Boolean, modifier: Modifier = M
 @Composable
 private fun MdCostEditor(existing: Expense?, onClose: () -> Unit) {
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val data = appData()
     val currency = data.move.currency
     val vehicle = data.vehicle()

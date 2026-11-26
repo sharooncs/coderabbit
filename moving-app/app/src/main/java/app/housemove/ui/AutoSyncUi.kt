@@ -53,10 +53,10 @@ fun AutoSyncSection() {
     val status = (if (settings.autoSync) live else live.copy(state = AutoSync.State.OFF)).copy(lastWith = device.lastSyncWith, lastAt = device.lastSyncAt)
         .let { s -> if (s.state == AutoSync.State.UP_TO_DATE && s.lastAt == 0L) s.copy(state = AutoSync.State.LOOKING) else s }
     // "2 min ago" moves on with the clock.
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var now by remember { mutableLongStateOf(nowMillis()) }
     LaunchedEffect(Unit) {
         while (true) {
-            now = System.currentTimeMillis()
+            now = nowMillis()
             delay(15_000)
         }
     }

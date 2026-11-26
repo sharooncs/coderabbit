@@ -24,7 +24,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -49,7 +48,7 @@ val LocalMailbox = staticCompositionLocalOf<MailboxSync?> { null }
 fun MailboxSection() {
     val store = LocalStore.current
     val engine = LocalMailbox.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val settings by store.phone.settings.collectAsState()
     val data = appData()
     val organiser = allowed(Action.MOVE_SETTINGS)
@@ -65,10 +64,10 @@ fun MailboxSection() {
     }
     var scanning by remember { mutableStateOf(false) }
     // "2 min ago" moves on with the clock.
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var now by remember { mutableLongStateOf(nowMillis()) }
     LaunchedEffect(Unit) {
         while (true) {
-            now = System.currentTimeMillis()
+            now = nowMillis()
             delay(15_000)
         }
     }

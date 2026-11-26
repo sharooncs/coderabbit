@@ -12,15 +12,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.housemove.data.*
 import app.housemove.ui.*
-import java.time.LocalDate
-import java.time.format.DateTimeFormatter
 
-private val MONTH_YEAR = DateTimeFormatter.ofPattern("MMM yyyy")
 
 /**
  * Every device and appliance with what has and hasn't been recorded about it.
@@ -31,7 +27,7 @@ private val MONTH_YEAR = DateTimeFormatter.ofPattern("MMM yyyy")
 fun ElectronicsScreen() {
     val nav = LocalNav.current
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val data = appData()
     // Make, model and serial numbers are not sent to Helpers: the list is not theirs.
     if (!data.seesHidden(deviceInfo())) {
@@ -58,7 +54,8 @@ fun ElectronicsScreen() {
                 EmptyState(
                     Pic.Device, "No devices yet",
                     text = "TVs, computers and appliances you list show up here.",
-                    action = "Start the walk-through", onAction = { nav.open("walk") },
+                    // The walk-through needs the camera (none on the iPhone until step 3).
+                    action = "Start the walk-through".takeIf { "walk" !in unavailableRoutes() }, onAction = { nav.open("walk") },
                 )
             }
         } else LazyColumn(
@@ -82,7 +79,7 @@ fun ElectronicsScreen() {
         ScanDialog(
             title = "Serial number of $name",
             raw = true,
-            formats = ScanFormats.SERIALS,
+            formats = ScanKind.SERIALS,
             typeLabel = "Or type the serial number",
             onCode = { text ->
                 val serial = text.trim()
@@ -127,7 +124,7 @@ private fun DeviceRow(d: Item, data: AppData, onOpen: () -> Unit, onScan: () -> 
                         if (data.photosOf(d.id, PhotoKind.RECEIPT).isEmpty()) IconFlag(Icons.Default.Receipt, "No receipt")
                         if (d.accessories.isNotBlank() && !d.accessoriesPacked) IconFlag(Icons.Default.Cable, "Accessories loose")
                         d.warrantyDay?.let {
-                            IconFlag(Icons.Default.VerifiedUser, if (it < today()) "Warranty ended" else "Warranty to ${MONTH_YEAR.format(LocalDate.ofEpochDay(it))}")
+                            IconFlag(Icons.Default.VerifiedUser, if (it < today()) "Warranty ended" else "Warranty to ${monthYearText(it)}")
                         }
                     }
                 }

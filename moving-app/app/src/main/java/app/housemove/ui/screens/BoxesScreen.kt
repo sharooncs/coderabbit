@@ -16,7 +16,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -78,7 +77,7 @@ fun BoxesScreen() {
                     action = "Pack the first box", onAction = { nav.open("pack") },
                 )
                 if (data.uses(Part.LABELS)) {
-                    GlassChip("Print labels first", Modifier.align(Alignment.CenterHorizontally), icon = Icons.Default.Print, onClick = { nav.open("labels") })
+                    if ("labels" !in unavailableRoutes()) GlassChip("Print labels first", Modifier.align(Alignment.CenterHorizontally), icon = Icons.Default.Print, onClick = { nav.open("labels") })
                 }
             }
         } else {
@@ -193,7 +192,7 @@ private fun ChipRow(content: @Composable RowScope.() -> Unit) {
 fun PackScreen() {
     val store = LocalStore.current
     val nav = LocalNav.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val data = appData()
     val device = deviceInfo()
     val rooms = data.roomsOf(Home.ORIGIN)
@@ -250,7 +249,7 @@ fun PackScreen() {
                     // Without printed labels in use, the handwritten code is the main way in.
                     val printed = data.uses(Part.LABELS)
                     val scan = @Composable {
-                        BigAction(Icons.Default.QrCodeScanner, "Scan a printed label", { scanning = true }, primary = printed)
+                        if (LocalPlatform.current.camera) BigAction(Icons.Default.QrCodeScanner, "Scan a printed label", { scanning = true }, primary = printed)
                     }
                     val write = @Composable {
                         BigAction(Icons.Default.Edit, "No sticker? Use a handwritten code", { startBox(store.nextHandCode()) }, primary = !printed)

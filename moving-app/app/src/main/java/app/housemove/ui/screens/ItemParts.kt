@@ -1,6 +1,5 @@
 package app.housemove.ui.screens
 
-import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -22,7 +21,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -109,7 +107,7 @@ internal fun AppData.itemState(x: Item): Pair<String, GlassTone> = when (x.dispo
  * Anyone else's tap becomes a suggestion that waits for approval. A waiting question
  * about the item is answered by it. Says why when the Store refuses.
  */
-internal fun Store.decideOrSuggest(context: Context, itemId: String, d: Disposition, price: Double? = null): Boolean {
+internal fun Store.decideOrSuggest(context: Platform, itemId: String, d: Disposition, price: Double? = null): Boolean {
     val now = data.value
     val item = now.item(itemId) ?: return false
     val question = now.waitingFor(itemId, ProposalKind.QUESTION).firstOrNull()
@@ -133,7 +131,7 @@ internal fun Store.decideOrSuggest(context: Context, itemId: String, d: Disposit
 }
 
 /** Choose the new-home room of an item, or suggest it, whichever this phone's person may do. */
-internal fun Store.planOrSuggestRoom(context: Context, itemId: String, roomId: String?): Boolean {
+internal fun Store.planOrSuggestRoom(context: Platform, itemId: String, roomId: String?): Boolean {
     if (can(Action.DECIDE)) return planRoom(itemId, roomId).okOrSay(context)
     val mine = data.value.waitingFor(itemId, ProposalKind.ITEM_ROOM).any { it.by == me?.id && it.roomId == roomId }
     if (mine) {
@@ -151,7 +149,7 @@ internal fun Store.planOrSuggestRoom(context: Context, itemId: String, roomId: S
 @Composable
 internal fun AskForDecision(itemId: String, primary: Boolean, modifier: Modifier = Modifier, onAsked: () -> Unit = {}) {
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     var typing by rememberSaveable(itemId) { mutableStateOf(false) }
     fun ask(note: String = "") {
         if (store.ask(itemId, note).okOrSay(context)) onAsked()

@@ -13,7 +13,7 @@ import app.housemove.ui.withArticle
  */
 
 /** What the role banner says: [title] in large type, [joined] when this is the first role the person was given. */
-internal class RoleNews(val role: Role, val title: String, val at: Long, val joined: Boolean)
+class RoleNews(val role: Role, val title: String, val at: Long, val joined: Boolean)
 
 /**
  * The latest role this phone's person was given by someone else, when they have not read about it yet
@@ -22,7 +22,7 @@ internal class RoleNews(val role: Role, val title: String, val at: Long, val joi
  * The first role someone is given is how they joined: "You joined as a Decider". A later one is a change:
  * "You are now a Decider".
  */
-internal fun AppData.roleNews(device: DeviceInfo, seenAt: Long = device.roleReadAt): RoleNews? {
+fun AppData.roleNews(device: DeviceInfo, seenAt: Long = device.roleReadAt): RoleNews? {
     if (!shared()) return null
     val me = me(device) ?: return null
     if (me.removed) return null

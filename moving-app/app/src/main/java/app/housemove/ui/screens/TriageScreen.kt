@@ -15,8 +15,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -37,7 +35,7 @@ import app.housemove.ui.*
 fun TriageScreen() {
     val store = LocalStore.current
     val nav = LocalNav.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val data = appData()
     deviceInfo() // whose phone this is decides what is offered below
     val mayDecide = store.can(Action.DECIDE)
@@ -73,7 +71,8 @@ fun TriageScreen() {
                 EmptyState(
                     Icons.Default.Rule, "Nothing to decide yet",
                     text = "Photograph the big things first, then decide here.",
-                    action = "Start the walk-through", onAction = { nav.open("walk") },
+                    // The walk-through needs the camera (none on the iPhone until step 3).
+                    action = "Start the walk-through".takeIf { "walk" !in unavailableRoutes() }, onAction = { nav.open("walk") },
                 )
             }
 

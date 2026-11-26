@@ -1,9 +1,5 @@
 package app.housemove.ui.screens
 
-import android.content.Context
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import app.housemove.ui.icons.Icons
@@ -16,18 +12,16 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import app.housemove.App
 import app.housemove.data.*
 import app.housemove.ui.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.IOException
-import java.io.InputStream
-import java.time.LocalDate
+import app.housemove.data.IOException
+import app.housemove.data.InputStream
 
 /*
  * Working apart and the safety nets on screen (design 2.1, sections 4 and 5): sending and opening update files,
@@ -39,10 +33,10 @@ import java.time.LocalDate
 // ---- sending and opening update files --------------------------------------------------------
 
 /** An update from someone removed from the move, which this phone's Organiser may take in as their work alone. */
-class RemovedOffer(val uri: Uri, val name: String, val sure: Boolean = false)
+class RemovedOffer(val file: PickedFile, val name: String, val sure: Boolean = false)
 
 /** An update made the older way (format 1), which cannot show who made it: asked about before it is opened ([text]). */
-class UnprovenOffer(val uri: Uri, val text: String)
+class UnprovenOffer(val file: PickedFile, val text: String)
 
 /**
  * Sending and opening update files from a screen: the file is made away from the screen and handed to the share
@@ -50,7 +44,7 @@ class UnprovenOffer(val uri: Uri, val text: String)
  * shown with one move on its own. [report] is what came of it, for the screen to show.
  */
 class UpdateActions internal constructor(
-    private val context: Context,
+    private val context: Platform,
     private val scope: CoroutineScope,
     private val moves: Moves?,
     private val store: Store?,
@@ -60,7 +54,13 @@ class UpdateActions internal constructor(
     var report by mutableStateOf<SyncReport?>(null)
     var removedOffer by mutableStateOf<RemovedOffer?>(null)
     var unprovenOffer by mutableStateOf<UnprovenOffer?>(null)
-    internal var picker: () -> Unit = {}
+    internal var picker: (() -> Unit)? = null
+
+    /** Can this phone send an update (hand a file to the share sheet)? */
+    val canSend: Boolean get() = context.shareFiles
+
+    /** Can this phone open an update file someone sent? */
+    val canOpen: Boolean get() = picker != null
 
     /**
      * Make an update of [s] and hand it to the share sheet: for every Organiser's and Decider's phone it knows, or
@@ -74,7 +74,7 @@ class UpdateActions internal constructor(
             var how: Update.Made? = null
             val made = withContext(Dispatchers.IO) {
                 try {
-                    val file = app.housemove.pdf.Share.outFile(context, updateFileName(s))
+                    val file = context.outFile(updateFileName(s))
                     how = file.outputStream().use { Update.write(s, it, organisersOnly) }
                     file to null
                 } catch (e: Exception) {
@@ -97,7 +97,7 @@ class UpdateActions internal constructor(
             } ?: ""
             report = SyncReport(true, "Update ready to send", "Choose the app to send it with. It opens on " + phonesText(s, organisersOnly) + "." + seal)
             try {
-                shareSheet(context, file, Update.MIME)
+                context.share(file, Update.MIME)
             } catch (_: Exception) {
             }
             then()
@@ -105,19 +105,21 @@ class UpdateActions internal constructor(
     }
 
     /** Pick an update file and open it. */
-    fun open() = picker()
+    fun open() {
+        picker?.invoke()
+    }
 
     /**
-     * Open the update at [uri]; with [takeInRemoved], the work of someone removed, as an Organiser may. One made the older
+     * Open the update in [file]; with [takeInRemoved], the work of someone removed, as an Organiser may. One made the older
      * way (which cannot show who made it) is asked about first ([unprovenOffer]), and opened with [sure] once the person
      * says so.
      */
-    fun openUri(uri: Uri, takeInRemoved: Boolean = false, sure: Boolean = false) {
+    fun openFile(file: PickedFile, takeInRemoved: Boolean = false, sure: Boolean = false) {
         busy = true
         report = null
         scope.launch(Dispatchers.Main) {
             val r = withContext(Dispatchers.IO) {
-                fun read(): InputStream = context.contentResolver.openInputStream(uri) ?: throw IOException("could not read")
+                fun read(): InputStream = file.open() ?: throw IOException("could not read")
                 when {
                     moves != null -> moves.openUpdate({ read() }, takeInRemoved, askIfUnproven = !sure)
                     store != null -> try {
@@ -130,10 +132,10 @@ class UpdateActions internal constructor(
             }
             busy = false
             if (r.unproven) {
-                unprovenOffer = UnprovenOffer(uri, r.message)
+                unprovenOffer = UnprovenOffer(file, r.message)
                 return@launch
             }
-            if (r.fromRemoved != null && r.mayTakeIn && !takeInRemoved) removedOffer = RemovedOffer(uri, r.fromName.ifBlank { "Their" }, sure)
+            if (r.fromRemoved != null && r.mayTakeIn && !takeInRemoved) removedOffer = RemovedOffer(file, r.fromName.ifBlank { "Their" }, sure)
             report = when {
                 r.ok && r.message == Update.NOTHING_NEW -> SyncReport(true, "Nothing new", r.message)
                 // Sealed by the phone it came from (format 2): the screen names that phone.
@@ -148,7 +150,7 @@ class UpdateActions internal constructor(
 /** "maple-road-update-2026-11-22.housemove" */
 private fun updateFileName(s: Store): String {
     val slug = s.data.value.move.name.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').take(24).trim('-').ifBlank { "move" }
-    return "$slug-update-${LocalDate.now()}.${Update.EXTENSION}"
+    return "$slug-update-${isoToday()}.${Update.EXTENSION}"
 }
 
 /** The phones an update from [s] opens on, by name: "Asha's phone and Dee's phone". */
@@ -164,14 +166,14 @@ private fun phonesText(s: Store, organisersOnly: Boolean): String {
 /** Sending and opening update files from this screen ([UpdateActions]), for the move in [store] if there is one. */
 @Composable
 fun rememberUpdateActions(store: Store?): UpdateActions {
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val local = rememberCoroutineScope()
     // A send that ends by removing the move outlives the screen it was started from.
     val scope = LocalAppState.current?.scope ?: local
     val moves = LocalMoves.current
     val actions = remember(store, moves) { UpdateActions(context, scope, moves, store) }
-    val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) actions.openUri(uri) }
-    actions.picker = { pick.launch(arrayOf(Update.MIME, "application/octet-stream", "*/*")) }
+    val pick = context.rememberOpenFile { file -> if (file != null) actions.openFile(file) }
+    actions.picker = pick?.let { { it(listOf(Update.MIME, "application/octet-stream", "*/*")) } }
     return actions
 }
 
@@ -187,7 +189,7 @@ fun UpdateDialogs(a: UpdateActions) {
             "Open this update?", onDismiss = close, icon = Icons.Default.HelpOutline, text = asked.text,
             buttons = {
                 DialogCancel(close, "Not now")
-                PillButton("Open it", onClick = { close(); a.openUri(asked.uri, sure = true) }, icon = Icons.Default.FileOpen)
+                PillButton("Open it", onClick = { close(); a.openFile(asked.file, sure = true) }, icon = Icons.Default.FileOpen)
             },
         )
         return
@@ -199,7 +201,7 @@ fun UpdateDialogs(a: UpdateActions) {
         text = "${offer.name} has been removed from this move. You can still take in what they did. Anything they had no right to do is turned away, as at a sync.",
         buttons = {
             DialogCancel(close, "Not now")
-            PillButton("Take in their work", onClick = { close(); a.openUri(offer.uri, takeInRemoved = true, sure = offer.sure) }, icon = Icons.Default.MoveToInbox)
+            PillButton("Take in their work", onClick = { close(); a.openFile(offer.file, takeInRemoved = true, sure = offer.sure) }, icon = Icons.Default.MoveToInbox)
         },
     )
 }
@@ -215,6 +217,8 @@ fun WorkingApartSection() {
     val data = appData()
     if (!data.shared()) return
     val updates = rememberUpdateActions(store)
+    // Updates and the picture list are files for other apps: a phone that cannot hand files over yet leaves this out.
+    if (!updates.canSend) return
     Section("Working apart") {
         if (updates.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         updates.report?.let { SyncReportCard(it) }
@@ -224,7 +228,7 @@ fun WorkingApartSection() {
                 "Send update", onClick = { updates.send(store) }, icon = Icons.AutoMirrored.Filled.Send, enabled = !updates.busy,
                 modifier = Modifier.weight(1f).fillMaxHeight(),
             )
-            PillButton(
+            if (updates.canOpen) PillButton(
                 "Open update", onClick = { updates.open() }, icon = Icons.Default.FileOpen, primary = false, enabled = !updates.busy,
                 modifier = Modifier.weight(1f).fillMaxHeight(),
             )
@@ -243,26 +247,25 @@ fun WorkingApartSection() {
 
 /** The folder picker for the daily small backup: the folder picked is kept, and today's backup written to it at once. */
 @Composable
-fun rememberBackupFolderPicker(store: Store, onDone: (Boolean) -> Unit = {}): () -> Unit {
-    val context = LocalContext.current
+fun rememberBackupFolderPicker(store: Store, onDone: (Boolean) -> Unit = {}): (() -> Unit)? {
+    val context = LocalPlatform.current
     val moves = LocalMoves.current
     val scope = rememberCoroutineScope()
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        if (!keepFolder(context, uri)) {
+    return context.rememberFolderPicker { folder ->
+        if (folder == null) return@rememberFolderPicker
+        if (!folder.keep()) {
             onDone(false)
-            return@rememberLauncherForActivityResult
+            return@rememberFolderPicker
         }
-        store.phone.updateSettings { it.copy(backupFolder = uri.toString()) }
+        store.phone.updateSettings { it.copy(backupFolder = folder.saved) }
         scope.launch(Dispatchers.Main) { onDone(withContext(Dispatchers.IO) { backUpNow(context, store, moves) }) }
     }
-    return { launcher.launch(null) }
 }
 
 /** Write [store]'s small backup to its folder now, whether or not today's is written. False when it could not. */
-private fun backUpNow(context: Context, store: Store, moves: Moves?): Boolean {
-    val place = backupFolder(context, store.phone.settings.value.backupFolder) ?: return false
-    val ok = DailyBackup.run(store, place, LocalDate.now().toEpochDay())
+private fun backUpNow(context: Platform, store: Store, moves: Moves?): Boolean {
+    val place = context.backupFolder(store.phone.settings.value.backupFolder) ?: return false
+    val ok = DailyBackup.run(store, place, today())
     moves?.refresh()
     return ok
 }
@@ -274,14 +277,15 @@ private fun backUpNow(context: Context, store: Store, moves: Moves?): Boolean {
 @Composable
 fun DailyBackupRow() {
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val data = appData()
     val device = deviceInfo()
     val settings by store.phone.settings.collectAsState()
     val applies = remember(data, device) { DailyBackup.applies(store) }
     if (!applies) return
-    val folder = remember(settings.backupFolder) { if (backupFolder(context, settings.backupFolder) == null) "" else backupFolderName(context, settings.backupFolder).ifBlank { "the folder you chose" } }
-    val pick = rememberBackupFolderPicker(store) { ok -> toast(context, if (ok) "Backed up to the folder." else "That folder cannot be written to. Choose another.") }
+    val folder = remember(settings.backupFolder) { if (context.backupFolder(settings.backupFolder) == null) "" else context.backupFolderName(settings.backupFolder).ifBlank { "the folder you chose" } }
+    // A phone with no folder to pick yet (the iPhone, until step 3) leaves the daily backup out.
+    val pick = rememberBackupFolderPicker(store) { ok -> toast(context, if (ok) "Backed up to the folder." else "That folder cannot be written to. Choose another.") } ?: return
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Icon(Icons.Default.EventRepeat, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
         Hint(
@@ -301,17 +305,18 @@ fun DailyBackupRow() {
 fun SafetyNudges() {
     val store = LocalStore.current
     val nav = LocalNav.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val moves = LocalMoves.current
     val data = appData()
     val device = deviceInfo()
     val settings by store.phone.settings.collectAsState()
-    val hasPlace = remember(settings.backupFolder) { backupFolder(context, settings.backupFolder) != null }
-    val n = remember(data, device, hasPlace) { DailyBackup.nudges(store, today(), System.currentTimeMillis(), hasPlace) }
+    val hasPlace = remember(settings.backupFolder) { context.backupFolder(settings.backupFolder) != null }
+    val n = remember(data, device, hasPlace) { DailyBackup.nudges(store, today(), nowMillis(), hasPlace) }
     val scope = rememberCoroutineScope()
     var working by remember { mutableStateOf(false) }
     val pick = rememberBackupFolderPicker(store) { ok -> if (!ok) toast(context, "That folder cannot be written to. Choose another.") }
-    if (n.backup) {
+    // The backup nudge needs a folder to back up to: a phone that has none yet (the iPhone, until step 3) does not show it.
+    if (n.backup && pick != null) {
         Section(tone = GlassTone.Amber) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 GlassOrb(Icons.Default.Backup, null, size = 40.dp)
@@ -333,7 +338,7 @@ fun SafetyNudges() {
             }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 PillButton(if (hasPlace) "Back up now" else "Choose a folder", enabled = !working, icon = if (hasPlace) Icons.Default.Backup else Icons.Default.CreateNewFolder, onClick = {
-                    if (!hasPlace) pick() else {
+                    if (!hasPlace) pick.invoke() else {
                         working = true
                         scope.launch(Dispatchers.Main) {
                             val ok = withContext(Dispatchers.IO) { backUpNow(context, store, moves) }
@@ -376,7 +381,7 @@ fun SafetyNudges() {
 fun RemovedBanner(modifier: Modifier = Modifier) {
     val store = LocalStore.current
     val moves = LocalMoves.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val data = appData()
     val device = deviceInfo()
     val removed = remember(data, device) { store.removedFromMove() }
@@ -401,7 +406,7 @@ fun RemovedBanner(modifier: Modifier = Modifier) {
             )
             updates.report?.takeIf { !it.ok }?.let { SyncReportCard(it) }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (!unshared.nothing) {
+                if (!unshared.nothing && updates.canSend) {
                     PillButton("Send my work", enabled = !updates.busy, icon = Icons.AutoMirrored.Filled.Send, onClick = {
                         updates.send(store, organisersOnly = true) { leave() }
                     })
@@ -436,7 +441,7 @@ internal fun unsharedWork(u: Unshared): String = listOfNotNull(
 @Composable
 fun ThanksHelper(p: Person) {
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val data = appData()
     val name = p.shownName()
     val thanked = remember(data, p.id) { data.roles().thankedAt(p.id) != null }
@@ -463,7 +468,7 @@ fun ThanksHelper(p: Person) {
 @Composable
 fun MoveDoneRow() {
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val data = appData()
     if (!data.shared() || !allowed(Action.MOVE_SETTINGS)) return
     Section {
@@ -486,19 +491,19 @@ private class FolderBackup(val place: BackupPlace, val name: String, val move: S
  */
 @Composable
 fun DailyBackupChooser(working: Boolean, onRestore: (() -> InputStream) -> Unit) {
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val moves = LocalMoves.current
     val scope = rememberCoroutineScope()
     var found by remember { mutableStateOf<List<FolderBackup>?>(null) }
     var looking by remember { mutableStateOf(false) }
-    val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        if (keepFolder(context, uri)) moves?.phone?.updateSettings { it.copy(backupFolder = uri.toString()) }
+    val pick = context.rememberFolderPicker { folder ->
+        if (folder == null) return@rememberFolderPicker
+        if (folder.keep()) moves?.phone?.updateSettings { it.copy(backupFolder = folder.saved) }
         looking = true
         scope.launch(Dispatchers.Main) {
             found = withContext(Dispatchers.IO) {
                 try {
-                    val place = TreePlace(context, uri)
+                    val place = folder.place()
                     DailyBackup.newestOfEach(place).map { f ->
                         val move = try {
                             place.read(f.name).use { Backup.peek(it).moveName }
@@ -514,7 +519,9 @@ fun DailyBackupChooser(working: Boolean, onRestore: (() -> InputStream) -> Unit)
             looking = false
         }
     }
-    BigAction(Icons.Default.Folder, "Choose the backup folder", onClick = { pick.launch(null) }, enabled = !working && !looking)
+    // A phone with no folder to pick yet (the iPhone, until step 3) has no daily backup to restore from.
+    if (pick == null) return
+    BigAction(Icons.Default.Folder, "Choose the backup folder", onClick = { pick() }, enabled = !working && !looking)
     if (looking) LinearProgressIndicator(Modifier.fillMaxWidth())
     val list = found ?: return
     if (list.isEmpty()) {
@@ -525,7 +532,7 @@ fun DailyBackupChooser(working: Boolean, onRestore: (() -> InputStream) -> Unit)
         list.forEach { b ->
             MenuRow(
                 Icons.Default.Restore, b.move,
-                sub = "Saved " + LocalDate.ofEpochDay(b.day).format(java.time.format.DateTimeFormatter.ofPattern("d MMMM yyyy")),
+                sub = "Saved " + dayLongText(b.day),
                 onClick = { if (!working) onRestore { b.place.read(b.name) } },
             )
         }
@@ -549,14 +556,14 @@ fun Farewells(moves: Moves) {
 /** An update file another app asked this one to open: it goes into its move, and what came of it is said. */
 @Composable
 fun IncomingUpdates(moves: Moves) {
-    val app = LocalContext.current.applicationContext as? App ?: return
-    val incoming by app.incomingUpdate.collectAsState()
+    val context = LocalPlatform.current
+    val incoming = context.incomingUpdate()
     val current by moves.current.collectAsState()
     val updates = rememberUpdateActions(current)
     LaunchedEffect(incoming) {
-        val uri = incoming ?: return@LaunchedEffect
-        app.incomingUpdate.value = null
-        updates.openUri(uri)
+        val file = incoming ?: return@LaunchedEffect
+        context.incomingUpdateTaken()
+        updates.openFile(file)
     }
     if (updates.removedOffer == null) updates.report?.let { r ->
         GlassDialog(

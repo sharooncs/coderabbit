@@ -1,7 +1,5 @@
 package app.housemove.ui.screens
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -17,7 +15,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role as SemanticsRole
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -25,9 +22,9 @@ import androidx.compose.ui.unit.dp
 import app.housemove.data.*
 import app.housemove.ui.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.time.LocalDate
 
 /** One move as its card shows it, worked out once when the list opens. */
 private class MoveSummary(
@@ -69,7 +66,7 @@ fun MovesScreen() {
     val moves = LocalMoves.current
     val store = LocalStore.current
     val nav = LocalNav.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val state = appState()
     val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) { moves?.refresh() }
@@ -91,30 +88,30 @@ fun MovesScreen() {
 
     // Backing up a move from its card: the file is chosen, then written away from the screen.
     var backingUp by rememberSaveable { mutableStateOf<String?>(null) }
-    val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+    val save = context.rememberSaveFile("application/zip") { target ->
         val id = backingUp
         backingUp = null
         val s = id?.let { if (store.identity.value.matches(it)) store else moves?.store(it) }
-        if (uri == null || s == null) return@rememberLauncherForActivityResult
+        if (target == null || s == null) return@rememberSaveFile
         working = true
         scope.launch(Dispatchers.Main) {
             val error = withContext(Dispatchers.IO) {
                 try {
-                    context.contentResolver.openOutputStream(uri)!!.use { Backup.export(s, it) }
+                    target.open()!!.use { Backup.export(s, it) }
                     null
                 } catch (e: Exception) {
                     e.message ?: "The file could not be written."
                 }
             }
             working = false
-            if (error == null) s.setDevice { it.copy(lastBackupAt = System.currentTimeMillis()) }
+            if (error == null) s.setDevice { it.copy(lastBackupAt = nowMillis()) }
             said = if (error == null) SyncReport(true, "Backup saved", s.data.value.move.name.ifBlank { "The move" } + " is in the file you chose.")
             else SyncReport(false, "Backup failed", error)
         }
     }
     fun backUp(s: MoveSummary) {
         backingUp = s.card.moveId
-        save.launch("housemove-" + s.name.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').ifBlank { "move" } + "-${LocalDate.now()}.zip")
+        save?.invoke("housemove-" + s.name.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').ifBlank { "move" } + "-${isoToday()}.zip")
     }
 
     fun open(s: MoveSummary) {
@@ -138,13 +135,14 @@ fun MovesScreen() {
                     moves.create()
                 }
             }
-            ActionPill(Icons.Default.QrCodeScanner, "Join a move", "Scan the invite on their phone") { nav.open("join") }
+            // The iPhone joins a move with its own screens, and holds the one it joined (Platform.moreMoves).
+            if (context.moreMoves) ActionPill(Icons.Default.QrCodeScanner, "Join a move", "Scan the invite on their phone") { nav.open("join") }
             if (earlier.isNotEmpty()) {
                 Fold("Earlier moves", Icons.Default.History, summary = earlier.joinToString(" · ") { it.name }) {
                     earlier.forEach { s -> MoveCardView(s, onOpen = { open(s) }, onMore = { acting = s }) }
                 }
             }
-            Text(
+            if (context.moreMoves) Text(
                 "Lost your phone? Restore a backup", style = MaterialTheme.typography.labelLarge, color = Night.MintPale, textAlign = TextAlign.Center,
                 modifier = Modifier.align(Alignment.CenterHorizontally).clip(RoundedCornerShape(14.dp))
                     .clickable(role = SemanticsRole.Button) { nav.open("lost") }.heightIn(min = 48.dp).padding(horizontal = 16.dp, vertical = 14.dp),
@@ -169,11 +167,11 @@ fun MovesScreen() {
                 }
             } else if (s.shared && s.store != null) {
                 // Not together: what this phone has, as an update through any messaging app.
-                MenuButton(Icons.AutoMirrored.Filled.Send, "Send update") { acting = null; updates.send(s.store) }
-                MenuButton(Icons.Default.FileOpen, "Open update") { acting = null; updates.open() }
+                if (updates.canSend) MenuButton(Icons.AutoMirrored.Filled.Send, "Send update") { acting = null; updates.send(s.store) }
+                if (updates.canOpen) MenuButton(Icons.Default.FileOpen, "Open update") { acting = null; updates.open() }
             }
             // Helpers make no backups: what Helpers are not sent is not on their phone to save.
-            if (mayBackUp) MenuButton(Icons.Default.SaveAlt, "Back up") { acting = null; backUp(s) }
+            if (mayBackUp && save != null) MenuButton(Icons.Default.SaveAlt, "Back up") { acting = null; backUp(s) }
             if (moves != null) {
                 if (s.card.archived) MenuButton(Icons.Default.Unarchive, "Bring back from Earlier moves") { acting = null; moves.archive(s.card.moveId, false) }
                 else MenuButton(Icons.Default.Archive, "Archive") { acting = null; moves.archive(s.card.moveId, true) }
@@ -223,7 +221,7 @@ fun MovesScreen() {
                         updates.send(s.store)
                     }
                 }
-                if (s.mayBackUp) MenuButton(Icons.Default.SaveAlt, "Back up first") { close(); backUp(s) }
+                if (s.mayBackUp && save != null) MenuButton(Icons.Default.SaveAlt, "Back up first") { close(); backUp(s) }
                 MenuButton(Icons.Default.PhonelinkErase, "Remove anyway", danger = true) {
                     close()
                     m.remove(s.card.moveId, evenIfUnshared = true).okOrSay(context)

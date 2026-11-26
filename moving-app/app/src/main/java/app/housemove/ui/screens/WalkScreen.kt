@@ -14,7 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.housemove.data.*
 import app.housemove.ui.*
-import java.io.File
+import app.housemove.data.File
 
 /**
  * Set in tests to stand in for the camera of the walk-through: it is handed the file a

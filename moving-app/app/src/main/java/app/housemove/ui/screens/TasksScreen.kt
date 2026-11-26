@@ -23,7 +23,6 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -87,7 +86,7 @@ fun TasksScreen() {
     val nav = LocalNav.current
     val data = appData()
     val now = today()
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val tasks = data.liveTasks
     val me = store.me
     val shared = data.shared()
@@ -194,7 +193,7 @@ private fun MoveDateCard(onSet: () -> Unit) {
 @Composable
 private fun TaskAdder(mayPlan: Boolean) {
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     var typing by rememberSaveable { mutableStateOf(false) }
     var text by rememberSaveable { mutableStateOf("") }
     fun add(said: String) {
@@ -340,7 +339,7 @@ private fun TaskRow(
     onSeen: (Proposal) -> Unit = {},
 ) {
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val data = appData()
     val me = store.me
     val mayTick = data.mayTick(me, task)
@@ -402,7 +401,7 @@ private fun TaskRow(
 @Composable
 private fun TaskDetail(task: Task, mayPlan: Boolean, maySuggest: Boolean) {
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val shared = appData().shared()
     var draft by remember(task.id, task.updatedAt) { mutableStateOf(task) }
     var title by remember(task.id, task.updatedAt) { mutableStateOf(task.title) }

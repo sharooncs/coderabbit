@@ -1,11 +1,5 @@
 package app.housemove.ui
 
-import android.content.ActivityNotFoundException
-import android.content.Intent
-import android.speech.RecognizerIntent
-import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -39,8 +33,6 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.Layout
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -223,7 +215,7 @@ fun MoveSwitch(modifier: Modifier = Modifier) {
     val others = otherMovesNeedingYou()
     val name = data.move.name.ifBlank { "Your move" }
     val role = if (data.shared()) data.roleOf(device) else null
-    val width = LocalConfiguration.current.let { it.screenWidthDp / it.fontScale }
+    val width = screenDp().let { it.screenWidthDp / it.fontScale }
     val wide = width >= 480f
     val narrow = width < 380f
     Box(modifier) {
@@ -323,7 +315,8 @@ fun TopAction(icon: ImageVector, description: String, kind: OrbKind = OrbKind.Pl
 fun TopActions() {
     val nav = LocalNav.current
     TopAction(Icons.Default.Search, "Find anything") { nav.open("search") }
-    TopAction(Icons.Default.QrCodeScanner, "Scan a label") { nav.open("scan") }
+    // Scanning needs the camera: where HouseMove cannot use it yet (the iPhone, until step 3), there is only search.
+    if (LocalPlatform.current.camera) TopAction(Icons.Default.QrCodeScanner, "Scan a label") { nav.open("scan") }
 }
 
 // ---- layout helpers --------------------------------------------------------
@@ -414,13 +407,10 @@ fun TextInput(
     placeholder: String? = null,
 ) {
     var text by remember(key) { mutableStateOf(value) }
-    val context = LocalContext.current
-    val speech = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
-        val said = res.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
-        if (!said.isNullOrBlank()) {
-            text = if (text.isBlank()) said else "$text, $said"
-            onChange(text)
-        }
+    // The phone's dictation (Android's speech sheet), where it has one.
+    val dictate = LocalPlatform.current.rememberDictation { said ->
+        text = if (text.isBlank()) said else "$text, $said"
+        onChange(text)
     }
     OutlinedTextField(
         value = text,
@@ -430,18 +420,9 @@ fun TextInput(
         singleLine = singleLine,
         minLines = if (singleLine) 1 else 2,
         keyboardOptions = KeyboardOptions(keyboardType = keyboard, capitalization = KeyboardCapitalization.Sentences),
-        trailingIcon = if (!mic) null else {
+        trailingIcon = if (!mic || dictate == null) null else {
             {
-                IconButton(onClick = {
-                    try {
-                        speech.launch(
-                            Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
-                                .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                        )
-                    } catch (_: ActivityNotFoundException) {
-                        Toast.makeText(context, "No voice input on this phone. Use the keyboard's microphone.", Toast.LENGTH_LONG).show()
-                    }
-                }) { Icon(Icons.Default.Mic, contentDescription = "Dictate") }
+                IconButton(onClick = dictate) { Icon(Icons.Default.Mic, contentDescription = "Dictate") }
             }
         },
         colors = glassFieldColors(),
@@ -654,7 +635,7 @@ fun ConfirmDialog(
 @Composable
 fun DatePickerPanel(day: Long?, label: String, allowClear: Boolean, onPick: (Long?) -> Unit, onClose: () -> Unit) {
     val state = rememberDatePickerState(initialSelectedDateMillis = (day ?: today()) * 86_400_000L)
-    val fit = ((LocalConfiguration.current.screenWidthDp - 8) / 360f).coerceAtMost(1f)
+    val fit = ((screenDp().screenWidthDp - 8) / 360f).coerceAtMost(1f)
     val colors = nightDatePickerColors()
     BasicAlertDialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(Modifier.requiredWidth(360.dp).heightIn(max = 568.dp).then(if (fit < 1f) Modifier.scale(fit) else Modifier).dialogPanel()) {
@@ -672,7 +653,7 @@ fun DatePickerPanel(day: Long?, label: String, allowClear: Boolean, onPick: (Lon
                 if (allowClear) PillButton("Clear", onClick = { onPick(null); onClose() }, primary = false)
                 DialogCancel(onClose)
                 PillButton("OK", onClick = {
-                    state.selectedDateMillis?.let { onPick(Math.floorDiv(it, 86_400_000L)) }
+                    state.selectedDateMillis?.let { onPick(it.floorDiv(86_400_000L)) }
                     onClose()
                 })
             }
@@ -899,4 +880,5 @@ fun MenuRow(icon: ImageVector, title: String, sub: String? = null, badge: String
     }
 }
 
-fun toast(context: android.content.Context, text: String) = Toast.makeText(context, text, Toast.LENGTH_LONG).show()
+/** A few words at the bottom of the screen for a few seconds (the phone's own way: a Toast on Android). */
+fun toast(context: Platform, text: String) = context.toast(text)

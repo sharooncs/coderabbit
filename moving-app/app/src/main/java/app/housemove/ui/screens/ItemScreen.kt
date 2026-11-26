@@ -12,7 +12,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -42,7 +41,7 @@ private val WORTH_PRESETS = listOf(50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0)
 fun ItemScreen(id: String) {
     val store = LocalStore.current
     val nav = LocalNav.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     val data = appData()
     val device = deviceInfo() // whose phone this is decides what is offered below
     val item = data.item(id)
@@ -304,7 +303,7 @@ fun ItemScreen(id: String) {
                         TextInput(item.model, { v -> details { it.copy(model = v) } }, "Model", key = "$id-model")
                         TextInput(item.serial, { v -> details { it.copy(serial = v.trim()) } }, "Serial number", key = "$id-serial-$serialScans")
                     }
-                    BigAction(Icons.Default.QrCodeScanner, "Scan the serial number barcode", onClick = { scanningSerial = true }, primary = item.serial.isBlank())
+                    if (LocalPlatform.current.camera) BigAction(Icons.Default.QrCodeScanner, "Scan the serial number barcode", onClick = { scanningSerial = true }, primary = item.serial.isBlank())
                     PhotoStrip(item.id, PhotoKind.SERIAL, label = "Photo of the serial label")
                     PhotoStrip(item.id, PhotoKind.RECEIPT, label = "Receipt or warranty card")
                     DateButton(item.boughtDay, { d -> details { it.copy(boughtDay = d) } }, "Bought", Modifier.fillMaxWidth())
@@ -319,7 +318,7 @@ fun ItemScreen(id: String) {
                     CheckRow("Bagged and marked with this item's name", item.accessoriesPacked, { v -> edit { it.copy(accessoriesPacked = v) } })
                     val accBox = data.findByLabel(item.accessoryBox)
                     if (item.accessoryBox.isBlank()) {
-                        BigAction(Icons.Default.QrCodeScanner, "Scan the box they are in", onClick = { scanningAccessoryBox = true }, primary = false)
+                        if (LocalPlatform.current.camera) BigAction(Icons.Default.QrCodeScanner, "Scan the box they are in", onClick = { scanningAccessoryBox = true }, primary = false)
                     } else {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text("In " + (accBox?.title ?: "${item.accessoryBox} (no box has this label yet)"), modifier = Modifier.weight(1f))
@@ -453,7 +452,7 @@ fun ItemScreen(id: String) {
                                 RowButton("Remove label", onClick = { edit { it.copy(label = null) } }, forward = false)
                             }
                         } else {
-                            BigAction(Icons.Default.QrCodeScanner, "Scan a printed label", onClick = { scanning = true }, primary = false)
+                            if (LocalPlatform.current.camera) BigAction(Icons.Default.QrCodeScanner, "Scan a printed label", onClick = { scanning = true }, primary = false)
                             BigAction(
                                 Icons.Default.Edit, "Use a handwritten code", primary = false,
                                 onClick = {
@@ -543,7 +542,7 @@ fun ItemScreen(id: String) {
         ScanDialog(
             title = "Scan the serial number barcode",
             raw = true,
-            formats = ScanFormats.SERIALS,
+            formats = ScanKind.SERIALS,
             typeLabel = "Or type the serial number",
             onCode = { text ->
                 val serial = text.trim()
@@ -613,7 +612,7 @@ private fun goneIcon(gone: Boolean) = if (gone) Icons.Default.CheckCircle else I
 
 /** Likely amounts for what something sold for: the asking price and a few steps below it. */
 internal fun soldPresets(asking: Double?): List<Double> =
-    if (asking != null && asking >= 10) listOf(1.0, 0.9, 0.8, 0.75, 0.5).map { Math.round(asking * it).toDouble() } else PRICE_PRESETS
+    if (asking != null && asking >= 10) listOf(1.0, 0.9, 0.8, 0.75, 0.5).map { (asking * it).roundToLong().toDouble() } else PRICE_PRESETS
 
 /** "120 × 74 × 205 cm", with a ? for a side not measured yet. Null when nothing is measured. */
 private fun sizeText(item: Item, inches: Boolean): String? {
@@ -630,7 +629,7 @@ private fun sizeText(item: Item, inches: Boolean): String? {
 @Composable
 private fun ContainerBlock(item: Item, container: Box?, data: AppData, onScan: () -> Unit, onOpen: (Box) -> Unit) {
     val store = LocalStore.current
-    val context = LocalContext.current
+    val context = LocalPlatform.current
     var choosing by rememberSaveable(item.id) { mutableStateOf(false) }
     // Once it is packed, by a tap or by a scan, the choice is made: taking it out again starts afresh.
     LaunchedEffect(container?.id) { if (container != null) choosing = false }
@@ -769,7 +768,7 @@ private fun HelperDeviceFold(item: Item, chips: List<String>, onEdit: ((Item) ->
         key = "device-helper",
     ) {
         Hint("Make, model and serial number are kept by the Organisers and Deciders. A photo of the serial label reaches them at the next sync.")
-        BigAction(Icons.Default.PhotoCamera, if (taken > 0) "Photograph it again" else "Photograph the serial label", onClick = { camera = true }, primary = taken == 0)
+        if (LocalPlatform.current.camera) BigAction(Icons.Default.PhotoCamera, if (taken > 0) "Photograph it again" else "Photograph the serial label", onClick = { camera = true }, primary = taken == 0)
         if (taken > 0) Text(countOf(taken, "photo") + " of the label taken on this phone", style = MaterialTheme.typography.bodySmall, color = Night.TextDim)
         HorizontalDivider(color = Night.Hairline)
         QuickText(
