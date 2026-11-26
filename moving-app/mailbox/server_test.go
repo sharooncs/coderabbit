@@ -158,7 +158,12 @@ func TestRegisteringNeedsTheHouseToken(t *testing.T) {
 	if code, _ := h.do("PUT", "/v1/mailboxes/"+id, randomHex(64), body); code != 401 {
 		t.Errorf("a wrong token: %d", code)
 	}
-	if code, _ := h.do("PUT", "/v1/mailboxes/"+id, h.token[:63]+"0", body); code != 401 {
+	// The last digit changed: to "1" where it is "0" already (one token in 16), so it is always off by one.
+	off := h.token[:63] + "0"
+	if off == h.token {
+		off = h.token[:63] + "1"
+	}
+	if code, _ := h.do("PUT", "/v1/mailboxes/"+id, off, body); code != 401 {
 		t.Errorf("a token one digit off: %d", code)
 	}
 	if code := h.register(id, secret); code != 201 {
