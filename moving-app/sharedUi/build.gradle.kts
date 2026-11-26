@@ -2,11 +2,10 @@ import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.plugin.KotlinPlatformType
 
-// The screens shared by the Android app and the iPhone app (Compose Multiplatform), step 0e of design/ios-plan.md.
-// It holds the shared look (theme, Outfit fonts, the app's Material icons as source), what the screens ask of the phone
-// (ui/Platform.kt, which the app implements for Android) and the first iPhone build's screens (ui/iphone: join a move
-// from an Android phone, look at it read-only, get fresh data, leave it). The Android app's screens move here in step 2;
-// the app uses the theme, fonts and icons already.
+// The screens shared by the Android app and the iPhone app (Compose Multiplatform), design/ios-plan.md steps 0e and 2.
+// It holds the shared look (theme, Outfit fonts, the app's Material icons as source), every screen of the app (ui/,
+// ui/screens; what they need of the phone is ui/Platform.kt, which the app implements for Android) and the iPhone's own
+// screens (ui/iphone: join a move from an Android phone, look at it read-only, get fresh data, leave it).
 //   android    the Android library the app uses; the same androidx Compose as the app's BOM
 //   desktop    a plain JVM, to render the screens to PNG on Linux (desktopTest)
 //   iosArm64, iosSimulatorArm64   a static framework, HouseMoveKit, that Xcode links into the iPhone app

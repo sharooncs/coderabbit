@@ -33,10 +33,9 @@ import org.jetbrains.compose.resources.Font
 
 /*
  * The "Night house" look, shared by the Android app and the iPhone app: a deep navy ground with soft coloured
- * glows, mint as the accent, and translucent glass for every panel, chip and button. The same colours, type and
- * corners as the app's ui/Theme.kt, which this replaces when the screens move here (step 2 of design/ios-plan.md):
- * the names and the package are the same so that the screens need no changes. What only Android does (the
- * system bars' icons) stays in the app until then.
+ * glows, mint as the accent, and translucent glass for every panel, chip and button. It replaced the app's own
+ * ui/Theme.kt when the screens moved here (step 2 of design/ios-plan.md), with the same names. What only Android does
+ * with it (the system bars' icons) is the app's SystemBars.
  *
  * There is one colour scheme. The app is always dark, whatever the phone is set to, because the look depends on
  * light things glowing against the night. [Night] holds the colours Material has no role for.
