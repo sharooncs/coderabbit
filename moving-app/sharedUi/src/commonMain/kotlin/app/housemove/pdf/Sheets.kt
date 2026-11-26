@@ -1,8 +1,8 @@
 package app.housemove.pdf
 
 /*
- * The papers HouseMove prints, as the screens choose them: the sheets of labels and hang tags and their codes. The
- * drawing of the PDFs is Android's (app pdf/); these are shared so that the screens are.
+ * The papers HouseMove prints, as the screens choose them: the sheets of labels and hang tags and their codes. Their
+ * layout is shared by both phones too (Printouts.kt), drawn by Android in app pdf/ and by the iPhone in iosMain pdf/.
  */
 
 /** Sheet layouts for QR labels. Sizes are in PDF points (1/72 inch). */
