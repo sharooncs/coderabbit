@@ -4,9 +4,10 @@ import app.housemove.data.File
 import app.housemove.sync.Discovery
 
 /**
- * What the shared screens of the first iPhone build ask of the phone they run on. The iPhone's side is in iosMain
- * (IosHooks); the desktop tests give their own. Nothing here changes the move: the move itself is only ever changed
- * by the shared [app.housemove.sync.WifiSync] and [app.housemove.data.Moves] code, through joining and syncing.
+ * What the iPhone's own screens and its [IphonePlatform] ask of the phone they run on. The iPhone's side is in iosMain
+ * (IosHooks); the desktop tests give their own. Nothing here changes the move: it is changed by the shared code, as on
+ * Android (joining and syncing, [app.housemove.data.Moves] and [app.housemove.sync.WifiSync]; the shared screens, by the
+ * Store's rules for this iPhone's person).
  */
 interface PhoneHooks {
     /** Where the moves are kept ([app.housemove.data.Moves]' filesDir), and what stays out of backups (noBackupDir). */
@@ -48,6 +49,14 @@ interface PhoneHooks {
      * built")? The iPhone does; demo mode and the desktop tests do not.
      */
     val mailbox: Boolean get() = false
+
+    /** A set of words the shared screens keep on this phone under [key] (which answers its person has read). */
+    fun readSet(key: String): Set<String> = emptySet()
+
+    fun writeSet(key: String, values: Set<String>) {}
+
+    /** The country the phone is set to ("GB"), for the paper size; empty when not known. */
+    fun country(): String = ""
 }
 
 /** What iOS says about HouseMove and the local network. */

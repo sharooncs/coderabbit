@@ -41,7 +41,8 @@ class MailboxModelTest {
         // Alex is a Decider: with no mailbox in the move yet, only an Organiser may set one up.
         model.use(code)
         waitFor("the answer") { model.fresh is Fresh.Idle && (model.fresh as Fresh.Idle).report != null }
-        assertEquals(Page.Fresh, model.pages.last())
+        // The code shows Get fresh data, where the answer is.
+        assertTrue(model.freshAsked > 0)
         val no = (model.fresh as Fresh.Idle).report!!
         assertFalse(no.ok)
         assertEquals(MailboxSync.ONLY_ORGANISERS, no.text)

@@ -12,6 +12,10 @@ import app.housemove.ui.iphone.PhoneHooks
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.toKString
 import platform.Foundation.NSFileManager
+import platform.Foundation.NSLocale
+import platform.Foundation.NSUserDefaults
+import platform.Foundation.countryCode
+import platform.Foundation.currentLocale
 import platform.Foundation.NSURL
 import platform.Network.nw_advertise_descriptor_create_bonjour_service
 import platform.Network.nw_browse_descriptor_create_bonjour_service
@@ -90,6 +94,28 @@ class IosHooks(override val dataDir: File, override val noBackupDir: File, priva
     override fun discovery(): Discovery = if (demo) LocalDiscovery(LocalLan.shared) else DnsSdDiscovery()
 
     override val loopbackOnly: Boolean get() = demo
+
+    /**
+     * The shared screens' small things kept on this iPhone (which answers its person has read), in the app's own
+     * defaults. Demo mode keeps them for as long as the app runs only, so a UI test never sees the one before it.
+     */
+    private val kept = HashMap<String, Set<String>>()
+
+    override fun readSet(key: String): Set<String> {
+        if (demo) return kept[key] ?: emptySet()
+        val list = NSUserDefaults.standardUserDefaults.stringArrayForKey("shared.$key") ?: return emptySet()
+        return list.mapNotNull { it as? String }.toSet()
+    }
+
+    override fun writeSet(key: String, values: Set<String>) {
+        if (demo) {
+            kept[key] = values
+            return
+        }
+        NSUserDefaults.standardUserDefaults.setObject(values.toList(), forKey = "shared.$key")
+    }
+
+    override fun country(): String = NSLocale.currentLocale.countryCode ?: ""
 }
 
 /**

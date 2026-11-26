@@ -13,7 +13,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
-import app.housemove.data.Home
 import app.housemove.sync.AutoSync
 import app.housemove.sync.LocalLan
 import app.housemove.sync.WifiSync
@@ -23,7 +22,7 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 
 /**
- * Renders every screen of the first iPhone build as an iPhone 17 Pro shows it (1206 x 2622 pixels at 3x: 402 x 874
+ * Renders the iPhone's screens (its join screens and Get fresh data, and the shared app once joined) as an iPhone 17 Pro shows it (1206 x 2622 pixels at 3x: 402 x 874
  * points, with the Dynamic Island and the home indicator drawn on top where the phone has them) and saves PNGs to look
  * at: build/screens/<screen>-normal.png, and <screen>-large-text.png at twice the text size (iOS's largest setting,
  * Accessibility XXXL, is about 1.8 in Compose Multiplatform). The safe area given to the screens is the phone's: 62
@@ -43,9 +42,9 @@ class ScreensRenderTest {
         root.deleteRecursively()
     }
 
-    private fun both(name: String) {
-        render("$name-normal.png", 1f)
-        render("$name-large-text.png", 2f)
+    private fun both(name: String, route: String? = null) {
+        render("$name-normal.png", 1f, route = route)
+        render("$name-large-text.png", 2f, route = route)
     }
 
     private fun joined() {
@@ -73,42 +72,42 @@ class ScreensRenderTest {
         render("join-demo-normal.png", 1f, demo)
     }
 
+    /**
+     * The shared app as the iPhone shows it once joined (step 2 of design/ios-plan.md): what Alex, a Decider, sees, with
+     * what waits for step 3 (the camera, scanning, the PDFs) left out.
+     */
     @Test
-    fun theMoveScreens() {
+    fun theSharedScreens() {
         joined()
-        both("rooms-welcome")
-        model.welcomeRead()
-        both("rooms")
+        // The first picture of Home has the welcome on it: who this iPhone is now.
+        both("home-welcome", "home")
         val d = model.store!!.data.value
-        model.open(Page.Room(d.roomsOf(Home.ORIGIN).first { it.name == "Kitchen" }.id))
-        both("room")
-        model.back()
-        model.open(Page.Room(d.roomsOf(Home.ORIGIN).first { it.name == "Bedroom" }.id))
-        both("room-bedroom")
-        model.back()
-        model.open(Page.Room(d.roomsOf(Home.DEST).first { it.name == "Lounge" }.id))
-        both("room-new-home")
-        model.back()
-        model.open(Page.Search)
-        model.query = "kitchen"
-        both("search")
-        model.query = "piano"
-        both("search-nothing")
-        model.back()
-        model.askToLeave(true)
-        both("leave")
-        model.askToLeave(false)
+        both("home", "home")
+        both("items", "items")
+        both("rooms", "rooms")
+        both("item", "item/" + d.liveItems.first { it.name == "Kettle" }.id)
+        both("item-sofa", "item/" + d.liveItems.first { it.name == "Sofa" }.id)
+        both("boxes", "boxes")
+        both("box", "box/" + d.liveBoxes.first { it.label == "A1" }.id)
+        both("search", "search")
+        both("people", "people")
+        both("more", "more")
+        both("moves", "moves")
+        both("moveday", "moveday")
     }
 
     @Test
     fun getFreshData() {
         joined()
-        model.open(Page.Fresh)
-        both("fresh")
+        model.welcomeRead()
+        both("fresh", "sync")
         model.showForPicture(Fresh.Showing(android.syncCode().replace("127.0.0.1", "192.168.1.23")))
-        both("fresh-code")
+        both("fresh-code", "sync")
         model.showForPicture(Fresh.Idle(Words.syncResult(WifiSync.Result("Sam", "A", 0, 0))))
-        both("fresh-done")
+        both("fresh-done", "sync")
+        model.askToLeave(true)
+        both("leave", "sync")
+        model.askToLeave(false)
     }
 
     /** "Get fresh data" once the iPhone has synced by itself with an Android phone on 2.3 (design/auto-sync.md). */
@@ -122,20 +121,19 @@ class ScreensRenderTest {
             auto.yes()
             waitFor("the join") { auto.store != null }
             auto.welcomeRead()
-            auto.open(Page.Fresh)
             waitFor("up to date by itself", 30_000) { auto.autoSync?.status?.value?.state == AutoSync.State.UP_TO_DATE }
-            render("fresh-by-itself-normal.png", 1f, auto)
-            render("fresh-by-itself-large-text.png", 2f, auto)
+            render("fresh-by-itself-normal.png", 1f, auto, "sync")
+            render("fresh-by-itself-large-text.png", 2f, auto, "sync")
         } finally {
             auto.autoSync?.close()
             phone.close()
         }
     }
 
-    private fun render(name: String, fontScale: Float, which: AppModel = model) {
+    private fun render(name: String, fontScale: Float, which: AppModel = model, route: String? = null) {
         val scene = ImageComposeScene(width = 1206, height = 2622, density = Density(3f, fontScale)) {
             Box(Modifier.fillMaxSize()) {
-                HouseMoveApp(which, safeArea = WindowInsets(top = 62.dp, bottom = 34.dp))
+                HouseMoveApp(which, safeArea = WindowInsets(top = 62.dp, bottom = 34.dp), startRoute = route)
                 // Where the phone covers the screen: the Dynamic Island and the home indicator.
                 Box(
                     Modifier.align(Alignment.TopCenter).offset(y = 11.dp).size(125.dp, 37.dp)

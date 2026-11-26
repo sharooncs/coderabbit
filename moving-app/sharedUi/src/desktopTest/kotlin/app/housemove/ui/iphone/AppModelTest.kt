@@ -64,7 +64,8 @@ class AppModelTest {
         assertEquals("Sample move", s.data.value.move.name)
         assertEquals(Role.DECIDER, s.myRole)
         assertEquals("You are Alex, Decider, in Sample move", model.welcome?.title)
-        assertEquals(listOf<Page>(Page.Rooms), model.pages)
+        // Nothing asked for Get fresh data: the shared screens open on Home.
+        assertEquals(0, model.freshAsked)
         assertTrue(s.device.value.lastSyncAt > 0)
         assertEquals(0, hooks.asked, "no local-network question when the other phone answered")
 
@@ -78,28 +79,22 @@ class AppModelTest {
         joinAsAlex()
         val d = iphoneData
         val kitchen = d.roomsOf(Home.ORIGIN).first { it.name == "Kitchen" }
-        val things = d.thingsOf(kitchen.id)
-        assertEquals("3\u00A0items · 2\u00A0boxes", things.text)
-        assertEquals(listOf("Kettle", "Microwave", "Toaster"), things.items.map { it.name })
-        val kettle = things.items.first { it.name == "Kettle" }
-        // Which box it is in, and where that box is, as Android says it.
+        val things = d.liveItems.filter { it.originRoomId == kitchen.id }
+        assertEquals(listOf("Kettle", "Microwave", "Toaster"), things.map { it.name }.sorted())
+        assertEquals(2, d.liveBoxes.count { it.originRoomId == kitchen.id })
+        val kettle = things.first { it.name == "Kettle" }
+        // Which box it is in, and where that box is, as Android says it (the shared screens show these words).
         assertEquals("In Box A1 · Plates, mugs, glasses · Old home: Kitchen", d.whereIs(kettle.toMovable()))
-        assertEquals("Move", d.stateOf(kettle))
         val bedroom = d.roomsOf(Home.ORIGIN).first { it.name == "Bedroom" }
-        val bed = d.thingsOf(bedroom.id).items.first { it.name == "Bed frame" }
+        val bed = d.liveItems.first { it.originRoomId == bedroom.id && it.name == "Bed frame" }
         assertEquals("On the van (Trip 1)", d.whereIs(bed.toMovable()))
-        assertEquals("On the van", d.stateOf(bed))
         // A new-home room holds what goes there.
         val lounge = d.roomsOf(Home.DEST).first { it.name == "Lounge" }
-        assertEquals(listOf("Sofa", "Television"), d.thingsOf(lounge.id).items.filter { it.disposition.name == "MOVE" }.map { it.name })
+        assertEquals(listOf("Sofa", "Television"), d.liveItems.filter { it.destRoomId == lounge.id && it.disposition.name == "MOVE" }.map { it.name }.sorted())
         assertEquals("Lounge", d.room(lounge.id)?.name)
-        // Search, across items and boxes.
-        model.open(Page.Search)
-        model.query = "passports"
-        assertEquals(listOf("Suitcase B2 · Passports and chargers"), d.search(model.query).map { it.movable.title })
+        // Search, across items and boxes, as the shared search screen asks it.
+        assertEquals(listOf("Suitcase B2 · Passports and chargers"), d.search("passports").map { it.movable.title })
         assertEquals(listOf("Kettle"), d.search("kettle").map { it.movable.title })
-        model.back()
-        assertEquals(listOf<Page>(Page.Rooms), model.pages)
     }
 
     @Test
@@ -191,7 +186,7 @@ class AppModelTest {
         val changed = android.store.data.value
         model.use(android.syncCode())
         waitFor("the second sync") { (model.fresh as? Fresh.Idle)?.report?.title == "Up to date" && iphoneData.liveItems.any { it.name == "Umbrella stand" } }
-        assertEquals("1\u00A0item · 0\u00A0boxes", iphoneData.thingsOf(hall.id).text)
+        assertEquals(listOf("Umbrella stand"), iphoneData.liveItems.filter { it.originRoomId == hall.id }.map { it.name })
         // The Android phone's move is as it was: the iPhone changed nothing in it.
         assertEquals(changed, android.store.data.value)
         assertTrue(android.store.data.value.refused.isEmpty())
@@ -202,7 +197,6 @@ class AppModelTest {
     fun theAndroidPhoneScansTheIphonesCode() {
         joinAsAlex()
         WifiSync.addresses = { listOf("127.0.0.1") }
-        model.open(Page.Fresh)
         model.showCode()
         val showing = model.fresh as Fresh.Showing
         assertTrue(hooks.awake, "the screen stays on while the code is shown")
@@ -216,7 +210,8 @@ class AppModelTest {
         waitFor("the iPhone's report") { (model.fresh as? Fresh.Showing)?.report != null }
         assertEquals("Up to date", (model.fresh as Fresh.Showing).report!!.title)
         assertTrue(iphoneData.liveItems.any { it.name == "Coat hooks" })
-        model.back()
+        // Leaving Get fresh data stops showing the code (FreshScreen does this as it goes).
+        model.stopCode()
         assertTrue(model.fresh is Fresh.Idle)
         assertTrue(!hooks.awake)
     }

@@ -28,6 +28,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -41,6 +45,9 @@ import app.housemove.data.Action
 import app.housemove.sync.AutoSync
 import app.housemove.sync.MailboxSync
 import app.housemove.ui.Night
+import app.housemove.ui.Screen
+import app.housemove.ui.screens.unsharedWork
+import app.housemove.ui.icons.filled.PhonelinkErase
 import app.housemove.ui.icons.Icons
 import app.housemove.ui.icons.filled.CheckCircle
 import app.housemove.ui.icons.filled.CloudOff
@@ -56,12 +63,14 @@ import kotlinx.coroutines.delay
  * Getting fresh data: a sync with the Android phone, as two Android phones sync. One shows a sync code and the other
  * scans it. The iPhone has no scanner of its own yet, so its first way is to show its code for the Android phone to
  * scan (More, Sync and backup, Scan sync code); the other is the Android phone's code, through the iPhone's Camera
- * (Open in HouseMove) or pasted.
+ * (Open in HouseMove) or pasted. In the shared app this is the iPhone's Sync and backup (LocalSyncScreen), and where
+ * the move is left.
  */
 
+/** The iPhone's Sync and backup: [code] is a sync code that came with the route, used once. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun FreshScreen(model: AppModel, store: Store) {
+fun FreshScreen(model: AppModel, store: Store, code: String? = null) {
     val device by store.device.collectAsState()
     val fresh = model.fresh
     var typed by remember { mutableStateOf("") }
@@ -70,7 +79,16 @@ fun FreshScreen(model: AppModel, store: Store) {
         typed = ""
         model.use(text)
     }
-    Frame("Get fresh data", onBack = { model.back() }) {
+    var codeUsed by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(code) {
+        if (code != null && !codeUsed) {
+            codeUsed = true
+            model.use(code)
+        }
+    }
+    // Leaving the screen stops showing this iPhone's code, as Back did.
+    DisposableEffect(Unit) { onDispose { model.stopCode() } }
+    Screen("Get fresh data") {
         Column(
             Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -147,8 +165,64 @@ fun FreshScreen(model: AppModel, store: Store) {
                 }
             }
             Hint(if (device.lastSyncAt == 0L) "Not synced yet." else "Last synced ${Words.ago(device.lastSyncAt)}.")
+
+            // Leaving the move on this iPhone: the Android phone keeps it.
+            Heading("This iPhone", Modifier.padding(top = 8.dp))
+            Hint(Words.LATER)
+            BigButton(
+                "Leave this move on this iPhone", Icons.Filled.PhonelinkErase, onClick = { model.askToLeave(true) },
+                primary = false, tone = Tone.Red, enabled = !model.busy,
+            )
+            Hint(model.buildLabel, Modifier.fillMaxWidth(), center = true)
         }
     }
+    if (model.askingToLeave) {
+        val unshared = remember(store) { model.moves.removing(store.moveId)?.unshared }
+        LeaveDialog(
+            store.data.value.move.name.ifBlank { "this move" }, unshared?.takeIf { !it.nothing }?.let { unsharedWork(it) },
+            onLeave = { model.leave() }, onKeep = { model.askToLeave(false) },
+        )
+    }
+}
+
+/**
+ * "Leave … on this iPhone?". The Android phone keeps the move; nothing is sent to it. [unshared] says what this iPhone
+ * has that no other phone has yet ("3 changes and 1 photo"), which goes with it.
+ */
+@Composable
+private fun LeaveDialog(move: String, unshared: String?, onLeave: () -> Unit, onKeep: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onKeep,
+        containerColor = Night.Panel,
+        titleContentColor = Night.Text,
+        textContentColor = Night.TextSoft,
+        title = { Text("Leave $move on this iPhone?", style = MaterialTheme.typography.titleLarge) },
+        text = {
+            // Scrolls at the largest text sizes, so the buttons below stay on the screen.
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "This iPhone forgets the move: its rooms, items and boxes. The Android phone keeps all of it, and nothing is sent to it. You can join again later with a new invite.",
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                if (unshared != null) {
+                    Text(
+                        "This iPhone has $unshared that no other phone has yet. They go with it. Get fresh data with the Android phone first to keep them.",
+                        style = MaterialTheme.typography.bodyLarge, color = Night.AmberPale,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onLeave, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text("Leave", color = Night.Red, style = MaterialTheme.typography.titleMedium)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onKeep, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text("Keep it", color = Night.MintLight, style = MaterialTheme.typography.titleMedium)
+            }
+        },
+    )
 }
 
 /**

@@ -46,24 +46,7 @@ sealed interface JoinStep {
     }
 }
 
-/** The screens of a move on this iPhone. Rooms is always first; the others go on top and come off with Back. */
-sealed interface Page {
-    data object Rooms : Page
-
-    /** One room's things. [roomId] is [NO_ROOM] for the things with no old-home room. */
-    data class Room(val roomId: String) : Page
-
-    data object Search : Page
-
-    /** Getting fresh data from the Android phone: a sync. */
-    data object Fresh : Page
-
-    companion object {
-        const val NO_ROOM = "-"
-    }
-}
-
-/** Getting fresh data, on the [Page.Fresh] screen. */
+/** Getting fresh data, on the Get fresh data screen (FreshScreen). */
 sealed interface Fresh {
     /** Nothing going on. [report] is how the last sync went, if one has. */
     data class Idle(val report: Report? = null) : Fresh
@@ -76,15 +59,16 @@ sealed interface Fresh {
 }
 
 /**
- * Everything the first iPhone build does, for its screens: join a move that lives on an Android phone, look at it,
- * get fresh data, and leave it. The move is only ever changed by the shared code that joins and syncs ([Moves.join],
- * [WifiSync]); nothing here edits a room, an item or a box.
+ * What the iPhone does around the shared screens (step 2 of design/ios-plan.md): join a move that lives on an Android
+ * phone ([Moves.join]), get fresh data from it ([WifiSync], syncing by itself, the internet mailbox), and leave it.
+ * Once joined, the move is the shared app's (HouseMoveApp shows it), with the same rules as on Android for this
+ * iPhone's person.
  *
  * [demo] is set only in demo mode (the launch argument `-HMDemoHost YES`): the invite of a sample move this app hosts
  * inside itself, shown on the join screen for the UI tests to type.
  */
 class AppModel(
-    private val hooks: PhoneHooks,
+    val hooks: PhoneHooks,
     val buildLabel: String,
     private val scope: CoroutineScope,
     val demo: Demo? = null,
@@ -105,8 +89,12 @@ class AppModel(
     var join: JoinStep by mutableStateOf(JoinStep.Start())
         private set
 
-    var pages: List<Page> by mutableStateOf(listOf<Page>(Page.Rooms))
+    /** Goes up each time something asks for Get fresh data to be shown (a sync code or the mailbox's code from outside). */
+    var freshAsked: Int by mutableStateOf(0)
         private set
+
+    /** What the shared screens say for a few seconds at the bottom of the screen (Android's toasts). */
+    val toasts = Toasts()
 
     var fresh: Fresh by mutableStateOf(Fresh.Idle())
         private set
@@ -186,7 +174,7 @@ class AppModel(
      * Organiser sets the move's mailbox up; anyone keeps its code for the mailbox the move already has.
      */
     private fun setUpMailbox(s: Store, text: String) {
-        open(Page.Fresh)
+        freshAsked++
         val (ok, said) = MailboxSync.setUp(s, text)
         fresh = Fresh.Idle(Report(ok, if (ok) "Internet mailbox" else "Not set up", said))
         if (ok) mailbox?.poke()
@@ -217,7 +205,7 @@ class AppModel(
             return
         }
         if (fresh is Fresh.Syncing) return
-        open(Page.Fresh)
+        freshAsked++
         when {
             invite == null -> fresh = Fresh.Idle(Report(false, "That is not a sync code", "On the Android phone: More, Sync and backup, Show sync code. Use that code."))
             invite.personId != null -> fresh = Fresh.Idle(
@@ -290,7 +278,6 @@ class AppModel(
             }
             val s = moves.current.value
             store = s
-            pages = listOf(Page.Rooms)
             fresh = Fresh.Idle()
             join = JoinStep.Start()
             if (s != null) {
@@ -301,7 +288,7 @@ class AppModel(
                 welcome = Report(
                     true,
                     if (who != null && who.name.isNotBlank()) "You are ${who.name}, ${role.label}, in $name" else "You are in $name",
-                    Words.roleLine(role) + " " + Words.READ_ONLY + Words.plainNote(r.result),
+                    Words.roleLine(role) + " " + Words.LATER + Words.plainNote(r.result),
                 )
             }
         }
@@ -352,22 +339,6 @@ class AppModel(
     }
 
     fun openSettings() = hooks.openSettings()
-
-    // ---- looking at the move -------------------------------------------------------------------------------------
-
-    /** What the search screen is looking for; kept while the person looks at other screens. */
-    var query: String by mutableStateOf("")
-
-    fun open(page: Page) {
-        if (pages.lastOrNull() == page) return
-        pages = if (page == Page.Rooms) listOf(Page.Rooms) else pages.filter { it != page } + page
-    }
-
-    fun back() {
-        if (pages.size <= 1) return
-        if (pages.last() == Page.Fresh) stopCode()
-        pages = pages.dropLast(1)
-    }
 
     // ---- getting fresh data --------------------------------------------------------------------------------------
 
@@ -452,7 +423,6 @@ class AppModel(
         if (now !== store) {
             stopCode()
             store = now
-            pages = listOf(Page.Rooms)
             if (now == null) {
                 join = JoinStep.Start(moves.farewells.value.lastOrNull())
                 moves.farewellsSaid()
@@ -477,7 +447,6 @@ class AppModel(
         scope.launch {
             withContext(io) { forget(s) }?.let { moves = it }
             store = moves.current.value
-            pages = listOf(Page.Rooms)
             fresh = Fresh.Idle()
             welcome = null
             join = JoinStep.Start(if (store == null) "$name was taken off this iPhone. The Android phone still has it." else null)

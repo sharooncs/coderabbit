@@ -20,8 +20,8 @@ private var waitingLink: String? = null
 
 /**
  * What the iPhone app shows; its SwiftUI StartView hosts it (in Swift:
- * `MainViewControllerKt.MainViewController(buildLabel:crypto:)`). The first iPhone build: join a move that lives on an
- * Android phone, look at it read-only, get fresh data, leave it. [buildLabel] names the build, as in "Test build 0.1
+ * `MainViewControllerKt.MainViewController(buildLabel:crypto:)`). Join a move that lives on an Android phone, then the
+ * shared app with it (step 2 of design/ios-plan.md), get fresh data, leave it. [buildLabel] names the build, as in "Test build 0.1
  * (202611241030)". [crypto] is the app's CryptoKit (CryptoKitCrypto.swift): the shared code's P-256 and AES-GCM for update
  * files, with this phone's private key in the Keychain (design/encryption.md). Launched with `-HMCryptoCheck YES` (the UI
  * tests only), the app checks that crypto against Android's instead (CryptoCheckScreen.kt).

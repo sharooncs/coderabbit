@@ -178,7 +178,7 @@ private fun AskScreen(model: AppModel, step: JoinStep.Asking) {
                     )
                 }
             }
-            Hint(Words.READ_ONLY)
+            Hint(Words.LATER)
             Hint("Nothing is sent until you tap Yes.")
         }
     }
