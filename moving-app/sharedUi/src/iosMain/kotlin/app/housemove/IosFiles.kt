@@ -172,7 +172,7 @@ internal object IosFiles : PhoneFiles {
 
     /**
      * Saving a file named [name] in Files, where the person chooses, as Android's "create a document" does: the picker
-     * puts an empty file of that name there, and [done] is given the way to write it (or null if they cancelled). What
+     * moves an empty file of that name there, and [done] is given the way to write it (or null if they cancelled). What
      * the screen writes goes to save/ first and then, in one go, to the place chosen ([SavingOutput]).
      */
     private fun pickToSave(name: String, done: (SaveFile?) -> Unit) = onMain {
@@ -183,7 +183,9 @@ internal object IosFiles : PhoneFiles {
             done(null)
             return@onMain
         }
-        val picker = UIDocumentPickerViewController(forExportingURLs = listOf(NSURL.fileURLWithPath(placeholder.path)), asCopy = true)
+        // Moved, not copied: the picker then hands back the file at the place chosen as a security-scoped link this app
+        // may write through (a copy's link need not be one).
+        val picker = UIDocumentPickerViewController(forExportingURLs = listOf(NSURL.fileURLWithPath(placeholder.path)), asCopy = false)
         picker.delegate = Picker(
             onPicked = { urls ->
                 val place = urls.firstOrNull()
