@@ -210,9 +210,10 @@ private class LiveSession(private val reader: CodeReader?) : LiveCamera {
     private var photos: AVCapturePhotoOutput? = null
     private var stopped = false
 
-    // On the main thread only: which way up the phone is held, and the photos being taken (AVFoundation keeps only a
-    // weak reference to their delegates).
+    // On the main thread only: which way up the phone is held (once the camera runs), whether the view has gone, and
+    // the photos being taken (AVFoundation keeps only a weak reference to their delegates).
     private var turning: AVCaptureDeviceRotationCoordinator? = null
+    private var gone = false
     private val shooting = mutableSetOf<PhotoSaver>()
 
     /** Main thread. [onStarted] is told, on the main thread, whether the camera runs. */
@@ -222,21 +223,24 @@ private class LiveSession(private val reader: CodeReader?) : LiveCamera {
             onStarted(false)
             return
         }
-        turning = AVCaptureDeviceRotationCoordinator(device = camera, previewLayer = preview)
         dispatch_async(cameraQueue) {
             val ok = !stopped && configure(camera)
             if (ok) session.startRunning()
             onMain {
-                // The picture upright on the screen, which is always upright (the app is portrait only).
-                val angle = turning?.videoRotationAngleForHorizonLevelPreview() ?: 90.0
-                if (ok) preview.connection?.turn(angle)
-                onStarted(ok && session.running)
+                val running = ok && !gone && session.running
+                if (running) {
+                    turning = AVCaptureDeviceRotationCoordinator(device = camera, previewLayer = preview)
+                    // The picture upright on the screen, which is always upright (the app is portrait only).
+                    preview.connection?.turn(turning?.videoRotationAngleForHorizonLevelPreview() ?: 90.0)
+                }
+                onStarted(running)
             }
         }
     }
 
     /** Main thread: the camera stops (and with it the torch), once whatever was started before has. */
     fun stop() {
+        gone = true
         turning = null
         dispatch_async(cameraQueue) {
             stopped = true
