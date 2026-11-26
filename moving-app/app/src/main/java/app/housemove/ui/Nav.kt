@@ -33,6 +33,7 @@ import app.housemove.ui.screens.*
  */
 @Composable
 fun AppRoot(moves: Moves, onNav: (NavHostController) -> Unit = {}, autoSync: AutoSync? = null, mailbox: MailboxSync? = null) {
+    SystemBars()
     HouseMoveTheme {
         val scope = rememberCoroutineScope()
         val state = remember { AppState(scope) }
@@ -85,6 +86,7 @@ private fun NavGraphBuilder.firstOpenRoutes(inMove: Boolean) {
  */
 @Composable
 fun AppRoot(store: Store, startRoute: String? = null, onNav: (NavHostController) -> Unit = {}) {
+    SystemBars()
     HouseMoveTheme {
         val nav = rememberNavController()
         LaunchedEffect(nav) { onNav(nav) }

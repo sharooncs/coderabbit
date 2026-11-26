@@ -223,7 +223,7 @@ fun AppBackground(modifier: Modifier = Modifier, content: @Composable () -> Unit
 }
 
 /** An elliptical glow: [color] at the centre fading to nothing at 72 % of the radii. */
-internal fun DrawScope.glow(color: Color, center: Offset, rx: Float, ry: Float, alpha: Float) {
+fun DrawScope.glow(color: Color, center: Offset, rx: Float, ry: Float, alpha: Float) {
     if (rx <= 0f || ry <= 0f) return
     scale(1f, ry / rx, pivot = center) {
         drawCircle(
@@ -236,7 +236,7 @@ internal fun DrawScope.glow(color: Color, center: Offset, rx: Float, ry: Float, 
     }
 }
 
-internal fun DrawScope.drawNightGround() {
+fun DrawScope.drawNightGround() {
     val w = size.width
     val h = size.height
     drawRect(Brush.verticalGradient(0f to Night.Ground0, 0.55f to Night.Ground1, 1f to Night.Ground2), size = Size(w, h))

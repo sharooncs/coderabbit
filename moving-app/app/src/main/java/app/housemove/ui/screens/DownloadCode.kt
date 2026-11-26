@@ -1,7 +1,7 @@
 package app.housemove.ui.screens
 
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.QrCode2
+import app.housemove.ui.icons.Icons
+import app.housemove.ui.icons.filled.QrCode2
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable

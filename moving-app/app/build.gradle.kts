@@ -106,7 +106,6 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.navigation:navigation-compose:2.8.9")
 
     val camerax = "1.4.2"
@@ -119,6 +118,9 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1")
     // The move's data and sync (they bring kotlinx-serialization, kotlinx-coroutines-core and ZXing with them).
     implementation(project(":shared"))
+    // The look and the screens shared with the iPhone (Compose Multiplatform): the theme, the Outfit fonts as Compose
+    // resources and the Material icons the app uses, as source (design/ios-plan.md, step 2).
+    implementation(project(":sharedUi"))
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.14.1")

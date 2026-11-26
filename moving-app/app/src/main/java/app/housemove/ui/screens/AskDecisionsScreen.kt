@@ -1,10 +1,10 @@
 package app.housemove.ui.screens
 
 import androidx.compose.foundation.layout.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.HowToVote
-import androidx.compose.material.icons.filled.Rule
-import androidx.compose.material.icons.filled.Share
+import app.housemove.ui.icons.Icons
+import app.housemove.ui.icons.filled.HowToVote
+import app.housemove.ui.icons.filled.Rule
+import app.housemove.ui.icons.filled.Share
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text

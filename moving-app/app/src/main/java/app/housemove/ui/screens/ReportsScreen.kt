@@ -11,14 +11,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Backup
-import androidx.compose.material.icons.filled.Checklist
-import androidx.compose.material.icons.filled.OpenInNew
-import androidx.compose.material.icons.filled.Payments
-import androidx.compose.material.icons.filled.PictureAsPdf
-import androidx.compose.material.icons.filled.Share as ShareIcon
-import androidx.compose.material.icons.filled.TableChart
+import app.housemove.ui.icons.Icons
+import app.housemove.ui.icons.filled.Backup
+import app.housemove.ui.icons.filled.Checklist
+import app.housemove.ui.icons.filled.OpenInNew
+import app.housemove.ui.icons.filled.Payments
+import app.housemove.ui.icons.filled.PictureAsPdf
+import app.housemove.ui.icons.filled.Share as ShareIcon
+import app.housemove.ui.icons.filled.TableChart
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme

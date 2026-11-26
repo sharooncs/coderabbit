@@ -2,10 +2,10 @@ package app.housemove.ui.screens
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.*
+import app.housemove.ui.icons.Icons
+import app.housemove.ui.icons.automirrored.filled.ArrowBack
+import app.housemove.ui.icons.automirrored.filled.ArrowForward
+import app.housemove.ui.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
