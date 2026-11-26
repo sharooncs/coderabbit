@@ -252,7 +252,8 @@ private fun BookLookupSwitch() {
 fun SearchScreen() {
     val data = appData()
     val nav = LocalNav.current
-    var query by remember { mutableStateOf("") }
+    // Kept while a thing found is open, so Back returns to the same results (on both phones).
+    var query by rememberSaveable { mutableStateOf("") }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) {
         try {

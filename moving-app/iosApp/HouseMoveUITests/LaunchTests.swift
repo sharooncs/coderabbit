@@ -386,7 +386,8 @@ final class LaunchTests: XCTestCase {
         let find = labelled(app, "label == 'Find anything'")
         XCTAssertTrue(find.waitForExistence(timeout: 10), "the search button")
         find.tap()
-        XCTAssertTrue(app.textFields.firstMatch.waitForExistence(timeout: 10), "search opened, with its field")
+        // Compose's field may be listed as a text view rather than a text field: found by its label then.
+        XCTAssertTrue(textField(app, "What are you looking for?").waitForExistence(timeout: 10), "search opened, with its field")
     }
 
     /// The round Back button at the top left.
