@@ -267,7 +267,13 @@ class AppModel(
                     WifiSync.Result("", "", 0, 0, WifiSync.CONNECTION_LOST)
                 }
             }
-            val r = withLocalNetworkCheck(check.invite, attempt) { stage -> join = JoinStep.Working(move, stage, who) }
+            // The screen stays awake while the move and its photos come across, and may sleep again before anything is said.
+            hooks.keepAwake(true)
+            val r = try {
+                withLocalNetworkCheck(check.invite, attempt) { stage -> join = JoinStep.Working(move, stage, who) }
+            } finally {
+                hooks.keepAwake(false)
+            }
             val joined = r.result.joinedAs != null
             if (!joined) {
                 val report = r.report ?: Words.joinProblem(r.result.error, r.result.shareApp)
@@ -404,7 +410,13 @@ class AppModel(
                     WifiSync.Result("", "", 0, 0, WifiSync.CONNECTION_LOST)
                 }
             }
-            val r = withLocalNetworkCheck(invite, attempt) {}
+            // The screen stays awake while the sync runs (many photos take a while).
+            hooks.keepAwake(true)
+            val r = try {
+                withLocalNetworkCheck(invite, attempt) {}
+            } finally {
+                hooks.keepAwake(false)
+            }
             val synced = r.result.ok || r.result.error == WifiSync.PHOTOS_CUT
             if (synced) afterSync(r.result.peerName)
             fresh = Fresh.Idle(r.report ?: Words.syncResult(r.result))

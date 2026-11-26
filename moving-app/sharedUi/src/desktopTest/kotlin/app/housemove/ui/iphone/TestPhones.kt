@@ -33,7 +33,15 @@ internal class DesktopHooks(
     override val noBackupDir = File(root, "no-backup").apply { mkdirs() }
     var asked = 0
     var settingsOpened = 0
-    var awake = false
+
+    /** How many things keep the screen awake now ([keepAwake] is called from the model's thread and the tests'). */
+    val holds = java.util.concurrent.atomic.AtomicInteger()
+
+    /** Is the screen kept awake? Each keepAwake(true) is matched by a keepAwake(false), as on the iPhone. */
+    val awake: Boolean get() = holds.get() > 0
+
+    /** What the camera's screens are given ([PhoneHooks.camera]): none unless a test sets one. */
+    override var camera: PhoneCamera? = null
 
     override fun deviceName() = "iPhone"
     override fun openSettings() {
@@ -44,7 +52,7 @@ internal class DesktopHooks(
         done(network)
     }
     override fun keepAwake(on: Boolean) {
-        awake = on
+        if (on) holds.incrementAndGet() else holds.updateAndGet { maxOf(0, it - 1) }
     }
     override fun paste(): String? = clipboard
     override fun deleteFolder(folder: File) {

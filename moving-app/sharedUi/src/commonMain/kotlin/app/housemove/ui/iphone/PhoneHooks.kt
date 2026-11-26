@@ -26,8 +26,14 @@ interface PhoneHooks {
      */
     fun checkLocalNetwork(done: (LocalNetwork) -> Unit) = done(LocalNetwork.UNKNOWN)
 
-    /** Keep the screen from going to sleep while another phone may connect ([on]), or let it sleep again. */
+    /**
+     * Keep the screen from going to sleep while another phone may connect, a sync runs or the camera is open ([on]), or
+     * let it sleep again. Each `true` is matched by a `false`: the screen sleeps again once every one has let go.
+     */
     fun keepAwake(on: Boolean) {}
+
+    /** The camera, the scanner and choosing photos (step 3a, [PhoneCamera]): null where the phone has none of them. */
+    val camera: PhoneCamera? get() = null
 
     /** The text the person copied last, if any. The iPhone asks first ("Allow Paste"). */
     fun paste(): String? = null

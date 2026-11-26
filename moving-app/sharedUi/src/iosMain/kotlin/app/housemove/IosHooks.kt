@@ -2,12 +2,15 @@
 
 package app.housemove
 
+import app.housemove.camera.AppleCamera
+import app.housemove.camera.DemoCamera
 import app.housemove.data.File
 import app.housemove.sync.Discovery
 import app.housemove.sync.DnsSdDiscovery
 import app.housemove.sync.LocalDiscovery
 import app.housemove.sync.LocalLan
 import app.housemove.ui.iphone.LocalNetwork
+import app.housemove.ui.iphone.PhoneCamera
 import app.housemove.ui.iphone.PhoneHooks
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.toKString
@@ -81,8 +84,11 @@ class IosHooks(override val dataDir: File, override val noBackupDir: File, priva
     override fun checkLocalNetwork(done: (LocalNetwork) -> Unit) = LocalNetworkCheck.run(done)
 
     override fun keepAwake(on: Boolean) {
-        dispatch_async(dispatch_get_main_queue()) { UIApplication.sharedApplication.idleTimerDisabled = on }
+        dispatch_async(dispatch_get_main_queue()) { Awake.hold(on) }
     }
+
+    /** The camera, the scanner and choosing photos (step 3a): AVFoundation and PhotosUI, or demo mode's fakes (camera/). */
+    override val camera: PhoneCamera = AppleCamera { openSettings() }.let { if (demo) DemoCamera(it) else it }
 
     override fun paste(): String? = UIPasteboard.generalPasteboard.string
 

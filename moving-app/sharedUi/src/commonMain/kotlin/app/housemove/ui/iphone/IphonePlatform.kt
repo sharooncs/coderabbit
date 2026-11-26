@@ -12,6 +12,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -21,7 +23,9 @@ import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
@@ -62,30 +66,57 @@ class IphonePlatform(private val hooks: PhoneHooks, private val toasts: Toasts) 
         return ScreenDp((size.width / density.density).toInt(), (size.height / density.density).toInt(), density.fontScale)
     }
 
-    // ---- not yet on the iPhone (step 3) ------------------------------------------------------------------------
+    // ---- the camera, the scanner and photos already on the phone (step 3a: PhoneCamera.kt) ---------------------
 
-    override val camera: Boolean get() = false
+    /** A real iPhone's camera, or demo mode's fake; not in the simulator (nor where [PhoneHooks.camera] is null). */
+    override val camera: Boolean get() = hooks.camera?.hasCamera == true
 
     @Composable
-    override fun rememberCameraPermission() = CameraPermission(false) {}
+    override fun rememberCameraPermission() = hooks.camera?.rememberPermission() ?: CameraPermission(false) {}
 
     override fun openAppSettings(): Boolean {
         hooks.openSettings()
         return true
     }
 
+    /** The live camera for photos. The screen stays awake while it is open (the walk-through goes from room to room). */
     @Composable
     override fun PhotoCameraView(modifier: Modifier, onReady: (LiveCamera?) -> Unit) {
-        LaunchedEffect(Unit) { onReady(null) }
+        val phone = hooks.camera?.takeIf { it.hasCamera }
+        if (phone == null) {
+            LaunchedEffect(Unit) { onReady(null) }
+            return
+        }
+        KeepAwake(hooks)
+        phone.PhotoView(modifier, onReady)
     }
 
+    /** The live scanner, with Android's rules: a buzz and a beep for each code, the same code again only after 2.5 s. */
     @Composable
     override fun ScannerView(formats: ScanKind, onText: (String) -> Unit, modifier: Modifier, onReady: (LiveCamera?) -> Unit) {
-        LaunchedEffect(Unit) { onReady(null) }
+        val phone = hooks.camera?.takeIf { it.hasCamera }
+        if (phone == null) {
+            LaunchedEffect(Unit) { onReady(null) }
+            return
+        }
+        KeepAwake(hooks)
+        val haptic = LocalHapticFeedback.current
+        val callback by rememberUpdatedState(onText)
+        val gate = remember { ScanGate() }
+        phone.CodeView(formats, { text ->
+            if (gate.pass(text, Words.nowMillis())) {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                phone.beep()
+                callback(text)
+            }
+        }, modifier, onReady)
     }
 
     @Composable
-    override fun rememberPhotoPicker(newFile: () -> File, onPhoto: (File) -> Unit, onDone: (Int) -> Unit): (() -> Unit)? = null
+    override fun rememberPhotoPicker(newFile: () -> File, onPhoto: (File) -> Unit, onDone: (Int) -> Unit): (() -> Unit)? =
+        hooks.camera?.rememberPicker(newFile, onPhoto, onDone)
+
+    // ---- not yet on the iPhone (step 3) ------------------------------------------------------------------------
 
     @Composable
     override fun canSpeak(): Boolean = false
