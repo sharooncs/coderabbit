@@ -286,6 +286,8 @@ d = sys.argv[1]
 for test in json.load(open(os.path.join(d, "manifest.json"))):
     for a in test.get("attachments", []):
         name = re.sub(r"_[0-9]+_[0-9A-F-]{36}", "", a.get("suggestedHumanReadableName", ""))
+        # GitHub refuses artifact files whose names have any of these (an XCTest debug description quotes "Close").
+        name = re.sub(r"[\"<>|*?:\r\n\\/]", "", name)
         src = os.path.join(d, a["exportedFileName"])
         if name and os.path.exists(src):
             os.replace(src, os.path.join(d, name))

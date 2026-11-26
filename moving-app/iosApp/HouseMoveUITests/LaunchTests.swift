@@ -534,17 +534,21 @@ final class LaunchTests: XCTestCase {
             .matching(NSPredicate(format: "identifier == 'ActivityListView' OR label == 'Save to Files' OR label == 'AirDrop'")).firstMatch
     }
 
-    /// Closes the share sheet: its Close button, or a swipe down on it.
+    /// Closes the share sheet: its Close button (whatever kind of element iOS makes it), else a tap on the dimmed
+    /// screen above the sheet. The sheet is drawn by another process, so its frames may read as empty: no swipe on it.
     @MainActor
     private func closeShareSheet(_ app: XCUIApplication) {
-        let close = app.buttons["Close"]
-        if close.waitForExistence(timeout: 5) {
+        let close = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label ==[c] 'Close' OR identifier ==[c] 'Close' OR label == 'Cancel'")).firstMatch
+        if close.waitForExistence(timeout: 5) && close.isHittable {
             close.tap()
         } else {
-            shareSheet(app).swipeDown(velocity: .fast)
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.06)).tap()
         }
         if !shareSheet(app).waitForNonExistence(timeout: 10) {
-            print("Note: the share sheet was still there 10 s after closing it")
+            print("Note: the share sheet was still there 10 s after closing it; what the test sees:\n\(app.debugDescription)")
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.06)).tap()
+            _ = shareSheet(app).waitForNonExistence(timeout: 10)
         }
     }
 
@@ -605,7 +609,7 @@ extension LaunchTests {
         // The fake scanner reads its code two seconds after it opens: a picture of it, if it is still there.
         if labelled(app, "label CONTAINS 'Demo scanner'").waitForExistence(timeout: 2) { keep("scan-label", app) }
         XCTAssertTrue(labelled(app, "label CONTAINS 'Items inside'").waitForExistence(timeout: 20), "the box with that label opened")
-        XCTAssertTrue(labelled(app, "label CONTAINS 'Plates, mugs, glasses'").exists, "box A1")
+        XCTAssertTrue(labelled(app, "label CONTAINS 'Box A1'").exists, "box A1 (its title)")
         keep("scanned-box", app)
     }
 

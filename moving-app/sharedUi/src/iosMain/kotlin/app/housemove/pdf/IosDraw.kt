@@ -38,6 +38,7 @@ import platform.CoreGraphics.CGPointMake
 import platform.CoreGraphics.CGRectMake
 import platform.CoreGraphics.CGSizeMake
 import platform.Foundation.NSError
+import platform.Foundation.NSFileManager
 import platform.Foundation.NSString
 import platform.Foundation.NSURL
 import platform.Foundation.NSUTF8StringEncoding
@@ -72,6 +73,8 @@ import kotlin.math.min
 object IosPaperWriter : PaperWriter {
     override fun pdf(file: File, draw: (PdfDoc) -> Unit): File {
         val url = NSURL.fileURLWithPath(file.path)
+        // A printout made again under the same name is a new file, never the old one written over in place.
+        NSFileManager.defaultManager.removeItemAtPath(file.path, error = null)
         // A page size for pages begun without one; every page here gives its own.
         val renderer = UIGraphicsPDFRenderer(bounds = CGRectMake(0.0, 0.0, 595.0, 842.0), format = UIGraphicsPDFRendererFormat())
         // An exception must not leave Kotlin through UIKit's block: it is kept, and thrown once UIKit is done.

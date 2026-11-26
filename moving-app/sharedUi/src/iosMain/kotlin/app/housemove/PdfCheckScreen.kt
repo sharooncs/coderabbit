@@ -178,7 +178,9 @@ internal object PdfCheck {
         for (d in listOf(root, outDir)) NSFileManager.defaultManager.createDirectoryAtPath(d.path, withIntermediateDirectories = true, attributes = null, error = null)
         val store = Store(File(root, "move"))
         DemoMove.fill(store)
-        val papers = DrawnPapers(IosPaperWriter) { File(outDir, it) }
+        // Each printout in a file of its own: the same name made twice (A4, then Letter) must not read back the first.
+        var made = 0
+        val papers = DrawnPapers(IosPaperWriter) { File(outDir, "${++made}-$it") }
         val data = store.data.value
         val tag = "K7Q2"
 
@@ -198,7 +200,7 @@ internal object PdfCheck {
         val wrong = codes.take(sheet.perPage).indices.filter { read[it] != labelQrText(codes[it], tag) }
         check(wrong.isEmpty(), "labels: all 21 QR codes on the first page read back as their codes" + if (wrong.isEmpty()) "" else " (not: ${wrong.map { codes[it] to read[it] }})")
         val letter = read(papers.labels(codes.take(3), LabelSheet.LETTER_10, 2, tag))
-        check(letter.pages == 1 && pageSize(letter.doc, 0) == (612 to 792), "labels: Letter sheets are 612 by 792 points, 6 labels on 1 page")
+        check(letter.pages == 1 && pageSize(letter.doc, 0) == (612 to 792), "labels: Letter sheets are 612 by 792 points, 6 labels on 1 page (${letter.pages}, ${pageSize(letter.doc, 0)})")
 
         // Hang tags: the codes read back, and their words.
         val tagSheet = TagSheet.A4_TAGS
@@ -225,7 +227,8 @@ internal object PdfCheck {
             val card = read(papers.helperCard(data, paper))
             check(
                 card.pages == 1 && pageSize(card.doc, 0) == (paper.w to paper.h) && "Helping with Sample move" in card.text && "Door signs" in card.text,
-                "Helper card (${paper.name}): one page of ${paper.w} by ${paper.h} points, with its steps and door signs",
+                "Helper card (${paper.name}): one page of ${paper.w} by ${paper.h} points, with its steps and door signs" +
+                    " (${card.pages}, ${pageSize(card.doc, 0)}, ${"Helping with Sample move" in card.text}, ${"Door signs" in card.text})",
             )
         }
 
