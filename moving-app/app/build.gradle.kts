@@ -24,8 +24,8 @@ android {
         applicationId = "app.housemove"
         minSdk = 26
         targetSdk = 35
-        versionCode = 13
-        versionName = "2.5"
+        versionCode = 14
+        versionName = "2.6"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
