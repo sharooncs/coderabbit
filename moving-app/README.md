@@ -406,6 +406,10 @@ device (`src/androidTest/`).
   on screen), `Speak.kt` (the microphone), `Camera.kt` (photos and scanners),
   `Journey.kt` (the phases of a move), `Nav.kt` (the routes), `Platform.kt` (what the screens ask of the phone)
 - `ui/screens/` (in `sharedUi/`) – one file per screen or group of screens
+- `camera/` (in `sharedUi/src/iosMain`) – the iPhone's camera, scanner and photo picker (`design/ios-plan.md`, step 3a):
+  AVFoundation, PhotosUI, ImageIO and AudioToolbox called from Kotlin (`AppleCamera`, `PhotoPicker`, `Jpeg`), and demo
+  mode's fakes for the UI tests (`DemoCamera`); what is the same everywhere (the scanner's rules, which codes it reads,
+  the beep) is `ui/iphone/PhoneCamera.kt`
 - `tools/` – the scripts above
 - `mailbox/` – the internet mailbox for the family's laptop (Go): it keeps sealed messages for the phones of a move. Its
   README says how to run it and its API; `design/asus-session.md` how a Claude Code session on the laptop sets it up
