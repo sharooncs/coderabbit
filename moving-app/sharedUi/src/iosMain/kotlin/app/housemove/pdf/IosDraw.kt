@@ -7,14 +7,26 @@ import app.housemove.data.IOException
 import app.housemove.data.qrPixels
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.ObjCObjectVar
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.allocArray
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
 import kotlinx.cinterop.set
 import kotlinx.cinterop.useContents
-import kotlinx.cinterop.value
+import platform.CoreGraphics.CGRect
+import platform.CoreGraphics.CGPDFContextCreateWithURL
+import platform.CoreGraphics.CGPDFContextClose
+import platform.CoreGraphics.CGContextBeginPage
+import platform.CoreGraphics.CGContextEndPage
+import platform.CoreGraphics.CGContextRelease
+import platform.CoreGraphics.CGContextTranslateCTM
+import platform.CoreGraphics.CGContextScaleCTM
+import platform.UIKit.UIGraphicsPushContext
+import platform.UIKit.UIGraphicsPopContext
+import platform.Foundation.CFBridgingRetain
+import platform.CoreFoundation.CFRelease
+import platform.CoreFoundation.CFURLRef
+import kotlinx.cinterop.reinterpret
 import platform.CoreGraphics.CGContextAddEllipseInRect
 import platform.CoreGraphics.CGContextAddLineToPoint
 import platform.CoreGraphics.CGContextAddPath
@@ -37,7 +49,6 @@ import platform.CoreGraphics.CGPathRelease
 import platform.CoreGraphics.CGPointMake
 import platform.CoreGraphics.CGRectMake
 import platform.CoreGraphics.CGSizeMake
-import platform.Foundation.NSError
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSString
 import platform.Foundation.NSURL
@@ -51,8 +62,6 @@ import platform.UIKit.UIGraphicsGetCurrentContext
 import platform.UIKit.UIGraphicsImageRenderer
 import platform.UIKit.UIGraphicsImageRendererFormat
 import platform.UIKit.UIGraphicsPDFRenderer
-import platform.UIKit.UIGraphicsPDFRendererContext
-import platform.UIKit.UIGraphicsPDFRendererFormat
 import platform.UIKit.UIImage
 import platform.UIKit.UIImageJPEGRepresentation
 import platform.UIKit.drawAtPoint
@@ -62,8 +71,7 @@ import kotlin.math.max
 import kotlin.math.min
 
 /*
- * The printouts' drawing interface (commonMain pdf/Draw.kt) on the iPhone: UIKit's PDF renderer (UIGraphicsPDFRenderer)
- * makes the file, CoreGraphics draws the shapes, UIKit the text (the system font, embedded in the PDF) and the photos
+ * The printouts' drawing interface (commonMain pdf/Draw.kt) on the iPhone: CoreGraphics' PDF context makes the file, CoreGraphics draws the shapes, UIKit the text (the system font, embedded in the PDF) and the photos
  * (upright, read small and kept as JPEG), and QR codes are the shared encoder's modules as vector squares, so they stay
  * sharp at any printer's resolution. Coordinates are UIKit's: points from the top left, y going down, as the common
  * layout's. UIKit's drawing may be used off the main thread, where the screens make their files.
@@ -71,30 +79,33 @@ import kotlin.math.min
 
 /** The iPhone's PDFs and the inventory spreadsheet. */
 object IosPaperWriter : PaperWriter {
+    /**
+     * A PDF made by CoreGraphics' PDF context, each page begun with its own media box (A4, Letter, landscape), and
+     * pushed as UIKit's current context, turned so y goes down, for UIKit's text and photos. (UIKit's PDF renderer gave
+     * a Letter page the renderer's own A4 size.)
+     */
     override fun pdf(file: File, draw: (PdfDoc) -> Unit): File {
-        val url = NSURL.fileURLWithPath(file.path)
         // A printout made again under the same name is a new file, never the old one written over in place.
         NSFileManager.defaultManager.removeItemAtPath(file.path, error = null)
-        // A page size for pages begun without one; every page here gives its own.
-        val renderer = UIGraphicsPDFRenderer(bounds = CGRectMake(0.0, 0.0, 595.0, 842.0), format = UIGraphicsPDFRendererFormat())
-        // An exception must not leave Kotlin through UIKit's block: it is kept, and thrown once UIKit is done.
-        var failed: Throwable? = null
-        val written = memScoped {
-            val error = alloc<ObjCObjectVar<NSError?>>()
-            renderer.writePDFToURL(url, withActions = { context ->
-                if (context == null) {
-                    failed = IOException("no PDF context")
-                } else {
-                    try {
-                        draw(IosDoc(context))
-                    } catch (t: Throwable) {
-                        failed = t
-                    }
-                }
-            }, error = error.ptr)
+        val retained = CFBridgingRetain(NSURL.fileURLWithPath(file.path)) ?: throw IOException("no URL for ${file.path}")
+        val url: CFURLRef = retained.reinterpret()
+        val ctx = try {
+            memScoped {
+                // The size of a page begun without one; every page here gives its own.
+                val a4 = alloc<CGRect>().apply { origin.x = 0.0; origin.y = 0.0; size.width = 595.0; size.height = 842.0 }
+                CGPDFContextCreateWithURL(url, a4.ptr, null)
+            }
+        } finally {
+            CFRelease(url)
+        } ?: throw IOException("could not write ${file.path}")
+        val doc = IosDoc(ctx)
+        try {
+            draw(doc)
+        } finally {
+            doc.close()
+            CGPDFContextClose(ctx)
+            CGContextRelease(ctx)
         }
-        failed?.let { throw it }
-        if (!written) throw IOException("could not write ${file.path}")
         return file
     }
 
@@ -106,16 +117,35 @@ object IosPaperWriter : PaperWriter {
     }
 }
 
-/** A PDF being drawn by UIKit's renderer: each page begun in [context] with its own size. */
-private class IosDoc(private val context: UIGraphicsPDFRendererContext) : PdfDoc {
+/** A PDF being drawn in CoreGraphics' PDF context [ctx]: each page begun with its own size, drawn with UIKit's y going down. */
+private class IosDoc(private val ctx: CGContextRef) : PdfDoc {
+    private var open = false
+
     override fun newPage(w: Int, h: Int): PdfPage {
-        // UIKit ends the page before, if any.
-        context.beginPageWithBounds(CGRectMake(0.0, 0.0, w.toDouble(), h.toDouble()), pageInfo = emptyMap<Any?, Any?>())
-        return IosPage(UIGraphicsGetCurrentContext() ?: throw IOException("no page"))
+        endPage()
+        memScoped {
+            val box = alloc<CGRect>().apply { origin.x = 0.0; origin.y = 0.0; size.width = w.toDouble(); size.height = h.toDouble() }
+            CGContextBeginPage(ctx, box.ptr)
+        }
+        // PDF's y goes up from the bottom; UIKit's, and the layout's, down from the top.
+        CGContextSaveGState(ctx)
+        CGContextTranslateCTM(ctx, 0.0, h.toDouble())
+        CGContextScaleCTM(ctx, 1.0, -1.0)
+        UIGraphicsPushContext(ctx)
+        open = true
+        return IosPage(ctx)
     }
 
-    // UIKit ends a page when the next one begins, or when the document ends.
-    override fun endPage() {}
+    override fun endPage() {
+        if (!open) return
+        UIGraphicsPopContext()
+        CGContextRestoreGState(ctx)
+        CGContextEndPage(ctx)
+        open = false
+    }
+
+    /** Ends the last page, if one is open: before the PDF is closed. */
+    fun close() = endPage()
 
     override fun picture(file: File, maxPx: Int): Picture? = IosPicture.read(file, maxPx)
 }
