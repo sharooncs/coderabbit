@@ -221,6 +221,14 @@ class CameraTest {
             val data = store.data.value
             assertEquals(hall.id, data.item(thing.id)?.originRoomId)
             assertEquals(1, data.photosOf(thing.id).size)
+
+            // Get fresh data's scanners close on the first code they read and say on the screen what came of it.
+            model.use("HM:A1")
+            assertEquals("That is not a sync code", (model.fresh as Fresh.Idle).report?.title)
+            model.useMailboxCode("HM:A1")
+            val said = (model.fresh as Fresh.Idle).report
+            assertEquals("Not set up", said?.title)
+            assertEquals(app.housemove.sync.MailboxSync.NOT_A_CODE, said?.text)
         } finally {
             model.stopCode()
             android.close()

@@ -180,6 +180,11 @@ class AppModel(
         if (ok) mailbox?.poke()
     }
 
+    /** What Get fresh data's mailbox scanner read (FreshScans.kt): set up with it, or said why not, as for a pasted code. */
+    fun useMailboxCode(text: String) {
+        store?.let { setUpMailbox(it, text) }
+    }
+
     // ---- codes from outside: a link from the Camera, a paste, typing ---------------------------------------------
 
     /**

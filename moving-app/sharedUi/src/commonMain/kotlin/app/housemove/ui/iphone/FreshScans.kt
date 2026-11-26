@@ -5,8 +5,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import app.housemove.sync.MailboxSync
-import app.housemove.sync.WifiSync
 import app.housemove.ui.LocalPlatform
 import app.housemove.ui.ScanDialog
 import app.housemove.ui.icons.Icons
@@ -18,12 +16,11 @@ import app.housemove.ui.icons.filled.QrCodeScanner
  * them (SyncScreen, MailboxUi). The iPhone's Camera app (Open in HouseMove) and pasting still work as before.
  */
 
-/** What is said when the scanner reads a code that is not one for getting fresh data. */
-internal const val NOT_A_SYNC_CODE = "That is not a sync code. On the Android phone tap More, Sync and backup, Show sync code."
-
 /**
- * "Scan the Android phone's code": its sync code (Show sync code) gets fresh data at once, as when it is pasted. The
- * mailbox's code is taken too. Anything else is said and the scanner stays open, as on Android.
+ * "Scan the Android phone's code": its sync code (Show sync code) gets fresh data at once, as when it is pasted; the
+ * mailbox's code is taken too. The scanner closes on the first code it reads, whatever it is, and Get fresh data says
+ * what came of it ("That is not a sync code", "That is an invite"). Android keeps scanning and says it in a toast; on
+ * the iPhone a toast shows under the scanner, which fills the screen, so it is said on the screen instead.
  */
 @Composable
 internal fun ScanSyncCode(model: AppModel) {
@@ -35,10 +32,8 @@ internal fun ScanSyncCode(model: AppModel) {
         ScanDialog(
             title = "Scan the sync code on the Android phone",
             onCode = { text ->
-                if (WifiSync.Invite.parse(Words.cleanCode(text)) != null || MailboxSync.isCode(text)) {
-                    scanning = false
-                    model.use(text)
-                } else platform.toast(NOT_A_SYNC_CODE)
+                scanning = false
+                model.use(text)
             },
             onClose = { scanning = false },
             raw = true,
@@ -49,21 +44,22 @@ internal fun ScanSyncCode(model: AppModel) {
     }
 }
 
-/** An Organiser's "Scan the mailbox's code" (or "Scan a new code" once there is one), as on Android's Sync and backup. */
+/**
+ * An Organiser's "Scan the mailbox's code" (or "Scan a new code" once there is one), as on Android's Sync and backup.
+ * As above, the scanner closes on the first code it reads and Get fresh data says what came of it ("Internet mailbox
+ * set up…", or that it is not the mailbox's code).
+ */
 @Composable
 internal fun ScanMailboxCode(model: AppModel, hasOne: Boolean) {
-    val platform = LocalPlatform.current
-    if (!platform.camera) return
+    if (!LocalPlatform.current.camera) return
     var scanning by remember { mutableStateOf(false) }
     SmallButton(if (hasOne) "Scan a new code" else "Scan the mailbox's code", Icons.Filled.QrCodeScanner, onClick = { scanning = true })
     if (scanning) {
         ScanDialog(
             title = "Scan the code the mailbox laptop shows",
             onCode = { text ->
-                if (MailboxSync.isCode(text)) {
-                    scanning = false
-                    model.use(text)
-                } else platform.toast(MailboxSync.NOT_A_CODE)
+                scanning = false
+                model.useMailboxCode(text)
             },
             onClose = { scanning = false },
             raw = true,
