@@ -62,8 +62,12 @@ internal fun startDemoHost(): AppModel.Demo {
         is Outcome.Ok -> made.value.encode()
         is Outcome.Refused -> error("demo invite: ${made.reason}")
     }
-    return AppModel.Demo(invite, host.invite(loopback).encode())
+    return AppModel.Demo(invite, host.invite(loopback).encode()).also { demoCodes = it }
 }
+
+/** The sample move's invite and sync code, for demo mode's fake scanner (camera/DemoCamera.kt, `-HMFakeScan`). */
+internal var demoCodes: AppModel.Demo? = null
+    private set
 
 /** Kept for as long as the app runs. */
 private var demoHost: WifiSync.Host? = null

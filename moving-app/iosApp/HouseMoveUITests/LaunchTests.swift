@@ -101,14 +101,15 @@ final class LaunchTests: XCTestCase {
         // One thing, opened: what happens to it and where it goes, as a Decider suggests them.
         labelled(app, "label CONTAINS 'Sofa'").tap()
         XCTAssertTrue(labelled(app, "label CONTAINS 'Suggest what happens to it'").waitForExistence(timeout: 10))
-        // What waits for a later test version is not offered: no camera here.
-        XCTAssertFalse(labelled(app, "label CONTAINS 'Take General photo'").exists)
+        // The camera is offered on it (demo mode's fake camera: the simulator has none).
+        XCTAssertTrue(labelled(app, "label == 'Take Sofa photo'").exists, "the camera is offered")
         keep("item", app)
         back(app)
         XCTAssertTrue(labelled(app, "label CONTAINS 'Sofa'").waitForExistence(timeout: 10), "back on the search")
     }
 
-    /// The shared screens a Decider uses most: Items, a box, and More (Everything), with no camera, scanner or printing.
+    /// The shared screens a Decider uses most: Items, a box, and More (Everything), with the camera and the scanner
+    /// (demo mode's fakes) and no printing.
     @MainActor
     func testShowsTheSharedScreens() throws {
         let app = launch()
@@ -117,7 +118,7 @@ final class LaunchTests: XCTestCase {
         XCTAssertTrue(items.waitForExistence(timeout: 10))
         items.tap()
         XCTAssertTrue(labelled(app, "label CONTAINS 'Kettle'").waitForExistence(timeout: 10))
-        XCTAssertFalse(labelled(app, "label BEGINSWITH 'Walk-through'").exists, "the walk-through needs the camera")
+        XCTAssertTrue(labelled(app, "label BEGINSWITH 'Walk-through'").exists, "the walk-through comes with the camera")
         keep("items", app)
 
         let boxes = labelled(app, "label BEGINSWITH 'Boxes'")
@@ -127,7 +128,7 @@ final class LaunchTests: XCTestCase {
         XCTAssertTrue(a1.waitForExistence(timeout: 10))
         a1.tap()
         XCTAssertTrue(labelled(app, "label CONTAINS 'Items inside'").waitForExistence(timeout: 10))
-        XCTAssertFalse(labelled(app, "label BEGINSWITH 'Scan '").exists, "scanning waits for a later test version")
+        XCTAssertTrue(labelled(app, "label BEGINSWITH 'Scan '").exists, "the box's scan buttons come with the camera")
         keep("box", app)
         back(app)
 
@@ -418,5 +419,124 @@ final class LaunchTests: XCTestCase {
         shot.name = name
         shot.lifetime = .keepAlways
         add(shot)
+    }
+}
+
+// ---- the camera and the scanner (step 3a), through demo mode's fakes ------------------------------------------------
+
+/// The camera and the scanner (step 3a of design/ios-plan.md). The simulator has no camera, so in demo mode the app uses
+/// fakes (sharedUi iosMain camera/DemoCamera.kt) through the same screens: the fake camera "takes" a sample picture of
+/// a sofa, saved as a photo is; the fake scanner "reads" the text given with `-HMFakeScan` a moment after it opens, where
+/// `demo-sync-code` stands for the sample move's sync code. Neither exists outside demo mode.
+extension LaunchTests {
+    /// A thing's photo: its camera, the shutter, Done; the photo then shows on the thing.
+    @MainActor
+    func testTakesAPhotoOfAThingWithTheDemoCamera() throws {
+        let app = launch()
+        join(app)
+        openThing(app, room: "Living room", thing: "Sofa")
+        XCTAssertTrue(labelled(app, "label == 'Take a photo'").waitForExistence(timeout: 10), "no photo yet")
+        let take = labelled(app, "label == 'Take Sofa photo'")
+        XCTAssertTrue(take.exists, "the camera is offered on the thing")
+        take.tap()
+        let shutter = labelled(app, "label == 'Take photo'")
+        XCTAssertTrue(shutter.waitForExistence(timeout: 10), "the camera opened")
+        XCTAssertTrue(labelled(app, "label BEGINSWITH 'Demo camera'").exists, "demo mode's fake camera")
+        keep("camera", app)
+        shutter.tap()
+        XCTAssertTrue(labelled(app, "label CONTAINS '1 taken'").waitForExistence(timeout: 15), "the photo was taken")
+        labelled(app, "label == 'Done'").tap()
+        // The thing's picture is the photo now: the "Take a photo" placeholder has gone.
+        XCTAssertTrue(waitForAbsence(labelled(app, "label == 'Take a photo'"), timeout: 15), "the photo shows on the thing")
+        let photo = app.images.matching(NSPredicate(format: "label == 'Sofa'")).firstMatch
+        if !photo.waitForExistence(timeout: 5) { print("Note: the Sofa photo is not listed as an image by accessibility") }
+        keep("item-photo", app)
+    }
+
+    /// Scan a label (Home, at the top) with the fake scanner reading box A1's old-style label: the box opens.
+    @MainActor
+    func testScanALabelOpensThatBox() throws {
+        let app = launch(fakeScan: "HM:A1")
+        join(app)
+        let scan = labelled(app, "label == 'Scan a label'")
+        XCTAssertTrue(scan.waitForExistence(timeout: 10), "Scan a label is offered on Home")
+        scan.tap()
+        // The fake scanner reads its code two seconds after it opens: a picture of it, if it is still there.
+        if labelled(app, "label CONTAINS 'Demo scanner'").waitForExistence(timeout: 2) { keep("scan-label", app) }
+        XCTAssertTrue(labelled(app, "label CONTAINS 'Items inside'").waitForExistence(timeout: 20), "the box with that label opened")
+        XCTAssertTrue(labelled(app, "label CONTAINS 'Plates, mugs, glasses'").exists, "box A1")
+        keep("scanned-box", app)
+    }
+
+    /// The walk-through is offered (Items), and a photo from its camera becomes a thing in the room picked.
+    @MainActor
+    func testTheWalkThroughIsOffered() throws {
+        let app = launch()
+        join(app)
+        let items = labelled(app, "label BEGINSWITH 'Items'")
+        XCTAssertTrue(items.waitForExistence(timeout: 10))
+        items.tap()
+        let walk = labelled(app, "label BEGINSWITH 'Walk-through'")
+        XCTAssertTrue(walk.waitForExistence(timeout: 10), "the walk-through is offered")
+        walk.tap()
+        let hall = labelled(app, "label BEGINSWITH 'Hall'")
+        XCTAssertTrue(hall.waitForExistence(timeout: 10), "the rooms to pick from")
+        hall.tap()
+        let start = labelled(app, "label BEGINSWITH 'Start shooting'")
+        XCTAssertTrue(reveal(app, start))
+        start.tap()
+        let shutter = labelled(app, "label == 'Take photo'")
+        XCTAssertTrue(shutter.waitForExistence(timeout: 10), "the walk-through's camera opened")
+        shutter.tap()
+        XCTAssertTrue(labelled(app, "label CONTAINS '1 taken'").waitForExistence(timeout: 15), "the photo was taken")
+        keep("walk-camera", app)
+        labelled(app, "label == 'Done'").tap()
+        XCTAssertTrue(labelled(app, "label CONTAINS 'Hall item 1'").waitForExistence(timeout: 15), "the photo became a thing in the Hall")
+        keep("walk", app)
+    }
+
+    /// Get fresh data: Scan the Android phone's code, with the fake scanner reading the sample move's sync code.
+    @MainActor
+    func testGetFreshDataScansASyncCode() throws {
+        let app = launch(fakeScan: "demo-sync-code")
+        join(app)
+        openFresh(app)
+        let scan = labelled(app, "label == \"Scan the Android phone's code\"")
+        XCTAssertTrue(reveal(app, scan), "the scan button comes into view")
+        scan.tap()
+        if labelled(app, "label CONTAINS 'Demo scanner'").waitForExistence(timeout: 2) { keep("scan-sync-code", app) }
+        let done = labelled(app, "label == 'Up to date'")
+        XCTAssertTrue(done.waitForExistence(timeout: 40), "the code was read and the sync went through")
+        keep("fresh-scanned", app)
+    }
+
+    /// The app in demo mode, its fake scanner reading [fakeScan].
+    @MainActor
+    private func launch(fakeScan: String) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments += ["-HMDemoHost", "YES", "-HMFakeScan", fakeScan]
+        app.launch()
+        return app
+    }
+
+    /// A thing, opened from search by its room's chip.
+    @MainActor
+    private func openThing(_ app: XCUIApplication, room: String, thing: String) {
+        openSearch(app)
+        let chip = labelled(app, "label CONTAINS '\(room)'")
+        XCTAssertTrue(reveal(app, chip), "the \(room) chip comes into view")
+        chip.tap()
+        let row = labelled(app, "label CONTAINS '\(thing)'")
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        row.tap()
+        XCTAssertTrue(labelled(app, "label CONTAINS 'Suggest what happens to it'").waitForExistence(timeout: 10), "\(thing) opened")
+    }
+
+    /// Waits up to [timeout] seconds for [element] to be gone; true when it is.
+    @MainActor
+    private func waitForAbsence(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
+        let until = Date().addingTimeInterval(timeout)
+        while element.exists && Date() < until { Thread.sleep(forTimeInterval: 0.5) }
+        return !element.exists
     }
 }

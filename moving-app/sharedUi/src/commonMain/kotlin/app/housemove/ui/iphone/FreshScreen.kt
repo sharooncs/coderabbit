@@ -44,6 +44,7 @@ import app.housemove.data.Store
 import app.housemove.data.Action
 import app.housemove.sync.AutoSync
 import app.housemove.sync.MailboxSync
+import app.housemove.ui.LocalPlatform
 import app.housemove.ui.Night
 import app.housemove.ui.Screen
 import app.housemove.ui.screens.unsharedWork
@@ -61,10 +62,10 @@ import kotlinx.coroutines.delay
 
 /*
  * Getting fresh data: a sync with the Android phone, as two Android phones sync. One shows a sync code and the other
- * scans it. The iPhone has no scanner of its own yet, so its first way is to show its code for the Android phone to
- * scan (More, Sync and backup, Scan sync code); the other is the Android phone's code, through the iPhone's Camera
- * (Open in HouseMove) or pasted. In the shared app this is the iPhone's Sync and backup (LocalSyncScreen), and where
- * the move is left.
+ * scans it. The iPhone shows its code for the Android phone to scan (More, Sync and backup, Scan sync code), or takes
+ * the Android phone's code: scanned here where it has a camera (FreshScans.kt), through the iPhone's Camera (Open in
+ * HouseMove), or pasted. In the shared app this is the iPhone's Sync and backup (LocalSyncScreen), and where the move
+ * is left.
  */
 
 /** The iPhone's Sync and backup: [code] is a sync code that came with the route, used once. */
@@ -140,9 +141,14 @@ fun FreshScreen(model: AppModel, store: Store, code: String? = null) {
 
             if (fresh !is Fresh.Showing) {
                 Heading("Or use the Android phone's code", Modifier.padding(top = 8.dp))
+                ScanSyncCode(model)
                 Panel {
                     Text(
-                        "On the Android phone, tap More, then Sync and backup, then Show sync code. Point this iPhone's Camera at it and tap Open in HouseMove.",
+                        if (LocalPlatform.current.camera) {
+                            "On the Android phone, tap More, then Sync and backup, then Show sync code. Scan it with the button above, or point this iPhone's Camera at it and tap Open in HouseMove."
+                        } else {
+                            "On the Android phone, tap More, then Sync and backup, then Show sync code. Point this iPhone's Camera at it and tap Open in HouseMove."
+                        },
                         style = MaterialTheme.typography.bodyLarge, color = Night.Text,
                     )
                     Hint("Or copy the code and paste it here.")
@@ -273,9 +279,9 @@ private fun AutoPanel(model: AppModel, engine: AutoSync, lastWith: String, lastA
 
 /**
  * The internet mailbox (design/encryption.md, "Mailbox as built"), as Android's Sync and backup shows it: one line ("Up to
- * date over the internet · 2 min ago", "No internet mailbox yet", or what went wrong), a hint, and the switch. The
- * iPhone has no scanner of its own: an Organiser points the Camera at the mailbox laptop's code and taps Open in
- * HouseMove, or pastes it into the code field below.
+ * date over the internet · 2 min ago", "No internet mailbox yet", or what went wrong), a hint, and the switch. An
+ * Organiser scans the mailbox laptop's code here where the iPhone has a camera (FreshScans.kt), points the Camera at it
+ * and taps Open in HouseMove, or pastes it into the code field below.
  */
 @Composable
 private fun MailboxPanel(model: AppModel, store: Store) {
@@ -313,10 +319,14 @@ private fun MailboxPanel(model: AppModel, store: Store) {
                 Text(status.line(now), style = MaterialTheme.typography.titleMedium, color = Night.Text)
                 status.hint(now, organiser)?.let { Hint(it) }
                 if (organiser && on && (status.state == MailboxSync.State.NOT_SET_UP || status.problem == MailboxSync.Problem.CODE_REFUSED)) {
-                    Hint("On this iPhone: point the Camera at the code and tap Open in HouseMove, or paste it below.")
+                    Hint(
+                        if (LocalPlatform.current.camera) "Scan the code the laptop shows, point the Camera at it and tap Open in HouseMove, or paste it below."
+                        else "On this iPhone: point the Camera at the code and tap Open in HouseMove, or paste it below.",
+                    )
                 }
             }
         }
+        if (organiser && on) ScanMailboxCode(model, hasOne = data.mailbox.url.isNotBlank())
         Row(
             Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(value = on, role = Role.Switch, onValueChange = { model.setMailbox(it) }),
             verticalAlignment = Alignment.CenterVertically,
