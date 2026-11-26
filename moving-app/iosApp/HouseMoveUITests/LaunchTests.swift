@@ -210,8 +210,17 @@ final class LaunchTests: XCTestCase {
         openFresh(app)
         let leave = labelled(app, "label == 'Leave this move on this iPhone'")
         XCTAssertTrue(reveal(app, leave), "the Leave button comes into view")
-        leave.tap()
+        // As in focus(): a tap while the list is still gliding from the swipe only stops the list, and nothing is
+        // asked. So let the glide end first, and tap again if the question did not come up (seen on the owner's Mac).
         let confirm = labelled(app, "label == 'Leave'")
+        for attempt in 1...3 {
+            Thread.sleep(forTimeInterval: 1.0)
+            leave.tap()
+            if confirm.waitForExistence(timeout: 5) {
+                print("Note: Leave was asked after tap \(attempt)")
+                break
+            }
+        }
         XCTAssertTrue(confirm.waitForExistence(timeout: 10), "asked first")
         XCTAssertTrue(labelled(app, "label == 'Keep it'").exists)
         keep("leave", app)
