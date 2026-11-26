@@ -288,7 +288,6 @@ class AppModel(
                 return@launch
             }
             val s = moves.current.value
-            store = s
             fresh = Fresh.Idle()
             join = JoinStep.Start()
             if (s != null) {
@@ -302,6 +301,8 @@ class AppModel(
                     Words.roleLine(role) + " " + Words.LATER + Words.plainNote(r.result),
                 )
             }
+            // Last: whoever sees the move here (the screens, a test on another thread) sees its welcome with it.
+            store = s
         }
     }
 
