@@ -13,6 +13,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import app.housemove.data.Backup
+import app.housemove.data.Home
+import app.housemove.data.Outcome
+import app.housemove.data.Role
+import app.housemove.data.Update
+import app.housemove.sync.AutoSync
+import app.housemove.sync.LocalLan
 import app.housemove.ui.unavailableRoutes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -24,12 +31,15 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
  * Files on the iPhone (step 3b of design/ios-plan.md), as the desktop tests can show them: the screens that now offer
  * printing and sharing (Labels and signs, Reports, Ask for decisions, and Get fresh data with Working apart and the
- * backup), drawn as an iPhone 17 Pro shows them (as ScreensRenderTest does, to build/screens).
+ * backup), drawn as an iPhone 17 Pro shows them (as ScreensRenderTest does, to build/screens), and files opened with
+ * HouseMove from another app: an update file from the Android phone, sealed for this iPhone, which says "Update from
+ * Sam's phone" and is taken in; and a backup, which an Organiser merges.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class FilesRenderTest {
@@ -76,6 +86,62 @@ class FilesRenderTest {
         }
         // Get fresh data, all of it (a tall picture): Working apart and the backup below the syncing.
         render("fresh-files-whole.png", 1f, route = "sync", height = 6200)
+    }
+
+    /** The Android phone sends an update file through a messaging app; the iPhone opens it with HouseMove. */
+    @Test
+    fun anUpdateFileOpenedWithHouseMoveSaysWhichPhoneItIsFrom() {
+        val lan = LocalLan()
+        val phone = AndroidPhone(File(root, "auto").apply { mkdirs() }, lan)
+        val iphone = DesktopHooks(File(root, "iphone-auto"), lan = lan)
+        val m = AppModel(iphone, "Test build 0.1 (1)", mainScope())
+        try {
+            joined(m, phone.invite())
+            // Once they have synced by themselves, the Android phone knows this iPhone opens updates sealed for it (2.5).
+            waitFor("up to date by itself", 30_000) { m.autoSync?.status?.value?.state == AutoSync.State.UP_TO_DATE }
+            val file = File(root, "maple-update.housemove")
+            waitFor("an update sealed for the iPhone", 30_000) { runCatching { file.outputStream().use { Update.write(phone.store, it) }.sealed }.getOrDefault(false) }
+            // Then it stops syncing by itself, and what it adds reaches the iPhone only in the update.
+            phone.engine?.pause()
+            phone.store.createItem("Garden bench", phone.store.data.value.roomsOf(Home.ORIGIN).first().id)
+            file.outputStream().use { Update.write(phone.store, it) }
+            iphone.files.hand(file)
+            render("incoming-update-normal.png", 1f, m, "home") {
+                iphone.files.incoming == null && m.store!!.data.value.liveItems.any { it.name == "Garden bench" }
+            }
+            assertNull(iphone.files.incoming, "taken")
+            assertTrue(m.store!!.data.value.liveItems.any { it.name == "Garden bench" }, "the update was taken in")
+        } finally {
+            m.autoSync?.close()
+            phone.close()
+        }
+    }
+
+    /** A backup opened with HouseMove: an Organiser on the iPhone merges it; a Decider is told only an Organiser may. */
+    @Test
+    fun aBackupOpenedWithHouseMoveIsMergedByAnOrganiser() {
+        val olive = (android.store.addPerson("Olive", Role.ORGANISER) as Outcome.Ok).value
+        joined(invite = android.invite(olive.id))
+        assertEquals(Role.ORGANISER, model.role)
+        // Made on the Android phone after the join, so only the backup brings it.
+        android.store.createItem("Garden bench", android.store.data.value.roomsOf(Home.ORIGIN).first().id)
+        val backup = File(root, "housemove-backup-2026-11-26.zip")
+        backup.outputStream().use { Backup.export(android.store, it) }
+        hooks.files.hand(backup, backup = true)
+        render("incoming-backup-normal.png", 1f, route = "home") {
+            hooks.files.incoming == null && model.store!!.data.value.liveItems.any { it.name == "Garden bench" }
+        }
+        assertTrue(model.store!!.data.value.liveItems.any { it.name == "Garden bench" }, "merged in")
+
+        // A Decider's iPhone: nothing changes.
+        val other = AppModel(DesktopHooks(File(root, "decider")), "Test build 0.1 (1)", mainScope())
+        joined(other)
+        assertEquals(Role.DECIDER, other.role)
+        val before = other.store!!.data.value.liveItems.size
+        (other.hooks.files as DesktopFiles).hand(backup, backup = true)
+        render("incoming-backup-decider-normal.png", 1f, other, "home") { (other.hooks.files as DesktopFiles).incoming == null }
+        Thread.sleep(500)
+        assertEquals(before, other.store!!.data.value.liveItems.size, "a Decider merges nothing")
     }
 
     /** Everything the iPhone offers once files are there; only the camera's screens wait (step 3a), and other moves. */

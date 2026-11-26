@@ -556,10 +556,19 @@ fun Farewells(moves: Moves) {
 /** An update file another app asked this one to open: it goes into its move, and what came of it is said. */
 @Composable
 fun IncomingUpdates(moves: Moves) {
+    val current by moves.current.collectAsState()
+    IncomingUpdatesFor(current)
+}
+
+/**
+ * [IncomingUpdates] for the move in [store] (the one in use; the iPhone's one move, with [LocalMoves] not given): an
+ * update file opened with HouseMove goes into it, and what came of it is said.
+ */
+@Composable
+fun IncomingUpdatesFor(store: Store?) {
     val context = LocalPlatform.current
     val incoming = context.incomingUpdate()
-    val current by moves.current.collectAsState()
-    val updates = rememberUpdateActions(current)
+    val updates = rememberUpdateActions(store)
     LaunchedEffect(incoming) {
         val file = incoming ?: return@LaunchedEffect
         context.incomingUpdateTaken()

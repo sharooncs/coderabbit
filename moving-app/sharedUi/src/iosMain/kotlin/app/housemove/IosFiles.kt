@@ -4,8 +4,10 @@ package app.housemove
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import app.housemove.data.AppFolders
 import app.housemove.data.File
 import app.housemove.data.IOException
@@ -16,6 +18,7 @@ import app.housemove.pdf.IosPaperWriter
 import app.housemove.ui.Papers
 import app.housemove.ui.PickedFile
 import app.housemove.ui.SaveFile
+import app.housemove.ui.iphone.AppModel
 import app.housemove.ui.iphone.IncomingFile
 import app.housemove.ui.iphone.PhoneFiles
 import kotlinx.cinterop.CPointer
@@ -66,6 +69,8 @@ import platform.posix.fwrite
  *   screens hand on: backups, update files and the PDFs;
  * - the system's document picker (UIDocumentPickerViewController), to open a file (an update file, a backup to merge) and
  *   to save a backup in Files;
+ * - files other apps hand to HouseMove ("Open in HouseMove" on an update file or a backup: Info.plist's document types),
+ *   which reach the app as a file link through the same path as an invite (HouseMoveApp.swift's onOpenURL, openLink);
  * - the printouts, drawn with the layout Android's are (pdf/IosDraw.kt).
  *
  * Everything is kept in Library/Caches/HouseMove: out/ (files made to hand on), in/ (files opened, read from there for as
@@ -189,11 +194,37 @@ internal object IosFiles : PhoneFiles {
         present(picker)
     }
 
-    // ---- files other apps hand to HouseMove: not yet ---------------------------------------------------------
+    // ---- files other apps hand to HouseMove ------------------------------------------------------------------
 
-    override val incoming: IncomingFile? get() = null
+    override var incoming: IncomingFile? by mutableStateOf(null)
+        private set
 
-    override fun incomingTaken() {}
+    override fun incomingTaken() {
+        incoming = null
+    }
+
+    /** Is [text] a file link ("Open in HouseMove" on a file), rather than an invite or a code? */
+    fun isFileLink(text: String): Boolean = text.startsWith("file:", ignoreCase = true)
+
+    /**
+     * A file another app asked HouseMove to open ([text], a file link, on the main thread): kept in in/ for the move's
+     * screens (IncomingFiles), a backup if it is a zip, an update file otherwise. With no move on this iPhone yet, it is
+     * said that it waits for one and the file is let go of; so is a file that cannot be read.
+     */
+    fun receive(text: String, model: AppModel?) {
+        val url = NSURL.URLWithString(text) ?: return
+        val kept = keep(url)
+        if (kept == null) {
+            model?.toasts?.say("HouseMove could not read that file. Save it in Files and open it from there.")
+            return
+        }
+        if (model != null && model.store == null) {
+            model.toasts.say("Join the move first. Then open the file with HouseMove again.")
+            return
+        }
+        val name = url.lastPathComponent ?: ""
+        incoming = IncomingFile(kept, backup = name.endsWith(".zip", ignoreCase = true))
+    }
 
     // ---- presenting on the screen --------------------------------------------------------------------------
 

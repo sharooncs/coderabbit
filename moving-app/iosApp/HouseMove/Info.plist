@@ -84,5 +84,63 @@
 			</array>
 		</dict>
 	</array>
+	<!-- Files HouseMove opens from other apps ("Open in HouseMove" from Files, Mail, Messages or AirDrop; step 3b of
+	     design/ios-plan.md): its update files (Send update: Android's .housemove, application/vnd.housemove.update),
+	     whose type it declares below, and backups, which are zip files (Android's housemove-backup-….zip): HouseMove is
+	     offered for a zip but is never the app a zip opens in by default. The file is copied into the app rather than
+	     opened in place, and reaches the shared screens as a file link (HouseMoveApp.swift, onOpenURL; IosFiles.kt). -->
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>HouseMove update</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>app.housemove.update</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>HouseMove backup</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.zip-archive</string>
+			</array>
+		</dict>
+	</array>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<false/>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>app.housemove.update</string>
+			<key>UTTypeDescription</key>
+			<string>HouseMove update</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>housemove</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/vnd.housemove.update</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
 </dict>
 </plist>

@@ -5,7 +5,7 @@ import XCTest
 /// the largest text size and Apple's accessibility audit. Screenshots are kept (CI copies them to the ci-shots branch):
 /// join, ask, rooms, room, search, fresh, fresh-by-itself, leave and the largest-text ones as before, and home, item,
 /// items, box and more for the shared screens; from step 3b (files), share-backup, save-backup, labels, labels-share,
-/// and pdf-check.
+/// pdf-check and update-opened.
 ///
 /// There is no Android phone in CI. Launched with `-HMDemoHost YES`, the app hosts a small sample move inside itself
 /// on 127.0.0.1 (demo mode, sharedUi iosMain Demo.kt), through the same sync code and real sockets as a real join, and
@@ -221,7 +221,7 @@ final class LaunchTests: XCTestCase {
         XCTAssertTrue(labelled(app, "label == 'Join a move'").exists)
     }
 
-    // ---- files (step 3b): the share sheet, the document picker, the PDFs -----------------------------------------
+    // ---- files (step 3b): the share sheet, the document picker, the PDFs, "Open in HouseMove" ----------------------
 
     /// Share backup, on Get fresh data (the iPhone's Sync and backup): the backup is made and handed to the share sheet
     /// (AirDrop, Save to Files, the apps), which closes again.
@@ -303,6 +303,29 @@ final class LaunchTests: XCTestCase {
         keep("pdf-check", app)
         XCTAssertEqual(summary.label, "PDF check passed", report)
         XCTAssertTrue(lines.contains { $0.hasPrefix("Check passed: labels: all 21 QR codes") }, report)
+    }
+
+    /// An update file opened with HouseMove from another app: with `-HMDemoUpdate YES`, once this iPhone has joined and
+    /// synced by itself, the sample move's phone (Sam's) sends it an update file, which arrives as "Open in HouseMove"
+    /// brings one. The iPhone says what Android says: "Update from Sam's phone", and what it brought is there.
+    @MainActor
+    func testOpensAnUpdateFileFromAnotherApp() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["-HMDemoHost", "YES", "-HMDemoUpdate", "YES"]
+        app.launch()
+        join(app)
+        let title = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Update from Sam's phone")).firstMatch
+        XCTAssertTrue(title.waitForExistence(timeout: 120), "the update file was opened, and says which phone it is from")
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "Taken in from Sam's phone")).firstMatch.exists)
+        keep("update-opened", app)
+        let ok = labelled(app, "label == 'OK'")
+        XCTAssertTrue(ok.exists)
+        ok.tap()
+        openSearch(app)
+        let field = textField(app, "What are you looking for?")
+        field.tap()
+        app.typeText("Garden")
+        XCTAssertTrue(labelled(app, "label CONTAINS 'Garden bench'").waitForExistence(timeout: 10), "what the update brought")
     }
 
     @MainActor
