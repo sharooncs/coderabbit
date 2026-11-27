@@ -421,7 +421,7 @@ final class LaunchTests: XCTestCase {
         XCTAssertTrue(invite.waitForExistence(timeout: 30), "the demo invite shows")
         let code = invite.label
         let field = textField(app, "Invite")
-        XCTAssertTrue(reveal(app, field), "the invite field comes into view")
+        XCTAssertTrue(reveal(app, field, clearOfBottom: true), "the invite field comes into view")
         focus(app, field)
         app.typeText(code)
         app.typeText("\n")
@@ -459,19 +459,29 @@ final class LaunchTests: XCTestCase {
             Thread.sleep(forTimeInterval: 0.5)
             let focused = (field.value(forKey: "hasKeyboardFocus") as? Bool) ?? false
             if focused || app.keyboards.firstMatch.exists { return }
-            _ = reveal(app, field)
+            _ = reveal(app, field, clearOfBottom: true)
         }
         // Not fatal by itself: whether the invite went in is checked next, by the question it brings up.
         print("Note: the invite field did not report focus after three taps")
     }
 
     /// Swipes the screen up until [element] can be tapped; false when it never can.
+    ///
+    /// With [clearOfBottom] (a text field), until it is also wholly above the bottom 100 points: the app draws only
+    /// inside the safe area, but iOS counts a field whose middle is under the home indicator as hittable, and a tap
+    /// there never reaches it. It stops early when a swipe no longer moves the field (the end of the screen).
     @MainActor
-    private func reveal(_ app: XCUIApplication, _ element: XCUIElement) -> Bool {
+    private func reveal(_ app: XCUIApplication, _ element: XCUIElement, clearOfBottom: Bool = false) -> Bool {
+        let bottom = app.windows.firstMatch.frame.maxY - 100
+        func ready() -> Bool {
+            element.exists && element.isHittable && (!clearOfBottom || element.frame.maxY <= bottom)
+        }
         var swipes = 0
-        while !(element.exists && element.isHittable) && swipes < 15 {
+        while !ready() && swipes < 15 {
+            let before: CGFloat? = element.exists && element.isHittable ? element.frame.minY : nil
             app.swipeUp(velocity: .slow)
             swipes += 1
+            if let before, element.exists, element.isHittable, abs(element.frame.minY - before) < 1 { break }
         }
         return element.exists && element.isHittable
     }
