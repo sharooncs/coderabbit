@@ -128,7 +128,9 @@ fun Frame(
     val tabs = if (tab == null) emptyList() else dockTabs(appData())
     val labelHeight = with(LocalDensity.current) { 16.sp.toDp() }
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val plan = if (tab == null) null else dockPlan(maxWidth, tabs.size, dockAction != null, labelHeight)
+        // At the largest text sizes the labels may take two lines, and the dock makes room for them (Dock.kt).
+        val labels = if (tab == null) null else rememberDockLabels(tabs, dockColumn(maxWidth, tabs.size, dockAction != null), tab)
+        val plan = if (tab == null) null else dockPlan(maxWidth, tabs.size, dockAction != null, labels?.height ?: labelHeight)
         Scaffold(
             containerColor = Color.Transparent,
             contentColor = Night.Text,
@@ -142,7 +144,7 @@ fun Frame(
                 content = content,
             )
         }
-        if (plan != null && tab != null) Dock(tab, tabs, plan, dockAction, Modifier.align(Alignment.BottomCenter))
+        if (plan != null && tab != null) Dock(tab, tabs, plan, dockAction, labels, Modifier.align(Alignment.BottomCenter))
     }
 }
 

@@ -6,6 +6,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
@@ -29,10 +30,14 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.housemove.data.Action
@@ -98,6 +103,12 @@ internal class DockPlan(
     }
 }
 
+/** How many columns the dock has: with a middle button and an even number of destinations, one is left free for it. */
+private fun dockSlots(tabs: Int, tall: Boolean): Int = if (tall && tabs % 2 == 0) tabs + 1 else tabs.coerceAtLeast(1)
+
+/** The width of one destination's column in a dock [width] wide. */
+internal fun dockColumn(width: Dp, tabs: Int, tall: Boolean): Dp = width / dockSlots(tabs, tall)
+
 internal fun dockPlan(width: Dp, tabs: Int, tall: Boolean, labelHeight: Dp): DockPlan {
     val apex = if (tall) 20.dp else 12.dp
     val edgeDrop = if (tall) 56.dp else 38.dp
@@ -106,7 +117,7 @@ internal fun dockPlan(width: Dp, tabs: Int, tall: Boolean, labelHeight: Dp): Doc
     val edge = (width / 2) / a
     val b = edgeDrop / (1f - sqrt(1f - edge * edge))
     // With a middle button and an even number of destinations, the middle column is left free for it.
-    val slots = if (tall && tabs % 2 == 0) tabs + 1 else tabs.coerceAtLeast(1)
+    val slots = dockSlots(tabs, tall)
     val column = width / slots
     val used = (0 until slots).filter { !(tall && tabs % 2 == 0 && it == slots / 2) }
     fun dropAt(x: Dp): Dp {
@@ -129,8 +140,47 @@ internal fun dockPlan(width: Dp, tabs: Int, tall: Boolean, labelHeight: Dp): Doc
     return DockPlan(width, height, reserve, apex, a, b, column, tabX, tabY, actionTop)
 }
 
+/** The labels under the dock's buttons: 11 sp on one line, as at the normal text size. */
+private val LABEL = TextStyle(fontSize = 11.sp, lineHeight = 15.sp, letterSpacing = 0.3.sp)
+
+/** The dock's labels at a large text size ([rememberDockLabels]): their size, and the [height] the dock keeps for them. */
+internal class DockLabels(val fontSize: TextUnit, val lineHeight: TextUnit, val height: Dp)
+
+/**
+ * How the dock's labels are written when the text is larger than normal and one of them would be cut at the edge of its
+ * [column] (at the largest sizes: "Move dc"), each measured as it is written ([current]'s label is the bolder): on up to
+ * two lines, broken between words, and smaller only as far as the longest word needs to fit. Null at the normal text
+ * size, and wherever every label fits as it is: then they are written as they always were.
+ */
 @Composable
-internal fun Dock(current: String, tabs: List<Tab>, plan: DockPlan, action: DockAction?, modifier: Modifier = Modifier) {
+internal fun rememberDockLabels(tabs: List<Tab>, column: Dp, current: String): DockLabels? {
+    val density = LocalDensity.current
+    // At the normal size and smaller, nothing is measured: the labels are as they always were.
+    if (density.fontScale <= 1f) return null
+    val measurer = rememberTextMeasurer()
+    val style = LocalTextStyle.current.merge(LABEL)
+    return remember(tabs, column, current, density, style) {
+        fun styleOf(t: Tab) = style.copy(fontWeight = if (t.route == current) FontWeight.SemiBold else FontWeight.Medium)
+        fun width(text: String, s: TextStyle) = measurer.measure(text, s, softWrap = false, maxLines = 1, density = density).size.width
+        // A label is cut once its letters reach past the column; the last 2 points of its measured width are only the
+        // letter spacing after its last letter and the letters' own margins, which nobody sees go.
+        val columnPx = with(density) { (column + 2.dp).toPx() }
+        if (tabs.all { width(it.label, styleOf(it)) <= columnPx }) return@remember null
+        // A little air between neighbouring labels.
+        val room = with(density) { (column - 4.dp).toPx() }
+        val widestWord = tabs.flatMap { t -> t.label.split(' ').map { width(it, styleOf(t)) } }.max().coerceAtLeast(1)
+        val k = minOf(1f, room / widestWord)
+        val lines = tabs.maxOf {
+            val smaller = styleOf(it).copy(fontSize = LABEL.fontSize * k, lineHeight = LABEL.lineHeight * k)
+            measurer.measure(it.label, smaller, maxLines = 2, constraints = Constraints(maxWidth = room.toInt()), density = density).lineCount
+        }
+        val lineHeight = LABEL.lineHeight * k
+        DockLabels(LABEL.fontSize * k, lineHeight, with(density) { lineHeight.toDp() * lines + 1.dp })
+    }
+}
+
+@Composable
+internal fun Dock(current: String, tabs: List<Tab>, plan: DockPlan, action: DockAction?, labels: DockLabels?, modifier: Modifier = Modifier) {
     val nav = LocalNav.current
     // Suggestions waiting for this person to approve: counted on the Home button, where the strip to review them is.
     val data = appData()
@@ -163,11 +213,18 @@ internal fun Dock(current: String, tabs: List<Tab>, plan: DockPlan, action: Dock
             ) {
                 GlassOrb(t.icon, null, kind = if (selected) OrbKind.Selected else OrbKind.Plain, size = ORB, badge = badge)
                 Spacer(Modifier.height(3.dp))
-                Text(
+                if (labels == null) Text(
                     t.label,
                     fontSize = 11.sp, lineHeight = 15.sp, letterSpacing = 0.3.sp,
                     fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                     color = Night.Text, maxLines = 1, softWrap = false, overflow = TextOverflow.Clip, textAlign = TextAlign.Center,
+                ) else Text(
+                    // The largest text sizes: up to two lines, no wider than the column ([rememberDockLabels]).
+                    t.label,
+                    fontSize = labels.fontSize, lineHeight = labels.lineHeight, letterSpacing = LABEL.letterSpacing,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                    color = Night.Text, maxLines = 2, overflow = TextOverflow.Clip, textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 2.dp),
                 )
             }
         }
