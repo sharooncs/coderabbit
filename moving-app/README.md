@@ -393,7 +393,8 @@ device (`src/androidTest/`).
   label ranges; `Hidden.kt`, `Records.kt` and `Where.kt` the records Helpers are
   not sent, damage and contents lines, and where things are; `Crypto.kt`,
   `Sealed.kt` and `Update.kt` the update files; `DailyBackup.kt` the daily
-  backup; `Numbers.kt` how every typed or spoken number is read, and what is refused
+  backup; `Numbers.kt` how every typed or spoken number is read, and what is refused; `TransferTime.kt` the time
+  the iPhone asks iOS for to finish a join, a sync, a mailbox request or a backup once HouseMove leaves the front
 - `sync/` (in `shared/`) – phone-to-phone sync over a local socket, and invites;
   syncing by itself (`AutoSync`, `AutoSession`, `Discovery`: Bonjour, the
   handshake); the encryption from 2.4 (`Noise`, `SecureChannel`: the handshakes
@@ -408,7 +409,8 @@ device (`src/androidTest/`).
   `Visual.kt` and `Common.kt` (tiles, buttons, inputs), `Dock.kt` (the dome at
   the bottom), `Iso.kt` (the house drawings), `PeopleKit.kt` (people and roles
   on screen), `Speak.kt` (the microphone), `Camera.kt` (photos and scanners),
-  `Journey.kt` (the phases of a move), `Nav.kt` (the routes), `Platform.kt` (what the screens ask of the phone)
+  `Journey.kt` (the phases of a move), `Nav.kt` (the routes), `Platform.kt` (what the screens ask of the phone),
+  `PhoneWords.kt` (the few words that differ between Android and the iPhone, and how a phone knows the other is an iPhone)
 - `ui/screens/` (in `sharedUi/`) – one file per screen or group of screens
 - `camera/` (in `sharedUi/src/iosMain`) – the iPhone's camera, scanner and photo picker (`design/ios-plan.md`, step 3a):
   AVFoundation, PhotosUI, ImageIO and AudioToolbox called from Kotlin (`AppleCamera`, `PhotoPicker`, `Jpeg`), and demo
