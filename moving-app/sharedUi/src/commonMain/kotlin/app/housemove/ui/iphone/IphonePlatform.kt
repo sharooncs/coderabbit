@@ -1,21 +1,21 @@
 package app.housemove.ui.iphone
 
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -31,7 +32,15 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.window.PopupProperties
 import app.housemove.data.BackupPlace
 import app.housemove.data.File
 import app.housemove.data.qrPixels
@@ -220,6 +229,9 @@ class Toasts {
     var count: Int by mutableIntStateOf(0)
         private set
 
+    /** How long the words stay: 3.5 seconds (Android's long toast). Tests that take their time over a picture keep them longer. */
+    internal var showMs = 3_500L
+
     fun say(words: String) {
         text = words
         count++
@@ -230,20 +242,56 @@ class Toasts {
     }
 }
 
-/** The words of [toasts] on a glass pill near the bottom, for 3.5 seconds (Android's long toast), read out by VoiceOver. */
+/**
+ * The words of [toasts] on a glass pill near the bottom of the area this fills (the safe area), for 3.5 seconds
+ * (Android's long toast), read out by VoiceOver: above everything on the screen, a full-screen dialog such as a scanner
+ * included, and never in the way of a touch, as Android's own toasts are.
+ *
+ * Above dialogs: the pill is drawn in a popup of its own. Compose Multiplatform draws every popup and dialog as a layer
+ * over the screen, the newest on top; a new popup is made for each thing said ([key]), so the words are above whatever
+ * was open when they were said. The popup is not focusable: it takes neither the keyboard, nor Back, nor taps outside it.
+ *
+ * Touches: a layer takes the touches that land inside its bounds and hands the others to the layers under it. This
+ * popup's bounds are a point (its layout is 0 by 0, at [ToastPlace]), and the pill is drawn around that point, outside
+ * those bounds (Compose does not clip what a layout draws to its size). So no touch lands in it: every one, on the pill
+ * too, goes to the dialog or the screen beneath.
+ */
 @Composable
 fun ToastHost(toasts: Toasts, modifier: Modifier = Modifier) {
     val words = toasts.text ?: return
     val seen = toasts.count
     LaunchedEffect(seen) {
-        delay(3_500)
+        delay(toasts.showMs)
         toasts.done(seen)
     }
-    Box(modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 96.dp), contentAlignment = Alignment.BottomCenter) {
-        Text(
-            words, style = MaterialTheme.typography.bodyLarge, color = Night.Text, textAlign = TextAlign.Center,
-            modifier = Modifier.widthIn(max = 520.dp).glass(RoundedCornerShape(22.dp), Tone.Plain).padding(horizontal = 18.dp, vertical = 12.dp)
-                .semantics { liveRegion = LiveRegionMode.Polite },
-        )
+    BoxWithConstraints(modifier.fillMaxSize()) {
+        val widest = minOf(maxWidth - 48.dp, 520.dp)
+        val lift = with(LocalDensity.current) { 96.dp.roundToPx() }
+        key(seen) {
+            Popup(
+                popupPositionProvider = remember(lift) { ToastPlace(lift) },
+                properties = PopupProperties(focusable = false, dismissOnBackPress = false, dismissOnClickOutside = false, clippingEnabled = false),
+            ) {
+                Text(
+                    words, style = MaterialTheme.typography.bodyLarge, color = Night.Text, textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .layout { measurable, constraints ->
+                            // As wide as the words, at most [widest]; no size at all as far as the popup goes (see above).
+                            val pill = measurable.measure(Constraints(maxWidth = widest.roundToPx().coerceAtMost(constraints.maxWidth)))
+                            layout(0, 0) { pill.place(-pill.width / 2, -pill.height) }
+                        }
+                        // A dark ground under the glass: the words stay readable over a bright camera picture too.
+                        .background(Night.Panel.copy(alpha = 0.94f), RoundedCornerShape(22.dp))
+                        .glass(RoundedCornerShape(22.dp), Tone.Plain).padding(horizontal = 18.dp, vertical = 12.dp)
+                        .semantics { liveRegion = LiveRegionMode.Polite },
+                )
+            }
+        }
     }
+}
+
+/** Where a toast goes: [lift] pixels above the middle of the bottom of the area it is shown in (the popup's anchor). */
+private class ToastPlace(private val lift: Int) : PopupPositionProvider {
+    override fun calculatePosition(anchorBounds: IntRect, windowSize: IntSize, layoutDirection: LayoutDirection, popupContentSize: IntSize): IntOffset =
+        IntOffset(anchorBounds.left + anchorBounds.width / 2, anchorBounds.bottom - lift)
 }

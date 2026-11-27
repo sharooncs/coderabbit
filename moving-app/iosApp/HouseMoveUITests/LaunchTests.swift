@@ -5,7 +5,7 @@ import XCTest
 /// the largest text size and Apple's accessibility audit. Screenshots are kept (CI copies them to the ci-shots branch):
 /// join, ask, rooms, room, search, fresh, fresh-by-itself, leave and the largest-text ones as before, and home, item,
 /// items, box and more for the shared screens; from step 3b (files), share-backup, save-backup, labels, labels-share,
-/// pdf-check and update-opened.
+/// pdf-check and update-opened; from step 5, toast-over-scanner.
 ///
 /// There is no Android phone in CI. Launched with `-HMDemoHost YES`, the app hosts a small sample move inside itself
 /// on 127.0.0.1 (demo mode, sharedUi iosMain Demo.kt), through the same sync code and real sockets as a real join, and
@@ -654,6 +654,38 @@ extension LaunchTests {
         let done = labelled(app, "label == 'Up to date'")
         XCTAssertTrue(done.waitForExistence(timeout: 40), "the code was read and the sync went through")
         keep("fresh-scanned", app)
+    }
+
+    /// A shared scanner that reads a wrong code says so above itself (step 5: the toast is drawn above dialogs): a box's
+    /// Change label, with the fake scanner reading the sample move's sync code. The words are checked softly (a toast is
+    /// a layer of its own, which accessibility may list or not); the picture toast-over-scanner shows them.
+    @MainActor
+    func testAWrongCodeInAScannerIsSaidAboveIt() throws {
+        let app = launch(fakeScan: "demo-sync-code")
+        join(app)
+        let boxes = labelled(app, "label BEGINSWITH 'Boxes'")
+        XCTAssertTrue(boxes.waitForExistence(timeout: 10))
+        boxes.tap()
+        let a1 = labelled(app, "label CONTAINS 'Plates, mugs, glasses'")
+        XCTAssertTrue(a1.waitForExistence(timeout: 10))
+        a1.tap()
+        XCTAssertTrue(labelled(app, "label CONTAINS 'Items inside'").waitForExistence(timeout: 10), "box A1 opened")
+        let more = labelled(app, "label BEGINSWITH 'More' AND label CONTAINS 'A1'")
+        XCTAssertTrue(reveal(app, more), "the box's More comes into view")
+        more.tap()
+        let change = labelled(app, "label == 'Change label'")
+        XCTAssertTrue(reveal(app, change), "Change label is offered")
+        change.tap()
+        XCTAssertTrue(labelled(app, "label == 'Scan or type the new label'").waitForExistence(timeout: 10), "the scanner opened")
+        // The fake scanner reads the sync code two seconds after it opens, and the words stay for three and a half: the
+        // picture is taken in between.
+        Thread.sleep(forTimeInterval: 3.5)
+        keep("toast-over-scanner", app)
+        let words = labelled(app, "label == 'That is a code for linking phones, not a box label.'")
+        if !words.waitForExistence(timeout: 2) {
+            print("Note: the toast over the scanner was not listed by accessibility; see the picture toast-over-scanner")
+        }
+        XCTAssertTrue(labelled(app, "label == 'Scan or type the new label'").exists, "the scanner is still open: the label was not changed")
     }
 
     /// The app in demo mode, its fake scanner reading [fakeScan].

@@ -14,7 +14,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
 import app.housemove.data.Store
@@ -52,10 +51,9 @@ fun HouseMoveApp(
                 val store = model.store
                 if (store == null) JoinFlow(model) else key(store) { TheMove(model, store, startRoute, onNav) }
             }
-            // What the shared screens say for a few seconds, above the home indicator. Not in the way of a tap.
-            Box(Modifier.fillMaxSize().windowInsetsPadding(safeArea), contentAlignment = Alignment.BottomCenter) {
-                ToastHost(model.toasts)
-            }
+            // What the shared screens say for a few seconds, above the home indicator and above any dialog (a scanner's
+            // "That is not a sync code" too), and never in the way of a tap (ToastHost).
+            ToastHost(model.toasts, Modifier.windowInsetsPadding(safeArea))
         }
     }
 }
