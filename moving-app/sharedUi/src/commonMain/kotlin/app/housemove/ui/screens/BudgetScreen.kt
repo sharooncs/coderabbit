@@ -451,7 +451,7 @@ private fun MdReceipts(expenseId: String, saved: Boolean, modifier: Modifier = M
             Spacer(Modifier.width(10.dp))
             Text(if (photos.isEmpty()) "Photograph the receipt" else "Another photo", style = MaterialTheme.typography.labelLarge, color = Night.MintPale)
         }
-        if (gallery != null) GlassOrb(Icons.Default.PhotoLibrary, "Add a receipt from the gallery", onClick = { gallery() })
+        if (gallery != null) GlassOrb(Icons.Default.PhotoLibrary, "Add a receipt ${context.words.fromTheGallery}", onClick = { gallery() })
         photos.forEach { p -> PhotoThumb(p, Modifier.size(60.dp).clip(RoundedCornerShape(16.dp)).clickable { viewing = p }) }
     }
     if (camera) PhotoCamera(hint = "Receipt", onPhoto = { keep(it) }, onClose = { camera = false })

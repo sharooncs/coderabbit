@@ -236,7 +236,7 @@ internal fun PhotoCamera(hint: String, onPhoto: (File) -> Unit, onClose: () -> U
             )
             if (gallery != null) BigAction(Icons.Default.PhotoLibrary, "Choose photos instead", onClick = { gallery() })
             BigAction(Icons.Default.Settings, "Open the phone's settings", primary = false, onClick = {
-                if (!context.openAppSettings()) toast(context, "Open Settings, then Apps, HouseMove, Permissions.")
+                if (!context.openAppSettings()) toast(context, context.words.cameraSettingsSteps)
                 onClose()
             })
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

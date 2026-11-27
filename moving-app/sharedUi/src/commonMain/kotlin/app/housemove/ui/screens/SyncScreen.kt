@@ -170,6 +170,7 @@ fun SyncScreen(code: String? = null) {
                     if (context.shareTheApp != null) PillButton("Share the app", onClick = { shareTheApp(context, scope) }, icon = Icons.Default.Share, primary = false)
                     DownloadCodeButton()
                 }
+                Text(IPHONE_GETS_IT)
             }
         }
     }

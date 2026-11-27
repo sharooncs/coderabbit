@@ -253,7 +253,7 @@ private fun MdRecordStrip(ownerId: String, name: String) {
                 Text(if (done) countOf(photos.size, "photo") else "No photos yet", style = MaterialTheme.typography.bodySmall, color = Night.TextDim)
             }
             if (gallery != null) {
-                GlassOrb(Icons.Default.PhotoLibrary, "Add photos of $name from the gallery", size = 40.dp, onClick = { gallery() })
+                GlassOrb(Icons.Default.PhotoLibrary, "Add photos of $name ${context.words.fromTheGallery}", size = 40.dp, onClick = { gallery() })
                 Spacer(Modifier.width(4.dp))
             }
             if (context.camera) GlassOrb(Icons.Default.PhotoCamera, "Photograph $name", kind = if (done) OrbKind.Plain else OrbKind.Selected, onClick = { camera = true })

@@ -102,7 +102,7 @@ fun CameraPermission(modifier: Modifier = Modifier, content: @Composable () -> U
             }
             Text("The camera is needed to take photos and scan labels.", color = Night.TextSoft, textAlign = TextAlign.Center)
             PillButton("Allow camera", onClick = { permission.ask() })
-            Hint("If nothing happens, allow the camera for HouseMove in the phone's app settings.")
+            Hint(LocalPlatform.current.words.allowCameraHint)
         }
     }
 }
@@ -352,7 +352,7 @@ fun PhotoStrip(ownerId: String, kind: PhotoKind, modifier: Modifier = Modifier, 
                 PhotoTile(Icons.Default.PhotoCamera, "Take $label photo") { camera = true }
             }
             if (gallery != null) item {
-                PhotoTile(Icons.Default.PhotoLibrary, "Add $label from gallery") { gallery() }
+                PhotoTile(Icons.Default.PhotoLibrary, "Add $label ${context.words.fromGallery}") { gallery() }
             }
             items(photos, key = { it.id }) { p ->
                 PhotoThumb(p, Modifier.size(72.dp).clip(RoundedCornerShape(14.dp)).clickable { viewing = p })
@@ -415,7 +415,7 @@ fun PhotoHero(
             ) {
                 if (photos.size > 1) OnPhotoLabel("${photos.size} photos")
                 if (gallery != null) OverlayIconButton(onClick = { gallery() }) {
-                    Icon(Icons.Default.PhotoLibrary, contentDescription = "Add $label from gallery")
+                    Icon(Icons.Default.PhotoLibrary, contentDescription = "Add $label ${context.words.fromGallery}")
                 }
                 if (context.camera) CameraOrb("Take $label photo") { camera = true }
             }

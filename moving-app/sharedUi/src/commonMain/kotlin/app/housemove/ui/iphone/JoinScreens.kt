@@ -36,6 +36,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.housemove.data.Role
+import app.housemove.sync.WifiSync
 import app.housemove.ui.HouseMark
 import app.housemove.ui.Night
 import app.housemove.ui.icons.Icons
@@ -102,9 +103,11 @@ private fun StartScreen(model: AppModel, step: JoinStep.Start) {
         }
         Heading("Join a move")
         Panel {
-            Step(1, Icons.Filled.PhoneAndroid, "On the Android phone, tap People (the round button at the top right), then the person this iPhone is for. Show their invite.")
-            Step(2, Icons.Filled.PhotoCamera, "On this iPhone, open the Camera and point it at the code. Tap Open in HouseMove.")
-            Hint("Both phones need to be on the same Wi-Fi.")
+            // A first start from TestFlight, with nobody about: what to ask for, before the steps that need the Android phone.
+            Text(Words.ASK_TO_BE_ADDED, style = MaterialTheme.typography.bodyLarge, color = Night.Text)
+            Step(1, Icons.Filled.PhoneAndroid, "On the Android phone, tap People (the round button at the top right), then your name. Your invite shows.")
+            Step(2, Icons.Filled.PhotoCamera, "On this iPhone, open the Camera and point it at the invite. Tap Open in HouseMove.")
+            Hint("Both phones need to be on the same Wi-Fi. An invite works once, for ${WifiSync.INVITE_MINUTES} minutes.")
         }
         Text(
             "Or paste the invite here",

@@ -38,6 +38,9 @@ import app.housemove.ui.GlassCard
 import app.housemove.ui.GlassTone
 import app.housemove.ui.LocalStore
 import app.housemove.ui.PersonOrb
+import app.housemove.ui.PhoneWords
+import app.housemove.ui.hasIphone
+import app.housemove.ui.isIphoneName
 import app.housemove.ui.PillButton
 import app.housemove.ui.RoleChip
 import app.housemove.ui.accent
@@ -73,6 +76,49 @@ const val OLDER_THERE = "The other phone has an older HouseMove. Share this phon
 /** Said when the other phone's HouseMove is newer than this one's. */
 const val NEWER_THERE = "The other phone has a newer HouseMove. Update this phone, or ask them to share theirs with you, then try again."
 
+/** Said when the other phone is an iPhone ([isIphoneName]) with an older HouseMove: nothing this phone has would install there. */
+const val IPHONE_OLDER = "That iPhone has an older HouseMove. Update HouseMove on it from TestFlight, then try again."
+
+/** Said when the other phone is an iPhone with a newer HouseMove: an iPhone cannot share Android's app. */
+const val IPHONE_NEWER = "That iPhone has a newer HouseMove. Update HouseMove on this phone, then try again."
+
+/** After [OLDER_THERE] when it cannot be told which phone it was, in a move that has an iPhone. */
+const val IF_IPHONE = " If it is an iPhone, update HouseMove on it from TestFlight instead."
+
+/** On an iPhone, when the other phone, an Android phone, has an older HouseMove. */
+const val ANDROID_OLDER = "The Android phone has an older HouseMove. Update HouseMove on the Android phone, then try again."
+
+/** On an iPhone, when the other phone has a newer HouseMove. */
+const val UPDATE_THIS_IPHONE = "The other phone has a newer HouseMove. Update HouseMove on this iPhone: open TestFlight and tap Update. Then try again."
+
+/** On an iPhone, when the versions differ and the other phone did not say which is newer. */
+const val VERSIONS_ON_IPHONE = "The two phones have different versions of HouseMove. Update HouseMove on both: this iPhone from TestFlight. Then try again."
+
+/**
+ * What to say when the two phones have different versions of HouseMove, on this phone ([here]): which phone should be
+ * updated and how. An iPhone gets HouseMove from TestFlight and can share nothing, so whether the other phone is one
+ * matters: it is when the name it gave says so ([isIphoneName]: it does when an iPhone came to this phone's code or
+ * invite; it cannot when this phone went to an iPhone's code, whose phone said only its version). When that cannot be
+ * told, a move that has an iPhone hears both ways.
+ */
+fun versionText(r: WifiSync.Result, store: Store?, here: PhoneWords = PhoneWords.ANDROID): String {
+    val iphone = isIphoneName(r.peerDevice)
+    val newer = !r.shareApp && r.peerSchema > SCHEMA
+    return when {
+        here.iphone && r.shareApp -> if (iphone) IPHONE_OLDER else ANDROID_OLDER
+        here.iphone && newer -> UPDATE_THIS_IPHONE
+        here.iphone -> VERSIONS_ON_IPHONE
+        iphone && r.shareApp -> IPHONE_OLDER
+        iphone && newer -> IPHONE_NEWER
+        r.shareApp -> OLDER_THERE + if (store?.data?.value?.hasIphone() == true) IF_IPHONE else ""
+        newer -> NEWER_THERE
+        else -> r.error ?: WifiSync.VERSION_MISMATCH
+    }
+}
+
+/** Is "Share the app" any use for [r]: the other phone is older, is not an iPhone, and this phone is not one either? */
+private fun shareAppHelps(r: WifiSync.Result, here: PhoneWords): Boolean = r.shareApp && !here.iphone && !isIphoneName(r.peerDevice)
+
 /** A heading for each thing that can go wrong when phones meet; every message itself comes from WifiSync, already in plain words. */
 private fun titleFor(error: String?): String = when {
     error == WifiSync.INVITE_EXPIRED -> "This invite no longer works"
@@ -97,20 +143,15 @@ private fun titleFor(error: String?): String = when {
 /**
  * Turn what [WifiSync] reported into something to show. Every message comes from WifiSync
  * itself, already in plain words; this only gives each a short heading, and says which phone
- * has the older app when the versions differ.
+ * has the older app when the versions differ ([versionText], in the words of [here], this phone).
  */
-fun syncReport(r: WifiSync.Result, store: Store?): SyncReport {
+fun syncReport(r: WifiSync.Result, store: Store?, here: PhoneWords = PhoneWords.ANDROID): SyncReport {
     if (r.error == WifiSync.PHOTOS_CUT) {
         return SyncReport(true, "Synced with ${r.peerName.ifBlank { "the other phone" }}, all but some photos", r.error!! + plainNote(r))
     }
     if (!r.ok && r.joinedAs == null) {
-        val text = when {
-            r.error != WifiSync.VERSION_MISMATCH -> r.error ?: ""
-            r.shareApp -> OLDER_THERE
-            r.peerSchema > SCHEMA -> NEWER_THERE
-            else -> r.error!!
-        }
-        return SyncReport(false, titleFor(r.error), text, shareApp = r.shareApp)
+        val text = if (r.error != WifiSync.VERSION_MISMATCH) r.error ?: "" else versionText(r, store, here)
+        return SyncReport(false, titleFor(r.error), text, shareApp = shareAppHelps(r, here))
     }
     val photos = if (r.photosSent + r.photosReceived == 0) "Everything is up to date."
     else "Photos sent ${r.photosSent}, received ${r.photosReceived}."

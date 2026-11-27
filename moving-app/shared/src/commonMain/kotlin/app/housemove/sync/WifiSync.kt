@@ -789,6 +789,9 @@ object WifiSync {
             // In an encrypted code sync, the code is the one whose key opened the handshake.
             if (viaCode != null && theirToken != viaCode) refuse("NO", WRONG_CODE)
             if (theirSchema != SCHEMA) {
+                // Which phone it is, if its hello says (read, never answered): the screens tell an iPhone's person to update
+                // it from TestFlight, not to share this phone's app with it. Nothing more is sent for it.
+                device = helloFrom(last)?.deviceName.orEmpty()
                 // The other phone may be older and not know this phone's version; it is told it, for a newer one to see.
                 out.writeUTF("VERSION"); out.writeInt(SCHEMA); out.flush()
                 throw Older(theirSchema)

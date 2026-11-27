@@ -83,7 +83,7 @@ fun HelpingScreen() {
                             who != null -> SyncReport(true, "${who.shownName()}'s phone has joined", "It is now ${who.shownName()}, ${who.role.label}." + plainNote(r))
                             // Undo on this phone needs no telling back.
                             r.error == WifiSync.UNDONE -> SyncReport(true, "Undone", "Nothing was sent to that phone. The invite still works for the right one.")
-                            !r.ok -> syncReport(r, store)
+                            !r.ok -> syncReport(r, store, context.words)
                             else -> null
                         }
                     }
@@ -143,11 +143,15 @@ fun HelpingScreen() {
                 CodePanel(h, addresses, toJoin, shown, onShow = { chosen = it }, helpersJoined = helpersJoined, modifier = Modifier.bringIntoViewRequester(codes))
             }
 
-            Hint("No HouseMove on their phone? Send it this one's, or show a code to download it.")
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (context.shareTheApp != null) GlassChip("Share the app", icon = Icons.Default.Share, onClick = { shareTheApp(context, scope) })
-                DownloadCodeButton(chip = true)
+            // Android sends its own app, or shows where to download it; an iPhone can do neither, and says how phones get it.
+            Hint(context.words.getTheApp)
+            if (context.shareTheApp != null || context.words.downloadCode) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (context.shareTheApp != null) GlassChip("Share the app", icon = Icons.Default.Share, onClick = { shareTheApp(context, scope) })
+                    if (context.words.downloadCode) DownloadCodeButton(chip = true)
+                }
             }
+            if (!context.words.iphone) Hint(IPHONE_GETS_IT)
         }
         BigAction(
             if (toJoin.isEmpty()) Icons.Default.Check else Icons.Default.Schedule,
@@ -297,6 +301,7 @@ private fun CodePanel(
                 "On each Helper's phone: open HouseMove, tap Join a move and point it here. Each phone joins under the name it already knows.",
                 style = MaterialTheme.typography.bodyMedium, color = Night.TextSoft, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(),
             )
+            Text(IPHONE_JOINS, style = MaterialTheme.typography.bodyMedium, color = Night.TextSoft, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
             val joined = helpersJoined.mapNotNull { data.person(it.id) }.filter { !it.removed }
             if (joined.isNotEmpty()) {
                 Text("Joined with this code", style = MaterialTheme.typography.labelLarge, color = Night.MintPale)

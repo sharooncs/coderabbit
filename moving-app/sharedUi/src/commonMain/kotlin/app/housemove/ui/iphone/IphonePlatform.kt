@@ -39,6 +39,7 @@ import app.housemove.ui.CameraPermission
 import app.housemove.ui.LiveCamera
 import app.housemove.ui.Night
 import app.housemove.ui.Papers
+import app.housemove.ui.PhoneWords
 import app.housemove.ui.PickedFile
 import app.housemove.ui.PickedFolder
 import app.housemove.ui.Platform
@@ -175,6 +176,9 @@ class IphonePlatform(private val hooks: PhoneHooks, private val toasts: Toasts) 
     override val shareTheApp: ((CoroutineScope) -> Unit)? get() = null
 
     // ---- small things --------------------------------------------------------------------------------------------
+
+    /** Photos rather than a gallery, the iPhone's own Settings, and HouseMove through TestFlight ([PhoneWords.IPHONE]). */
+    override val words: PhoneWords get() = PhoneWords.IPHONE
 
     /** The shared encoder's QR code (the same modules as Android's ZXing draws), black on white, drawn into a picture. */
     override fun qrImage(text: String, sizePx: Int): ImageBitmap {

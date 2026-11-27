@@ -12,6 +12,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import app.housemove.ui.GlassChip
 import app.housemove.ui.GlassDialog
+import app.housemove.ui.IPHONE_GETS_IT
 import app.housemove.ui.Night
 import app.housemove.ui.PillButton
 
@@ -47,5 +48,7 @@ internal fun DownloadCodeDialog(onClose: () -> Unit) {
         CodeImage(APP_DOWNLOAD_URL, "Download code for HouseMove")
         Text("On their phone: point the camera here and open the link.", style = MaterialTheme.typography.bodyMedium)
         Text(APP_DOWNLOAD_NOTE, style = MaterialTheme.typography.bodyMedium, color = Night.TextSoft)
+        // The code is Android's app: an iPhone cannot install it.
+        Text(IPHONE_GETS_IT, style = MaterialTheme.typography.bodyMedium, color = Night.TextSoft)
     }
 }

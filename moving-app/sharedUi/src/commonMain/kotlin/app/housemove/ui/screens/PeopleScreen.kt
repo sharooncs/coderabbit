@@ -532,6 +532,7 @@ internal fun InviteCard(name: String, isMe: Boolean, invite: ShownInvite, inner:
                 "On " + (if (isMe) "the new phone" else "$name's phone") + ": open HouseMove, tap Join a move and point it here.",
                 style = MaterialTheme.typography.bodyMedium, color = Night.TextSoft, textAlign = TextAlign.Center,
             )
+            Text(IPHONE_JOINS, style = MaterialTheme.typography.bodyMedium, color = Night.TextSoft, textAlign = TextAlign.Center)
         }
     }
     if (inner) body() else Section { body() }

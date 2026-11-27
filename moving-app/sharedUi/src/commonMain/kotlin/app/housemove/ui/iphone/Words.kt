@@ -3,6 +3,10 @@ package app.housemove.ui.iphone
 import app.housemove.data.Role
 import app.housemove.data.SYNC_PREFIX
 import app.housemove.sync.WifiSync
+import app.housemove.ui.PhoneWords
+import app.housemove.ui.screens.ANDROID_OLDER
+import app.housemove.ui.screens.VERSIONS_ON_IPHONE
+import app.housemove.ui.screens.versionText
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
@@ -30,6 +34,10 @@ object Words {
 
     const val NOTHING_TO_PASTE = "There is nothing to paste. Copy the invite first, then tap Paste."
 
+    /** The join screen's first words: a move is on an Android phone, and only its Organiser can let someone in. */
+    const val ASK_TO_BE_ADDED =
+        "A move is kept on an Android phone. Ask the move's Organiser to add you under People there, and to show you your invite."
+
     const val LOCAL_NETWORK_ASK =
         "Your iPhone may ask if HouseMove can find devices on your local network. Tap Allow: that is how it reaches the Android phone."
 
@@ -56,6 +64,15 @@ object Words {
         settings = couldBeDenied,
     )
 
+    /**
+     * What a join or a sync that did not work tells the person, from all [r] says: when the phones have different
+     * versions of HouseMove, which phone to update and how ([versionText]: an Android phone as Android phones are, this
+     * iPhone or another iPhone from TestFlight).
+     */
+    fun problem(r: WifiSync.Result): Report =
+        if (r.error == WifiSync.VERSION_MISMATCH) Report(false, "Different versions", versionText(r, null, PhoneWords.IPHONE))
+        else joinProblem(r.error, r.shareApp)
+
     /** What a join that did not work tells the person. [error] is WifiSync's message. */
     fun joinProblem(error: String?, shareApp: Boolean = false): Report = when (error) {
         WifiSync.INVITE_EXPIRED -> Report(
@@ -80,11 +97,7 @@ object Words {
         )
         WifiSync.NO_NETWORK -> NO_WIFI
         WifiSync.UNREACHABLE -> unreachable(couldBeDenied = true)
-        WifiSync.VERSION_MISMATCH -> Report(
-            false, "Different versions",
-            if (shareApp) "The Android phone has an older HouseMove. Update it to version 2.2, then try again."
-            else "The Android phone has a HouseMove this iPhone does not know yet. Tell us its version; this iPhone works with version 2.2.",
-        )
+        WifiSync.VERSION_MISMATCH -> Report(false, "Different versions", if (shareApp) ANDROID_OLDER else VERSIONS_ON_IPHONE)
         WifiSync.NOT_ADDED, WifiSync.UNKNOWN_PHONE -> Report(
             false, "Not added to this move",
             "This iPhone is not in that move yet. On the Android phone, open People, tap the person this iPhone is for, and show their invite.",
@@ -114,7 +127,7 @@ object Words {
             false, "The code was not accepted",
             "Show the sync code again on the Android phone and use the new one.",
         )
-        else -> joinProblem(r.error, r.shareApp).let { if (it.title == "Could not join") it.copy(title = "Could not sync") else it }
+        else -> problem(r).let { if (it.title == "Could not join") it.copy(title = "Could not sync") else it }
     }
 
     /** What each role may do, as the Android app says it. */

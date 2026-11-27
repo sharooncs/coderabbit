@@ -96,6 +96,20 @@ class ScreensRenderTest {
         both("moveday", "moveday")
     }
 
+    /**
+     * An iPhone that joined as the move's Organiser (step 5): Who's helping says how each kind of phone gets HouseMove,
+     * with no "Share the app" and no download code (Android's app), and the dock at the largest text.
+     */
+    @Test
+    fun theOrganisersScreens() {
+        model.use(android.invite(android.store.me!!.id))
+        model.yes()
+        waitFor("the join") { model.store != null }
+        model.welcomeRead()
+        both("helping", "helping")
+        both("organiser-home", "home")
+    }
+
     @Test
     fun getFreshData() {
         joined()

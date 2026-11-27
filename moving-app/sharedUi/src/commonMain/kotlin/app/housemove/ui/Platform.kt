@@ -140,6 +140,9 @@ interface Platform {
 
     // ---- small things -------------------------------------------------------------------------------------------
 
+    /** The words that differ between the phones ([PhoneWords]): Android's own unless the phone says otherwise. */
+    val words: PhoneWords get() = PhoneWords.ANDROID
+
     /** [text] as a QR code of [sizePx] pixels with its quiet zone, black on white, for another phone's camera. */
     fun qrImage(text: String, sizePx: Int): ImageBitmap
 

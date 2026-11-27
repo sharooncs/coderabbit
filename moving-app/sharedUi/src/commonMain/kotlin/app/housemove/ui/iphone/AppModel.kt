@@ -281,7 +281,7 @@ class AppModel(
             }
             val joined = r.result.joinedAs != null
             if (!joined) {
-                val report = r.report ?: Words.joinProblem(r.result.error, r.result.shareApp)
+                val report = r.report ?: Words.problem(r.result)
                 // A used or refused invite will not work again; anything else (the Wi-Fi, a time-out, Undo) may.
                 val dead = r.result.error in setOf(WifiSync.INVITE_EXPIRED, WifiSync.CODE_NOT_ACCEPTED, WifiSync.REMOVED_SELF, WifiSync.WRONG_MOVE)
                 join = JoinStep.Failed(report, if (dead) null else check)
@@ -385,7 +385,12 @@ class AppModel(
     private fun hosted(r: WifiSync.Result) {
         val synced = r.ok || r.error == WifiSync.PHOTOS_CUT
         if (synced) afterSync(r.peerName)
-        val report = if (synced) Words.syncResult(r) else Report(false, "Could not sync", r.error ?: "Something went wrong. Try again.")
+        val report = when {
+            synced -> Words.syncResult(r)
+            // Which phone to update, and how (the other phone named itself as it came).
+            r.error == WifiSync.VERSION_MISMATCH -> Words.problem(r)
+            else -> Report(false, "Could not sync", r.error ?: "Something went wrong. Try again.")
+        }
         val showing = fresh as? Fresh.Showing
         fresh = if (showing != null && store != null) showing.copy(report = report) else Fresh.Idle(report)
     }
