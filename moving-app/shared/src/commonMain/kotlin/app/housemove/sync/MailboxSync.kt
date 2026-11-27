@@ -13,6 +13,7 @@ import app.housemove.data.Role
 import app.housemove.data.SCHEMA
 import app.housemove.data.Shrink
 import app.housemove.data.Store
+import app.housemove.data.TransferTime
 import app.housemove.data.Update
 import app.housemove.data.ZipWriter
 import app.housemove.data.awaitMillis
@@ -298,7 +299,7 @@ class MailboxSync(
         // Registered on this mailbox, with this phone's address on its entry.
         var reg = store.mailboxState.registration()?.takeIf { MailboxCode.cleanUrl(it.first) == url }
         if (reg == null) {
-            reg = register(store, client, url, null, now) ?: return
+            reg = TransferTime.during(TransferTime.MAILBOX) { register(store, client, url, null, now) } ?: return
         }
         val (_, id, secret) = reg
         val entry = d.phoneEntry(me)?.second?.mailbox
@@ -310,7 +311,7 @@ class MailboxSync(
         // Read this phone's mailbox: at the start, every [pollMs], and when asked.
         if (pollNow || now >= nextPoll) {
             pollNow = false
-            if (!poll(store, client, url, id, secret, now)) return
+            if (!TransferTime.during(TransferTime.MAILBOX) { poll(store, client, url, id, secret, now) }) return
             nextPoll = now + pollMs
             // "Up to date … 2 min ago" is the last time the mailbox was read.
             lastOk = now
@@ -367,17 +368,19 @@ class MailboxSync(
         val crypto = noiseCrypto()
         val mine = store.phone.keys.noiseKey()
         val url = MailboxCode.cleanUrl(reg.first)
-        if (crypto != null && mine != null && url != null) {
-            for (p in peersOf(store, store.data.value, url)) {
-                try {
-                    send(store, client, url, p, store.mailboxState.peer(p.phone), emptyList(), store.stampOf(store.data.value), now, crypto, mine)
-                } catch (_: Exception) {
+        TransferTime.during(TransferTime.MAILBOX) {
+            if (crypto != null && mine != null && url != null) {
+                for (p in peersOf(store, store.data.value, url)) {
+                    try {
+                        send(store, client, url, p, store.mailboxState.peer(p.phone), emptyList(), store.stampOf(store.data.value), now, crypto, mine)
+                    } catch (_: Exception) {
+                    }
                 }
             }
-        }
-        try {
-            client.unregister(reg.second, reg.third)
-        } catch (_: Exception) {
+            try {
+                client.unregister(reg.second, reg.third)
+            } catch (_: Exception) {
+            }
         }
         store.mailboxState.forgetRegistration()
         waitUntil = 0
@@ -517,7 +520,7 @@ class MailboxSync(
             val photos = if (look) photosFor(store, d, p, pb, now) else emptyList()
             val due = (quiet && (stamp > pb.sentStamp || photos.isNotEmpty())) || (pb.owes && now - pb.heardAt >= ackMs)
             if (!due) continue
-            if (!send(store, client, url, p, pb, photos, stamp, now, crypto, mine)) return null
+            if (!TransferTime.during(TransferTime.MAILBOX) { send(store, client, url, p, pb, photos, stamp, now, crypto, mine) }) return null
         }
         return peers.size
     }

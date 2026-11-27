@@ -10,6 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.housemove.data.Action
 import app.housemove.data.Backup
+import app.housemove.data.TransferTime
 import app.housemove.ui.*
 import app.housemove.ui.icons.Icons
 import app.housemove.ui.icons.filled.*
@@ -36,11 +37,13 @@ fun BackupSection(busy: Boolean, onWorking: (Boolean) -> Unit, say: (SyncReport?
         if (target != null) scope.launch {
             onWorking(true)
             val error = withContext(Dispatchers.IO) {
-                try {
-                    target.open()!!.use { Backup.export(store, it) }
-                    null
-                } catch (e: Exception) {
-                    e.message ?: "unknown error"
+                TransferTime.during(TransferTime.BACKUP) {
+                    try {
+                        target.open()!!.use { Backup.export(store, it) }
+                        null
+                    } catch (e: Exception) {
+                        e.message ?: "unknown error"
+                    }
                 }
             }
             onWorking(false)
@@ -52,12 +55,14 @@ fun BackupSection(busy: Boolean, onWorking: (Boolean) -> Unit, say: (SyncReport?
         if (file != null) scope.launch {
             onWorking(true)
             val report = withContext(Dispatchers.IO) {
-                try {
-                    val r = file.open()!!.use { Backup.import(store, it) }
-                    SyncReport(true, "Backup merged in", "${r.photos} new photo(s) added.")
-                } catch (e: Exception) {
-                    // Includes the Store's own reason when this person may not restore a backup.
-                    SyncReport(false, "Could not restore that file", e.message ?: "")
+                TransferTime.during(TransferTime.BACKUP) {
+                    try {
+                        val r = file.open()!!.use { Backup.import(store, it) }
+                        SyncReport(true, "Backup merged in", "${r.photos} new photo(s) added.")
+                    } catch (e: Exception) {
+                        // Includes the Store's own reason when this person may not restore a backup.
+                        SyncReport(false, "Could not restore that file", e.message ?: "")
+                    }
                 }
             }
             say(report)
@@ -85,12 +90,14 @@ fun BackupSection(busy: Boolean, onWorking: (Boolean) -> Unit, say: (SyncReport?
                     scope.launch {
                         onWorking(true)
                         val file = withContext(Dispatchers.IO) {
-                            try {
-                                context.outFile("housemove-backup-${isoToday()}.zip").also { f ->
-                                    f.outputStream().use { Backup.export(store, it) }
+                            TransferTime.during(TransferTime.BACKUP) {
+                                try {
+                                    context.outFile("housemove-backup-${isoToday()}.zip").also { f ->
+                                        f.outputStream().use { Backup.export(store, it) }
+                                    }
+                                } catch (_: Exception) {
+                                    null
                                 }
-                            } catch (_: Exception) {
-                                null
                             }
                         }
                         onWorking(false)

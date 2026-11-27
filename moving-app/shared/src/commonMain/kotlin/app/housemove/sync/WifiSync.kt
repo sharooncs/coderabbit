@@ -12,6 +12,7 @@ import app.housemove.data.Role
 import app.housemove.data.SCHEMA
 import app.housemove.data.SYNC_PREFIX
 import app.housemove.data.Store
+import app.housemove.data.TransferTime
 import app.housemove.data.admission
 import app.housemove.data.isRetired
 import app.housemove.data.isSafeFileName
@@ -588,7 +589,8 @@ object WifiSync {
                     }
                     startThread("sync-peer") {
                         try {
-                            serve(socket)
+                            // A phone that came with this phone's code or an invite: time to finish if HouseMove leaves the front.
+                            TransferTime.during(TransferTime.SYNC_BY_CODE) { serve(socket) }
                         } finally {
                             serving.decrementAndGet()
                         }
@@ -1016,12 +1018,12 @@ object WifiSync {
         letNewPhonesIn: Boolean = true,
         holdsCard: Boolean = false,
         onWaiting: () -> Unit = {},
-    ): Result {
+    ): Result = TransferTime.during(if (invite.personId != null) TransferTime.JOIN else TransferTime.SYNC_BY_CODE) {
         // With no Wi-Fi there is nothing to try: say so at once instead of waiting for every address to time out.
-        if (invite.hosts.all { onLocalNetwork(it) } && addresses().isEmpty()) return Result("", "", 0, 0, NO_NETWORK)
+        if (invite.hosts.all { onLocalNetwork(it) } && addresses().isEmpty()) return@during Result("", "", 0, 0, NO_NETWORK)
         // A code a phone with 2.4 showed: encrypted, and nothing else. Never the plain hello, which would send the code in the clear.
-        if (isE2(invite.token) && !olderPhone(store.phone.id)) return joinSecure(store, invite, connectTimeoutMs, letNewPhonesIn, holdsCard, onWaiting)
-        return joinPlain(store, invite, connectTimeoutMs, letNewPhonesIn, holdsCard, onWaiting)
+        if (isE2(invite.token) && !olderPhone(store.phone.id)) return@during joinSecure(store, invite, connectTimeoutMs, letNewPhonesIn, holdsCard, onWaiting)
+        joinPlain(store, invite, connectTimeoutMs, letNewPhonesIn, holdsCard, onWaiting)
     }
 
     /**

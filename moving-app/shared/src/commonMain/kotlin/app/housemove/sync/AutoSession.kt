@@ -6,6 +6,7 @@ import app.housemove.data.Lock
 import app.housemove.data.MoveIdentity
 import app.housemove.data.Person
 import app.housemove.data.Store
+import app.housemove.data.TransferTime
 import app.housemove.data.base64Encode
 import app.housemove.data.currentTimeMillis
 import app.housemove.data.decodeUtf8
@@ -220,6 +221,15 @@ internal object AutoSession {
             socket.close()
             return Dialled("LOST")
         }
+        // Connected: time to finish if HouseMove leaves the front meanwhile.
+        return TransferTime.during(TransferTime.SYNC_BY_ITSELF) { talk(store, socket, crypto, me, s, rs, moveId, peerPhone, person, onProven) }
+    }
+
+    /** [dial], once connected on [socket]: the handshake, then the sync. */
+    private fun talk(
+        store: Store, socket: Socket, crypto: app.housemove.data.PlatformCrypto, me: String, s: NoiseKey, rs: ByteArray, moveId: String, peerPhone: String,
+        person: Person, onProven: (Person) -> Unit,
+    ): Dialled {
         try {
             socket.use { sock ->
                 sock.soTimeout = stepMs
@@ -316,6 +326,12 @@ internal object AutoSession {
             reply(BUSY)
             return null
         }
+        // Syncing now: time to finish if HouseMove leaves the front meanwhile.
+        val hold = try {
+            TransferTime.holder.hold(TransferTime.SYNC_BY_ITSELF)
+        } catch (_: Exception) {
+            null
+        }
         try {
             reply(OK)
             val (send, receive) = hs.split()
@@ -337,6 +353,10 @@ internal object AutoSession {
             return Answered(result, peer)
         } finally {
             slot.release()
+            try {
+                hold?.release()
+            } catch (_: Exception) {
+            }
         }
     }
 }

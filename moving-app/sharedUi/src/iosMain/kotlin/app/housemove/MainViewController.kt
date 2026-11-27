@@ -33,6 +33,8 @@ fun MainViewController(buildLabel: String, crypto: AppleCrypto): UIViewControlle
     val m = model ?: run {
         // What the last run left to hand on or had opened (IosFiles.kt), before any file link of this run is taken in.
         IosFiles.clean()
+        // Before anything syncs: a transfer under way gets time to finish if HouseMove leaves the front (TransferTasks.kt).
+        TransferTasks.install()
         val demo = demoRequested()
         val hooks = if (demo) {
             val (data, noBackup) = demoFolders()

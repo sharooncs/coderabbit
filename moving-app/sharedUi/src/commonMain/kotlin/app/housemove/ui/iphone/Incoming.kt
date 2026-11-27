@@ -8,6 +8,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import app.housemove.data.Backup
 import app.housemove.data.Store
+import app.housemove.data.TransferTime
 import app.housemove.ui.GlassDialog
 import app.housemove.ui.PillButton
 import app.housemove.ui.icons.Icons
@@ -35,12 +36,14 @@ internal fun IncomingFiles(model: AppModel, store: Store) {
         val file = backup ?: return@LaunchedEffect
         files.incomingTaken()
         report = withContext(Dispatchers.IO) {
-            try {
-                val r = file.file.open()!!.use { Backup.import(store, it) }
-                SyncReport(true, "Backup merged in", "${r.photos} new photo(s) added.")
-            } catch (e: Exception) {
-                // Includes the Store's own reason when this person may not restore a backup.
-                SyncReport(false, "Could not restore that file", e.message ?: Backup.NOT_A_BACKUP)
+            TransferTime.during(TransferTime.BACKUP) {
+                try {
+                    val r = file.file.open()!!.use { Backup.import(store, it) }
+                    SyncReport(true, "Backup merged in", "${r.photos} new photo(s) added.")
+                } catch (e: Exception) {
+                    // Includes the Store's own reason when this person may not restore a backup.
+                    SyncReport(false, "Could not restore that file", e.message ?: Backup.NOT_A_BACKUP)
+                }
             }
         }
     }

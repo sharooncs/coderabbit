@@ -73,12 +73,14 @@ class UpdateActions internal constructor(
         scope.launch(Dispatchers.Main) {
             var how: Update.Made? = null
             val made = withContext(Dispatchers.IO) {
-                try {
-                    val file = context.outFile(updateFileName(s))
-                    how = file.outputStream().use { Update.write(s, it, organisersOnly) }
-                    file to null
-                } catch (e: Exception) {
-                    null to (e.message?.takeIf { it == Update.NO_RECIPIENTS } ?: Update.COULD_NOT_WRITE)
+                TransferTime.during(TransferTime.UPDATE_FILE) {
+                    try {
+                        val file = context.outFile(updateFileName(s))
+                        how = file.outputStream().use { Update.write(s, it, organisersOnly) }
+                        file to null
+                    } catch (e: Exception) {
+                        null to (e.message?.takeIf { it == Update.NO_RECIPIENTS } ?: Update.COULD_NOT_WRITE)
+                    }
                 }
             }
             busy = false
@@ -120,14 +122,16 @@ class UpdateActions internal constructor(
         scope.launch(Dispatchers.Main) {
             val r = withContext(Dispatchers.IO) {
                 fun read(): InputStream = file.open() ?: throw IOException("could not read")
-                when {
-                    moves != null -> moves.openUpdate({ read() }, takeInRemoved, askIfUnproven = !sure)
-                    store != null -> try {
-                        read().use { Update.open(store, it, takeInRemoved, askIfUnproven = !sure) }
-                    } catch (_: Exception) {
-                        Update.Opened(false, Update.NOT_AN_UPDATE)
+                TransferTime.during(TransferTime.UPDATE_FILE) {
+                    when {
+                        moves != null -> moves.openUpdate({ read() }, takeInRemoved, askIfUnproven = !sure)
+                        store != null -> try {
+                            read().use { Update.open(store, it, takeInRemoved, askIfUnproven = !sure) }
+                        } catch (_: Exception) {
+                            Update.Opened(false, Update.NOT_AN_UPDATE)
+                        }
+                        else -> Update.Opened(false, Update.NOT_ON_PHONE)
                     }
-                    else -> Update.Opened(false, Update.NOT_ON_PHONE)
                 }
             }
             busy = false
