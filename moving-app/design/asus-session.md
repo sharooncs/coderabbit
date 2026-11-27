@@ -79,7 +79,7 @@ The laptop already has Tailscale. The phones will reach the mailbox at the lapto
    owner to approve the Windows prompt; register it from an administrator PowerShell (`Start-Process powershell -Verb RunAs`):
    ```
    $dir = "$env:LOCALAPPDATA\HouseMoveMailbox"
-   $action = New-ScheduledTaskAction -Execute "$env:ComSpec" -Argument "/c `"$dir\housemove-mailbox.exe`" --config `"$dir\mailbox.json`" >> `"$dir\mailbox.log`" 2>&1" -WorkingDirectory $dir
+   $action = New-ScheduledTaskAction -Execute "$env:ComSpec" -Argument "/c `"`"$dir\housemove-mailbox.exe`" --config `"$dir\mailbox.json`" >> `"$dir\mailbox.log`" 2>&1`"" -WorkingDirectory $dir
    $trigger = New-ScheduledTaskTrigger -AtStartup
    $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType S4U -RunLevel Limited
    $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
@@ -88,7 +88,9 @@ The laptop already has Tailscale. The phones will reach the mailbox at the lapto
    ```
    (Run the first two lines in the owner's own PowerShell first and pass the resolved `$dir` into the administrator one, so
    it is the owner's folder, not the administrator's.) S4U is "Run whether user is logged on or not" with "Do not store
-   password". The log gets one line per request, with no IDs, tokens or contents (the README says what), and is safe to read.
+   password". The whole command after `/c` sits inside one more pair of quotes: when what follows `/c` starts with a
+   quote and holds more than two, `cmd` strips the first and the last, and the task then ends at once with result 1 and
+   no log. The log gets one line per request, with no IDs, tokens or contents (the README says what), and is safe to read.
    Check: `Get-ScheduledTask -TaskName "HouseMove mailbox" | Get-ScheduledTaskInfo` (LastTaskResult 267009 means running),
    and `Invoke-RestMethod http://127.0.0.1:8787/v1/health`.
 8. **Power, with the owner's agreement.** The laptop must not sleep on mains power, and must stay awake with its lid shut.
