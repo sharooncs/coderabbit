@@ -390,9 +390,10 @@ fun PhotoHero(
             if (first != null) {
                 AsyncImage(
                     model = store.photoFile(first).path,
-                    contentDescription = label,
+                    // "Photo of Sofa": a screen reader (VoiceOver, TalkBack) names it as a picture, and says it opens.
+                    contentDescription = "Photo of $label",
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize().clickable { viewing = first },
+                    modifier = Modifier.fillMaxSize().clickable(onClickLabel = "Open the photo", role = Role.Image) { viewing = first },
                 )
             } else {
                 Column(

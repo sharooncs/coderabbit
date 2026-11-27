@@ -587,7 +587,14 @@ private fun KeyNumberView(k: KeyNumber, withOrb: Boolean, modifier: Modifier = M
         }
         Column(horizontalAlignment = if (withOrb) Alignment.Start else Alignment.CenterHorizontally) {
             Text(k.value, fontSize = 18.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-            Text(k.label, style = MaterialTheme.typography.bodySmall, fontSize = 11.sp, color = Night.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // With the largest text the words take a second line rather than being cut ("boxes se…"); where they fit, as before.
+            var cut by remember(k.label) { mutableStateOf(false) }
+            Text(
+                k.label, style = MaterialTheme.typography.bodySmall, fontSize = 11.sp, color = Night.TextDim,
+                maxLines = if (cut) 2 else 1, overflow = TextOverflow.Ellipsis,
+                textAlign = if (cut && !withOrb) TextAlign.Center else TextAlign.Unspecified,
+                onTextLayout = { if (it.hasVisualOverflow) cut = true },
+            )
         }
     }
 }

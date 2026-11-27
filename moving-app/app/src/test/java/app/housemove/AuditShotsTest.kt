@@ -341,7 +341,7 @@ class AuditShotsTest {
         go("item/wardrobe")
         rule.waitForIdle()
         Thread.sleep(150)
-        rule.onAllNodes(hasContentDescription("Oak wardrobe") and hasClickAction()).onFirst().performClick()
+        rule.onAllNodes(hasContentDescription("Photo of Oak wardrobe") and hasClickAction()).onFirst().performClick()
         rule.waitForIdle()
         Thread.sleep(150)
         rule.waitForIdle()

@@ -594,8 +594,9 @@ extension LaunchTests {
         labelled(app, "label == 'Done'").tap()
         // The thing's picture is the photo now: the "Take a photo" placeholder has gone.
         XCTAssertTrue(waitForAbsence(labelled(app, "label == 'Take a photo'"), timeout: 15), "the photo shows on the thing")
-        let photo = app.images.matching(NSPredicate(format: "label == 'Sofa'")).firstMatch
-        if !photo.waitForExistence(timeout: 5) { print("Note: the Sofa photo is not listed as an image by accessibility") }
+        // The thing's photo is named for VoiceOver ("Photo of Sofa"), whatever kind of element iOS lists it as.
+        let photo = labelled(app, "label == 'Photo of Sofa'")
+        if !photo.waitForExistence(timeout: 5) { print("Note: the Sofa photo is not listed by accessibility as 'Photo of Sofa'") }
         keep("item-photo", app)
     }
 
