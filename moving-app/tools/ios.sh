@@ -276,7 +276,11 @@ PY
     status=0
     xcodebuild test-without-building -project "$PROJECT" -scheme HouseMove -destination "id=$id" \
       -retry-tests-on-failure -test-iterations 2 \
-      -resultBundlePath build/sim.xcresult CODE_SIGNING_ALLOWED=NO | tail -40 || status=$?
+      -resultBundlePath build/sim.xcresult CODE_SIGNING_ALLOWED=NO > build/sim-test.log 2>&1 || status=$?
+    tail -40 build/sim-test.log
+    # What the tests print for a person to read (the accessibility audit's issues on the shared screens, which do not
+    # fail a test, and the tests' notes), here in the log rather than only in the result bundle.
+    grep -E "Accessibility (issue|audit)|Note: " build/sim-test.log | sort | uniq -c | sort -rn | head -60 || true
     mkdir -p build/shots
     xcrun xcresulttool export attachments --path build/sim.xcresult --output-path build/shots >/dev/null 2>&1 || true
     # Name each screenshot after the test's own name for it (start.png, start-largest-text.png, ...).
