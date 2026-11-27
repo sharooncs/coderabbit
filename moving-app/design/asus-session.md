@@ -114,7 +114,8 @@ The laptop already has Tailscale. The phones will reach the mailbox at the lapto
 11. **The setup code for the owner.** Tell the owner where the picture is (`%LOCALAPPDATA%\HouseMoveMailbox\data\setup-code.png`)
     and to open it themselves on the laptop's screen. On an Organiser's Android phone: HouseMove, More, Sync and backup,
     Internet mailbox, Scan the mailbox's code. On an iPhone: point the Camera at it and tap Open in HouseMove. The other
-    phones of the move get it at their next sync with that phone. Never send the picture or its text anywhere.
+    phones of the move get it at their next sync with that phone. Never send the picture or its text anywhere. If a new
+    token was made after the mailbox started (see Later), restart it before the owner scans, or the code is refused.
 12. **Report** to the owner, to paste back to the cloud session:
     - each step as pass or fail, with the exact error text (with the address and tailnet written as placeholders);
     - the two SHA-256 values (committed and, if built, from the source) and the `go test` result;
@@ -125,7 +126,10 @@ The laptop already has Tailscale. The phones will reach the mailbox at the lapto
 
 ## Later
 - A new house token (if the code got out): `housemove-mailbox.exe --new-token` in a new window the owner can see, as in
-  step 5. Registered mailboxes keep working; an Organiser scans the new code.
+  step 5. Then restart the mailbox, since it reads the token only when it starts: restart the laptop, or in an
+  administrator PowerShell `Stop-ScheduledTask -TaskName "HouseMove mailbox"; Start-ScheduledTask -TaskName "HouseMove mailbox"`.
+  Until then the old code still registers and the new one is refused. Registered mailboxes keep working; an Organiser
+  scans the new code.
 - An update of the program: stop the task (`Stop-ScheduledTask -TaskName "HouseMove mailbox"`), check and copy the new .exe
   as in steps 2 and 3 (the data folder stays), start it again.
 - Stopping it for good: `tailscale funnel reset` (or as `tailscale funnel --help` says for the version installed), then
