@@ -1,0 +1,148 @@
+name: HouseMove APK
+
+on:
+  push:
+    paths:
+      - "moving-app/**"
+      # Changes only to the iPhone app skip this workflow; the shared screens (sharedUi) are the Android app's too.
+      - "!moving-app/iosApp/**"
+      - "!moving-app/tools/ios.sh"
+      - "!moving-app/tools/asc.swift"
+      - "moving-app/sharedUi/**"
+      - ".github/workflows/housemove-apk.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: housemove-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: moving-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          # Save the Gradle cache from this branch too (by default only the default branch writes it), so runs
+          # do not fetch every library again and get turned away by Maven Central (HTTP 429).
+          cache-read-only: false
+      # MailboxGoServerTest builds the internet mailbox (moving-app/mailbox) and runs phones against it over HTTP.
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.7"
+          cache: false
+      - name: Test
+        # The data and sync tests (plain JVM), the app's tests (simulated Android) and the shared screens rendered on a
+        # plain JVM; --continue runs them all even if one fails.
+        run: ./gradlew --continue :shared:jvmTest :app:testDebugUnitTest :sharedUi:desktopTest
+      - name: Build APK
+        run: ./gradlew :app:assembleRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HouseMove-apk
+          path: moving-app/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+
+  # The internet mailbox for the family's laptop (moving-app/mailbox, Go): its tests, and the committed Windows .exe is
+  # byte for byte what its source builds.
+  mailbox:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: moving-app/mailbox
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.7"
+          cache: false
+      - name: Vet and test
+        run: |
+          test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+          go vet ./...
+          go test -count=1 ./...
+      - name: The committed .exe is what the source builds
+        run: ./build.sh check
+
+  # Installs the app on a real Android emulator and drives it: the whole
+  # journey, the camera, the live scanner, real PDFs, sync and restart.
+  emulator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - api-level: 26
+            gpu: swiftshader_indirect
+          # On Android 14 the older SwiftShader mode has taken the emulator down mid-run (graphics errors,
+          # nothing in the app's log); the ANGLE-on-SwiftShader mode is the one meant for machines with no GPU.
+          - api-level: 34
+            gpu: swangle_indirect
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          # Save the Gradle cache from this branch too (by default only the default branch writes it), so runs
+          # do not fetch every library again and get turned away by Maven Central (HTTP 429).
+          cache-read-only: false
+      - name: Enable hardware acceleration for the emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run the app on Android ${{ matrix.api-level }}
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          arch: x86_64
+          target: default
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-snapshot-save -no-window -gpu ${{ matrix.gpu }} -noaudio -no-boot-anim -camera-back emulated -camera-front emulated
+          working-directory: moving-app
+          # Less heap for Gradle here than in the build job, so the emulator on the same runner keeps its memory.
+          script: ./gradlew :app:connectedDebugAndroidTest -Dorg.gradle.jvmargs="-Xmx2g -XX:MaxMetaspaceSize=640m -Dfile.encoding=UTF-8"
+      - name: Show why the device tests failed
+        if: failure()
+        working-directory: moving-app/app/build/outputs
+        run: |
+          # The test results and each test's logcat, printed here so they can be read from the log alone.
+          # Whether the system stopped a process for lack of memory (the emulator, when it vanishes mid-run).
+          sudo dmesg 2>/dev/null | grep -i -E 'out of memory|killed process|oom' | tail -20 || true
+          free -m || true
+          # The file names have spaces in them ("emulator-5554 - 14"), so they are read one per line.
+          find . -name '*.xml' -path '*androidTest-results*' -print0 | xargs -0 -r grep -h -A40 '<failure' | head -300 || true
+          # The last steps each test reached, so a run cut short shows where.
+          find . -name 'logcat-*.txt' -print0 | while IFS= read -r -d '' f; do
+            echo "== last steps: $(basename "$f")"
+            grep -h 'DeviceTest.*step:' "$f" | tail -4 || true
+          done
+          find . -name 'logcat-*.txt' -print0 | while IFS= read -r -d '' f; do
+            if grep -q 'FATAL EXCEPTION\|Process crashed\|ANR in' "$f"; then
+              echo "== $f"
+              grep -h -B2 -A45 'FATAL EXCEPTION\|ANR in' "$f" | head -150
+            fi
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: emulator-android-${{ matrix.api-level }}
+          path: |
+            moving-app/app/build/outputs/connected_android_test_additional_output/**
+            moving-app/app/build/reports/androidTests/**
+          if-no-files-found: warn

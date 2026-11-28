@@ -1,0 +1,873 @@
+{
+  "about": "Values 2.1.1 works out from String.hashCode, SHA-256 and the text rules of Kotlin on the JVM: lowercase()/uppercase() are Locale.ROOT with full case mapping (İ lowercases to i + U+0307, a final Σ to ς, ß uppercases to SS), trim() removes what Char.isWhitespace calls white space (U+00A0 and U+3000 included, U+200B not), toByteArray() is UTF-8 with '?' for a lone surrogate.",
+  "hashCode": [
+    {
+      "text": "",
+      "hashCode": 0,
+      "floorMod26": 0,
+      "floorMod5000": 0
+    },
+    {
+      "text": "a",
+      "hashCode": 97,
+      "floorMod26": 19,
+      "floorMod5000": 97
+    },
+    {
+      "text": "A",
+      "hashCode": 65,
+      "floorMod26": 13,
+      "floorMod5000": 65
+    },
+    {
+      "text": "Asha",
+      "hashCode": 2050251,
+      "floorMod26": 21,
+      "floorMod5000": 251
+    },
+    {
+      "text": "Priya 🏠",
+      "textUtf16": "0050 0072 0069 0079 0061 0020 d83c dfe0",
+      "hashCode": -1090388715,
+      "floorMod26": 13,
+      "floorMod5000": 1285
+    },
+    {
+      "text": "00000000-0000-4000-8000-000000000001",
+      "hashCode": -191747387,
+      "floorMod26": 13,
+      "floorMod5000": 2613
+    },
+    {
+      "text": "00000000-0000-4000-8000-000000000020",
+      "hashCode": -191747326,
+      "floorMod26": 22,
+      "floorMod5000": 2674
+    },
+    {
+      "text": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+      "hashCode": -1885019005,
+      "floorMod26": 1,
+      "floorMod5000": 995
+    },
+    {
+      "text": "9b2e6c1d-7f3a-4e8b-b5c2-1d0e9f8a7b6c",
+      "hashCode": 1370625806,
+      "floorMod26": 4,
+      "floorMod5000": 806
+    },
+    {
+      "text": "pashaphone23456789ab",
+      "hashCode": 88940952,
+      "floorMod26": 22,
+      "floorMod5000": 952
+    },
+    {
+      "text": "polygenelubricants",
+      "hashCode": -2147483648,
+      "floorMod26": 2,
+      "floorMod5000": 1352
+    },
+    {
+      "text": "日本",
+      "textUtf16": "65e5 672c",
+      "hashCode": 835047,
+      "floorMod26": 5,
+      "floorMod5000": 47
+    },
+    {
+      "text": "\u0000",
+      "textUtf16": "0000",
+      "hashCode": 0,
+      "floorMod26": 0,
+      "floorMod5000": 0
+    },
+    {
+      "text": "x\ud800y",
+      "textUtf16": "0078 d800 0079",
+      "hashCode": 1829617,
+      "floorMod26": 23,
+      "floorMod5000": 4617
+    }
+  ],
+  "legacyLabels": [
+    {
+      "letter": "A",
+      "normalised": "A",
+      "first": 100000,
+      "last": 100999
+    },
+    {
+      "letter": "B",
+      "normalised": "B",
+      "first": 101000,
+      "last": 101999
+    },
+    {
+      "letter": "Z",
+      "normalised": "Z",
+      "first": 125000,
+      "last": 125999
+    },
+    {
+      "letter": "a",
+      "normalised": "A",
+      "first": 100000,
+      "last": 100999
+    },
+    {
+      "letter": " c ",
+      "normalised": "C",
+      "first": 102000,
+      "last": 102999
+    },
+    {
+      "letter": "AA",
+      "normalised": "AA",
+      "first": 126000,
+      "last": 126999
+    },
+    {
+      "letter": "AZ",
+      "normalised": "AZ",
+      "first": 151000,
+      "last": 151999
+    },
+    {
+      "letter": "BA",
+      "normalised": "BA",
+      "first": 152000,
+      "last": 152999
+    },
+    {
+      "letter": "ZZ",
+      "normalised": "ZZ",
+      "first": 801000,
+      "last": 801999
+    },
+    {
+      "letter": "zz",
+      "normalised": "ZZ",
+      "first": 801000,
+      "last": 801999
+    },
+    {
+      "letter": "AAA",
+      "normalised": "AAA",
+      "first": 5347000,
+      "last": 5347999
+    },
+    {
+      "letter": "A1",
+      "normalised": "A1",
+      "first": 2866000,
+      "last": 2866999
+    },
+    {
+      "letter": "1",
+      "normalised": "1",
+      "first": 851000,
+      "last": 851999
+    },
+    {
+      "letter": "Ä",
+      "letterUtf16": "00c4",
+      "normalised": "Ä",
+      "normalisedUtf16": "00c4",
+      "first": 998000,
+      "last": 998999
+    },
+    {
+      "letter": "É",
+      "letterUtf16": "00c9",
+      "normalised": "É",
+      "normalisedUtf16": "00c9",
+      "first": 1003000,
+      "last": 1003999
+    },
+    {
+      "letter": "ß",
+      "letterUtf16": "00df",
+      "normalised": "SS",
+      "first": 612000,
+      "last": 612999
+    },
+    {
+      "letter": "ﬃ",
+      "letterUtf16": "fb03",
+      "normalised": "FFI",
+      "first": 5315000,
+      "last": 5315999
+    },
+    {
+      "letter": "ı",
+      "letterUtf16": "0131",
+      "normalised": "I",
+      "first": 108000,
+      "last": 108999
+    },
+    {
+      "letter": "i",
+      "normalised": "I",
+      "first": 108000,
+      "last": 108999
+    },
+    {
+      "letter": "İ",
+      "letterUtf16": "0130",
+      "normalised": "İ",
+      "normalisedUtf16": "0130",
+      "first": 1106000,
+      "last": 1106999
+    },
+    {
+      "letter": "Ω",
+      "letterUtf16": "03a9",
+      "normalised": "Ω",
+      "normalisedUtf16": "03a9",
+      "first": 1739000,
+      "last": 1739999
+    },
+    {
+      "letter": "🏠",
+      "letterUtf16": "d83c dfe0",
+      "normalised": "🏠",
+      "normalisedUtf16": "d83c dfe0",
+      "first": 4150000,
+      "last": 4150999
+    },
+    {
+      "letter": "",
+      "normalised": "",
+      "first": 802000,
+      "last": 802999
+    },
+    {
+      "letter": "Priya 🏠",
+      "letterUtf16": "0050 0072 0069 0079 0061 0020 d83c dfe0",
+      "normalised": "PRIYA 🏠",
+      "normalisedUtf16": "0050 0052 0049 0059 0041 0020 d83c dfe0",
+      "first": 1551000,
+      "last": 1551999
+    }
+  ],
+  "letterInstead": [
+    {
+      "personId": "a",
+      "start": 19,
+      "letter": "BT"
+    },
+    {
+      "personId": "A",
+      "start": 13,
+      "letter": "BN"
+    },
+    {
+      "personId": "Asha",
+      "start": 21,
+      "letter": "BV"
+    },
+    {
+      "personId": "Priya 🏠",
+      "personIdUtf16": "0050 0072 0069 0079 0061 0020 d83c dfe0",
+      "start": 13,
+      "letter": "BN"
+    },
+    {
+      "personId": "00000000-0000-4000-8000-000000000020",
+      "start": 22,
+      "letter": "BW"
+    },
+    {
+      "personId": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+      "start": 1,
+      "letter": "BB"
+    },
+    {
+      "personId": "9b2e6c1d-7f3a-4e8b-b5c2-1d0e9f8a7b6c",
+      "start": 4,
+      "letter": "BE"
+    },
+    {
+      "personId": "pashaphone23456789ab",
+      "start": 22,
+      "letter": "BW"
+    },
+    {
+      "personId": "polygenelubricants",
+      "start": 2,
+      "letter": "BC"
+    },
+    {
+      "personId": "日本",
+      "personIdUtf16": "65e5 672c",
+      "start": 5,
+      "letter": "BF"
+    },
+    {
+      "personId": "\u0000",
+      "personIdUtf16": "0000",
+      "start": 0,
+      "letter": "BA"
+    },
+    {
+      "personId": "x\ud800y",
+      "personIdUtf16": "0078 d800 0079",
+      "start": 23,
+      "letter": "BX"
+    },
+    {
+      "name": "the first choice is taken",
+      "personId": "Priya 🏠",
+      "personIdUtf16": "0050 0072 0069 0079 0061 0020 d83c dfe0",
+      "taken": "BN",
+      "letter": "BO"
+    }
+  ],
+  "derivedMoveId": [
+    {
+      "founder": "00000000-0000-4000-8000-000000000001",
+      "moveId": "m3906c46cfd44f4074ce7"
+    },
+    {
+      "founder": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+      "moveId": "m00b7278fa92b7a14d506"
+    },
+    {
+      "founder": "Priya 🏠",
+      "founderUtf16": "0050 0072 0069 0079 0061 0020 d83c dfe0",
+      "moveId": "m1ecebec2a4fc1736a22a"
+    },
+    {
+      "founder": "x\ud800y",
+      "founderUtf16": "0078 d800 0079",
+      "moveId": "md097a93160917471435b"
+    },
+    {
+      "name": "nobody with an open grant: the person with the earliest grant, then the smaller id",
+      "people": "u9,u10,u0",
+      "moveId": "ma7ad7f4fa00ec51f81e2"
+    }
+  ],
+  "moveTagAndDailyKey": [
+    {
+      "moveId": "m6c0dbd4c3ba1d4b5e1f2",
+      "moveTag": "A58E",
+      "dailyBackupKey": "68083784"
+    },
+    {
+      "moveId": "m0123456789abcdef0123",
+      "moveTag": "5E8E",
+      "dailyBackupKey": "f75a7fda"
+    },
+    {
+      "moveId": "",
+      "moveTag": "",
+      "dailyBackupKey": "6de3213a"
+    },
+    {
+      "moveId": "mZoë",
+      "moveIdUtf16": "006d 005a 006f 00eb",
+      "moveTag": "C9AB",
+      "dailyBackupKey": "5920034e"
+    }
+  ],
+  "digest": [
+    {
+      "text": "",
+      "toByteArray": "",
+      "digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "text": "abc",
+      "toByteArray": "616263",
+      "digest": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    },
+    {
+      "text": "housemove move 00000000-0000-4000-8000-000000000001",
+      "toByteArray": "686f7573656d6f7665206d6f76652030303030303030302d303030302d343030302d383030302d303030303030303030303031",
+      "digest": "3906c46cfd44f4074ce7fde3d1dffbd48d2749050b837a66001b127812e19594"
+    },
+    {
+      "text": "Priya 🏠",
+      "textUtf16": "0050 0072 0069 0079 0061 0020 d83c dfe0",
+      "toByteArray": "507269796120f09f8fa0",
+      "digest": "8096c68da827403dc6229212b38cd9e658b976d7c8453a46ebf3b3e35c297f10"
+    },
+    {
+      "text": "x\ud800y",
+      "textUtf16": "0078 d800 0079",
+      "toByteArray": "783f79",
+      "digest": "98b24bb90aca85539bc2a0c7616713bea77d7fbd41d190c61cf153bf7f508f90"
+    },
+    {
+      "text": "x?y",
+      "toByteArray": "783f79",
+      "digest": "98b24bb90aca85539bc2a0c7616713bea77d7fbd41d190c61cf153bf7f508f90"
+    },
+    {
+      "text": "\u0000",
+      "textUtf16": "0000",
+      "toByteArray": "00",
+      "digest": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d"
+    }
+  ],
+  "lineId": [
+    {
+      "text": "Plates",
+      "trimmedLowercase": "plates",
+      "lineId": "b1/5uz9hmal"
+    },
+    {
+      "text": "  Plates  ",
+      "trimmedLowercase": "plates",
+      "lineId": "b1/5uz9hmal"
+    },
+    {
+      "text": "PLATES",
+      "trimmedLowercase": "plates",
+      "lineId": "b1/5uz9hmal"
+    },
+    {
+      "text": "Plates.",
+      "trimmedLowercase": "plates.",
+      "lineId": "b1/db285ncj"
+    },
+    {
+      "text": "İstanbul mugs",
+      "textUtf16": "0130 0073 0074 0061 006e 0062 0075 006c 0020 006d 0075 0067 0073",
+      "trimmedLowercase": "i̇stanbul mugs",
+      "trimmedLowercaseUtf16": "0069 0307 0073 0074 0061 006e 0062 0075 006c 0020 006d 0075 0067 0073",
+      "lineId": "b1/bdp32z6b"
+    },
+    {
+      "text": "ΟΔΟΣ",
+      "textUtf16": "039f 0394 039f 03a3",
+      "trimmedLowercase": "οδος",
+      "trimmedLowercaseUtf16": "03bf 03b4 03bf 03c2",
+      "lineId": "b1/2cgm3m"
+    },
+    {
+      "text": "ΟΔΟΣ cups",
+      "textUtf16": "039f 0394 039f 03a3 0020 0063 0075 0070 0073",
+      "trimmedLowercase": "οδος cups",
+      "trimmedLowercaseUtf16": "03bf 03b4 03bf 03c2 0020 0063 0075 0070 0073",
+      "lineId": "b1/bpimz93b"
+    },
+    {
+      "text": "ΣΑΣ",
+      "textUtf16": "03a3 0391 03a3",
+      "trimmedLowercase": "σας",
+      "trimmedLowercaseUtf16": "03c3 03b1 03c2",
+      "lineId": "b1/2sk40"
+    },
+    {
+      "text": "Σ",
+      "textUtf16": "03a3",
+      "trimmedLowercase": "σ",
+      "trimmedLowercaseUtf16": "03c3",
+      "lineId": "b1/31d"
+    },
+    {
+      "text": "aΣb",
+      "textUtf16": "0061 03a3 0062",
+      "trimmedLowercase": "aσb",
+      "trimmedLowercaseUtf16": "0061 03c3 0062",
+      "lineId": "b1/e13k9ftw"
+    },
+    {
+      "text": "Straße",
+      "textUtf16": "0053 0074 0072 0061 00df 0065",
+      "trimmedLowercase": "straße",
+      "trimmedLowercaseUtf16": "0073 0074 0072 0061 00df 0065",
+      "lineId": "b1/5wbc4bl0"
+    },
+    {
+      "text": "STRASSE",
+      "trimmedLowercase": "strasse",
+      "lineId": "b1/fciyqr3"
+    },
+    {
+      "text": "ẞ",
+      "textUtf16": "1e9e",
+      "trimmedLowercase": "ß",
+      "trimmedLowercaseUtf16": "00df",
+      "lineId": "b1/e13wtn0l"
+    },
+    {
+      "text": "Zoë",
+      "textUtf16": "005a 006f 00eb",
+      "trimmedLowercase": "zoë",
+      "trimmedLowercaseUtf16": "007a 006f 00eb",
+      "lineId": "b1/e13k7y0e"
+    },
+    {
+      "text": "Zoë",
+      "textUtf16": "005a 006f 0065 0308",
+      "trimmedLowercase": "zoë",
+      "trimmedLowercaseUtf16": "007a 006f 0065 0308",
+      "lineId": "b1/e0t1qmg2"
+    },
+    {
+      "text": " Plates　",
+      "textUtf16": "00a0 0050 006c 0061 0074 0065 0073 3000",
+      "trimmedLowercase": "plates",
+      "lineId": "b1/5uz9hmal"
+    },
+    {
+      "text": "Plates​",
+      "textUtf16": "0050 006c 0061 0074 0065 0073 200b",
+      "trimmedLowercase": "plates​",
+      "trimmedLowercaseUtf16": "0070 006c 0061 0074 0065 0073 200b",
+      "lineId": "b1/db28b2gm"
+    },
+    {
+      "text": "ǅ",
+      "textUtf16": "01c5",
+      "trimmedLowercase": "ǆ",
+      "trimmedLowercaseUtf16": "01c6",
+      "lineId": "b1/e13wtsji"
+    },
+    {
+      "text": "ﬃ",
+      "textUtf16": "fb03",
+      "trimmedLowercase": "ﬃ",
+      "trimmedLowercaseUtf16": "fb03",
+      "lineId": "b1/16529"
+    },
+    {
+      "text": "Ⅻ",
+      "textUtf16": "216b",
+      "trimmedLowercase": "ⅻ",
+      "trimmedLowercaseUtf16": "217b",
+      "lineId": "b1/550p"
+    },
+    {
+      "text": "K",
+      "textUtf16": "212a",
+      "trimmedLowercase": "k",
+      "lineId": "b1/e13wtk8p"
+    },
+    {
+      "text": "x\ud83cy",
+      "textUtf16": "0078 d83c 0079",
+      "trimmedLowercase": "x\ud83cy",
+      "trimmedLowercaseUtf16": "0078 d83c 0079",
+      "lineId": "b1/iyghb"
+    }
+  ],
+  "storedLines": [
+    {
+      "text": "Plates, Mugs; ΟΔΟΣ cups, Straße",
+      "textUtf16": "0050 006c 0061 0074 0065 0073 002c 0020 004d 0075 0067 0073 003b 0020 039f 0394 039f 03a3 0020 0063 0075 0070 0073 002c 0020 0053 0074 0072 0061 00df 0065",
+      "lines": [
+        "Plates",
+        "Mugs",
+        "ΟΔΟΣ cups",
+        "Straße"
+      ]
+    },
+    {
+      "text": "Kettle and toaster",
+      "lines": [
+        "Kettle and toaster"
+      ]
+    },
+    {
+      "text": "a,,b ;\n c.",
+      "textUtf16": "0061 002c 002c 0062 0020 003b 000a 0020 0063 002e",
+      "lines": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    {
+      "text": "Plates, plates, PLATES",
+      "lines": [
+        "Plates"
+      ]
+    },
+    {
+      "text": "İ, i̇, I",
+      "textUtf16": "0130 002c 0020 0069 0307 002c 0020 0049",
+      "lines": [
+        "İ",
+        "I"
+      ]
+    },
+    {
+      "text": "Straße, STRASSE",
+      "textUtf16": "0053 0074 0072 0061 00df 0065 002c 0020 0053 0054 0052 0041 0053 0053 0045",
+      "lines": [
+        "Straße",
+        "STRASSE"
+      ]
+    }
+  ],
+  "refusedId": [
+    {
+      "what": "decision",
+      "targetId": "i1",
+      "by": "u2",
+      "at": "1767225600000",
+      "record": "{\"id\":\"refused/lnd03b4\",\"by\":\"u2\",\"at\":1767225600000,\"what\":\"decision\",\"targetId\":\"i1\",\"tried\":\"change {}\",\"updatedAt\":1767225600000}"
+    },
+    {
+      "what": "outcome",
+      "targetId": "00000000-0000-4000-8000-000000000005",
+      "by": "u3",
+      "at": "0",
+      "record": "{\"id\":\"refused/5xmkeoz0\",\"by\":\"u3\",\"what\":\"outcome\",\"targetId\":\"00000000-0000-4000-8000-000000000005\",\"tried\":\"change {}\"}"
+    },
+    {
+      "what": "settings",
+      "targetId": "move",
+      "by": "u2",
+      "at": "1767312000000",
+      "record": "{\"id\":\"refused/c1kc3k59\",\"by\":\"u2\",\"at\":1767312000000,\"what\":\"settings\",\"targetId\":\"move\",\"tried\":\"change {}\",\"updatedAt\":1767312000000}"
+    },
+    {
+      "what": "where",
+      "targetId": "b1",
+      "by": "Priya 🏠",
+      "byUtf16": "0050 0072 0069 0079 0061 0020 d83c dfe0",
+      "at": "1",
+      "record": "{\"id\":\"refused/673wy5z9\",\"by\":\"Priya 🏠\",\"at\":1,\"what\":\"where\",\"targetId\":\"b1\",\"tried\":\"change {}\",\"updatedAt\":1}"
+    },
+    {
+      "what": "decision",
+      "targetId": "i1",
+      "by": "",
+      "at": "5",
+      "record": "none: a change in nobody's name is not recorded"
+    }
+  ],
+  "caseAndTrim": [
+    {
+      "text": "İ",
+      "textUtf16": "0130",
+      "lowercase": "i̇",
+      "lowercaseUtf16": "0069 0307",
+      "uppercase": "İ",
+      "uppercaseUtf16": "0130",
+      "trim": "İ",
+      "trimUtf16": "0130",
+      "equalsIgnoreCaseLower": false
+    },
+    {
+      "text": "ı",
+      "textUtf16": "0131",
+      "lowercase": "ı",
+      "lowercaseUtf16": "0131",
+      "uppercase": "I",
+      "trim": "ı",
+      "trimUtf16": "0131",
+      "equalsIgnoreCaseLower": true
+    },
+    {
+      "text": "i",
+      "lowercase": "i",
+      "uppercase": "I",
+      "trim": "i",
+      "equalsIgnoreCaseLower": true
+    },
+    {
+      "text": "ß",
+      "textUtf16": "00df",
+      "lowercase": "ß",
+      "lowercaseUtf16": "00df",
+      "uppercase": "SS",
+      "trim": "ß",
+      "trimUtf16": "00df",
+      "equalsIgnoreCaseLower": true
+    },
+    {
+      "text": "ẞ",
+      "textUtf16": "1e9e",
+      "lowercase": "ß",
+      "lowercaseUtf16": "00df",
+      "uppercase": "ẞ",
+      "uppercaseUtf16": "1e9e",
+      "trim": "ẞ",
+      "trimUtf16": "1e9e",
+      "equalsIgnoreCaseLower": true
+    },
+    {
+      "text": "ΟΔΟΣ",
+      "textUtf16": "039f 0394 039f 03a3",
+      "lowercase": "οδος",
+      "lowercaseUtf16": "03bf 03b4 03bf 03c2",
+      "uppercase": "ΟΔΟΣ",
+      "uppercaseUtf16": "039f 0394 039f 03a3",
+      "trim": "ΟΔΟΣ",
+      "trimUtf16": "039f 0394 039f 03a3",
+      "equalsIgnoreCaseLower": true
+    },
+    {
+      "text": "ΟΔΟΣ ΚΑΙ",
+      "textUtf16": "039f 0394 039f 03a3 0020 039a 0391 0399",
+      "lowercase": "οδος και",
+      "lowercaseUtf16": "03bf 03b4 03bf 03c2 0020 03ba 03b1 03b9",
+      "uppercase": "ΟΔΟΣ ΚΑΙ",
+      "uppercaseUtf16": "039f 0394 039f 03a3 0020 039a 0391 0399",
+      "trim": "ΟΔΟΣ ΚΑΙ",
+      "trimUtf16": "039f 0394 039f 03a3 0020 039a 0391 0399",
+      "equalsIgnoreCaseLower": true
+    },
+    {
+      "text": "Σ",
+      "textUtf16": "03a3",
+      "lowercase": "σ",
+      "lowercaseUtf16": "03c3",
+      "uppercase": "Σ",
+      "uppercaseUtf16": "03a3",
+      "trim": "Σ",
+      "trimUtf16": "03a3",
+      "equalsIgnoreCaseLower": true
+    },
+    {
+      "text": "aΣ",
+      "textUtf16": "0061 03a3",
+      "lowercase": "aς",
+      "lowercaseUtf16": "0061 03c2",
+      "uppercase": "AΣ",
+      "uppercaseUtf16": "0041 03a3",
+      "trim": "aΣ",
+      "trimUtf16": "0061 03a3",
+      "equalsIgnoreCaseLower": true
+    },
+    {
+      "text": "ǅ",
+      "textUtf16": "01c5",
+      "lowercase": "ǆ",
+      "lowercaseUtf16": "01c6",
+      "uppercase": "Ǆ",
+      "uppercaseUtf16": "01c4",
+      "trim": "ǅ",
+      "trimUtf16": "01c5",
+      "equalsIgnoreCaseLower": true
+    },
+    {
+      "text": "ﬃ",
+      "textUtf16": "fb03",
+      "lowercase": "ﬃ",
+      "lowercaseUtf16": "fb03",
+      "uppercase": "FFI",
+      "trim": "ﬃ",
+      "trimUtf16": "fb03",
+      "equalsIgnoreCaseLower": true
+    },
+    {
+      "text": "K",
+      "textUtf16": "212a",
+      "lowercase": "k",
+      "uppercase": "K",
+      "uppercaseUtf16": "212a",
+      "trim": "K",
+      "trimUtf16": "212a",
+      "equalsIgnoreCaseLower": true
+    },
+    {
+      "text": "ŉ",
+      "textUtf16": "0149",
+      "lowercase": "ŉ",
+      "lowercaseUtf16": "0149",
+      "uppercase": "ʼN",
+      "uppercaseUtf16": "02bc 004e",
+      "trim": "ŉ",
+      "trimUtf16": "0149",
+      "equalsIgnoreCaseLower": true
+    },
+    {
+      "text": " x ",
+      "textUtf16": "00a0 0078 2007",
+      "lowercase": " x ",
+      "lowercaseUtf16": "00a0 0078 2007",
+      "uppercase": " X ",
+      "uppercaseUtf16": "00a0 0058 2007",
+      "trim": "x",
+      "equalsIgnoreCaseLower": true
+    },
+    {
+      "text": "​x",
+      "textUtf16": "200b 0078",
+      "lowercase": "​x",
+      "lowercaseUtf16": "200b 0078",
+      "uppercase": "​X",
+      "uppercaseUtf16": "200b 0058",
+      "trim": "​x",
+      "trimUtf16": "200b 0078",
+      "equalsIgnoreCaseLower": true
+    },
+    {
+      "text": "\u001fx",
+      "textUtf16": "001f 0078 007f",
+      "lowercase": "\u001fx",
+      "lowercaseUtf16": "001f 0078 007f",
+      "uppercase": "\u001fX",
+      "uppercaseUtf16": "001f 0058 007f",
+      "trim": "x",
+      "trimUtf16": "0078 007f",
+      "equalsIgnoreCaseLower": true
+    }
+  ],
+  "compareTo": [
+    {
+      "a": "a",
+      "b": "b",
+      "sign": -1
+    },
+    {
+      "a": "B",
+      "b": "a",
+      "sign": -1
+    },
+    {
+      "a": "Zoë",
+      "aUtf16": "005a 006f 00eb",
+      "b": "Zoe",
+      "sign": 1
+    },
+    {
+      "a": "😀",
+      "aUtf16": "d83d de00",
+      "b": "！",
+      "bUtf16": "ff01",
+      "sign": -1
+    },
+    {
+      "a": "é",
+      "aUtf16": "00e9",
+      "b": "é",
+      "bUtf16": "0065 0301",
+      "sign": 1
+    },
+    {
+      "a": "1.0E-4",
+      "b": "0.001",
+      "sign": 1
+    },
+    {
+      "a": "10000000.0",
+      "b": "1.0E7",
+      "sign": 1
+    },
+    {
+      "a": "",
+      "b": "a",
+      "sign": -1
+    },
+    {
+      "a": "Priya",
+      "b": "Priya 🏠",
+      "bUtf16": "0050 0072 0069 0079 0061 0020 d83c dfe0",
+      "sign": -1
+    },
+    {
+      "a": "u10",
+      "b": "u9",
+      "sign": -1
+    }
+  ]
+}

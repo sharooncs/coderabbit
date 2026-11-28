@@ -1,0 +1,297 @@
+package app.housemove.ui.iphone
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Canvas
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.window.PopupProperties
+import app.housemove.data.BackupPlace
+import app.housemove.data.File
+import app.housemove.data.qrPixels
+import app.housemove.ui.CameraPermission
+import app.housemove.ui.LiveCamera
+import app.housemove.ui.Night
+import app.housemove.ui.Papers
+import app.housemove.ui.PhoneWords
+import app.housemove.ui.PickedFile
+import app.housemove.ui.PickedFolder
+import app.housemove.ui.Platform
+import app.housemove.ui.SaveFile
+import app.housemove.ui.ScanKind
+import app.housemove.ui.ScreenDp
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
+
+/**
+ * What the shared screens ask of the phone ([Platform]), on the iPhone: its Settings and its own small store through
+ * [hooks], and the few words it says through [toasts]. Files (the share sheet, opening and saving them, "Open in
+ * HouseMove", the PDFs) are [PhoneFiles], from step 3b. What waits for the rest of step 3 of design/ios-plan.md is not
+ * offered, so the screens leave it out: the camera and scanning, choosing photos, speech and the daily backup folder.
+ * A photo already in the move shows. The desktop tests render the shared screens with this too, so their pictures are
+ * what the iPhone shows.
+ */
+class IphonePlatform(private val hooks: PhoneHooks, private val toasts: Toasts) : Platform {
+    override fun toast(text: String) = toasts.say(text)
+
+    /** The window as Compose measures it, in points (dp), with the text scale. */
+    @Composable
+    override fun screen(): ScreenDp {
+        val size = LocalWindowInfo.current.containerSize
+        val density = LocalDensity.current
+        return ScreenDp((size.width / density.density).toInt(), (size.height / density.density).toInt(), density.fontScale)
+    }
+
+    // ---- the camera, the scanner and photos already on the phone (step 3a: PhoneCamera.kt) ---------------------
+
+    /** A real iPhone's camera, or demo mode's fake; not in the simulator (nor where [PhoneHooks.camera] is null). */
+    override val camera: Boolean get() = hooks.camera?.hasCamera == true
+
+    @Composable
+    override fun rememberCameraPermission() = hooks.camera?.rememberPermission() ?: CameraPermission(false) {}
+
+    override fun openAppSettings(): Boolean {
+        hooks.openSettings()
+        return true
+    }
+
+    /** The live camera for photos. The screen stays awake while it is open (the walk-through goes from room to room). */
+    @Composable
+    override fun PhotoCameraView(modifier: Modifier, onReady: (LiveCamera?) -> Unit) {
+        val phone = hooks.camera?.takeIf { it.hasCamera }
+        if (phone == null) {
+            LaunchedEffect(Unit) { onReady(null) }
+            return
+        }
+        KeepAwake(hooks)
+        phone.PhotoView(modifier, onReady)
+    }
+
+    /** The live scanner, with Android's rules: a buzz and a beep for each code, the same code again only after 2.5 s. */
+    @Composable
+    override fun ScannerView(formats: ScanKind, onText: (String) -> Unit, modifier: Modifier, onReady: (LiveCamera?) -> Unit) {
+        val phone = hooks.camera?.takeIf { it.hasCamera }
+        if (phone == null) {
+            LaunchedEffect(Unit) { onReady(null) }
+            return
+        }
+        KeepAwake(hooks)
+        val haptic = LocalHapticFeedback.current
+        val callback by rememberUpdatedState(onText)
+        val gate = remember { ScanGate() }
+        phone.CodeView(formats, { text ->
+            if (gate.pass(text, Words.nowMillis())) {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                phone.beep()
+                callback(text)
+            }
+        }, modifier, onReady)
+    }
+
+    @Composable
+    override fun rememberPhotoPicker(newFile: () -> File, onPhoto: (File) -> Unit, onDone: (Int) -> Unit): (() -> Unit)? =
+        hooks.camera?.rememberPicker(newFile, onPhoto, onDone)
+
+    // ---- not yet on the iPhone (step 3) ------------------------------------------------------------------------
+
+    @Composable
+    override fun canSpeak(): Boolean = false
+
+    @Composable
+    override fun rememberSpeech(onText: (String) -> Unit): ((String) -> Unit)? = null
+
+    @Composable
+    override fun rememberDictation(onText: (String) -> Unit): (() -> Unit)? = null
+
+    // ---- files (step 3b): the share sheet, the document picker, "Open in HouseMove" ([PhoneFiles]) ----------------
+
+    private val files: PhoneFiles? = hooks.files
+
+    override val shareFiles: Boolean get() = files != null
+
+    override fun outFile(name: String): File = File(files?.outDir ?: hooks.noBackupDir, name)
+
+    override fun share(file: File, mime: String) {
+        files?.share(file, mime)
+    }
+
+    /** The iPhone opens nothing in another app by itself: the share sheet offers Print, Save to Files and the apps. */
+    override fun open(file: File, mime: String) {
+        files?.share(file, mime)
+    }
+
+    @Composable
+    override fun rememberOpenFile(onPicked: (PickedFile?) -> Unit): ((List<String>) -> Unit)? = files?.rememberOpenFile(onPicked)
+
+    @Composable
+    override fun rememberSaveFile(mime: String, onPicked: (SaveFile?) -> Unit): ((String) -> Unit)? = files?.rememberSaveFile(mime, onPicked)
+
+    /** An update file opened with HouseMove; a backup opened with it is the iPhone's own ([IncomingFiles]). */
+    @Composable
+    override fun incomingUpdate(): PickedFile? = files?.incoming?.takeIf { !it.backup }?.file
+
+    override fun incomingUpdateTaken() {
+        if (files?.incoming?.backup == false) files.incomingTaken()
+    }
+
+    @Composable
+    override fun rememberFolderPicker(onPicked: (PickedFolder?) -> Unit): (() -> Unit)? = null
+
+    override fun backupFolder(saved: String): BackupPlace? = null
+
+    override fun backupFolderName(saved: String): String = ""
+
+    /** The iPhone holds the one move it joined (its own join screens), and leaves it from Get fresh data. */
+    override val moreMoves: Boolean get() = false
+
+    /** The printouts, drawn with the same layout as Android's (pdf/Printouts.kt) where the phone can share them. */
+    override val papers: Papers? get() = files?.papers
+
+    override val shareTheApp: ((CoroutineScope) -> Unit)? get() = null
+
+    // ---- small things --------------------------------------------------------------------------------------------
+
+    /** Photos rather than a gallery, the iPhone's own Settings, and HouseMove through TestFlight ([PhoneWords.IPHONE]). */
+    override val words: PhoneWords get() = PhoneWords.IPHONE
+
+    /** The shared encoder's QR code (the same modules as Android's ZXing draws), black on white, drawn into a picture. */
+    override fun qrImage(text: String, sizePx: Int): ImageBitmap {
+        val code = qrPixels(text, sizePx)
+        val image = ImageBitmap(code.size, code.size)
+        val canvas = Canvas(image)
+        val white = Paint().apply { color = Color.White }
+        val black = Paint().apply { color = Color.Black }
+        canvas.drawRect(0f, 0f, code.size.toFloat(), code.size.toFloat(), white)
+        // Each row's dark runs as one rectangle each.
+        for (y in 0 until code.size) {
+            var x = 0
+            while (x < code.size) {
+                if (!code[x, y]) {
+                    x++
+                    continue
+                }
+                val start = x
+                while (x < code.size && code[x, y]) x++
+                canvas.drawRect(start.toFloat(), y.toFloat(), x.toFloat(), y + 1f, black)
+            }
+        }
+        return image
+    }
+
+    override fun readSet(file: String, key: String): Set<String> = hooks.readSet("$file.$key")
+
+    override fun writeSet(file: String, key: String, values: Set<String>) = hooks.writeSet("$file.$key", values)
+
+    override fun country(): String = hooks.country()
+}
+
+/** What the iPhone says for a few seconds at the bottom of the screen, as Android's toasts do. */
+class Toasts {
+    var text: String? by mutableStateOf(null)
+        private set
+
+    /** Goes up with each thing said, so the same words said twice show twice. */
+    var count: Int by mutableIntStateOf(0)
+        private set
+
+    /** How long the words stay: 3.5 seconds (Android's long toast). Tests that take their time over a picture keep them longer. */
+    internal var showMs = 3_500L
+
+    fun say(words: String) {
+        text = words
+        count++
+    }
+
+    fun done(seen: Int) {
+        if (seen == count) text = null
+    }
+}
+
+/**
+ * The words of [toasts] on a glass pill near the bottom of the area this fills (the safe area), for 3.5 seconds
+ * (Android's long toast), read out by VoiceOver: above everything on the screen, a full-screen dialog such as a scanner
+ * included, and never in the way of a touch, as Android's own toasts are.
+ *
+ * Above dialogs: the pill is drawn in a popup of its own. Compose Multiplatform draws every popup and dialog as a layer
+ * over the screen, the newest on top; a new popup is made for each thing said ([key]), so the words are above whatever
+ * was open when they were said. The popup is not focusable: it takes neither the keyboard, nor Back, nor taps outside it.
+ *
+ * Touches: a layer takes the touches that land inside its bounds and hands the others to the layers under it. This
+ * popup's bounds are a point (its layout is 0 by 0, at [ToastPlace]), and the pill is drawn around that point, outside
+ * those bounds (Compose does not clip what a layout draws to its size). So no touch lands in it: every one, on the pill
+ * too, goes to the dialog or the screen beneath.
+ */
+@Composable
+fun ToastHost(toasts: Toasts, modifier: Modifier = Modifier) {
+    val words = toasts.text ?: return
+    val seen = toasts.count
+    LaunchedEffect(seen) {
+        delay(toasts.showMs)
+        toasts.done(seen)
+    }
+    BoxWithConstraints(modifier.fillMaxSize()) {
+        val widest = minOf(maxWidth - 48.dp, 520.dp)
+        val lift = with(LocalDensity.current) { 96.dp.roundToPx() }
+        key(seen) {
+            Popup(
+                popupPositionProvider = remember(lift) { ToastPlace(lift) },
+                properties = PopupProperties(focusable = false, dismissOnBackPress = false, dismissOnClickOutside = false, clippingEnabled = false),
+            ) {
+                Text(
+                    words, style = MaterialTheme.typography.bodyLarge, color = Night.Text, textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .layout { measurable, constraints ->
+                            // As wide as the words, at most [widest]; no size at all as far as the popup goes (see above).
+                            val pill = measurable.measure(Constraints(maxWidth = widest.roundToPx().coerceAtMost(constraints.maxWidth)))
+                            layout(0, 0) { pill.place(-pill.width / 2, -pill.height) }
+                        }
+                        // A dark ground under the glass: the words stay readable over a bright camera picture too.
+                        .background(Night.Panel.copy(alpha = 0.94f), RoundedCornerShape(22.dp))
+                        .glass(RoundedCornerShape(22.dp), Tone.Plain).padding(horizontal = 18.dp, vertical = 12.dp)
+                        .semantics { liveRegion = LiveRegionMode.Polite },
+                )
+            }
+        }
+    }
+}
+
+/** Where a toast goes: [lift] pixels above the middle of the bottom of the area it is shown in (the popup's anchor). */
+private class ToastPlace(private val lift: Int) : PopupPositionProvider {
+    override fun calculatePosition(anchorBounds: IntRect, windowSize: IntSize, layoutDirection: LayoutDirection, popupContentSize: IntSize): IntOffset =
+        IntOffset(anchorBounds.left + anchorBounds.width / 2, anchorBounds.bottom - lift)
+}

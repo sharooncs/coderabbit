@@ -1,0 +1,160 @@
+{
+  "about": "Noise_IK and Noise_XXpsk0 over P-256, AES-256-GCM and SHA-256, as HouseMove 2.4 syncs (design/encryption.md, Part 2). Made by NoiseFixtureTest; not to be edited.",
+  "moveId": "m3906c46cfd44f4074ce7",
+  "scalars": {
+    "initiator static": "371f07a483a34311675281cbd54c528b628523d9b1944f81eb9dfdb64b27c033",
+    "responder static": "649fb1e976869e4469006132a42668cb43a0d835071a1d83f9f924fac3edf3b1",
+    "initiator ephemeral ik": "2cbd57b3489ae32e35639d233eefcbe34884fb50ccb1d35c9b2a55f4c6b644dd",
+    "responder ephemeral ik": "6c364713993a5ae3a3a2af34e42fd388eba3f94c0252f089fbc310da77692318",
+    "initiator ephemeral xx": "911162cab519f8ae57a05fdedb0703760b01ea52a456114b27edc2c87dbf6ec2",
+    "responder ephemeral xx": "32f08f7496106556593862a0f9ed5c7f59ce4d06fd848a950504f73bf799d5a4"
+  },
+  "publicKeys": {
+    "initiator static": "04b1358d450ec031810e62506dfcd805f73debd0455553421636c3ecd1122119ac2596e9fc4988ee956e4bc3aed457768b665fd040165be9eec7d6d7f9cee72dc9",
+    "responder static": "04ce30290675e46fc398c213c6cf69efe2a1f7dcd576feebc50606612938cefe16ffa706ff33f543b3eca43b2734feb751cff6a183caae7101844468cf2088c3ae",
+    "initiator ephemeral ik": "04f734adda14ab2a9d468af3cbf47a88fb016cd157f1b0f0f2e64bb8fbbb3986133717362656999ed30b6dd4418090bc9bde171fee33312feaecb02a60ed418d78",
+    "responder ephemeral ik": "04d32d512095a2e813dfe26a3288e483d6cb74c0efa6bdc5e91832ba02279b0e3e0b9be3406ae47ede7a19508d282c9e76c31bce8c48ae6185791e14091f5d9bdf",
+    "initiator ephemeral xx": "0468cca0703eeca54fee3819baf83e74ec5fc5e041c50a5a8e55a6fafd1bd876c0beaa2c9f03ec922c523d1cf874f276db488f93704318ef6e384e051bee4cc9ba",
+    "responder ephemeral xx": "04a576b4234536ebcc88ca7bee09314d86d13b84b7b3f95d80c0e5980c57e10238d49adfb569f011141ecf69997c016fa0d7315fafaf2b3df1d410bc8c1c137ac7"
+  },
+  "ik": {
+    "protocol": "Noise_IK_P256_AESGCM_SHA256",
+    "prologue": "00000010486f7573654d6f76652073796e632032000000156d3339303663343663666434346634303734636537",
+    "messages": [
+      {
+        "payload": "0000001470707269796170686f6e65323334353637386162",
+        "bytes": "04f734adda14ab2a9d468af3cbf47a88fb016cd157f1b0f0f2e64bb8fbbb3986133717362656999ed30b6dd4418090bc9bde171fee33312feaecb02a60ed418d78c255077d9d620914db5c14acefa764cf958f77e5eb3fafffdb95a70548313c5ffb1eb5c4c891d47350806b8698bd9cd070a499343b51a664e4daa9c317d501fb217dc87195533586222575edff7a9812cdc03f1b06f4b02d0a738f8311f534b949869a01c9e0599023f39e15baea54450598e8f587ac709869"
+      },
+      {
+        "payload": "00000014706173686170686f6e6532333435363738396162000000024f4b",
+        "bytes": "04d32d512095a2e813dfe26a3288e483d6cb74c0efa6bdc5e91832ba02279b0e3e0b9be3406ae47ede7a19508d282c9e76c31bce8c48ae6185791e14091f5d9bdf42e7d1a60d35c9f6cce4dd1e1a5f25747d8508e83224abeaf303fd9ff8c85c8a11e1a60680488f8fa5b508293e33"
+      }
+    ],
+    "handshakeHash": "66c7f3f1c144a30c0380261b9acc88220916435efb0fd3abe813d842f12576f2",
+    "keys": {
+      "initiatorToResponder": "acfdccb6a93c7d8e7615ff63f5fa96de2f0560e5ab0234b04d9cfa0056864024",
+      "responderToInitiator": "b3edae556e3c56dca2a0b54f048aa62065ad5fcac37edf00603094736d14447c"
+    },
+    "frames": [
+      {
+        "from": "initiator",
+        "length": 45,
+        "bytes": "002d3a0966f2d2b3f6de042079a15e9edc3e60b91a101224c8fc565897fbd4a6b97fefc20a6cb455cb077dfec207a4"
+      },
+      {
+        "from": "responder",
+        "length": 42,
+        "bytes": "002ab164d64fc4e771ed7651a006879d0ba31679e51d57f9145eb0d435422e047a5ef98ab2f42246b69095dd"
+      },
+      {
+        "from": "initiator",
+        "length": 65535,
+        "sha256": "520fc222331adbed4eb7aeb77f5054cded0cdbb70e71d97b0df75d0f607ecb3f",
+        "start": "ffff96c23375317752139ea15fe480b9977f897c3f6ea307d376b3326144badbaea6bfd42fafa76f297935ca5c43a14daf587713cdbd855c7192bc6dd25a8359"
+      },
+      {
+        "from": "initiator",
+        "length": 4497,
+        "sha256": "282fda3f1fbaf6d52fe90efca428f3e12ce12e85a1e477a692df19445ae6ba8a",
+        "start": "1191ba1c1697f0b01c2ca449c384e0abd5d689e61b62b0b3b724d7ede05b6458ccb791eb5bc8d20aee780b05430372ea5c64fa5ffeb184895fba0f19b1175576"
+      },
+      {
+        "from": "responder",
+        "length": 22,
+        "bytes": "00160bb63e055d42a4aa19673aa8c75728153d2a67952562"
+      }
+    ],
+    "plain": [
+      {
+        "from": "initiator",
+        "text": "hello from the dialling phone"
+      },
+      {
+        "from": "responder",
+        "text": "and from the answering one"
+      },
+      {
+        "from": "initiator",
+        "length": 70000,
+        "sha256": "3500f58cfd1bd88e231edf56dca995542a702bd54525804e5a8604c8aa5cb52e"
+      },
+      {
+        "from": "responder",
+        "text": "got it"
+      }
+    ]
+  },
+  "xxpsk0": {
+    "protocol": "Noise_XXpsk0_P256_AESGCM_SHA256",
+    "code": "E2GQ7K2MXP",
+    "psk": "963e621ed6ef780eb7a7063811390646543c6327d364eddfbeff0bb3cda158eb",
+    "prologue": "00000010486f7573654d6f766520636f64652032000000156d3339303663343663666434346634303734636537",
+    "messages": [
+      {
+        "payload": "",
+        "bytes": "0468cca0703eeca54fee3819baf83e74ec5fc5e041c50a5a8e55a6fafd1bd876c0beaa2c9f03ec922c523d1cf874f276db488f93704318ef6e384e051bee4cc9baba279f2bae1a59d41e13c3b55d2e8856"
+      },
+      {
+        "payload": "00000014706173686170686f6e6532333435363738396162",
+        "bytes": "04a576b4234536ebcc88ca7bee09314d86d13b84b7b3f95d80c0e5980c57e10238d49adfb569f011141ecf69997c016fa0d7315fafaf2b3df1d410bc8c1c137ac7167857b4b48bc9f74a4c04e6ac3ba17eeab5691810cf99ae8fa2e476d99d42d8561097bf1559a6ff789f393e3a7cd4171f971f93cfee5cd534f91415497284d3a74cdad502d427cd5668043190a30a24a6b19e4734a8f3de55d2e53e5348eeb16bc36f55ecf6c40973e803654449b156c6795d294822a056d7"
+      },
+      {
+        "payload": "0000001470707269796170686f6e65323334353637386162",
+        "bytes": "beb758f911c9255e48420bb333517755a9b045a43a9c5a34fd072cc885e90fd88bc1ff8ffbc79027ec91f28d76ff834a8f9843415ef2b9b365e1ce120fd2364152610ccd0b2d46a421c5e958b8c84d9a1f8e046d65dc49cd870f96ac8761332e9489d803324a38a5cf50604a863fb722cac22e444454475538"
+      }
+    ],
+    "handshakeHash": "cacd149ffc14cae91e85a8ba9c2a370d4380b806958286f9f46ef73503cccf1c",
+    "keys": {
+      "initiatorToResponder": "88b9c29bd963d4b758dc186a003e3c1c8850a051370a9950c193eed94ff9e1ff",
+      "responderToInitiator": "6d68f427ccbe64c6bc42e3c0004928b479e9b050d3ab95034db259d0bc9dc039"
+    },
+    "frames": [
+      {
+        "from": "initiator",
+        "length": 45,
+        "bytes": "002d7b8da27748ed2d1f5008913c5f9d58bb6136c2ffb57ee14dac509fcac81dd0aae39d78c073387b7b0fc35501b5"
+      },
+      {
+        "from": "responder",
+        "length": 42,
+        "bytes": "002a354f109e97cb6cd4986fb54589482fa5bfd6641a2a25889a57e8d32c66ec7df88f07da3b399779021b57"
+      },
+      {
+        "from": "initiator",
+        "length": 65535,
+        "sha256": "83dcbe330654863a931b148f7486342ee017f36c4ea45c9defa29a44f6f01b2f",
+        "start": "ffff02e77171853118879747cb9d7f64bd9312288682581539474a0073fffa1fd414516a83398650722415883d16c2d16db0c92c44f5932dfb5c728a97f14eb3"
+      },
+      {
+        "from": "initiator",
+        "length": 4497,
+        "sha256": "b5d672ded45bed519e3565d3c3607c19052f6444d9aceb1eed50d22295ced88d",
+        "start": "1191bd6982c55e5b80d300d6087e9395a166d00c3e27a4a010cf6e027c6fcef1cf48beaf0dd5c236f991d6196543e20bf67b1d8bc0e664f70167fb147457748d"
+      },
+      {
+        "from": "responder",
+        "length": 22,
+        "bytes": "0016cc85b7597626f550319a52fde6c2bb2a363fcbf66168"
+      }
+    ],
+    "plain": [
+      {
+        "from": "initiator",
+        "text": "hello from the dialling phone"
+      },
+      {
+        "from": "responder",
+        "text": "and from the answering one"
+      },
+      {
+        "from": "initiator",
+        "length": 70000,
+        "sha256": "3500f58cfd1bd88e231edf56dca995542a702bd54525804e5a8604c8aa5cb52e"
+      },
+      {
+        "from": "responder",
+        "text": "got it"
+      }
+    ]
+  }
+}

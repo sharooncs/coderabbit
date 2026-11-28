@@ -1,0 +1,5 @@
+<resources>
+    <!-- The middle of the app's ground gradient (Night.Ground1 in ui/Theme.kt). -->
+    <color name="night_ground">#101D2E</color>
+    <color name="ic_launcher_bg">#0E1A2A</color>
+</resources>

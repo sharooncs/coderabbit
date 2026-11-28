@@ -1,0 +1,316 @@
+{
+  "about": "Strings as DataOutputStream.writeUTF writes them (Java's modified UTF-8: a two-byte big-endian length, NUL as C0 80, every UTF-16 code unit on its own, so a surrogate pair is two three-byte groups and a lone surrogate is kept), and as String.toByteArray() writes them (standard UTF-8; a lone surrogate becomes '?'). The sync wire uses writeUTF for every string and toByteArray for the JSON of the data.",
+  "strings": [
+    {
+      "name": "ascii",
+      "text": "Asha",
+      "writeUTF": "000441736861",
+      "toByteArray": "41736861"
+    },
+    {
+      "name": "emoji, a surrogate pair",
+      "text": "Priya 🏠",
+      "textUtf16": "0050 0072 0069 0079 0061 0020 d83c dfe0",
+      "writeUTF": "000c507269796120eda0bcedbfa0",
+      "toByteArray": "507269796120f09f8fa0"
+    },
+    {
+      "name": "NUL",
+      "text": "a\u0000b",
+      "textUtf16": "0061 0000 0062",
+      "writeUTF": "000461c08062",
+      "toByteArray": "610062"
+    },
+    {
+      "name": "accented, precomposed",
+      "text": "Zoë Café",
+      "textUtf16": "005a 006f 00eb 0020 0043 0061 0066 00e9",
+      "writeUTF": "000a5a6fc3ab20436166c3a9",
+      "toByteArray": "5a6fc3ab20436166c3a9"
+    },
+    {
+      "name": "accented, decomposed",
+      "text": "Zoë Café",
+      "textUtf16": "005a 006f 0065 0308 0020 0043 0061 0066 0065 0301",
+      "writeUTF": "000c5a6f65cc882043616665cc81",
+      "toByteArray": "5a6f65cc882043616665cc81"
+    },
+    {
+      "name": "CJK",
+      "text": "日本語の箱",
+      "textUtf16": "65e5 672c 8a9e 306e 7bb1",
+      "writeUTF": "000fe697a5e69cace8aa9ee381aee7aeb1",
+      "toByteArray": "e697a5e69cace8aa9ee381aee7aeb1"
+    },
+    {
+      "name": "two- and three-byte",
+      "text": "£5 €5",
+      "textUtf16": "00a3 0035 0020 20ac 0035",
+      "writeUTF": "0008c2a33520e282ac35",
+      "toByteArray": "c2a33520e282ac35"
+    },
+    {
+      "name": "lone high surrogate",
+      "text": "x\ud83cy",
+      "textUtf16": "0078 d83c 0079",
+      "writeUTF": "000578eda0bc79",
+      "toByteArray": "783f79"
+    },
+    {
+      "name": "lone low surrogate",
+      "text": "x\udfe0y",
+      "textUtf16": "0078 dfe0 0079",
+      "writeUTF": "000578edbfa079",
+      "toByteArray": "783f79"
+    },
+    {
+      "name": "a pair the wrong way round",
+      "text": "\udfe0\ud83c",
+      "textUtf16": "dfe0 d83c",
+      "writeUTF": "0006edbfa0eda0bc",
+      "toByteArray": "3f3f"
+    },
+    {
+      "name": "empty",
+      "text": "",
+      "writeUTF": "0000",
+      "toByteArray": ""
+    },
+    {
+      "name": "control characters",
+      "text": "tab\there\nnew\r",
+      "textUtf16": "0074 0061 0062 0009 0068 0065 0072 0065 000a 006e 0065 0077 000d",
+      "writeUTF": "000d74616209686572650a6e65770d",
+      "toByteArray": "74616209686572650a6e65770d"
+    },
+    {
+      "name": "BOM and U+FFFF",
+      "text": "﻿start￿",
+      "textUtf16": "feff 0073 0074 0061 0072 0074 ffff",
+      "writeUTF": "000befbbbf7374617274efbfbf",
+      "toByteArray": "efbbbf7374617274efbfbf"
+    },
+    {
+      "name": "no-break and ideographic spaces",
+      "text": " spaced　",
+      "textUtf16": "00a0 0073 0070 0061 0063 0065 0064 3000",
+      "writeUTF": "000bc2a0737061636564e38080",
+      "toByteArray": "c2a0737061636564e38080"
+    },
+    {
+      "name": "DEL and C1 controls",
+      "text": "",
+      "textUtf16": "007f 0080 009f",
+      "writeUTF": "00057fc280c29f",
+      "toByteArray": "7fc280c29f"
+    },
+    {
+      "name": "the edges of two and three bytes",
+      "text": "߿ࠀ￿",
+      "textUtf16": "007f 0080 07ff 0800 ffff",
+      "writeUTF": "000b7fc280dfbfe0a080efbfbf",
+      "toByteArray": "7fc280dfbfe0a080efbfbf"
+    }
+  ],
+  "long": [
+    {
+      "name": "three-byte CJK, at the limit",
+      "unit": "日",
+      "unitUtf16": "65e5",
+      "times": 21845,
+      "utfLength": 65535,
+      "head": "ffffe697a5e697a5",
+      "sha256": "54fccba5919edf14a39bac6897bb56781c035b8bac72f6103b5fdef35573fa73"
+    },
+    {
+      "name": "three-byte CJK, one over",
+      "unit": "日",
+      "unitUtf16": "65e5",
+      "times": 21846,
+      "writeUTF": "error: UTFDataFormatException"
+    },
+    {
+      "name": "emoji, six bytes each",
+      "unit": "🏠",
+      "unitUtf16": "d83c dfe0",
+      "times": 10922,
+      "utfLength": 65532,
+      "head": "fffceda0bcedbfa0",
+      "sha256": "a24e4f5cb294179e116b1ac28ecf575eb0ad6ee26d170df3c125616bd7c94482"
+    },
+    {
+      "name": "emoji, one over",
+      "unit": "🏠",
+      "unitUtf16": "d83c dfe0",
+      "times": 10923,
+      "writeUTF": "error: UTFDataFormatException"
+    },
+    {
+      "name": "NUL, two bytes each",
+      "unit": "\u0000",
+      "unitUtf16": "0000",
+      "times": 32767,
+      "utfLength": 65534,
+      "head": "fffec080c080c080",
+      "sha256": "9b658254ff521f87c01d50ac4ab2d9979abdd8666402432066e6463c7fbbcd9e"
+    },
+    {
+      "name": "NUL, one over",
+      "unit": "\u0000",
+      "unitUtf16": "0000",
+      "times": 32768,
+      "writeUTF": "error: UTFDataFormatException"
+    },
+    {
+      "name": "ASCII, at the limit",
+      "unit": "a",
+      "times": 65535,
+      "utfLength": 65535,
+      "head": "ffff616161616161",
+      "sha256": "d271e951c5dd007413ee16193f7f8f864b8daad80dc84bb100ce6e50ac9db9cc"
+    },
+    {
+      "name": "ASCII, one over",
+      "unit": "a",
+      "times": 65536,
+      "writeUTF": "error: UTFDataFormatException"
+    }
+  ],
+  "readUTF": [
+    {
+      "name": "empty",
+      "hex": "0000",
+      "text": ""
+    },
+    {
+      "name": "a raw zero byte is read as NUL",
+      "hex": "000100",
+      "text": "\u0000",
+      "textUtf16": "0000"
+    },
+    {
+      "name": "NUL as written",
+      "hex": "0002c080",
+      "text": "\u0000",
+      "textUtf16": "0000"
+    },
+    {
+      "name": "emoji as written",
+      "hex": "0006eda0bcedbfa0",
+      "text": "🏠",
+      "textUtf16": "d83c dfe0"
+    },
+    {
+      "name": "emoji as standard UTF-8: refused",
+      "hex": "0004f09f8fa0",
+      "result": "error: UTFDataFormatException"
+    },
+    {
+      "name": "lone surrogate",
+      "hex": "0003eda0bc",
+      "text": "\ud83c",
+      "textUtf16": "d83c"
+    },
+    {
+      "name": "an overlong two-byte '@' is accepted",
+      "hex": "0002c180",
+      "text": "@"
+    },
+    {
+      "name": "a stray continuation byte",
+      "hex": "000180",
+      "result": "error: UTFDataFormatException"
+    },
+    {
+      "name": "shorter than its length",
+      "hex": "0005414243",
+      "result": "error: EOFException"
+    }
+  ],
+  "decodeToString": [
+    {
+      "name": "emoji",
+      "hex": "f09f8fa0",
+      "text": "🏠",
+      "textUtf16": "d83c dfe0"
+    },
+    {
+      "name": "emoji in modified UTF-8",
+      "hex": "eda0bcedbfa0",
+      "text": "��",
+      "textUtf16": "fffd fffd"
+    },
+    {
+      "name": "NUL in modified UTF-8",
+      "hex": "c080",
+      "text": "��",
+      "textUtf16": "fffd fffd"
+    },
+    {
+      "name": "a byte that is never UTF-8",
+      "hex": "ff",
+      "text": "�",
+      "textUtf16": "fffd"
+    },
+    {
+      "name": "cut short",
+      "hex": "e282",
+      "text": "�",
+      "textUtf16": "fffd"
+    },
+    {
+      "name": "Zoë",
+      "hex": "5a6fc3ab",
+      "text": "Zoë",
+      "textUtf16": "005a 006f 00eb"
+    }
+  ],
+  "writeInt": [
+    {
+      "value": 0,
+      "hex": "00000000"
+    },
+    {
+      "value": 5,
+      "hex": "00000005"
+    },
+    {
+      "value": -1,
+      "hex": "ffffffff"
+    },
+    {
+      "value": 65536,
+      "hex": "00010000"
+    },
+    {
+      "value": -2147483648,
+      "hex": "80000000"
+    },
+    {
+      "value": 2147483647,
+      "hex": "7fffffff"
+    }
+  ],
+  "writeLong": [
+    {
+      "value": "0",
+      "hex": "0000000000000000"
+    },
+    {
+      "value": "16",
+      "hex": "0000000000000010"
+    },
+    {
+      "value": "-2",
+      "hex": "fffffffffffffffe"
+    },
+    {
+      "value": "1767225600000",
+      "hex": "0000019b76daa800"
+    },
+    {
+      "value": "9223372036854775807",
+      "hex": "7fffffffffffffff"
+    }
+  ]
+}

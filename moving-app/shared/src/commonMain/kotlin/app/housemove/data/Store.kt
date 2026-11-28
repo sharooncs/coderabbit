@@ -1,0 +1,2438 @@
+package app.housemove.data
+
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import kotlin.concurrent.Volatile
+
+val AppJson = Json {
+    ignoreUnknownKeys = true
+    encodeDefaults = false
+    coerceInputValues = true
+}
+
+/** Where new ids come from. A test that has to repeat a run exactly swaps in a seeded source; the app never does. */
+@Volatile
+internal var idSource: () -> String = { randomUuid() }
+
+fun newId(): String = idSource()
+
+/**
+ * This phone's own settings for one move, never synced. [letter] and [nextSeq] are kept beside the
+ * phone ID outside Android's backup (see [Codes]); [bookLookup] is the same in every move on the
+ * phone when the move was opened through [Moves] (see [PhoneSettings]).
+ */
+@Serializable
+data class DeviceInfo(
+    val name: String = "",
+    /** Prefix for handwritten box codes. Each phone must use a different letter. */
+    val letter: String = "A",
+    /** Next number for a handwritten code on this phone. */
+    val nextSeq: Int = 1,
+    /** Old-home room currently being worked in (walk-through, packing). */
+    val currentRoomId: String? = null,
+    val currentTripId: String? = null,
+    val lastSyncAt: Long = 0,
+    val lastBackupAt: Long = 0,
+    /** The phone this phone last synced with, as its person's name ("Asha"), for "Up to date with Asha's phone". */
+    val lastSyncWith: String = "",
+    /** May book titles be fetched online from their barcode? Null until the person has been asked. */
+    val bookLookup: Boolean? = null,
+    /**
+     * A helper's phone: Home shows only packing, loading, unloading and search.
+     * Since 2.0 this follows the role of the phone's person: it is true exactly when they are a Helper.
+     * Setting it still works as the old "helper mode" switch while the phone is the only one in the move.
+     */
+    val helper: Boolean = false,
+    /** The [Person] this phone belongs to. [name] and [letter] are kept the same as that person's. */
+    val personId: String = "",
+    /** The phone that wrote these settings. Another phone's means they came back from a backup or a copy of that phone. */
+    val phoneId: String = "",
+    /** Every change up to this stamp is on another phone: the last complete sync sent it (see [Store.unshared]). */
+    val sharedUpTo: Long = 0,
+    /** The same, for what Helpers are not sent: up to here it is on an Organiser's or Decider's phone too. */
+    val sharedAllUpTo: Long = 0,
+    /** When another phone of the move last refused this one because its person has been removed; 0 when none has. */
+    val removedSeenAt: Long = 0,
+    /** The day (an epoch day) the daily small backup of this move was last written from this phone; 0 when never. */
+    val dailyBackupDay: Long = 0,
+    /** This phone's person said "Not now" to adding a second Organiser before move day. */
+    val secondOrganiserDeclined: Boolean = false,
+    /**
+     * Home's banner about the role of this phone's person ("You joined as a Decider", "You are now a Decider"),
+     * read: by person, the time of the grant they last put away. Kept with this move's settings for this phone,
+     * so it neither comes back when the app starts again nor counts for another person the phone becomes.
+     */
+    val rolesRead: Map<String, Long> = emptyMap(),
+) {
+    /** Up to which grant the person this phone is now has read the role banner (see [Store.roleNewsRead]). */
+    val roleReadAt: Long get() = rolesRead[personId] ?: 0L
+}
+
+/** What happened when something was scanned into a box. */
+sealed class ScanIn {
+    abstract val entry: BoxEntry
+    data class Added(override val entry: BoxEntry) : ScanIn()
+    data class AlreadyHere(override val entry: BoxEntry) : ScanIn()
+    data class Moved(override val entry: BoxEntry, val fromLabel: String?) : ScanIn()
+}
+
+/**
+ * Holds the whole dataset in memory and persists it as one JSON file.
+ * The dataset for a house move is small (hundreds of records), so this is
+ * simpler and easier to merge and back up than a database. Writes are atomic:
+ * a temp file is written, the previous file is kept as .bak, then renamed.
+ *
+ * The store is also where the rules about who may do what are applied to
+ * changes made on this phone (see [can] and Rules.kt). The plain `put` and
+ * `update…` functions never fail: a protected part the phone's person may not
+ * change is simply left as it was. The functions that return an [Outcome] say
+ * why when they refuse.
+ *
+ * A Store holds one move. [Moves] keeps several on a phone, each in its own folder, and gives each
+ * its Store; a Store made on its own for a folder (as 2.0 kept its one move, and as tests use one)
+ * keeps the phone ID and the codes in that folder.
+ */
+class Store internal constructor(
+    private val dir: File,
+    private val clock: () -> Long,
+    /** This installed copy of the app (see [Phone]). */
+    val phone: Phone,
+    /** Where this phone's letter, code counter and label numbers for the move are kept: outside Android's backup. */
+    private val codesDir: File,
+    /** Letters this phone uses in its other moves, which it does not take in this one. */
+    private val lettersElsewhere: () -> Set<String>,
+    /** Where the move's photo files are kept. Android's backup does not copy them. */
+    photos: File = File(dir, "photos"),
+    /** One of the moves in a phone's list of moves ([Moves]): a backup of another move belongs in a card of its own, not in this one. */
+    private val listed: Boolean = false,
+    /** The label numbers this phone prints from in its other moves, which it does not print from in this one. */
+    private val labelsElsewhere: () -> List<IntRange> = { emptyList() },
+) {
+    /** A move kept in [dir] on its own, with the phone's ID and codes beside it. */
+    constructor(dir: File, clock: () -> Long = ::currentTimeMillis) : this(dir, clock, Phone.standalone(dir), dir, { emptySet() })
+
+    val photoDir: File = photos.apply {
+        mkdirs()
+        // Leftovers from a transfer or import that was cut off.
+        listFiles()?.filter { it.name.endsWith(".part") || it.name.endsWith(".import") }?.forEach { it.delete() }
+    }
+    private val dataFile = File(dir, "data.json")
+    private val backupFile = File(dir, "data.json.bak")
+    private val deviceFile = File(dir, "device.json")
+    private val moveFile = File(dir, "move.json")
+    private val codesFile = File(codesDir, "codes.json")
+
+    /** The codes live in a folder of their own, apart from the move's folder (which Android's backup copies). */
+    private val codesApart = codesDir.absoluteFile != dir.absoluteFile
+
+    private val io = SerialWorker("store-io")
+    private val dirty = AtomicBoolean(false)
+
+    private val _saveProblem = MutableStateFlow<String?>(null)
+
+    /**
+     * [SAVE_FAILED] while the move's data could not be written to the phone, null once it has been. Nothing is
+     * lost meanwhile: the data stays in memory, and writing it is tried again soon ([SAVE_RETRY_MS]).
+     * The screens show it, so a save never fails without the person knowing.
+     */
+    val saveProblem: StateFlow<String?> = _saveProblem
+
+    /** How soon a failed save is tried again; tests make it short. */
+    @Volatile
+    internal var saveRetryMs: Long = SAVE_RETRY_MS
+
+    /** Everything that changes the data or the device settings takes this, so each change is seen whole. */
+    private val lock = Lock()
+
+    /** Set when the saved data could not be read normally at start-up; shown once on the dashboard. */
+    @Volatile
+    var loadWarning: String? = null
+        private set
+
+    fun clearLoadWarning() {
+        loadWarning = null
+    }
+
+    private val loaded = load()
+
+    /** Nothing was saved here yet: this phone is starting a new move. */
+    private val founding = loaded.people.isEmpty() && loaded.bare()
+
+    /** Data from before 2.0, with nobody in it: the person this phone is given is made as 2.0 would have made it. */
+    private val fromBefore20 = loaded.people.isEmpty() && !loaded.bare()
+
+    private val _data = MutableStateFlow(migrate(loaded))
+    val data: StateFlow<AppData> = _data
+
+    /** This phone's letter, counter and label numbers in the move. Changed only under [lock] (or while the store is being made). */
+    @Volatile
+    private var codes: Codes = Codes()
+
+    /** The codes file was there when the move was opened. */
+    private var codesFound = false
+
+    /** These settings were written by another phone: this folder is a copy of that phone's move (Android's backup, or a cloned phone). */
+    private var copied = false
+
+    private val _device = MutableStateFlow(loadDevice())
+    val device: StateFlow<DeviceInfo> = _device
+
+    private val _identity = MutableStateFlow(MoveIdentity())
+
+    /** Which move this is (see [MoveIdentity]). */
+    val identity: StateFlow<MoveIdentity> = _identity
+    val moveId: String get() = _identity.value.id
+
+    /**
+     * The keys this phone accepts for the other phones of the move, for encrypted sync (design/encryption.md, "The trust
+     * root: pins"): kept beside the codes, in the no-backup folder, so no backup, update file or sync ever carries them.
+     * Pins saved for another move count as none. Opening the move deletes 2.3's key ring beside them (`ring.json`): from
+     * 2.4 its Wi-Fi keys and pair keys open nothing.
+     */
+    internal val pins: app.housemove.sync.Pins =
+        app.housemove.sync.Pins(File(codesDir, "pins.json"), File(codesDir, "ring.json"), { _identity.value }, { clock() })
+
+    /**
+     * This phone's dealings with the move's internet mailbox (from 2.5; design/encryption.md, "Mailbox as built"): the house
+     * token, this phone's own mailbox and its read secret, and what it sent to and heard from the others. Beside the pins,
+     * in the no-backup folder: no backup, update file or sync carries it.
+     */
+    internal val mailboxState: app.housemove.sync.MailboxState =
+        app.housemove.sync.MailboxState(File(codesDir, "mailbox.json"), { _identity.value })
+
+    private fun load(): AppData {
+        var damaged = false
+        for (f in listOf(dataFile, backupFile)) {
+            if (!f.exists()) continue
+            try {
+                val d = AppJson.decodeFromString<AppData>(f.readText())
+                if (damaged) loadWarning = "The saved data was damaged, so the previous saved copy was loaded. The last few changes may be missing."
+                return d
+            } catch (_: Exception) {
+                // Keep the unreadable file for recovery instead of overwriting it, then try the older copy.
+                damaged = true
+                try {
+                    f.copyTo(File(dir, f.name + ".damaged"), overwrite = true)
+                } catch (_: Exception) {
+                }
+            }
+        }
+        if (damaged) loadWarning = "The saved data could not be read, so the app started empty. Restore your latest backup, or sync from another phone."
+        return AppData()
+    }
+
+    private fun loadDevice(): DeviceInfo {
+        var dev = try {
+            if (deviceFile.exists()) AppJson.decodeFromString<DeviceInfo>(deviceFile.readText())
+            else DeviceInfo(letter = randomLetter())
+        } catch (_: Exception) {
+            DeviceInfo()
+        }
+        copied = dev.phoneId.isNotEmpty() && dev.phoneId != phone.id
+        val saved = try {
+            if (codesFile.isFile) AppJson.decodeFromString<Codes>(codesFile.readText()) else null
+        } catch (_: Exception) {
+            null
+        }
+        codesFound = saved != null
+        // A phone from 2.0 kept its letter and counter with its settings. A copy of another phone's settings does not
+        // bring that phone's: it would write the same codes on boxes. This phone gets a letter of its own (ensureMyPhone).
+        codes = saved ?: if (copied) Codes() else Codes(letter = dev.letter.trim().uppercase(), nextSeq = dev.nextSeq)
+        dev = dev.copy(letter = codes.letter, nextSeq = codes.nextSeq, phoneId = phone.id)
+        phone.settings.value.bookLookup?.let { dev = dev.copy(bookLookup = it) }
+        return dev
+    }
+
+    /** A letter for a phone starting out: any single letter it does not use in another move. */
+    private fun randomLetter(): String {
+        val elsewhere = lettersElsewhere().map { it.uppercase() }.toSet()
+        val free = ('A'..'Z').map { it.toString() }.filter { it !in elsewhere }
+        return if (free.isEmpty()) "A" else free[(mathRandom() * free.size).toInt().coerceIn(0, free.size - 1)]
+    }
+
+    private fun saveCodes(next: Codes) {
+        if (next == codes) return
+        codes = next
+        try {
+            io.execute {
+                try {
+                    codesFile.parentFile?.mkdirs()
+                    writeWhole(codesFile, AppJson.encodeToString(next))
+                } catch (_: Exception) {
+                }
+            }
+        } catch (_: Exception) {
+            // The store has been closed.
+        }
+    }
+
+    private fun readIdentity(): MoveIdentity? = try {
+        if (moveFile.isFile) AppJson.decodeFromString<MoveIdentity>(moveFile.readText()).takeIf { it.id.isNotEmpty() } else null
+    } catch (_: Exception) {
+        null
+    }
+
+    private fun saveIdentity(next: MoveIdentity) {
+        _identity.value = next
+        try {
+            writeWhole(moveFile, AppJson.encodeToString(next))
+        } catch (_: Exception) {
+        }
+    }
+
+    private val lastStamp = AtomicLong(maxStamp(_data.value))
+
+    /**
+     * Time used to stamp changes. It never goes backwards and is always later
+     * than every change this phone has already seen, including ones received
+     * from other phones. So an edit made after a sync always wins over what was
+     * synced, even when the phones' clocks disagree.
+     */
+    fun now(): Long = lastStamp.updateAndGet { last -> maxOf(clock(), last + 1) }
+
+    private fun maxStamp(d: AppData): Long {
+        var m = d.move.updatedAt
+        for (list in listOf<List<Rec>>(
+            d.rooms, d.items, d.boxes, d.photos, d.tasks, d.expenses, d.supplies, d.trips, d.readings, d.entries,
+            d.people, d.proposals, d.activity, d.hidden, d.collect, d.damage, d.lines, d.refused,
+        )) {
+            for (r in list) if (r.updatedAt > m) m = r.updatedAt
+        }
+        if (d.mailbox.setBy.at > m) m = d.mailbox.setBy.at
+        return m
+    }
+
+    init {
+        ensureMe(madeBefore21 = fromBefore20)
+        val known = readIdentity()
+        // A move without an ID is either new (its founder's ID is made from the founding person, who is new) or from 2.0, when each
+        // phone works out the same one from the founder it knows.
+        val identity = known ?: MoveIdentity(id = _data.value.derivedMoveId(), derived = !founding)
+        if (known == null) saveIdentity(identity) else _identity.value = identity
+        if (!codesFound) {
+            val d = _data.value
+            // A copy of the founder's phone is not the founder's phone: what that phone handed out after the copy was made is not known here.
+            val founder = !copied && (founding || (d.people.isNotEmpty() && Roles(d.people).founder == _device.value.personId))
+            saveCodes(codes.copy(founder = founder))
+        }
+        synchronized(lock) { ensureMyPhone() }
+    }
+
+    // ---- persistence -------------------------------------------------------
+
+    private fun scheduleSave(delayMs: Long = 250) {
+        if (dirty.compareAndSet(false, true)) {
+            io.schedule(delayMs) { writeNow() }
+        }
+    }
+
+    private fun writeNow() {
+        dirty.set(false)
+        try {
+            val tmp = File(dir, "data.json.tmp")
+            tmp.writeText(AppJson.encodeToString(_data.value))
+            if (dataFile.exists()) dataFile.copyTo(backupFile, overwrite = true)
+            if (!tmp.renameTo(dataFile)) {
+                tmp.copyTo(dataFile, overwrite = true)
+                tmp.delete()
+            }
+            _saveProblem.value = null
+        } catch (_: Exception) {
+            // Until 2.2 this only left a flag set, which also stopped every later change from being written until the
+            // app went to the background, and said nothing. Now it says so, and tries again soon.
+            _saveProblem.value = SAVE_FAILED
+            try {
+                scheduleSave(saveRetryMs)
+            } catch (_: Exception) {
+                // The store has been closed.
+            }
+        }
+    }
+
+    /** Blocks until everything is on disk. Call when the app goes to the background. */
+    fun flush() {
+        try {
+            io.runAndWait(10_000) { writeNow() }
+        } catch (_: Exception) {
+        }
+    }
+
+    /** Write everything out and stop background writes. The store must not be used afterwards. */
+    fun close() {
+        flush()
+        io.shutdownNow() // also drops delayed writes; flush() above already saved everything
+        io.awaitTermination(5_000)
+    }
+
+    private fun writeDevice(next: DeviceInfo) {
+        _device.value = next
+        if (next.letter != codes.letter || next.nextSeq != codes.nextSeq) saveCodes(codes.copy(letter = next.letter, nextSeq = next.nextSeq))
+        if (next.bookLookup != null && next.bookLookup != phone.settings.value.bookLookup) phone.updateSettings { it.copy(bookLookup = next.bookLookup) }
+        // The letter and counter are kept with the codes, outside Android's backup, when the move has a folder for them.
+        val onDisk = if (codesApart) next.copy(letter = "", nextSeq = 1) else next
+        try {
+            io.execute {
+                try {
+                    // Written whole or not at all: this file says who the phone is, and half of it would say nobody.
+                    val tmp = File(dir, "device.json.tmp")
+                    tmp.writeText(AppJson.encodeToString(onDisk))
+                    if (!tmp.renameTo(deviceFile)) {
+                        tmp.copyTo(deviceFile, overwrite = true)
+                        tmp.delete()
+                    }
+                } catch (_: Exception) {
+                }
+            }
+        } catch (_: Exception) {
+            // The store has been closed.
+        }
+    }
+
+    /**
+     * Change this phone's own settings. The name and letter are passed on to the
+     * phone's [Person]; a letter someone else already uses is not taken.
+     * [DeviceInfo.helper] follows the person's role. Switching it by hand still
+     * works as the old "helper mode" while this phone is the only one in the
+     * move; once there are other people, roles are changed with [setRole].
+     */
+    fun setDevice(f: (DeviceInfo) -> DeviceInfo) = synchronized(lock) {
+        val before = _device.value
+        // Who the phone is, is not a setting: a caller that builds the settings afresh and so leaves it
+        // out does not make the phone nobody. Only becomePerson, joinAs and starting again change it.
+        val asked = f(before).let { if (it.personId.isBlank() && before.personId.isNotBlank()) it.copy(personId = before.personId) else it }
+        val d = _data.value
+        val me = d.person(before.personId)
+        if (asked.name != before.name && asked.name.isNotBlank()) phone.updateSettings { it.copy(name = asked.name.trim()) }
+        if (me != null && asked.personId == before.personId) {
+            var mine: Person = me
+            if (asked.name != before.name) mine = mine.copy(name = asked.name)
+            val letter = asked.letter.trim().uppercase()
+            val entry = me.phones.firstOrNull { it.id == phone.id }
+            val free = letter !in d.lettersInUse(except = me.id) && me.phones.none { it.id != phone.id && it.letter.equals(letter, ignoreCase = true) } &&
+                lettersElsewhere().none { it.equals(letter, ignoreCase = true) }
+            if (asked.letter != before.letter && letter.isNotEmpty() && free) {
+                // A phone that uses its person's letter changes the person's; another phone of theirs has a letter of its own.
+                mine = if (entry == null || entry.letter.isBlank()) mine.copy(letter = letter)
+                else mine.copy(phones = mine.phones.map { if (it.id == phone.id) it.copy(letter = letter) else it })
+            }
+            val t = now()
+            if (asked.helper != before.helper && d.people.count { !it.removed } <= 1) {
+                val role = if (asked.helper) Role.HELPER else Role.ORGANISER
+                if (role != mine.role) mine = mine.copy(role = role, grants = mine.grants + grantOf(role, false, t, Actor(d, me).signature))
+            }
+            if (mine != me) {
+                val saved = mine.copy(updatedAt = t)
+                _data.value = d.copy(people = d.people.map { if (it.id == me.id) saved else it })
+                scheduleSave()
+            }
+        }
+        writeDevice(asked)
+        mirrorMe()
+    }
+
+    /**
+     * This phone's person has read Home's banner about their role up to the grant made at [at]: with
+     * "Got it", or by closing the banner that said who the phone is after it joined. Kept per person in
+     * this move's settings for this phone ([DeviceInfo.rolesRead]); never moved back.
+     */
+    fun roleNewsRead(at: Long) = synchronized(lock) {
+        val dev = _device.value
+        if (dev.personId.isEmpty() || at <= dev.roleReadAt) return@synchronized
+        writeDevice(dev.copy(rolesRead = dev.rolesRead + (dev.personId to at)))
+    }
+
+    // ---- who this phone is --------------------------------------------------
+
+    /** The person this phone belongs to. */
+    val me: Person? get() = _data.value.me(_device.value)
+
+    /** This phone's role in the move. */
+    val myRole: Role get() = _data.value.roleOf(_device.value)
+
+    /** May this phone's person do [action]? See [AppData.can] for the table. */
+    fun can(action: Action): Boolean = _data.value.can(_device.value, action)
+
+    private fun actor(d: AppData) = Actor(d, d.person(_device.value.personId))
+
+    /**
+     * Make sure this phone has a person, so that it is never nobody. Data from
+     * before 2.0 has none: the phone then becomes an Organiser, or a Helper if
+     * its old helper switch was on. Nobody appointed them, so the grant is an open one.
+     */
+    private fun ensureMe(restoring: Boolean = false, madeBefore21: Boolean = false) = synchronized(lock) {
+        val dev = _device.value
+        val d = _data.value
+        if (d.person(dev.personId) == null) {
+            val only = d.people.singleOrNull()
+            if (dev.personId.isEmpty() && only != null && only.grants.firstOrNull()?.by == "") {
+                // The person was saved but not yet which phone it is: the app was closed in between.
+                writeDevice(dev.copy(personId = only.id))
+            } else {
+                val t = now()
+                // A phone that starts up holding a move with an Organiser in it, without knowing which of its people it is
+                // (its settings file was lost or damaged), does not make itself one: it gets the least rights until someone
+                // says who it is. Whoever restores a backup on purpose was allowed to, and comes in as before.
+                val role = if (dev.helper || (!restoring && d.hasOrganiser())) Role.HELPER else Role.ORGANISER
+                val wanted = dev.letter.trim().uppercase().ifBlank { "A" }
+                val letter = if (wanted in d.lettersInUse()) d.freeLetter(avoid = lettersElsewhere()) else wanted
+                // Data from before 2.0 being brought up to date gets its first person as 2.0 would have made it, without
+                // this phone's ID: the grant is from the time before there were people (see Roles).
+                val grant = if (madeBefore21) Grant(role, false, t, "") else grantOf(role, false, t, "")
+                val p = Person(id = newId(), name = dev.name, role = role, letter = letter, joinedAt = t, grants = listOf(grant), updatedAt = t)
+                _data.value = d.copy(people = d.people + p)
+                scheduleSave()
+                writeDevice(dev.copy(personId = p.id))
+            }
+        }
+        mirrorMe()
+    }
+
+    /** A grant made on this phone: it carries the phone's ID (see [Roles]). */
+    private fun grantOf(role: Role, removed: Boolean, t: Long, by: String) = Grant(role, removed, t, by, phone.id)
+
+    /**
+     * Make sure this phone is on its person's list of phones, with the name it has in its own
+     * settings, its letter and its block of label numbers. A phone that comes onto the list here
+     * (one from before 2.1, the founder's, or one holding a copy of another phone's move) and
+     * finds the person's letter in use by another of their phones gets a letter of its own.
+     */
+    private fun ensureMyPhone() {
+        val d = _data.value
+        val p = d.person(_device.value.personId) ?: return
+        if (p.removed) return
+        val mine = p.phones.firstOrNull { it.id == phone.id }
+        var c = codes
+        val letter = when {
+            mine != null -> mine.letter
+            p.phones.none { it.letter.isBlank() } && !copied -> ""
+            else -> c.letter.takeIf { it.isNotBlank() && !it.equals(p.letter, ignoreCase = true) && it !in d.lettersInUse() }
+                ?: d.freeLetter(avoid = lettersElsewhere() + c.lettersGiven)
+        }
+        if (c.labelsFrom == 0) {
+            val block = when {
+                mine != null && mine.labelsFrom != 0 -> mine.labelsFrom..mine.labelsTo
+                c.founder -> founderBlock(labelsElsewhere())
+                else -> legacyLabels(letter.ifBlank { p.letter })
+            }
+            c = c.copy(labelsFrom = block.first, labelsTo = block.last)
+            // The founder of a move from 2.0 goes on from the last label printed there.
+            if (c.founder && block.first == 1) c = c.copy(nextLabel = d.labelsUsed(ownLabels(1, block.last)) + 1)
+        }
+        saveCodes(c)
+        // This phone's public key for update files goes on its entry, so that every phone of the move can send it one.
+        val keys = phone.keys
+        val next = (mine ?: PhoneEntry(id = phone.id, addedAt = now())).let {
+            val key = if (it.key != keys.publicText && keys.madeAt >= it.keyAt) it.copy(key = keys.publicText, keyAt = keys.madeAt) else it
+            key.copy(name = phone.deviceName.ifBlank { it.name }, letter = letter, labelsFrom = c.labelsFrom, labelsTo = c.labelsTo)
+        }
+        if (next != mine) {
+            val t = now()
+            val saved = p.copy(phones = (p.phones.filter { it.id != phone.id } + next).sortedWith(compareBy({ it.addedAt }, { it.id })), updatedAt = t)
+            _data.value = d.copy(people = d.people.map { if (it.id == p.id) saved else it })
+            scheduleSave()
+        }
+        mirrorMe()
+    }
+
+    /** If it turns out that someone who was in the move before this phone's person has the same letter, this phone takes another. */
+    private fun giveWayOnLetter() {
+        val d = _data.value
+        val me = d.person(_device.value.personId) ?: return
+        val letter = d.letterInstead(me) ?: return
+        val t = now()
+        _data.value = d.copy(people = d.people.map { if (it.id == me.id) it.copy(letter = letter, updatedAt = t) else it })
+        mirrorMe()
+    }
+
+    /** This phone's own settings follow its person: the name, the letter, and the old helper switch. */
+    private fun mirrorMe() {
+        val dev = _device.value
+        val d = _data.value
+        val p = d.person(dev.personId) ?: return
+        val own = p.phones.firstOrNull { it.id == phone.id }?.letter?.ifBlank { null }
+        val next = dev.copy(name = p.name, letter = own ?: p.letter.ifBlank { dev.letter }, helper = d.roleOf(dev) == Role.HELPER)
+        if (next != dev) writeDevice(next)
+    }
+
+    // ---- mutations ---------------------------------------------------------
+
+    /**
+     * Replace the data with [f] of it. This is the raw write: nothing is checked, stamped or logged, except that a
+     * change that would put NaN or an infinity into the data is refused and nothing of it is kept ([firstNonFinite]):
+     * the data could not be saved with it. Ok holds the data as it is now.
+     */
+    fun update(f: (AppData) -> AppData): Outcome<AppData> {
+        synchronized(lock) {
+            val d = _data.value
+            val next = f(d)
+            unsavable(d, next)?.let { return Outcome.Refused(it) }
+            _data.value = next
+        }
+        scheduleSave()
+        return Outcome.Ok(_data.value)
+    }
+
+    /**
+     * Why [next] may not replace [d]: it holds a number that is not finite, which kotlinx.serialization refuses to
+     * write, so no later change could be saved either (as in 2.1.1). Null when it may. Data that already held one
+     * (it cannot, since nothing reads one in) is not held up by it.
+     */
+    private fun unsavable(d: AppData, next: AppData): String? {
+        if (next === d) return null
+        val bad = next.firstNonFinite() ?: return null
+        return if (d.firstNonFinite() == null) notANumberRefusal(bad) else null
+    }
+
+    /** One change by this phone's person, with the rules, the container logic and the activity log applied. */
+    private fun change(block: Draft.() -> Unit) = update { d -> Draft(d, actor(d), now()).apply(block).finish() }
+
+    /** Like [change], for things the rules can refuse. Nothing is saved unless the result is [Outcome.Ok]. */
+    private fun <T> act(action: Action?, block: Draft.() -> Outcome<T>): Outcome<T> = synchronized(lock) {
+        val d = _data.value
+        val a = actor(d)
+        if (action != null) a.refusal(action)?.let { return Outcome.Refused(it) }
+        val draft = Draft(d, a, now())
+        val out = draft.block()
+        if (out.ok) {
+            val next = draft.finish()
+            unsavable(d, next)?.let { return Outcome.Refused(it) }
+            _data.value = next
+            scheduleSave()
+            mirrorMe()
+        }
+        out
+    }
+
+    private fun <T : Rec> List<T>.upsert(x: T): List<T> {
+        val i = indexOfFirst { it.id == x.id }
+        return if (i < 0) this + x else toMutableList().also { it[i] = x }
+    }
+
+    /** Change the move settings. Only an Organiser's change is taken; anyone may move [MoveInfo.labelsPrinted] on. */
+    fun setMove(f: (MoveInfo) -> MoveInfo) = update { d ->
+        val t = now()
+        d.copy(move = actor(d).guard(d.move, f(d.move), t).copy(updatedAt = t))
+    }
+
+    /** [setMove] that says why when it is refused. */
+    fun changeMove(f: (MoveInfo) -> MoveInfo): Outcome<MoveInfo> = act(Action.MOVE_SETTINGS) {
+        d = d.copy(move = actor.guard(d.move, f(d.move), t).copy(updatedAt = t))
+        Outcome.Ok(d.move)
+    }
+
+    /**
+     * The move's internet mailbox (from 2.5; design/encryption.md, "Mailbox as built"): [url] is the address of the mailbox
+     * program, or blank for none. Only an Organiser may set it; it then reaches every phone of the move with the data.
+     */
+    fun setMailbox(url: String): Outcome<MailboxSetting> = act(Action.MOVE_SETTINGS) {
+        val clean = url.trim()
+        if (clean == d.mailbox.url) return@act Outcome.Ok(d.mailbox)
+        val m = MailboxSetting(clean)
+        d = d.copy(mailbox = m.copy(setBy = actor.stamp(t, m.settingSum())))
+        Outcome.Ok(d.mailbox)
+    }
+
+    /**
+     * This phone's own mailbox (from 2.5), on its entry in the move, so the other phones post to it: [address], or an empty
+     * one (with the time) once this phone has stopped reading it. Only this phone sets it.
+     */
+    internal fun noteMyMailbox(address: MailboxAddress) {
+        synchronized(lock) {
+            val d = _data.value
+            val p = d.person(_device.value.personId) ?: return
+            val mine = p.phones.firstOrNull { it.id == phone.id } ?: return
+            val was = mine.mailbox
+            if (was != null && was.url == address.url && was.id == address.id) return
+            if (was == null && address.id.isEmpty()) return
+            val t = now()
+            val entry = mine.copy(mailbox = address.copy(at = maxOf(address.at, t)))
+            val saved = p.copy(phones = p.phones.map { if (it.id == phone.id) entry else it }, updatedAt = t)
+            _data.value = d.copy(people = d.people.map { if (it.id == p.id) saved else it })
+        }
+        scheduleSave()
+    }
+
+    /** Save a room. Deleting one this phone's person may not delete ([mayDelete]) saves nothing. */
+    fun put(x: Room) = update { d ->
+        val a = actor(d)
+        val old = d.rooms.firstOrNull { it.id == x.id }
+        if (a.refusesDeleting(old, x)) d else d.copy(rooms = d.rooms.upsert(a.guard(old, x, now())))
+    }
+
+    /**
+     * Save an item. The decision, the room it goes to and whether it has gone are only
+     * changed when this phone's person may change them (see Rules.kt); the rest is always saved.
+     */
+    fun put(x: Item) = change { saveItems(listOf(x)) }
+
+    /** Save a container. Moving one that is inside another moves the outer one. */
+    fun put(x: Box) = change { saveBoxes(listOf(x)) }
+    /** Save a photo record. Deleting one this phone's person may not delete saves nothing. */
+    fun put(x: Photo) = update { d ->
+        val a = actor(d)
+        val old = d.photos.firstOrNull { it.id == x.id }
+        if (a.refusesDeleting(old, x)) d else d.copy(photos = d.photos.upsert(a.guard(old, x, now())))
+    }
+
+    /** Save a task. Only an Organiser can add or change one; whoever it is assigned to can tick it off. */
+    fun put(x: Task) = update { d ->
+        val t = now()
+        val saved = actor(d).guard(d.tasks.firstOrNull { it.id == x.id }, x, t) ?: return@update d
+        closeProposals(d.copy(tasks = d.tasks.upsert(saved.copy(updatedAt = t))))
+    }
+
+    /** Save a cost. Only an Organiser can add or change one. */
+    fun put(x: Expense) = update { d ->
+        val t = now()
+        val saved = actor(d).guard(d.expenses.firstOrNull { it.id == x.id }, x, t) ?: return@update d
+        closeProposals(d.copy(expenses = d.expenses.upsert(saved.copy(updatedAt = t))))
+    }
+    /**
+     * [put] for a task that says what happened: Ok with the task as saved, or why nothing was saved.
+     * Creating or changing a task is an Organiser's; ticking it is also the assignee's ([tick]).
+     * Nothing is saved unless all of it may be. A Decider uses [saveOrSuggest] to make it a suggestion.
+     */
+    fun saveTask(x: Task): Outcome<Task> = act(null) {
+        val old = d.tasks.firstOrNull { it.id == x.id }
+        val saved = actor.guard(old, x, t) ?: return@act Outcome.Refused(actor.refusal(Action.DECIDE) ?: "Only an Organiser can add a task.")
+        if (saved.planSum() != x.planSum()) return@act Outcome.Refused(actor.refusal(Action.DECIDE) ?: "Only an Organiser can change a task.")
+        if (saved.done != x.done) return@act Outcome.Refused("Only an Organiser, or the person a task is assigned to, can tick it off.")
+        if (old != null && saved.copy(updatedAt = old.updatedAt) == old.stamped()) return@act Outcome.Ok(old)
+        if (x.assignedTo != null && x.assignedTo != old?.assignedTo && d.person(x.assignedTo)?.removed != false) return@act Outcome.Refused("That person is not in the move.")
+        val next = saved.copy(updatedAt = t)
+        d = d.copy(tasks = d.tasks.upsert(next))
+        Outcome.Ok(next)
+    }
+
+    /**
+     * [put] for a cost that says what happened: Ok with the cost as saved, or why nothing was saved.
+     * Creating or changing a cost is an Organiser's; marking it paid follows [markPaid]'s rule.
+     * Nothing is saved unless all of it may be. A Decider uses [saveOrSuggest] to make it a suggestion.
+     */
+    fun saveCost(x: Expense): Outcome<Expense> = act(null) {
+        val old = d.expenses.firstOrNull { it.id == x.id }
+        val saved = actor.guard(old, x, t) ?: return@act Outcome.Refused(actor.refusal(Action.DECIDE) ?: "Only an Organiser can add a cost.")
+        if (saved.costSum() != x.costSum()) return@act Outcome.Refused(actor.refusal(Action.DECIDE) ?: "Only an Organiser can change a cost.")
+        if (saved.planned != x.planned) return@act Outcome.Refused(actor.refusal(Action.CARRY_OUT) ?: "An Organiser has to approve your suggestion for this first.")
+        if (old != null && saved.copy(updatedAt = old.updatedAt) == old.stamped()) return@act Outcome.Ok(old)
+        val next = saved.copy(updatedAt = t)
+        d = d.copy(expenses = d.expenses.upsert(next))
+        if (old != null && old.planned && !next.planned) events.say("marked a cost as paid", next.id)
+        Outcome.Ok(next)
+    }
+
+    /**
+     * Save a task if this phone's person may, or else put it forward as a suggestion when they may
+     * suggest (a Decider). Ok holds the saved [Task] or the waiting [Proposal]; Refused says why
+     * neither could be done (a Helper may only tick a task given to them).
+     */
+    fun saveOrSuggest(x: Task, note: String = ""): Outcome<Rec> = synchronized(lock) {
+        val direct = saveTask(x)
+        if (direct.ok || !actor(_data.value).may(Action.SUGGEST)) return direct
+        val old = _data.value.task(x.id)
+        // Only the plan is put forward: ticking is not something to suggest.
+        if (old != null && old.copy(done = x.done).planSum() == x.planSum()) return direct
+        suggestTask(x.copy(done = old?.done ?: false), note)
+    }
+
+    /** The same as [saveOrSuggest] for a cost: saved for an Organiser, suggested for a Decider. */
+    fun saveOrSuggest(x: Expense, note: String = ""): Outcome<Rec> = synchronized(lock) {
+        // Neither can hold an amount that is not a number: said as the cost's, not as a suggestion's.
+        if (!x.amount.isFinite()) return Outcome.Refused(notANumberRefusal("a cost's amount"))
+        val direct = saveCost(x)
+        if (direct.ok || !actor(_data.value).may(Action.SUGGEST)) return direct
+        val old = _data.value.expense(x.id)
+        if (old != null && old.costSum() == x.copy(planned = old.planned).costSum()) return direct
+        suggestCost(x, note)
+    }
+
+    fun put(x: Supply) = update { it.copy(supplies = it.supplies.upsert(x.copy(updatedAt = now()))) }
+    fun put(x: Trip) = update { it.copy(trips = it.trips.upsert(x.copy(updatedAt = now()))) }
+    fun put(x: Reading) = update { it.copy(readings = it.readings.upsert(x.copy(updatedAt = now()))) }
+    fun put(x: BoxEntry) = update { d -> d.copy(entries = d.entries.upsert(actor(d).guard(d.entries.firstOrNull { it.id == x.id }, x, now()))) }
+
+    // ---- deleting ------------------------------------------------------------
+    //
+    // An Organiser may delete anything; anyone else only an item, container, room or photo they added
+    // themselves that nobody else has had a hand in since (see Deleting.kt and [mayDelete]). The plain
+    // delete calls do nothing when that is refused, as the plain saves leave a protected part alone;
+    // tryDelete says why. Either way it is the stored record that is deleted, not the caller's copy of it.
+
+    fun delete(x: Room) {
+        tryDelete(x, withPhotos = false)
+    }
+
+    fun delete(x: Item) {
+        tryDelete(x, withPhotos = false)
+    }
+
+    fun delete(x: BoxEntry) {
+        tryDelete(x)
+    }
+
+    /**
+     * Deleting a container also removes the list of things scanned into it.
+     * Catalogued items and other containers that were inside are let go, not deleted.
+     */
+    fun delete(x: Box) {
+        tryDelete(x, withPhotos = false)
+    }
+
+    fun delete(x: Task) {
+        tryDelete(x)
+    }
+
+    fun delete(x: Expense) {
+        tryDelete(x)
+    }
+
+    fun delete(x: Supply) = put(x.copy(deleted = true))
+    fun delete(x: Trip) = put(x.copy(deleted = true))
+    fun delete(x: Reading) = put(x.copy(deleted = true))
+    fun delete(x: Photo) {
+        tryDelete(x)
+    }
+
+    /** The photos of [ownerId] this person may delete, deleted with the thing they show. */
+    private fun Draft.deletePhotosOf(ownerId: String) {
+        val doomed = d.photos.filter { !it.deleted && it.ownerId == ownerId && d.mayDelete(actor.me, it) == null }.map { it.id }.toSet()
+        if (doomed.isEmpty()) return
+        d = d.copy(photos = d.photos.map { if (it.id in doomed) actor.guard(it, it.copy(deleted = true), t) else it })
+    }
+
+    /**
+     * Delete an item, saying why when this phone's person may not ([mayDelete]). With [withPhotos]
+     * the photos of it that they may delete go too (their files once the change is saved).
+     */
+    fun tryDelete(x: Item, withPhotos: Boolean = true): Outcome<Item> = act(null) {
+        val old = d.item(x.id) ?: return@act Outcome.Refused("That item is no longer here.")
+        d.mayDelete(actor.me, old)?.let { return@act Outcome.Refused(it) }
+        if (withPhotos) deletePhotosOf(old.id)
+        saveItems(listOf(old.copy(deleted = true)))
+        Outcome.Ok(d.items.first { it.id == old.id })
+    }.also { if (it.ok) forgetDeletedPhotos() }
+
+    /** Delete a container ([delete]), saying why when this phone's person may not. */
+    fun tryDelete(x: Box, withPhotos: Boolean = true): Outcome<Box> = act(null) {
+        val old = d.box(x.id) ?: return@act Outcome.Refused("That container is no longer here.")
+        d.mayDelete(actor.me, old)?.let { return@act Outcome.Refused(it) }
+        if (withPhotos) deletePhotosOf(old.id)
+        saveBoxes(listOf(old.copy(deleted = true)))
+        Outcome.Ok(d.boxes.first { it.id == old.id })
+    }.also { if (it.ok) forgetDeletedPhotos() }
+
+    /** Delete a room, saying why when this phone's person may not. Things in it stay, with no room. */
+    fun tryDelete(x: Room, withPhotos: Boolean = true): Outcome<Room> = act(null) {
+        val old = d.room(x.id) ?: return@act Outcome.Refused("That room is no longer here.")
+        d.mayDelete(actor.me, old)?.let { return@act Outcome.Refused(it) }
+        if (withPhotos) deletePhotosOf(old.id)
+        val saved = actor.guard(old, old.copy(deleted = true), t)
+        d = d.copy(rooms = d.rooms.upsert(saved))
+        Outcome.Ok(saved)
+    }.also { if (it.ok) forgetDeletedPhotos() }
+
+    /** Delete a photo and its file, saying why when this phone's person may not. */
+    fun tryDelete(x: Photo): Outcome<Photo> = act(null) {
+        val old = d.photos.firstOrNull { it.id == x.id && !it.deleted } ?: return@act Outcome.Refused("That photo is no longer here.")
+        d.mayDelete(actor.me, old)?.let { return@act Outcome.Refused(it) }
+        val saved = actor.guard(old, old.copy(deleted = true), t)
+        d = d.copy(photos = d.photos.upsert(saved))
+        Outcome.Ok(saved)
+    }.also { if (it.ok) forgetDeletedPhotos() }
+
+    /** Delete a task. Organisers only. */
+    fun tryDelete(x: Task): Outcome<Task> = act(null) {
+        val old = d.task(x.id) ?: return@act Outcome.Refused("That task is no longer here.")
+        d.mayDelete(actor.me, old)?.let { return@act Outcome.Refused(it) }
+        val saved = (actor.guard(old, old.copy(deleted = true), t) ?: old).copy(updatedAt = t)
+        d = d.copy(tasks = d.tasks.upsert(saved))
+        Outcome.Ok(saved)
+    }
+
+    /** Delete a cost. Organisers only; a Decider suggests it with [suggestCost] of the cost marked deleted, or [askToDelete]. */
+    fun tryDelete(x: Expense): Outcome<Expense> = act(null) {
+        val old = d.expense(x.id) ?: return@act Outcome.Refused("That cost is no longer here.")
+        d.mayDelete(actor.me, old)?.let { return@act Outcome.Refused(it) }
+        val saved = (actor.guard(old, old.copy(deleted = true), t) ?: old).copy(updatedAt = t)
+        d = d.copy(expenses = d.expenses.upsert(saved))
+        Outcome.Ok(saved)
+    }
+
+    /** Remove something scanned into a container. Part of the work: anyone may. */
+    fun tryDelete(x: BoxEntry): Outcome<BoxEntry> = act(Action.WORK) {
+        val old = d.entries.firstOrNull { it.id == x.id && !it.deleted } ?: return@act Outcome.Refused("That is no longer in the container.")
+        val saved = actor.guard(old, old.copy(deleted = true), t)
+        d = d.copy(entries = d.entries.upsert(saved))
+        Outcome.Ok(saved)
+    }
+
+    /** Apply one change to many items / boxes in a single write. */
+    fun updateItems(ids: Collection<String>, f: (Item) -> Item) = change {
+        val set = ids.toSet()
+        saveItems(d.items.filter { it.id in set && !it.deleted }.map(f))
+    }
+
+    fun updateBoxes(ids: Collection<String>, f: (Box) -> Box) = change {
+        val set = ids.toSet()
+        saveBoxes(d.boxes.filter { it.id in set && !it.deleted }.map(f))
+    }
+
+    // ---- creating things ---------------------------------------------------
+
+    /** New box with this label. Its destination defaults to the room its old-home room maps to. */
+    fun createBox(label: String, originRoomId: String? = _device.value.currentRoomId, kind: ContainerKind = ContainerKind.CARTON): Box {
+        val box = Box(
+            id = newId(), label = label.trim(), originRoomId = originRoomId,
+            destRoomId = _data.value.room(originRoomId)?.mapsTo, packedBy = _device.value.name,
+            kind = kind, travelsWithMe = kind.travelsWithMe,
+        )
+        put(box)
+        return _data.value.box(box.id) ?: box
+    }
+
+    /**
+     * New container with nothing typed: its destination, category, kind and size
+     * are those of the last one packed in the same room ([packDefaults]) and it
+     * gets a name such as "Kitchen box 4". Pass [kind] to choose the kind.
+     */
+    fun createContainer(label: String, originRoomId: String? = _device.value.currentRoomId, kind: ContainerKind? = null): Box {
+        val d = _data.value
+        val like = d.packDefaults(originRoomId)
+        val k = kind ?: like.kind
+        val box = Box(
+            id = newId(), label = label.trim(), originRoomId = originRoomId, destRoomId = like.destRoomId,
+            kind = k, size = if (k == like.kind) like.size else suggestContainer(d.room(originRoomId)?.name, category = like.category).size,
+            category = like.category, name = d.defaultBoxName(k, originRoomId), travelsWithMe = k.travelsWithMe, packedBy = _device.value.name,
+        )
+        put(box)
+        return _data.value.box(box.id) ?: box
+    }
+
+    /** New catalogued item in an old-home room, destination defaulted the same way. */
+    fun createItem(name: String = "", originRoomId: String? = _device.value.currentRoomId): Item {
+        val item = Item(id = newId(), name = name, originRoomId = originRoomId, destRoomId = _data.value.room(originRoomId)?.mapsTo)
+        put(item)
+        return _data.value.item(item.id) ?: item
+    }
+
+    /** Add a room with the next free colour and a unique short code. */
+    fun createRoom(home: Home, name: String): Room {
+        val existing = _data.value.roomsOf(home)
+        val code = freeRoomCode(name, existing)
+        val usedColors = existing.map { it.color }.toSet()
+        val color = ROOM_COLORS.indices.firstOrNull { it !in usedColors } ?: existing.size
+        val room = Room(id = newId(), home = home, name = name.trim(), code = code, color = color, sort = (existing.maxOfOrNull { it.sort } ?: 0) + 1)
+        put(room)
+        return room
+    }
+
+    /**
+     * Rename a room, for instance "Bedroom 2" to "Ava's room". A name another room of the same home already has is
+     * refused. The short code on door signs and labels follows the new name while nothing is marked with the old
+     * one ([roomCodeFollowsName]); after that it stays, so codes already written on boxes still match their sign.
+     */
+    fun renameRoom(roomId: String, name: String): Outcome<Room> {
+        val n = name.trim().replace(Regex("\\s+"), " ")
+        val d = _data.value
+        val room = d.room(roomId) ?: return Outcome.Refused("That room is no longer there.")
+        if (n.isEmpty()) return Outcome.Refused("A room needs a name.")
+        if (n == room.name) return Outcome.Ok(room)
+        d.roomNameTaken(room, n)?.let { return Outcome.Refused(it) }
+        val others = d.roomsOf(room.home).filter { it.id != room.id }
+        put(room.copy(name = n, code = if (d.roomCodeFollowsName(room)) freeRoomCode(n, others) else room.code))
+        return _data.value.room(roomId)?.let { Outcome.Ok(it) } ?: Outcome.Refused("That room is no longer there.")
+    }
+
+    /**
+     * Record something in a box by its own barcode, or by a typed [title] when it has none.
+     * A book (ISBN) exists once, so scanning it into another box moves it there.
+     * Other products can be in several boxes, since identical ones share a barcode.
+     * A name given to a barcode before is reused.
+     */
+    fun scanInto(boxId: String, code: String, title: String = "", author: String = ""): ScanIn {
+        val c = code.trim()
+        val d = _data.value
+        if (c.isNotEmpty()) {
+            d.liveEntries.firstOrNull { it.code == c && it.boxId == boxId }?.let { return ScanIn.AlreadyHere(it) }
+            if (isIsbn(c)) {
+                d.liveEntries.firstOrNull { it.code == c }?.let { elsewhere ->
+                    val moved = elsewhere.copy(boxId = boxId)
+                    put(moved)
+                    return ScanIn.Moved(moved, d.box(elsewhere.boxId)?.label)
+                }
+            }
+        }
+        val known = if (c.isEmpty()) null else d.entries.lastOrNull { it.code == c && it.title.isNotBlank() }
+        val entry = BoxEntry(
+            id = newId(), boxId = boxId, code = c,
+            title = title.trim().ifBlank { known?.title ?: "" },
+            author = author.trim().ifBlank { known?.author ?: "" },
+        )
+        put(entry)
+        return ScanIn.Added(entry)
+    }
+
+    // ---- containers ----------------------------------------------------------
+
+    /** Pack a catalogued item into a container. From then on it travels with the container. */
+    fun putInto(itemId: String, boxId: String): Outcome<Item> = act(Action.WORK) {
+        val item = d.item(itemId) ?: return@act Outcome.Refused("That item is no longer here.")
+        d.box(boxId) ?: return@act Outcome.Refused("That container is no longer here.")
+        saveItems(listOf(item.copy(boxId = boxId)))
+        Outcome.Ok(mirrorContainers(d, t).item(itemId) ?: item)
+    }
+
+    /** Take an item out of its container. It stays where the container was. */
+    fun takeOut(itemId: String): Outcome<Item> = act(Action.WORK) {
+        val item = d.item(itemId) ?: return@act Outcome.Refused("That item is no longer here.")
+        saveItems(listOf(item.copy(boxId = null)))
+        Outcome.Ok(d.item(itemId) ?: item)
+    }
+
+    /**
+     * Put container [boxId] inside [parentId], or take it out again with null.
+     * Containers go one inside another and no deeper; loops are refused.
+     */
+    fun nest(boxId: String, parentId: String?): Outcome<Box> = act(Action.WORK) {
+        val box = d.box(boxId) ?: return@act Outcome.Refused("That container is no longer here.")
+        if (parentId != null) d.whyNotNest(boxId, parentId)?.let { return@act Outcome.Refused(it) }
+        saveBoxes(listOf(box.copy(parentId = parentId)))
+        Outcome.Ok(mirrorContainers(d, t).box(boxId) ?: box)
+    }
+
+    // ---- photos ------------------------------------------------------------
+
+    /** A fresh file in the photo directory for the camera to write into. */
+    fun newPhotoFile(): File = File(photoDir, newId() + ".jpg")
+
+    /**
+     * Register a photo file already saved in [photoDir]. A receipt for a cost is part of
+     * carrying that cost out: from someone who may not, it is not kept ([attachReceipt] says why).
+     */
+    fun addPhoto(ownerId: String, kind: PhotoKind, file: File, note: String = ""): Photo {
+        val d = _data.value
+        val a = actor(d)
+        val p = Photo(id = newId(), ownerId = ownerId, kind = kind, file = file.name, note = note, by = a.signature)
+        val cost = if (kind == PhotoKind.RECEIPT) d.expense(ownerId) else null
+        if (cost != null && !d.mayPay(a.me, cost)) {
+            file.delete()
+            return p
+        }
+        put(p)
+        return p
+    }
+
+    fun photoFile(p: Photo): File = File(photoDir, p.file)
+
+    // ---- labels ------------------------------------------------------------
+
+    /** Next handwritten code for this phone, e.g. "A7". Skips codes already in use. */
+    fun nextHandCode(): String {
+        val d = _data.value
+        val used = (d.liveBoxes.map { it.label } + d.liveItems.mapNotNull { it.label }).toSet()
+        var n = _device.value.nextSeq
+        val letter = _device.value.letter.ifBlank { "A" }
+        while ("$letter$n" in used) n++
+        setDevice { it.copy(nextSeq = n + 1) }
+        // The codes it wrote with this letter are on things in this move: the phone never takes the letter in another of its moves.
+        synchronized(lock) { if (letter.uppercase() !in codes.lettersUsed) saveCodes(codes.copy(lettersUsed = codes.lettersUsed + letter.uppercase())) }
+        return "$letter$n"
+    }
+
+    // ---- people --------------------------------------------------------------
+
+    private fun Draft.savePerson(p: Person): Person {
+        val saved = p.copy(updatedAt = t)
+        d = d.copy(people = if (d.people.any { it.id == p.id }) d.people.map { if (it.id == p.id) saved else it } else d.people + saved)
+        return saved
+    }
+
+    private fun Draft.grant(p: Person, role: Role, removed: Boolean): Person =
+        savePerson(p.copy(role = role, removed = removed, grants = p.grants + grantOf(role, removed, t, actor.signature)))
+
+    /**
+     * The next letter from this phone's own block (see [nextInBlock]), never one it has handed out
+     * before, nor one it has written codes with itself (its person may have taken another letter since,
+     * but those codes are still on things), nor one in [avoid]. Noted as handed out.
+     */
+    private fun allotLetter(d: AppData, avoid: Set<String> = emptySet()): String {
+        val c = codes
+        val own = _device.value.letter
+        val taken = c.lettersGiven.toSet() + c.lettersUsed + avoid
+        val letter = d.nextInBlock(own, c.founder, taken) ?: d.freeLetter(avoid = taken)
+        saveCodes(c.copy(lettersGiven = c.lettersGiven + letter))
+        return letter
+    }
+
+    /** Would changing [p] leave the move with nobody to run it? */
+    private fun Draft.lastOrganiser(p: Person): Boolean =
+        p.role == Role.ORGANISER && !p.removed && d.people.none { it.id != p.id && it.role == Role.ORGANISER && !it.removed }
+
+    /**
+     * Add someone to the move, before their phone has joined. Their letter for
+     * handwritten codes is the next free one. Show them an invite made with
+     * WifiSync's `inviteFor` to bring their phone in. A blank [name] becomes "Helper 2" and the like.
+     */
+    fun addPerson(name: String, role: Role): Outcome<Person> = act(Action.MANAGE_PEOPLE) {
+        if (actor.open) return@act Outcome.Refused(NOBODY_TO_ADD)
+        val shown = name.trim().ifBlank { role.label + " " + (d.people.count { it.role == role } + 1) }
+        val p = savePerson(Person(id = newId(), name = shown, role = role, letter = allotLetter(d), grants = listOf(grantOf(role, false, t, actor.signature))))
+        events.say("added $shown as ${article(role)}", p.id)
+        Outcome.Ok(p)
+    }
+
+    private fun article(role: Role) = (if (role == Role.ORGANISER) "an " else "a ") + role.label
+
+    /** Change someone's role. The last Organiser cannot be made anything else. */
+    fun setRole(personId: String, role: Role): Outcome<Person> = act(Action.MANAGE_PEOPLE) {
+        val p = d.person(personId)?.takeIf { !it.removed } ?: return@act Outcome.Refused("That person is not in the move.")
+        if (p.role == role) return@act Outcome.Ok(p)
+        if (lastOrganiser(p)) return@act Outcome.Refused("A move needs at least one Organiser. Make someone else an Organiser first.")
+        val saved = grant(p, role, false)
+        events.say("made ${p.name.ifBlank { "someone" }} ${article(role)}", p.id)
+        Outcome.Ok(saved)
+    }
+
+    /** Remove someone from the move. Their phone is refused when it next tries to sync. What they did stays. */
+    fun removePerson(personId: String): Outcome<Person> = act(Action.MANAGE_PEOPLE) {
+        val p = d.person(personId)?.takeIf { !it.removed } ?: return@act Outcome.Refused("That person is not in the move.")
+        if (lastOrganiser(p)) return@act Outcome.Refused("A move needs at least one Organiser. Make someone else an Organiser first.")
+        val saved = grant(p, p.role, true)
+        events.say("removed ${p.name.ifBlank { "someone" }}", p.id)
+        Outcome.Ok(saved)
+    }
+
+    /** Let a removed person back in, with the role they had. */
+    fun restorePerson(personId: String): Outcome<Person> = act(Action.MANAGE_PEOPLE) {
+        val p = d.person(personId) ?: return@act Outcome.Refused("That person is not in the move.")
+        if (!p.removed) return@act Outcome.Ok(p)
+        val saved = grant(p, p.role, false)
+        events.say("added ${p.name.ifBlank { "someone" }} back", p.id)
+        Outcome.Ok(saved)
+    }
+
+    /** Change someone's name: an Organiser can for anyone, anyone can for themselves. */
+    fun renamePerson(personId: String, name: String): Outcome<Person> = act(null) {
+        val p = d.person(personId) ?: return@act Outcome.Refused("That person is not in the move.")
+        if (p.id != actor.id) actor.refusal(Action.MANAGE_PEOPLE)?.let { return@act Outcome.Refused(it) }
+        Outcome.Ok(savePerson(p.copy(name = name.trim())))
+    }
+
+    /** Change someone's letter for handwritten codes. It must be one nobody else has. */
+    fun setLetter(personId: String, letter: String): Outcome<Person> = act(null) {
+        val p = d.person(personId) ?: return@act Outcome.Refused("That person is not in the move.")
+        if (p.id != actor.id) actor.refusal(Action.MANAGE_PEOPLE)?.let { return@act Outcome.Refused(it) }
+        val l = letter.trim().uppercase().filter { it.isLetter() }.take(2)
+        if (l.isEmpty()) return@act Outcome.Refused("Choose a letter.")
+        d.people.firstOrNull { it.id != p.id && it.letter.equals(l, ignoreCase = true) }?.let {
+            return@act Outcome.Refused("${it.name.ifBlank { "Someone else" }} already uses the letter $l.")
+        }
+        // This phone writes with its person's letter: one it uses in another of its moves would give the same codes in both.
+        if (p.id == actor.id && lettersElsewhere().any { it.equals(l, ignoreCase = true) }) {
+            return@act Outcome.Refused("This phone uses the letter $l in another of its moves. Choose another, so its codes are never the same in two moves.")
+        }
+        // The codes this phone wrote with a letter are still on things after its person has taken another: nobody else gets it.
+        if (p.id != actor.id && codes.lettersUsed.any { it.equals(l, ignoreCase = true) }) {
+            return@act Outcome.Refused("This phone has written codes with the letter $l. Choose another, so no code is on two things.")
+        }
+        Outcome.Ok(savePerson(p.copy(letter = l)))
+    }
+
+    /** True while this phone is the only one in its move: nobody else has ever been in its data. */
+    fun isAlone(): Boolean = _data.value.people.let { it.size == 1 && it[0].id == _device.value.personId }
+
+    /**
+     * Make this phone the phone of [personId], someone already in the move (for
+     * example after restoring a backup onto a new phone). The person the phone
+     * started as, if it made that one up itself, steps out of the move.
+     */
+    fun becomePerson(personId: String): Outcome<Person> = synchronized(lock) {
+        val d = _data.value
+        val target = d.person(personId) ?: return Outcome.Refused("That person is not in the move.")
+        if (target.removed) return Outcome.Refused("${target.name.ifBlank { "That person" }} has been removed from the move.")
+        val dev = _device.value
+        if (dev.personId == personId) return Outcome.Ok(target)
+        val t = now()
+        val old = d.person(dev.personId)
+        val selfMade = old != null && !old.removed && old.grants.all { it.by.isEmpty() || it.by == old.id }
+        val saved = target.copy(joinedAt = t, updatedAt = t)
+        _data.value = d.copy(
+            people = settlePeople(
+                d.people.map {
+                    when {
+                        it.id == personId -> saved
+                        selfMade && it.id == old!!.id -> it.copy(grants = it.grants + grantOf(it.role, true, t, Actor(d, old).signature), updatedAt = t)
+                        else -> it
+                    }
+                }
+            ),
+        )
+        scheduleSave()
+        writeDevice(dev.copy(personId = personId))
+        mirrorMe()
+        ensureMyPhone()
+        Outcome.Ok(_data.value.person(personId) ?: saved)
+    }
+
+    /**
+     * Take in the data of a move this phone has just been invited into and
+     * become [personId] in it. A phone that was on its own until now leaves the
+     * person it started as behind, so what it decided alone does not count as
+     * an Organiser's decision in the move it joins. [identity] is the joined
+     * move's, as the hosting phone gave it; without one it is worked out from
+     * the move's founder. Joining another move than the one held here starts
+     * this phone's letter, counter and label numbers afresh, from what the
+     * admitting phone gave it.
+     */
+    fun joinAs(personId: String, remote: AppData, identity: MoveIdentity? = null): Outcome<Person> = synchronized(lock) {
+        val sent = distrustUnstamped(remote)
+        val target = sent.person(personId) ?: return Outcome.Refused("That person is not in the move.")
+        // A phone joining as a Helper takes in nothing a Helper is not sent, whatever the other phone sent it.
+        val asHelper = sent.hasOrganiser() && target.role == Role.HELPER
+        val incoming = if (asHelper) sent.sentTo(Role.HELPER, personId) else sent
+        if (target.removed) return Outcome.Refused("${target.name.ifBlank { "That person" }} has been removed from the move.")
+        val dev = _device.value
+        val seen = maxStamp(incoming)
+        lastStamp.updateAndGet { maxOf(it, seen) }
+        var merged = merge(distrustUnstamped(offerFor(personId)), incoming)
+        // What this phone brings of its own goes to the inviting phone in the same exchange, before this; a Helper's
+        // phone then keeps none of the hidden records (its photos stay until their files have gone across too).
+        if (asHelper) merged = merged.copy(hidden = emptyList(), refused = emptyList(), collect = merged.collect.filter { it.to == personId })
+        val t = now()
+        _data.value = merged.copy(people = merged.people.map { if (it.id == personId) it.copy(joinedAt = t, updatedAt = t) else it })
+        val joined = identity ?: MoveIdentity(id = remote.derivedMoveId())
+        val another = !joined.matches(_identity.value)
+        if (another) {
+            saveIdentity(joined)
+            saveCodes(Codes())
+        } else if (joined != _identity.value) saveIdentity(_identity.value.withAliasesOf(joined))
+        scheduleSave()
+        writeDevice(if (another) dev.forAnotherMove(personId) else dev.copy(personId = personId))
+        mirrorMe()
+        ensureMyPhone()
+        forgetDeletedPhotos()
+        Outcome.Ok(_data.value.person(personId) ?: target)
+    }
+
+    /**
+     * This phone's data as it goes into a move it is joining as [personId]. A phone that was on its
+     * own until now leaves its own move behind ([leavingOwnMove]); one that is already in the move
+     * offers what it has.
+     */
+    internal fun offerFor(personId: String): AppData = synchronized(lock) {
+        val d = _data.value
+        val mine = _device.value.personId
+        when {
+            isAlone() && mine != personId -> leavingOwnMove(d)
+            // A stand-in the phone gave itself when it turned out to be nobody ([ensureMe]) is not taken along either.
+            mine != personId && d.person(mine)?.let { p -> p.joinedAt != 0L && p.grants.size == 1 && p.grants[0].by.isEmpty() && p.role == Role.HELPER } == true ->
+                d.copy(people = d.people.filter { it.id != mine })
+            else -> d
+        }
+    }
+
+    /**
+     * Take in what another phone says about its own person, when the two phones are not going to
+     * sync: someone who has been removed. They may know more about that than this phone does (an
+     * Organiser who took themselves out of the move has nobody else to tell), and it must reach the
+     * rest of the move. As in a merge, every grant either phone knows is kept and each is checked.
+     */
+    internal fun hearAbout(peer: Person?) {
+        if (peer == null) return
+        synchronized(lock) {
+            val d = _data.value
+            if (d.people.none { it.id == peer.id }) return
+            val people = mergePeople(d.people, listOf(peer))
+            if (people == d.people) return
+            val seen = maxOf(peer.updatedAt, peer.grants.maxOfOrNull { it.at } ?: 0L)
+            lastStamp.updateAndGet { maxOf(it, seen) }
+            _data.value = d.copy(people = people)
+            ensureMe()
+        }
+        scheduleSave()
+    }
+
+    /** Note that [personId]'s phone has joined. Called on the phone that showed the invite. */
+    fun markJoined(personId: String) = update { d ->
+        val t = now()
+        d.copy(people = d.people.mapChanged { if (it.id == personId && it.joinedAt == 0L) it.copy(joinedAt = t, updatedAt = t) else it })
+    }
+
+    // ---- decisions -------------------------------------------------------------
+
+    private fun Draft.replace(x: Item) {
+        d = d.copy(items = d.items.map { if (it.id == x.id) x else it })
+    }
+
+    private fun Draft.replace(x: Proposal) {
+        d = d.copy(proposals = d.proposals.map { if (it.id == x.id) x else it })
+    }
+
+    /**
+     * Set an item's decision in this person's name, even when it is the same as before: that is what an approval is.
+     * The asking price is on the item's hidden record, with a stamp of its own.
+     */
+    private fun Draft.decideItem(item: Item, disposition: Disposition, price: Double?): Item {
+        val was = item.stamped()
+        val next = was.copy(disposition = disposition, updatedAt = t, hands = actor.handsAfter(was.hands, true))
+            .let { it.copy(decisionBy = actor.stamp(t, it.decisionSum())) }
+        replace(next)
+        changeHidden(item.id) { it.copy(price = price) }
+        return next
+    }
+
+    /**
+     * Decide what happens to an item, and the asking price if it is to be sold (on its hidden record).
+     * Organisers only; others use [suggestDecision].
+     */
+    fun decide(itemId: String, disposition: Disposition, price: Double? = _data.value.priceOf(itemId)): Outcome<Item> = act(Action.DECIDE) {
+        val item = d.item(itemId) ?: return@act Outcome.Refused("That item is no longer here.")
+        saveItems(listOf(item.copy(disposition = disposition)))
+        changeHidden(itemId) { it.copy(price = price) }
+        Outcome.Ok(d.item(itemId) ?: item)
+    }
+
+    /** Choose the new-home room an item goes to. Organisers only; others use [suggestRoom]. */
+    fun planRoom(itemId: String, roomId: String?): Outcome<Item> = act(Action.DECIDE) {
+        val item = d.item(itemId) ?: return@act Outcome.Refused("That item is no longer here.")
+        saveItems(listOf(item.copy(destRoomId = roomId)))
+        Outcome.Ok(d.item(itemId) ?: item)
+    }
+
+    /**
+     * Carry out the decision on an item: mark it listed for sale, gone, or what it sold for.
+     * Null leaves that part as it is. An Organiser may; a Decider may once a suggestion of
+     * theirs for this item has been approved and until the decision changes ([mayCarryOut]).
+     */
+    fun carryOut(itemId: String, listed: Boolean? = null, gone: Boolean? = null, soldFor: Double? = null): Outcome<Item> = act(null) {
+        val item = d.item(itemId) ?: return@act Outcome.Refused("That item is no longer here.")
+        if (!d.mayCarryOut(actor.me, item)) {
+            return@act Outcome.Refused(actor.refusal(Action.CARRY_OUT) ?: "An Organiser has to approve your suggestion for this first.")
+        }
+        saveItems(listOf(item.copy(listed = listed ?: item.listed, gone = gone ?: item.gone)))
+        // What it sold for is on its hidden record, with a stamp of its own.
+        if (soldFor != null) changeHidden(itemId) { it.copy(soldFor = soldFor) }
+        Outcome.Ok(d.item(itemId) ?: item)
+    }
+
+    /** Mark a cost paid (or not paid after all). The same rule as [carryOut], for costs ([mayPay]). */
+    fun markPaid(expenseId: String, paid: Boolean = true): Outcome<Expense> = act(null) {
+        val e = d.expense(expenseId) ?: return@act Outcome.Refused("That cost is no longer here.")
+        if (!d.mayPay(actor.me, e)) {
+            return@act Outcome.Refused(actor.refusal(Action.CARRY_OUT) ?: "An Organiser has to approve your suggestion for this first.")
+        }
+        val saved = (actor.guard(e, e.copy(planned = !paid), t) ?: e).copy(updatedAt = t)
+        d = d.copy(expenses = d.expenses.map { if (it.id == e.id) saved else it })
+        if (paid && e.planned) events.say("marked a cost as paid", e.id)
+        Outcome.Ok(saved)
+    }
+
+    /** Attach the photo of a receipt to a cost. The same rule as [markPaid]. The file is deleted when refused. */
+    fun attachReceipt(expenseId: String, file: File, note: String = ""): Outcome<Photo> = act(null) {
+        val e = d.expense(expenseId) ?: return@act Outcome.Refused("That cost is no longer here.")
+        if (!d.mayPay(actor.me, e)) {
+            file.delete()
+            return@act Outcome.Refused(actor.refusal(Action.CARRY_OUT) ?: "An Organiser has to approve your suggestion for this first.")
+        }
+        val p = actor.guard(null, Photo(id = newId(), ownerId = e.id, kind = PhotoKind.RECEIPT, file = file.name, note = note, by = actor.signature, createdAt = t), t)
+        d = d.copy(photos = d.photos + p)
+        Outcome.Ok(p)
+    }
+
+    /** Tick a task off or untick it: an Organiser, or the person it is assigned to. */
+    fun tick(taskId: String, done: Boolean = true): Outcome<Task> = act(null) {
+        val task = d.task(taskId) ?: return@act Outcome.Refused("That task is no longer here.")
+        if (!d.mayTick(actor.me, task)) return@act Outcome.Refused("Only an Organiser, or the person a task is assigned to, can tick it off.")
+        val saved = (actor.guard(task, task.copy(done = done), t) ?: task).copy(updatedAt = t)
+        d = d.copy(tasks = d.tasks.map { if (it.id == task.id) saved else it })
+        Outcome.Ok(saved)
+    }
+
+    /** Give a task to someone (or to nobody in particular with null). Organisers only. */
+    fun assign(taskId: String, personId: String?): Outcome<Task> = act(Action.DECIDE) {
+        val task = d.task(taskId) ?: return@act Outcome.Refused("That task is no longer here.")
+        if (personId != null && d.person(personId)?.removed != false) return@act Outcome.Refused("That person is not in the move.")
+        val saved = (actor.guard(task, task.copy(assignedTo = personId), t) ?: task).copy(updatedAt = t)
+        d = d.copy(tasks = d.tasks.map { if (it.id == task.id) saved else it })
+        Outcome.Ok(saved)
+    }
+
+    // ---- suggestions and approvals -------------------------------------------------
+
+    private fun Draft.propose(p: Proposal, said: String): Outcome<Proposal> {
+        val saved = p.copy(id = newId(), by = actor.id, state = ProposalState.WAITING, reason = "", createdAt = t, updatedAt = t)
+            .let { it.copy(decided = Stamp(sum = it.stateSum())) }
+        d = d.copy(proposals = d.proposals + saved)
+        events.say(said, saved.id)
+        return Outcome.Ok(saved)
+    }
+
+    /**
+     * Suggest what should happen to an item, with an asking price if it is to be sold.
+     * It waits until an Organiser approves or declines it. [answers] is the id of the
+     * question this is an answer to, if any.
+     */
+    fun suggestDecision(itemId: String, disposition: Disposition, price: Double? = null, note: String = "", answers: String? = null): Outcome<Proposal> =
+        act(Action.SUGGEST) {
+            d.item(itemId) ?: return@act Outcome.Refused("That item is no longer here.")
+            val p = Proposal(id = "", kind = ProposalKind.ITEM_DECISION, targetId = itemId, disposition = disposition, price = price, note = note.trim(), answers = answers)
+            propose(p, "suggested: " + d.describe(p, amounts = false))
+        }
+
+    /** Suggest the new-home room an item should go to. */
+    fun suggestRoom(itemId: String, roomId: String?, note: String = ""): Outcome<Proposal> = act(Action.SUGGEST) {
+        d.item(itemId) ?: return@act Outcome.Refused("That item is no longer here.")
+        val p = Proposal(id = "", kind = ProposalKind.ITEM_ROOM, targetId = itemId, roomId = roomId, note = note.trim())
+        propose(p, "suggested: " + d.describe(p, amounts = false))
+    }
+
+    /**
+     * Suggest a new cost, or a change to an existing one (same id). The cost appears, or changes, when approved.
+     * An existing cost marked deleted is a suggestion to delete it.
+     */
+    fun suggestCost(expense: Expense, note: String = ""): Outcome<Proposal> =
+        suggestCostChange(expense, note, if (expense.deleted) "suggested deleting a cost" else "suggested a cost")
+
+    private fun suggestCostChange(expense: Expense, note: String, said: String): Outcome<Proposal> = act(Action.SUGGEST) {
+        val gone = expense.deleted && d.expense(expense.id) != null
+        if (expense.deleted && !gone) return@act Outcome.Refused("That cost is no longer here.")
+        val clean = expense.copy(costBy = Stamp(), paidBy = Stamp(), deleted = gone, updatedAt = 0)
+        propose(Proposal(id = "", kind = ProposalKind.COST, targetId = expense.id, expense = clean, note = note.trim()), said)
+    }
+
+    /** Suggest a new task, or a change to an existing one (same id). An existing task marked deleted is a suggestion to delete it. */
+    fun suggestTask(task: Task, note: String = ""): Outcome<Proposal> = act(Action.SUGGEST) {
+        val gone = task.deleted && d.task(task.id) != null
+        if (task.deleted && !gone) return@act Outcome.Refused("That task is no longer here.")
+        val clean = task.copy(planBy = Stamp(), doneBy = Stamp(), deleted = gone, updatedAt = 0)
+        propose(Proposal(id = "", kind = ProposalKind.TASK, targetId = task.id, task = clean, note = note.trim()), (if (gone) "suggested deleting a task: " else "suggested a task: ") + task.title.take(60))
+    }
+
+    /** Ask the Organisers what should happen to an item. Anyone may ask. */
+    fun ask(itemId: String, note: String = ""): Outcome<Proposal> = act(Action.ASK) {
+        val item = d.item(itemId) ?: return@act Outcome.Refused("That item is no longer here.")
+        propose(Proposal(id = "", kind = ProposalKind.QUESTION, targetId = itemId, note = note.trim()), "asked what to do with " + item.title())
+    }
+
+    /**
+     * Approve a waiting suggestion: the change is made in the approver's name,
+     * other waiting suggestions for the same thing become NOT_CHOSEN, and the
+     * person who suggested it may now carry it out.
+     */
+    fun approve(proposalId: String): Outcome<Proposal> = act(Action.APPROVE) {
+        val p = d.proposal(proposalId) ?: return@act Outcome.Refused("That suggestion is no longer here.")
+        if (p.state != ProposalState.WAITING) return@act Outcome.Refused("That suggestion is no longer waiting.")
+        when (p.kind) {
+            ProposalKind.ITEM_DECISION -> {
+                val item = d.item(p.targetId) ?: return@act Outcome.Refused("The item it was about is no longer here.")
+                val before = item.disposition
+                val next = decideItem(item, p.disposition ?: item.disposition, p.price ?: d.priceOf(item.id))
+                if (next.disposition != before) events.add(decisionVerb(next.disposition), next.title(), next.id)
+            }
+            ProposalKind.ITEM_ROOM -> {
+                val item = d.item(p.targetId)?.stamped() ?: return@act Outcome.Refused("The item it was about is no longer here.")
+                replace(item.copy(destRoomId = p.roomId, updatedAt = t, hands = actor.handsAfter(item.hands, true)).let { it.copy(roomBy = actor.stamp(t, it.roomSum())) })
+            }
+            ProposalKind.COST -> {
+                val proposed = p.expense ?: return@act Outcome.Refused("That suggestion has no cost in it.")
+                val old = d.expenses.firstOrNull { it.id == p.targetId }?.stamped()
+                // A suggestion to delete a cost deletes it; one that is no longer there stays gone.
+                if (proposed.deleted && old?.deleted != false) return@act Outcome.Refused("That cost is no longer here.")
+                val next = (
+                    if (old == null) proposed.copy(id = p.targetId, deleted = false).let { it.copy(paidBy = actor.stamp(t, it.paidSum())) }
+                    else old.copy(title = proposed.title, amount = proposed.amount, category = proposed.category, day = proposed.day, deleted = proposed.deleted)
+                    ).copy(updatedAt = t).let { it.copy(costBy = actor.stamp(t, it.costSum())) }
+                d = d.copy(expenses = d.expenses.upsert(next))
+            }
+            ProposalKind.TASK -> {
+                val proposed = p.task ?: return@act Outcome.Refused("That suggestion has no task in it.")
+                val old = d.tasks.firstOrNull { it.id == p.targetId }?.stamped()
+                if (proposed.deleted && old?.deleted != false) return@act Outcome.Refused("That task is no longer here.")
+                val next = (
+                    if (old == null) proposed.copy(id = p.targetId, deleted = false, done = false).let { it.copy(doneBy = Stamp(sum = it.doneSum())) }
+                    else old.copy(
+                        title = proposed.title, offsetDays = proposed.offsetDays, dueDay = proposed.dueDay, category = proposed.category,
+                        notes = proposed.notes, assignedTo = proposed.assignedTo, deleted = proposed.deleted,
+                    )
+                    ).copy(updatedAt = t).let { it.copy(planBy = actor.stamp(t, it.planSum())) }
+                d = d.copy(tasks = d.tasks.upsert(next))
+            }
+            ProposalKind.QUESTION -> {
+                if (!p.deletes) return@act Outcome.Refused("A question is answered, not approved.")
+                deleteForGood(p.targetId)?.let { return@act Outcome.Refused(it) }
+            }
+        }
+        val done = p.copy(state = ProposalState.APPROVED, reason = "", updatedAt = t).let { it.copy(decided = actor.stamp(t, it.stateSum())) }
+        replace(done)
+        events.say(if (p.kind == ProposalKind.COST) "approved a suggested cost" else "approved: " + d.describe(p, amounts = false), p.id)
+        Outcome.Ok(done)
+    }.also { if (it.ok) forgetDeletedPhotos() }
+
+    /** Delete whatever [id] names, as an Organiser does when approving a request to delete it. Null when done, else why not. */
+    private fun Draft.deleteForGood(id: String): String? {
+        d.item(id)?.let {
+            deletePhotosOf(id)
+            saveItems(listOf(it.copy(deleted = true)))
+            return null
+        }
+        d.box(id)?.let {
+            deletePhotosOf(id)
+            saveBoxes(listOf(it.copy(deleted = true)))
+            return null
+        }
+        d.room(id)?.let {
+            deletePhotosOf(id)
+            d = d.copy(rooms = d.rooms.upsert(actor.guard(it, it.copy(deleted = true), t)))
+            return null
+        }
+        d.photos.firstOrNull { it.id == id && !it.deleted }?.let {
+            d = d.copy(photos = d.photos.upsert(actor.guard(it, it.copy(deleted = true), t)))
+            return null
+        }
+        d.task(id)?.let {
+            d = d.copy(tasks = d.tasks.upsert((actor.guard(it, it.copy(deleted = true), t) ?: it).copy(updatedAt = t)))
+            return null
+        }
+        d.expense(id)?.let {
+            d = d.copy(expenses = d.expenses.upsert((actor.guard(it, it.copy(deleted = true), t) ?: it).copy(updatedAt = t)))
+            return null
+        }
+        return "What it was about is no longer here."
+    }
+
+    /**
+     * Ask an Organiser to delete something this phone's person may not delete themselves (see
+     * [mayDelete]): an item, container, room, photo or task. It waits like a question, and an
+     * Organiser approves it (the thing is deleted) or declines it. Anyone may ask. A Decider asking
+     * about a cost suggests deleting it instead ([suggestCost]), since costs are not shown to Helpers.
+     * Asking again about the same thing gives back the request already waiting.
+     */
+    fun askToDelete(targetId: String, note: String = ""): Outcome<Proposal> = synchronized(lock) {
+        val d0 = _data.value
+        d0.expense(targetId)?.let { e ->
+            actor(d0).refusal(Action.SUGGEST)?.let { return Outcome.Refused("Only an Organiser can delete a cost.") }
+            if (actor(d0).may(Action.DELETE)) return Outcome.Refused("You can delete it yourself.")
+            return suggestCost(e.copy(deleted = true), note)
+        }
+        act(Action.ASK) {
+            val target: Rec = d.item(targetId) ?: d.box(targetId) ?: d.room(targetId) ?: d.task(targetId)
+                ?: d.photos.firstOrNull { it.id == targetId && !it.deleted } ?: return@act Outcome.Refused("That is no longer here.")
+            if (d.mayDelete(actor.me, target) == null) return@act Outcome.Refused("You can delete it yourself.")
+            d.liveProposals.firstOrNull { it.deletes && it.targetId == targetId && it.by == actor.id && it.state == ProposalState.WAITING }?.let { return@act Outcome.Ok(it) }
+            val p = Proposal(id = "", kind = ProposalKind.QUESTION, targetId = targetId, note = note.trim(), deletes = true)
+            propose(p, "asked to delete " + d.nameOf(targetId))
+        }
+    }
+
+    /**
+     * Withdraw a suggestion or question of one's own while it is still waiting. It is then in no
+     * list on any phone. If an Organiser approved or declined it on another phone in the meantime,
+     * that stands instead once the phones have synced.
+     */
+    fun withdraw(proposalId: String): Outcome<Proposal> = act(null) {
+        val p = d.proposal(proposalId) ?: return@act Outcome.Refused("That suggestion is no longer here.")
+        if (p.by != actor.id || actor.id.isEmpty()) return@act Outcome.Refused("Only the person who made a suggestion can withdraw it.")
+        if (p.state != ProposalState.WAITING) return@act Outcome.Refused("That suggestion has already been dealt with, so it cannot be withdrawn.")
+        val done = p.copy(deleted = true, updatedAt = t).let { it.copy(withdrawn = Stamp(actor.id, t, it.withdrawnSum())) }
+        replace(done)
+        events.say(if (p.kind == ProposalKind.QUESTION && !p.deletes) "withdrew a question" else "withdrew a suggestion", p.id)
+        Outcome.Ok(done)
+    }
+
+    /** Decline a waiting suggestion, or dismiss a question, with the reason to show whoever made it. */
+    fun decline(proposalId: String, reason: String = ""): Outcome<Proposal> = act(Action.APPROVE) {
+        val p = d.proposal(proposalId) ?: return@act Outcome.Refused("That suggestion is no longer here.")
+        if (p.state != ProposalState.WAITING) return@act Outcome.Refused("That suggestion is no longer waiting.")
+        val done = p.copy(state = ProposalState.DECLINED, reason = reason.trim(), updatedAt = t).let { it.copy(decided = actor.stamp(t, it.stateSum())) }
+        replace(done)
+        events.say(if (p.kind == ProposalKind.COST) "declined a suggested cost" else "declined: " + d.describe(p, amounts = false), p.id)
+        Outcome.Ok(done)
+    }
+
+    /**
+     * Answer a question about an item. An Organiser's answer is the decision and
+     * closes the question (the question, APPROVED, is returned). A Decider's
+     * answer becomes a suggestion for an Organiser to approve (that suggestion is
+     * returned); approving it closes the question too.
+     */
+    fun answer(questionId: String, disposition: Disposition, price: Double? = null, note: String = ""): Outcome<Proposal> = synchronized(lock) {
+        val d0 = _data.value
+        val q = d0.proposal(questionId)?.takeIf { it.kind == ProposalKind.QUESTION } ?: return Outcome.Refused("That question is no longer here.")
+        if (q.state != ProposalState.WAITING) return Outcome.Refused("That question has already been dealt with.")
+        if (q.deletes) return Outcome.Refused("That is a request to delete something: approve or decline it.")
+        if (!actor(d0).may(Action.DECIDE)) return suggestDecision(q.targetId, disposition, price, note, answers = q.id)
+        act(Action.DECIDE) {
+            val item = d.item(q.targetId) ?: return@act Outcome.Refused("The item it was about is no longer here.")
+            val before = item.disposition
+            val next = decideItem(item, disposition, price ?: d.priceOf(item.id))
+            if (next.disposition != before) events.add(decisionVerb(next.disposition), next.title(), next.id)
+            val done = q.copy(state = ProposalState.APPROVED, reason = note.trim(), updatedAt = t).let { it.copy(decided = actor.stamp(t, it.stateSum())) }
+            replace(done)
+            Outcome.Ok(done)
+        }
+    }
+
+    // ---- sync / restore ----------------------------------------------------
+
+    private fun forgetDeletedPhotos() {
+        // Remove files for photos that were deleted on the other phone.
+        val dead = _data.value.photos.filter { it.deleted }.map { it.file }
+        dead.forEach { File(photoDir, it).delete() }
+    }
+
+    /**
+     * Merge another phone's (or a backup's) dataset into this one. Returns the merged result.
+     * Protected parts that arrive without a stamp, or stamped by someone whose role did not
+     * allow the change, are not accepted (see [merge]).
+     */
+    fun mergeIn(remote: AppData): AppData {
+        synchronized(lock) {
+            val seen = maxStamp(remote)
+            lastStamp.updateAndGet { maxOf(it, seen) }
+            val was = _data.value
+            val dev = _device.value
+            var merged = merge(distrustUnstamped(was), distrustUnstamped(remote))
+            fun AppData.helperHere() = hasOrganiser() && roleOf(dev) == Role.HELPER
+            if (was.helperHere() && merged.helperHere()) merged = merged.withHelpersShareOf(was).withHelpersHiddenOf(was, dev.personId)
+            _data.value = merged
+            // What arrived can show that this phone's person was never rightly in the move (whoever added them had
+            // already lost the right to). The phone is not left as nobody: it goes on as a Helper nobody has added yet.
+            ensureMe()
+            giveWayOnLetter()
+            ensureMyPhone()
+        }
+        scheduleSave()
+        forgetDeletedPhotos()
+        return _data.value
+    }
+
+    /**
+     * Replace everything with [other] (used for "restore and overwrite" and for erasing).
+     * This is the raw replacement and is not checked against the rules: screens use [erase],
+     * and Backup checks before restoring. A phone whose person is not in [other] starts as a new one.
+     */
+    fun replaceAll(other: AppData) {
+        synchronized(lock) {
+            val seen = maxStamp(other)
+            lastStamp.updateAndGet { maxOf(it, seen) }
+            val mine = _data.value.person(_device.value.personId)
+            var next = migrate(other)
+            // An older copy of the move does not know what this phone's person has been granted since.
+            // Whoever restores it stays who they are, so a phone cannot restore itself out of its own move.
+            if (mine != null && next.person(mine.id) != null) next = next.copy(people = mergePeople(next.people, listOf(mine)))
+            _data.value = next
+            ensureMe(restoring = true)
+        }
+        scheduleSave()
+    }
+
+    /** Does this phone share its move with anyone: is anybody but its own person in it? */
+    private fun AppData.sharedHere(): Boolean = people.any { it.id != _device.value.personId }
+
+    /** Is [backup] of the same move as [d]: does it have any of the same people, or (from before 2.0, with no people) any of the same things? */
+    private fun sameMove(d: AppData, backup: AppData): Boolean {
+        if (backup.people.isNotEmpty()) {
+            val ids = d.people.map { it.id }.toSet()
+            return backup.people.any { it.id in ids }
+        }
+        val ids = HashSet<String>()
+        for (list in listOf<List<Rec>>(d.items, d.boxes, d.rooms, d.tasks, d.expenses)) for (r in list) ids += r.id
+        return listOf<List<Rec>>(backup.items, backup.boxes, backup.rooms, backup.tasks, backup.expenses).any { l -> l.any { it.id in ids } }
+    }
+
+    /**
+     * Why [backup] should not be restored on this phone, or null when it may be. Only an Organiser
+     * restores ([Action.RESTORE_BACKUP]). A phone on its own takes in any backup: that is how a move
+     * comes onto a new phone, or how two phones that cannot reach each other are combined. A phone
+     * that shares its move with others only takes in a backup of that same move, so that two moves
+     * are never mixed and passed on to everyone in this one. A move in a phone's list of moves
+     * ([listed]) takes in only a backup of itself, unless it is the card [Moves.restore] made for
+     * this backup ([newCard]): a backup of another move goes into a card of its own, so the phone
+     * never holds a move twice nor loses the one it restored into. A move with nothing in it is no
+     * such card: an erased one is a move of its own, and the move of the backup may be in another card.
+     */
+    fun whyNotRestore(backup: AppData, identity: MoveIdentity? = null, newCard: Boolean = false): String? {
+        val d = _data.value
+        d.refusal(me, Action.RESTORE_BACKUP)?.let { return it }
+        val same = isSameMove(backup, identity)
+        val name = backup.move.name.trim().let { if (it.isEmpty()) "" else " (“$it”)" }
+        if (listed && !same && !newCard) {
+            return "That backup is of another move$name, so it was not mixed into this one. Restore it from Your moves " +
+                "(Lost your phone? Restore a backup), where it gets a card of its own."
+        }
+        if (!d.sharedHere() || same) return null
+        return "That backup is of a different move$name. This phone shares its move with others, so the two are not mixed. " +
+            "Restore it on a phone that is not in a move yet, or erase this phone first."
+    }
+
+    /**
+     * Is [backup] of this move? A backup that says which move it is ([identity], from 2.1) is when
+     * that is this move's ID or one of its aliases; one from before goes by 2.0's check, that it has
+     * some of the same people, or (from before 2.0) some of the same things.
+     */
+    fun isSameMove(backup: AppData, identity: MoveIdentity?): Boolean =
+        if (identity != null && identity.id.isNotEmpty()) identity.matches(_identity.value) else sameMove(_data.value, backup)
+
+    /**
+     * Restore a backup, already checked with [whyNotRestore] and brought up to date with [migrate].
+     *
+     * Who the phone is afterwards: a phone whose own person is in the backup stays itself. A phone on
+     * its own whose person is not in it takes the backup's move for its own ([restoreOntoLonePhone])
+     * when the backup has someone to become or an Organiser: it leaves its own move behind, as when
+     * joining one (its things go in, its person does not), and becomes the person whose phone made
+     * the backup ([madeBy]), or a Helper when that person is not in it or has been removed. With
+     * neither (a backup from before 2.0, say), the backup's move simply becomes this phone's, as
+     * before: there is nobody in it who could be misled. A phone that shares its move with others
+     * stays itself, and takes in nobody from the backup it does not know who gave themselves their
+     * role ([withoutTheSelfMade]): nobody ever let them into this move.
+     *
+     * Merged in, nothing on the phone is lost. With [replace] the phone goes back to the backup, but
+     * who is in the move and every role change and removal since are kept, so a restore never gives
+     * anyone back rights they have lost. A backup from a Helper's phone ([helpersShare]) holds none of
+     * what Helpers are not sent, so this phone keeps its own costs, cost suggestions, and receipt and
+     * serial-label photos. [identity] is the backup's move, when it says (2.1 and later).
+     */
+    internal fun restore(backup: AppData, replace: Boolean, helpersShare: Boolean = false, madeBy: String = "", identity: MoveIdentity? = null) {
+        synchronized(lock) {
+            val cur = _data.value
+            if (backup.person(_device.value.personId) == null && isAlone()) {
+                val maker = backup.person(madeBy)?.takeIf { !it.removed }
+                if (maker != null || backup.hasOrganiser()) {
+                    restoreOntoLonePhone(backup, replace, maker?.id, identity)
+                    return
+                }
+            }
+            val incoming = if (cur.sharedHere()) backup.withoutTheSelfMade(cur) else backup
+            // The same move, known by another ID on the phone that made the backup (both worked out from a move from 2.0).
+            identity?.let { other -> if (other.id.isNotEmpty() && other.id != moveId) saveIdentity(_identity.value.withAliasesOf(other)) }
+            if (!replace) {
+                mergeIn(incoming)
+                return
+            }
+            var next = incoming
+            if (sameMove(cur, incoming) && cur.people.isNotEmpty()) {
+                next = next.copy(people = mergePeople(next.people, cur.people))
+                if (helpersShare) {
+                    next = next.copy(
+                        expenses = cur.expenses,
+                        photos = next.photos.filter { it.kind !in HIDDEN_FROM_HELPERS } + cur.photos.filter { it.kind in HIDDEN_FROM_HELPERS },
+                        proposals = next.proposals.filter { it.kind != ProposalKind.COST } + cur.proposals.filter { it.kind == ProposalKind.COST },
+                        hidden = cur.hidden,
+                        refused = cur.refused,
+                        collect = cur.collect,
+                    )
+                }
+            }
+            replaceAll(next)
+        }
+    }
+
+    /**
+     * A phone that was on its own takes on the move of [backup], whose people do not include it, as
+     * a phone does when it joins a move: it leaves its own move behind ([leavingOwnMove]), so what
+     * it decided alone does not count there and what it deleted alone stays deleted, and it becomes
+     * [personId], someone in the backup. With nobody to become, it goes on as a Helper nobody has
+     * added yet ([ensureMe]), for the backup's move has an Organiser, who can add it. With [replace]
+     * nothing of the phone's own is kept. The move's ID is the backup's ([identity]); a backup from
+     * before 2.1 has its worked out from its founder.
+     */
+    private fun restoreOntoLonePhone(backup: AppData, replace: Boolean, personId: String?, identity: MoveIdentity?) {
+        val dev = _device.value
+        val seen = maxStamp(backup)
+        lastStamp.updateAndGet { maxOf(it, seen) }
+        val next = if (replace) backup else merge(distrustUnstamped(leavingOwnMove(_data.value)), distrustUnstamped(backup))
+        if (personId != null) {
+            val t = now()
+            _data.value = next.copy(people = next.people.map { if (it.id == personId) it.copy(joinedAt = t, updatedAt = t) else it })
+        } else {
+            _data.value = next
+        }
+        val joined = identity?.takeIf { it.id.isNotEmpty() } ?: MoveIdentity(id = backup.derivedMoveId(), derived = true)
+        val another = !joined.matches(_identity.value)
+        if (another) {
+            saveIdentity(joined)
+            saveCodes(Codes())
+        }
+        val me = personId ?: dev.personId
+        writeDevice(if (another) dev.forAnotherMove(me) else dev.copy(personId = me))
+        ensureMe()
+        giveWayOnLetter()
+        mirrorMe()
+        ensureMyPhone()
+        scheduleSave()
+        forgetDeletedPhotos()
+    }
+
+    /**
+     * This backup as it goes into [d], a move this phone shares, without anyone this phone has not
+     * heard of whom nobody else gave a role: every grant of theirs is open or their own. Such a
+     * person counts as whatever they first said they were, an Organiser even (a phone that took in
+     * another move's backup while on its own, on version 2.0), and the merge would pass them on to
+     * everyone in this move. Anyone really in the move reaches this phone with the next sync.
+     */
+    private fun AppData.withoutTheSelfMade(d: AppData): AppData {
+        val known = d.people.mapTo(HashSet()) { it.id }
+        val kept = people.filter { p -> p.id in known || p.grants.any { it.by.isNotEmpty() && it.by != p.id } }
+        return if (kept.size == people.size) this else copy(people = kept)
+    }
+
+    /**
+     * Erase everything on this phone, photos included, and start again. Organisers only. What is left is a new move of
+     * this phone's own, with an ID of its own; the [Moves] it is in is told ([onErased]), so its card says so at once.
+     */
+    fun erase(): Outcome<Unit> {
+        synchronized(lock) {
+            actor(_data.value).refusal(Action.ERASE)?.let { return Outcome.Refused(it) }
+            photoDir.listFiles()?.forEach { it.delete() }
+            // The codes the phone wrote before are still on boxes, in backups of the move as it was and on other phones: it
+            // writes the new move's with a letter it has not used, and its counter goes on.
+            val was = codes
+            val letter = AppData().freeLetter(avoid = lettersElsewhere() + was.lettersUsed + was.lettersGiven + _device.value.letter.uppercase())
+            writeDevice(_device.value.copy(letter = letter))
+            replaceAll(AppData())
+            setDevice { it.copy(currentRoomId = null, currentTripId = null, lastSyncAt = 0, lastSyncWith = "", lastBackupAt = 0, sharedUpTo = 0, sharedAllUpTo = 0) }
+            saveIdentity(MoveIdentity(id = _data.value.derivedMoveId()))
+            // This phone founds the new move. Nothing it printed or handed out is given out again (see [Codes]): it keeps the
+            // letters it gave, and a founder's block of label numbers it already had, or one it prints from in none of its
+            // other moves.
+            val c = codes
+            val block = if (c.founder && c.labelsFrom != 0) c.labelsFrom..c.labelsTo else founderBlock(labelsElsewhere())
+            saveCodes(c.copy(founder = true, labelsFrom = block.first, labelsTo = block.last, nextLabel = if (block.first == c.labelsFrom) c.nextLabel else 0))
+            ensureMyPhone()
+        }
+        onErased?.invoke(this)
+        return Outcome.Ok(Unit)
+    }
+
+    /** Called once this move has been erased ([erase]): the [Moves] it is in brings its card up to date. */
+    @Volatile
+    internal var onErased: ((Store) -> Unit)? = null
+
+    // ---- phones, letters and labels -------------------------------------------------
+
+    /** The short tag printed in this move's label QR codes. */
+    val moveTag: String get() = _identity.value.tag
+
+    /** The printed label numbers this phone prints in the move, from its own block (see [Codes]). */
+    fun labelRange(): IntRange = ownLabels(codes.labelsFrom, codes.labelsTo)
+
+    /**
+     * The number the next printed label gets on this phone: after the last one it printed, and
+     * after any code from its range already on something, so no code is printed twice.
+     */
+    fun nextLabelNumber(): Int {
+        val range = labelRange()
+        if (range.isEmpty()) return maxOf(_data.value.move.labelsPrinted, _data.value.labelsUsed(1..Int.MAX_VALUE)) + 1
+        return maxOf(codes.nextLabel, range.first, _data.value.labelsUsed(range) + 1)
+    }
+
+    /** Note that labels up to [last] have been printed on this phone. */
+    fun labelsPrinted(last: Int) {
+        synchronized(lock) { if (last + 1 > codes.nextLabel) saveCodes(codes.copy(nextLabel = last + 1)) }
+        setMove { it.copy(labelsPrinted = maxOf(it.labelsPrinted, last)) }
+    }
+
+    /**
+     * Retire one of someone's phones ("Retire Sam's old phone"), when it is lost or replaced.
+     * Organisers only, and not the phone in hand. Once more, its work is taken in when it syncs,
+     * and nothing is sent back to it; after that it is refused.
+     */
+    fun retirePhone(personId: String, phoneId: String): Outcome<Person> = act(Action.MANAGE_PEOPLE) {
+        val p = d.person(personId) ?: return@act Outcome.Refused("That person is not in the move.")
+        val ph = p.phones.firstOrNull { it.id == phoneId } ?: return@act Outcome.Refused("That phone is not one of ${p.name.ifBlank { "theirs" }}.")
+        if (phoneId == phone.id) return@act Outcome.Refused("This is the phone in your hand. Retire it from another Organiser's phone.")
+        if (ph.isRetired) return@act Outcome.Ok(p)
+        val saved = savePerson(p.copy(phones = p.phones.map { if (it.id == phoneId) it.copy(retired = actor.stamp(t, retiredSum(phoneId))) else it }))
+        events.say("retired ${p.name.ifBlank { "someone" }}'s phone ${ph.name.ifBlank { "" }}".trim(), p.id)
+        Outcome.Ok(saved)
+    }
+
+    /**
+     * Let in a phone of this move whose person nobody added (one that restored a backup of it while
+     * on its own, say), when this phone's person may add people and shows the plain code with new
+     * phones let in: as a Helper, in this person's name, since what it says of itself counts for
+     * nothing (see [Roles]).
+     */
+    internal fun letIn(peer: Person): Outcome<Person> = act(Action.MANAGE_PEOPLE) {
+        val base = d.person(peer.id) ?: peer
+        val saved = savePerson(base.copy(role = Role.HELPER, grants = base.grants + grantOf(Role.HELPER, false, t, actor.signature)))
+        events.say("let ${peer.name.ifBlank { "a phone" }} in as a Helper", peer.id)
+        Outcome.Ok(saved)
+    }
+
+    /** Note that a retired phone's last work has been taken in: it is refused from now on. */
+    internal fun markCollected(phoneId: String) = synchronized(lock) {
+        val d = _data.value
+        val (p, _) = d.phoneEntry(phoneId) ?: return@synchronized
+        val t = now()
+        val saved = p.copy(phones = p.phones.map { if (it.id == phoneId) it.copy(collected = true) else it }, updatedAt = t)
+        _data.value = d.copy(people = d.people.map { if (it.id == p.id) saved else it })
+        scheduleSave()
+    }
+
+    /**
+     * On the phone that showed an invite or a Helper code, when [phoneId] joins as [personId]: the
+     * phone goes on the person's list with its own name, and is given a block of label numbers from
+     * this phone's own blocks. A person's first phone uses the letter they were given, unless that
+     * phone uses it in another move ([avoid]); another phone of theirs gets a letter of its own.
+     */
+    internal fun admitPhone(
+        personId: String, phoneId: String, deviceName: String, avoid: Set<String>, key: String = "", keyAt: Long = 0,
+        avoidLabels: List<IntRange> = emptyList(),
+    ): Outcome<Person> = synchronized(lock) {
+        val d = _data.value
+        val p = d.person(personId)?.takeIf { !it.removed } ?: return Outcome.Refused("That person is not in the move.")
+        if (phoneId.isEmpty() || p.phones.any { it.id == phoneId }) return Outcome.Ok(p)
+        val t = now()
+        var person = p
+        var letter = ""
+        if (p.phones.isEmpty()) {
+            if (avoid.any { it.equals(p.letter, ignoreCase = true) } || p.letter.isBlank()) person = person.copy(letter = allotLetter(d, avoid))
+        } else letter = allotLetter(d, avoid)
+        // The next block whose numbers that phone does not print from in its other moves ([avoidLabels]); one passed over is never given.
+        var n = codes.blocksGiven
+        var block = givenBlock(codes.labelsFrom, codes.labelsTo, n)
+        while (block != null && ownLabels(block.first, block.last).let { own -> avoidLabels.any { it.overlaps(own) } }) block = givenBlock(codes.labelsFrom, codes.labelsTo, ++n)
+        if (block != null) saveCodes(codes.copy(blocksGiven = n + 1))
+        // Its public key for update files, as it said it: the admitting phone can send it an update at once.
+        val ok = key.isNotEmpty() && isPublicKeyText(key)
+        val entry = PhoneEntry(
+            id = phoneId, name = deviceName.trim(), letter = letter, labelsFrom = block?.first ?: 0, labelsTo = block?.last ?: 0, addedAt = t,
+            key = if (ok) key else "", keyAt = if (ok) keyAt else 0,
+        )
+        person = person.copy(phones = person.phones + entry, updatedAt = t)
+        _data.value = d.copy(people = d.people.map { if (it.id == p.id) person else it })
+        scheduleSave()
+        Outcome.Ok(person)
+    }
+
+    /**
+     * On the phone showing a Helper code: [phoneId] joins as a new Helper under [name], the name
+     * that phone remembers ([PhoneSettings.name]), made unique in the move ("Sam 2"). A phone of
+     * someone removed, or a retired one, is refused; one already in the move comes in as who it is.
+     */
+    internal fun admitHelper(
+        name: String, phoneId: String, deviceName: String, avoid: Set<String>, id: String = newId(), key: String = "", keyAt: Long = 0,
+        avoidLabels: List<IntRange> = emptyList(),
+    ): Outcome<Person> = synchronized(lock) {
+        whyNotAdmitHelper(phoneId)?.let { return Outcome.Refused(it) }
+        _data.value.phoneEntry(phoneId)?.let { return Outcome.Ok(it.first) }
+        val added = act(Action.MANAGE_PEOPLE) {
+            if (actor.open) return@act Outcome.Refused(NOBODY_TO_ADD)
+            val base = name.trim().ifBlank { "Helper" }
+            val names = d.people.filter { !it.removed }.map { it.name.trim().lowercase() }.toSet()
+            var shown = base
+            var n = 2
+            while (shown.lowercase() in names) shown = "$base ${n++}"
+            val p = savePerson(Person(id = id, name = shown, role = Role.HELPER, letter = allotLetter(d, avoid), grants = listOf(grantOf(Role.HELPER, false, t, actor.signature))))
+            events.say("added $shown as a Helper", p.id)
+            Outcome.Ok(p)
+        }
+        val p = added.valueOrNull() ?: return added
+        return admitPhone(p.id, phoneId, deviceName, avoid, key, keyAt, avoidLabels)
+    }
+
+    /** Why a phone may not join with a Helper code shown here: this phone's person may not add people, or that phone is retired or its person removed. */
+    internal fun whyNotAdmitHelper(phoneId: String): String? {
+        val d = _data.value
+        d.refusal(me, Action.MANAGE_PEOPLE)?.let { return it }
+        val (p, ph) = d.phoneEntry(phoneId) ?: return null
+        if (ph.isRetired) return RETIRED_PHONE
+        if (p.removed) return "${p.name.ifBlank { "That person" }} has been removed from the move."
+        return null
+    }
+
+    /** A new person's id, for one that is made a little later (see [admitHelper]). */
+    internal fun newPersonId(): String = newId()
+
+    /** Has anyone but this phone's person ever joined the move? Then it cannot be deleted, only removed from this phone. */
+    fun everShared(): Boolean {
+        val mine = _device.value.personId
+        return _data.value.people.any { it.id != mine && (it.joinedAt != 0L || it.phones.isNotEmpty()) }
+    }
+
+    /** Is this phone's person the move's only Organiser, while there are others in it? Then it cannot be removed from this phone. */
+    fun lastOrganiserOfShared(): Boolean {
+        val d = _data.value
+        val mine = _device.value.personId
+        val me = d.person(mine) ?: return false
+        return me.role == Role.ORGANISER && !me.removed && d.people.none { it.id != mine && it.role == Role.ORGANISER && !it.removed } &&
+            d.people.any { it.id != mine && !it.removed }
+    }
+
+    /**
+     * What this phone holds that no other phone has: changes made since its last complete sync, and
+     * the photos among them. A phone that synced only with Helpers counts what Helpers are not sent
+     * as not shared ([DeviceInfo.sharedAllUpTo]).
+     */
+    fun unshared(): Unshared = _device.value.let { unsharedSince(it.sharedUpTo, maxOf(it.sharedAllUpTo, 0)) }
+
+    /** What has changed here since [upTo], and for what Helpers are not sent, since [upToAll] (see [unshared]). */
+    private fun unsharedSince(upTo: Long, upToAll: Long): Unshared {
+        val d = _data.value
+        var changes = 0
+        val things = ArrayList<String>()
+        fun count(list: List<Rec>, hidden: (Rec) -> Boolean = { false }, name: (Rec) -> String? = { null }) {
+            for (r in list) if (r.updatedAt > (if (hidden(r)) upToAll else upTo)) {
+                changes++
+                name(r)?.let { if (things.size < 10) things += it }
+            }
+        }
+        count(d.items, name = { (it as Item).title() })
+        count(d.boxes, name = { (it as Box).title() })
+        count(d.rooms)
+        count(d.tasks)
+        count(d.expenses, hidden = { true })
+        count(d.supplies)
+        count(d.trips)
+        count(d.readings)
+        count(d.entries)
+        count(d.proposals, hidden = { (it as Proposal).kind == ProposalKind.COST })
+        // Since 2.1 damage reports and contents lines are records of their own, and the hidden details too.
+        count(d.damage)
+        count(d.lines)
+        count(d.hidden, hidden = { true })
+        count(d.collect, hidden = { true })
+        if (d.move.updatedAt > upTo) changes++
+        var photos = 0
+        for (p in d.photos) {
+            val limit = if (p.kind in HIDDEN_FROM_HELPERS) upToAll else upTo
+            if (!p.deleted && maxOf(p.updatedAt, p.createdAt) > limit && File(photoDir, p.file).isFile) photos++
+            else if (p.updatedAt > limit) changes++
+        }
+        return Unshared(changes, photos, things)
+    }
+
+    /** The newest change in [d], for [noteShared]. */
+    internal fun stampOf(d: AppData): Long = maxStamp(d)
+
+    /** A sync has finished: everything up to [upTo] is on another phone too, all of it when that phone's person is no Helper ([everything]). */
+    internal fun noteShared(upTo: Long, everything: Boolean) = synchronized(lock) {
+        val dev = _device.value
+        val next = dev.copy(
+            sharedUpTo = maxOf(dev.sharedUpTo, upTo), sharedAllUpTo = if (everything) maxOf(dev.sharedAllUpTo, upTo) else dev.sharedAllUpTo,
+            // A phone that has just synced with one of the move's phones is in the move.
+            removedSeenAt = 0,
+        )
+        if (next != dev) writeDevice(next)
+    }
+
+    /** After meeting a phone of the same move that knew it by another ID (see [MoveIdentity]): both are kept, and the one worked out from the move's founder as it is now known is used. */
+    internal fun adoptAliases(other: MoveIdentity) = synchronized(lock) {
+        val cur = _identity.value
+        var next = cur.withAliasesOf(other)
+        if (cur.derived) {
+            val id = _data.value.derivedMoveId()
+            if (id != next.id) next = next.copy(id = id, aliases = (next.aliases + next.id).filter { it != id }.distinct())
+        }
+        if (next != cur) saveIdentity(next)
+    }
+
+    /** The letters this phone uses in this move: its own, and those it has handed out, for keeping its other moves apart. */
+    fun lettersHere(): Set<String> = (listOf(_device.value.letter) + codes.lettersGiven + codes.lettersUsed).filter { it.isNotBlank() }.map { it.uppercase() }.toSet()
+
+    /** Letters this phone uses in its other moves. */
+    fun lettersElsewhereNow(): Set<String> = lettersElsewhere().map { it.uppercase() }.toSet()
+
+    /** The label numbers this phone prints from in its other moves. */
+    fun labelsElsewhereNow(): List<IntRange> = labelsElsewhere().filter { !it.isEmpty() }
+
+    /** This phone's letter and label numbers as kept outside Android's backup (for tests and the move list). */
+    internal val codesNow: Codes get() = codes
+
+    companion object {
+        const val RETIRED_PHONE = "This phone has been retired from the move. Its work was passed on; use the move on your new phone."
+
+        /**
+         * A move with no Organiser (a phone on its own in the old helper mode) has nobody who can let anyone in: a role given
+         * there would count on no phone ([Roles]), and the person would be gone again once the move is read back.
+         */
+        const val NOBODY_TO_ADD = "This move has no Organiser, so nobody can be added yet. Turn off helper mode in Settings first: you are then its Organiser."
+
+        /** What the screens say while the move's data cannot be written to the phone ([saveProblem]). */
+        const val SAVE_FAILED = "Your latest changes could not be saved on this phone. HouseMove keeps them while it is open and keeps trying. Check the phone has free space."
+
+        /** How soon a save that failed is tried again, in milliseconds. */
+        const val SAVE_RETRY_MS = 5_000L
+    }
+
+    // ==== 2.1: records, merges and privacy =========================================================
+    //
+    // What Helpers are not sent (Hidden.kt), handing sold and donated things over, where things are and the
+    // storage unit (Where.kt), damage reports and contents lines (Records.kt), and changes refused at a merge
+    // (Refused.kt). Everything here goes through the same rules and log as the rest of the Store.
+
+    /**
+     * Change an item's value, make, model, serial number or dates (its [Hidden] record). An Organiser or a
+     * Decider may; a Helper's serial number comes in as a photo of the label or a question instead. The price
+     * and the sale are left alone: they are set with [decide] and [carryOut].
+     */
+    fun setDetails(itemId: String, f: (Hidden) -> Hidden): Outcome<Hidden> = act(null) {
+        d.item(itemId) ?: return@act Outcome.Refused("That item is no longer here.")
+        val me = actor.me
+        if (!actor.open) {
+            if (me == null || me.removed) return@act Outcome.Refused(actor.refusal(Action.DECIDE) ?: "You have been removed from this move.")
+            if (me.role == Role.HELPER) return@act Outcome.Refused(HELPERS_DETAILS)
+        }
+        val before = d.hiddenOf(itemId)
+        val saved = changeHidden(itemId) { h -> f(h).copy(price = h.price, soldFor = h.soldFor) }
+        if (saved != before && saved.updatedAt == t) touch(itemId)
+        Outcome.Ok(saved)
+    }
+
+    /**
+     * Arrange the hand-over of an item decided to be sold or donated: who hands it over ([to], or nobody in
+     * particular with null), whether the buyer has paid already, and for a sale not yet paid what is to be
+     * collected (by default what it sold for, else the asking price). Only [to] among the Helpers is sent the
+     * amount. The same people as [carryOut]: an Organiser, or a Decider whose suggestion was approved.
+     */
+    fun arrangeHandover(
+        itemId: String,
+        to: String? = _data.value.item(itemId)?.handoverTo,
+        paid: Boolean = _data.value.item(itemId)?.paid ?: false,
+        amount: Double? = null,
+    ): Outcome<Item> = act(null) {
+        val item = d.item(itemId) ?: return@act Outcome.Refused("That item is no longer here.")
+        if (!item.forHandover()) return@act Outcome.Refused("Only something to be sold or donated is handed over.")
+        if (!d.mayArrangeHandover(actor.me, item)) {
+            return@act Outcome.Refused(actor.refusal(Action.CARRY_OUT) ?: "An Organiser has to approve your suggestion for this first.")
+        }
+        if (to != null && d.person(to)?.removed != false) return@act Outcome.Refused("That person is not in the move.")
+        saveItems(listOf(item.copy(handoverTo = to, paid = paid)))
+        val h = d.hiddenOf(itemId)
+        val kept = d.index.collect[itemId]?.takeIf { it.to == to.orEmpty() }?.amount
+        setCollect(itemId, to, if (paid || item.disposition != Disposition.SELL) null else amount ?: kept ?: h?.soldFor ?: h?.price)
+        Outcome.Ok(d.item(itemId) ?: item)
+    }
+
+    /** Mark a sale paid or not paid, keeping who hands it over. The same people as [arrangeHandover]. */
+    fun setPaid(itemId: String, paid: Boolean = true): Outcome<Item> = arrangeHandover(itemId, paid = paid)
+
+    /**
+     * Mark an item handed over to the buyer or the charity (or not, with [done] false). Anyone in the move may,
+     * Helpers included, once it is decided it is to be sold or donated.
+     */
+    fun handOver(itemId: String, done: Boolean = true): Outcome<Item> = act(Action.WORK) {
+        val item = d.item(itemId) ?: return@act Outcome.Refused("That item is no longer here.")
+        if (!d.mayHandOver(actor.me, item)) return@act Outcome.Refused("Only something decided to be sold or donated is handed over.")
+        saveItems(listOf(item.copy(handedOver = done)))
+        Outcome.Ok(d.item(itemId) ?: item)
+    }
+
+    /**
+     * Add a trip: from the old home to the new one (the usual), to the storage unit, or from the storage unit to
+     * the new home ("Bring back from storage"). Part of the work: anyone may.
+     */
+    fun addTrip(from: Place = Place.OLD_HOME, to: Place = Place.NEW_HOME, name: String = ""): Outcome<Trip> = act(Action.WORK) {
+        val ok = (from == Place.OLD_HOME && (to == Place.NEW_HOME || to == Place.STORAGE)) || (from == Place.STORAGE && to == Place.NEW_HOME)
+        if (!ok) return@act Outcome.Refused("A trip goes from the old home to the new one or to the storage unit, or from the storage unit to the new home.")
+        val trips = d.liveTrips
+        val shown = name.trim().ifBlank {
+            when {
+                to == Place.STORAGE -> STORAGE_TRIP_NAME
+                from == Place.STORAGE -> BRING_BACK_TRIP_NAME
+                else -> "Trip " + (trips.count { it.from == Place.OLD_HOME && it.to == Place.NEW_HOME } + 1)
+            }
+        }
+        val trip = Trip(id = newId(), name = shown, sort = (trips.maxOfOrNull { it.sort } ?: 0) + 1, from = from, to = to, updatedAt = t)
+        d = d.copy(trips = d.trips + trip)
+        Outcome.Ok(trip)
+    }
+
+    private fun Draft.thingsFor(ids: Collection<String>): List<Movable> =
+        ids.mapNotNull { id -> d.box(id)?.toMovable() ?: d.item(id)?.toMovable() }.map { d.carrierOf(it) }.distinctBy { it.id }
+
+    private fun Draft.moveThings(things: List<Movable>, stage: (Movable) -> Stage, tripId: (Movable) -> String?) {
+        saveBoxes(things.filter { it.isBox }.mapNotNull { m -> d.box(m.id)?.copy(stage = stage(m), tripId = tripId(m)) })
+        saveItems(things.filter { !it.isBox }.mapNotNull { m -> d.item(m.id)?.copy(stage = stage(m), tripId = tripId(m)) })
+    }
+
+    /**
+     * Load things onto [tripId] (or take them along by hand with null). Each must be where the trip starts
+     * ([whyNotLoad]): nothing is loaded when one is not. Something inside a container moves the container.
+     */
+    fun loadOnto(tripId: String?, ids: Collection<String>): Outcome<Int> = act(Action.WORK) {
+        val trip = if (tripId == null) null else d.trip(tripId) ?: return@act Outcome.Refused("That trip is no longer here.")
+        val things = thingsFor(ids)
+        things.firstNotNullOfOrNull { d.whyNotLoad(it, trip) }?.let { return@act Outcome.Refused(it) }
+        moveThings(things, { Stage.LOADED }, { tripId })
+        Outcome.Ok(things.size)
+    }
+
+    /** Unload things that are on their way: at the new home, or in storage when their trip went to the storage unit. */
+    fun unload(ids: Collection<String>): Outcome<Int> = act(Action.WORK) {
+        val things = thingsFor(ids).filter { it.stage == Stage.LOADED }
+        moveThings(things, { d.arrivalStage(it.tripId) }, { it.tripId })
+        Outcome.Ok(things.size)
+    }
+
+    /**
+     * Undo the last step for these things: unpacked goes back to delivered, delivered or in storage back onto its
+     * trip, and loaded back to where its trip started (the old home, or the storage unit for a trip back from it).
+     * It wins over what other phones had as long as it is the latest move made.
+     */
+    fun putBack(ids: Collection<String>): Outcome<Int> = act(Action.WORK) {
+        val things = thingsFor(ids).filter { it.stage != Stage.AT_ORIGIN }
+        moveThings(things, { m ->
+            when (m.stage) {
+                Stage.DONE -> Stage.DELIVERED
+                Stage.DELIVERED, Stage.STORED -> Stage.LOADED
+                Stage.LOADED -> d.departureStage(m.tripId)
+                Stage.AT_ORIGIN -> Stage.AT_ORIGIN
+            }
+        }, { it.tripId })
+        Outcome.Ok(things.size)
+    }
+
+    /** Report damage to a box or item. Anyone may; each report is its own, and stays until an Organiser clears it. */
+    fun reportDamage(thingId: String, note: String = ""): Outcome<Damage> = act(Action.WORK) {
+        val name = d.item(thingId)?.title() ?: d.box(thingId)?.logName() ?: return@act Outcome.Refused("That is no longer here.")
+        val x = addDamage(thingId, note)
+        touch(thingId)
+        events.add("reported damage to", name, thingId)
+        Outcome.Ok(x)
+    }
+
+    /** Clear a damage report (or reopen it with [cleared] false). Organisers only. Other reports on the same thing stay. */
+    fun clearDamage(damageId: String, cleared: Boolean = true): Outcome<Damage> = act(null) {
+        if (!actor.isOrganiser) return@act Outcome.Refused("Only an Organiser can clear a damage report.")
+        val x = d.damage.firstOrNull { it.id == damageId && !it.deleted } ?: return@act Outcome.Refused("That report is no longer here.")
+        if (x.cleared == cleared) return@act Outcome.Ok(x)
+        val saved = setCleared(setOf(damageId), cleared).first()
+        events.say((if (cleared) "cleared a damage report on " else "reopened a damage report on ") + d.nameOf(x.thingId), x.thingId)
+        Outcome.Ok(saved)
+    }
+
+    /** Change what a damage report says. Part of the work: anyone may. */
+    fun setDamageNote(damageId: String, note: String): Outcome<Damage> = act(Action.WORK) {
+        val x = d.damage.firstOrNull { it.id == damageId && !it.deleted } ?: return@act Outcome.Refused("That report is no longer here.")
+        Outcome.Ok(setDamageNote(damageId, note) ?: x)
+    }
+
+    /** Make a box's contents the lines of [text] ([storedLines]): lines no longer in it are removed, new ones added. */
+    fun setContents(boxId: String, text: String): Outcome<Box> = act(Action.WORK) {
+        val box = d.box(boxId) ?: return@act Outcome.Refused("That container is no longer here.")
+        saveBoxes(listOf(box.copy(contents = storedLines(text).joinToString(", "))))
+        Outcome.Ok(d.box(boxId) ?: box)
+    }
+
+    /** Add lines to what is in a box. A line it already has is not added again. */
+    fun addLines(boxId: String, vararg lines: String): Outcome<Box> = synchronized(lock) {
+        val have = _data.value.linesOf(boxId).map { it.text }
+        setContents(boxId, (have + lines).joinToString("\n"))
+    }
+
+    /** Remove one line from what is in a box. It stays removed on every phone. */
+    fun removeLine(boxId: String, line: String): Outcome<Box> = synchronized(lock) {
+        val have = _data.value.linesOf(boxId).map { it.text }.filter { !it.equals(line.trim(), ignoreCase = true) }
+        setContents(boxId, have.joinToString("\n"))
+    }
+
+    /** Dismiss a refused change from the Organisers' list. Organisers only. */
+    fun dismissRefused(id: String): Outcome<RefusedChange> = act(null) {
+        if (!actor.isOrganiser) return@act Outcome.Refused("Only an Organiser can dismiss this.")
+        val r = d.refused.firstOrNull { it.id == id && !it.deleted } ?: return@act Outcome.Refused("That is no longer here.")
+        val saved = r.copy(deleted = true, updatedAt = t)
+        d = d.copy(refused = d.refused.map { if (it.id == id) saved else it })
+        Outcome.Ok(saved)
+    }
+
+    /**
+     * The sync calls this when a full sync with [peerPersonId]'s phone has finished: the data both ways, then the
+     * photos. When this phone's person is a Helper and the peer's an Organiser or a Decider, that phone now holds
+     * everything this one did, so what Helpers are not sent is let go here ([withoutHiddenFor]), with the files of
+     * receipt and serial-label photos. This is how a Helper's phone sheds what 2.0 sent it, and how a person
+     * made a Helper loses what they no longer see. A sync with another Helper changes nothing. Returns whether
+     * anything was let go.
+     */
+    fun fullSyncDone(peerPersonId: String?, sent: AppData? = null): Boolean {
+        val dropped: List<Photo> = synchronized(lock) {
+            val d = _data.value
+            val dev = _device.value
+            if (!d.hasOrganiser() || d.roleOf(dev) != Role.HELPER) return false
+            val peer = d.person(peerPersonId)?.takeIf { !it.removed } ?: return false
+            if (peer.role != Role.ORGANISER && peer.role != Role.DECIDER) return false
+            if (!d.holdsHidden(dev.personId)) return false
+            // With [sent], the data that went to that phone: only what it was sent goes (see keepingUnsent).
+            val next = d.withoutHiddenFor(dev.personId).let { if (sent == null) it else it.keepingUnsent(d, sent, dev.personId) }
+            if (next == d) return false
+            val kept = next.photos.map { it.file }.toSet()
+            _data.value = next
+            d.photos.filter { it.kind in HIDDEN_FROM_HELPERS && it.file !in kept }
+        }
+        scheduleSave()
+        dropped.forEach { File(photoDir, it.file).delete() }
+        return true
+    }
+
+    /** Why this phone may not make a backup, or null when it may. Helpers cannot ([whyNoBackup]). */
+    fun whyNoBackup(): String? = _data.value.whyNoBackup(_device.value)
+
+    // ==== 2.1: working apart and safety nets ======================================================
+    //
+    // Update files (Update.kt), small copies of photos, being taken out of a move, Helpers' copies that
+    // expire, "Done, thanks", marking the move done, and the daily small backup (DailyBackup.kt).
+
+    /** Called once a sync of this move has finished: the [Moves] it is in does its daily backup and tidying then. */
+    @Volatile
+    internal var onSynced: ((Store) -> Unit)? = null
+
+    /** A sync of this move has finished, both ways (WifiSync calls this last). */
+    internal fun syncFinished() {
+        try {
+            onSynced?.invoke(this)
+        } catch (_: Exception) {
+        }
+    }
+
+    private val smallFile = File(dir, "small-photos.json")
+
+    /** Photo files this phone holds only as a small copy, from an update file or a small backup. */
+    @Volatile
+    private var small: Set<String> = try {
+        if (smallFile.isFile) AppJson.decodeFromString<List<String>>(smallFile.readText()).toSet() else emptySet()
+    } catch (_: Exception) {
+        emptySet()
+    }
+
+    /**
+     * Is the file of this photo only a small copy (from an update file or a small backup)? A sync then neither offers
+     * it as the photo nor passes it on, so the full one comes from a phone that has it, and replaces it.
+     */
+    fun isSmallCopy(file: String): Boolean = file in small
+
+    /** Note photo files as small copies ([small] true) or as the full photo. */
+    internal fun noteSmallCopies(files: Collection<String>, small: Boolean) = synchronized(lock) {
+        val next = if (small) this.small + files else this.small - files.toSet()
+        if (next == this.small) return@synchronized
+        this.small = next
+        try {
+            writeWhole(smallFile, AppJson.encodeToString(next.sorted()))
+        } catch (_: Exception) {
+        }
+    }
+
+    /**
+     * Has this phone been taken out of the move: refused by another phone of it because its person has been
+     * removed, or its own data says so? Its card then says so, and offers to send what it has not synced to an
+     * Organiser as an update before it goes.
+     */
+    fun removedFromMove(): Boolean {
+        val d = _data.value
+        val me = d.person(_device.value.personId)
+        return (d.hasOrganiser() && me?.removed == true) || _device.value.removedSeenAt > 0
+    }
+
+    /** Another phone of the move refused this one: its person has been removed ([removedFromMove]). */
+    internal fun noteRemoved() = synchronized(lock) {
+        val dev = _device.value
+        if (dev.removedSeenAt == 0L) writeDevice(dev.copy(removedSeenAt = maxOf(clock(), 1)))
+    }
+
+    /**
+     * What this phone holds that no Organiser's or Decider's phone has yet: everything changed here, or come in
+     * from others, since its last full sync with one of them. A sync among Helpers does not count.
+     */
+    fun unsharedWithDeciders(): Unshared = unsharedSince(_device.value.sharedAllUpTo, _device.value.sharedAllUpTo)
+
+    /**
+     * Why this phone should let go of its copy of the move now, or null while it keeps it. Only a Helper's phone
+     * does, and only once an Organiser's or a Decider's phone has all of its work ([unsharedWithDeciders]): when an
+     * Organiser has thanked them ("Done, thanks", [thank]), or [HELPER_COPY_DAYS] days after the move was marked
+     * done ([markDone]). [today] is an epoch day.
+     */
+    fun whyLetGo(today: Long): LetGo? {
+        val d = _data.value
+        val dev = _device.value
+        if (!d.hasOrganiser() || removedFromMove()) return null
+        val me = d.person(dev.personId) ?: return null
+        if (me.removed || d.roleOf(dev) != Role.HELPER) return null
+        if (!unsharedWithDeciders().nothing) return null
+        if (d.roles().thankedAt(me.id) != null) return LetGo.THANKED
+        val done = d.move.doneDay ?: return null
+        return if (today >= done + HELPER_COPY_DAYS) LetGo.EXPIRED else null
+    }
+
+    /**
+     * "Done, thanks Sam": an Organiser thanks a Helper for their part. Their phone lets go of its copy at the end of
+     * its next full sync with an Organiser's or a Decider's phone, once that phone has all of their work; an
+     * Organiser's phone that has just had that sync removes them ([thankedSynced]).
+     */
+    fun thank(personId: String): Outcome<Person> = act(Action.MANAGE_PEOPLE) {
+        val p = d.person(personId)?.takeIf { !it.removed } ?: return@act Outcome.Refused("That person is not in the move.")
+        if (p.role != Role.HELPER) return@act Outcome.Refused("Only a Helper is thanked this way. Change their role or remove them instead.")
+        if (d.roles().thankedAt(p.id) != null) return@act Outcome.Ok(p)
+        val saved = savePerson(p.copy(grants = p.grants + grantOf(p.role, false, t, actor.signature).copy(thanks = true)))
+        events.say("said thank you to ${p.name.ifBlank { "a Helper" }}: done", p.id)
+        Outcome.Ok(saved)
+    }
+
+    /**
+     * A full sync with [peerPersonId]'s phone has just finished. When they were thanked ([thank]) and this phone's
+     * person may remove people, this phone now holds all of that phone's work, so they are removed: their phone
+     * lets go of its copy at the end of the same sync, or, if it was busy meanwhile, is told at its next one.
+     */
+    internal fun thankedSynced(peerPersonId: String?): Boolean {
+        val d = _data.value
+        val peer = d.person(peerPersonId)?.takeIf { !it.removed } ?: return false
+        if (d.roles().thankedAt(peer.id) == null || !d.can(_device.value, Action.MANAGE_PEOPLE)) return false
+        return removePerson(peer.id).ok
+    }
+
+    /** The daily small backup of this move was written today ([day], an epoch day). It counts as this phone's last backup. */
+    internal fun noteDailyBackup(day: Long) = synchronized(lock) {
+        val dev = _device.value
+        writeDevice(dev.copy(dailyBackupDay = maxOf(dev.dailyBackupDay, day), lastBackupAt = maxOf(dev.lastBackupAt, clock())))
+    }
+
+    /** This phone's person said "Not now" to adding a second Organiser before move day: it is not asked again in this move. */
+    fun declineSecondOrganiser() = synchronized(lock) {
+        writeDevice(_device.value.copy(secondOrganiserDeclined = true))
+    }
+
+    /** Mark the move done ([done] true, on [day]) or not done after all. Organisers only. */
+    fun markDone(done: Boolean = true, day: Long = today()): Outcome<MoveInfo> =
+        changeMove { it.copy(doneDay = if (done) it.doneDay ?: day else null) }
+
+    /**
+     * The phones an update file from this phone is sent to: every phone of the move's Organisers and Deciders that
+     * this phone knows the key of, except itself and retired ones. With [organisersOnly], only Organisers' phones
+     * (a phone taken out of the move sends its last work to an Organiser).
+     */
+    fun updateRecipients(organisersOnly: Boolean = removedFromMove()): List<Pair<Person, PhoneEntry>> {
+        val d = _data.value
+        val out = ArrayList<Pair<Person, PhoneEntry>>()
+        for (p in d.people) {
+            if (p.removed) continue
+            if (p.role != Role.ORGANISER && (organisersOnly || p.role != Role.DECIDER)) continue
+            for (ph in p.phones) if (ph.id != phone.id && !ph.isRetired && ph.key.isNotEmpty()) out += p to ph
+        }
+        return out
+    }
+}
+
+/** Why a Helper's phone lets go of its copy of a move (see [Store.whyLetGo]). */
+enum class LetGo { THANKED, EXPIRED }
+
+/** How many days after the move is marked done a Helper's phone lets go of its copy. */
+const val HELPER_COPY_DAYS = 3
+
+
+/** What a phone holds that no other phone has (see [Store.unshared]). [things] names some of what changed. */
+data class Unshared(val changes: Int, val photos: Int, val things: List<String>) {
+    val nothing: Boolean get() = changes == 0 && photos == 0
+}
+
+/** The settings for one move as a phone starts out in another one. */
+internal fun DeviceInfo.forAnotherMove(personId: String) = copy(
+    personId = personId, letter = "", nextSeq = 1, currentRoomId = null, currentTripId = null,
+    lastSyncAt = 0, lastSyncWith = "", lastBackupAt = 0, sharedUpTo = 0, sharedAllUpTo = 0, removedSeenAt = 0, dailyBackupDay = 0, secondOrganiserDeclined = false,
+    rolesRead = emptyMap(),
+)
+
+
+/** Why a Helper cannot change an item's details, in words for the screen. */
+const val HELPERS_DETAILS = "Helpers cannot change the make, model, serial number or value. Take a photo of the serial label, or ask a question about it."

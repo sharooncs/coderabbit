@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Home, night house look</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+button{font-family:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; box-sizing: border-box; display: flex; flex-direction: column; background: radial-gradient(46% 24% at 18% 24%, rgba(70, 120, 255, 0.34), rgba(11, 20, 34, 0) 72%), radial-gradient(54% 30% at 80% 50%, rgba(47, 211, 168, 0.30), rgba(11, 20, 34, 0) 72%), radial-gradient(90% 32% at 50% 102%, rgba(98, 227, 187, 0.55), rgba(11, 20, 34, 0) 72%), linear-gradient(180deg, #0a1320 0%, #101d2e 55%, #0b1725 100%); color: #f2f6fa; font-family: 'Outfit', 'Segoe UI', Roboto, Arial, sans-serif; font-size: 14px; line-height: 1.35; overflow: hidden">
+
+<header style="display: flex; align-items: center; justify-content: space-between; padding: 16px 16px 0">
+<button type="button" aria-label="Menu" style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; padding: 0; background: radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.50) 0%, rgba(255, 255, 255, 0.12) 42%, rgba(255, 255, 255, 0.04) 70%, rgba(255, 255, 255, 0.14) 100%); border: 1px solid rgba(255, 255, 255, 0.30); border-radius: 24px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), inset 0 -6px 10px rgba(255, 255, 255, 0.06), 0 8px 18px rgba(0, 0, 0, 0.45); backdrop-filter: blur(14px) saturate(170%); color: #f2f6fa">
+<svg viewBox="0 0 24 24" aria-hidden="true" style="width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round"><path d="M6 9h12M6 15h8"></path></svg>
+</button>
+<svg viewBox="0 0 24 24" role="img" aria-label="HouseMove" style="width: 32px; height: 32px; fill: none; stroke: #7df0cd; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 0 8px rgba(98, 227, 187, 0.8))"><path d="M3.5 11 12 4l8.5 7v9h-17z"></path><path d="M9.5 13.5h5v5h-5z"></path></svg>
+<button type="button" aria-label="Your profile" style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; padding: 0; background: radial-gradient(circle at 30% 22%, #ffffff 0%, #e6eef5 48%, #b4c3d3 100%); border: 1px solid rgba(255, 255, 255, 0.7); border-radius: 24px; box-shadow: inset 0 -6px 10px rgba(60, 80, 100, 0.30), 0 8px 18px rgba(0, 0, 0, 0.45); color: #0e1826; font-size: 18px; font-weight: 600">Y</button>
+</header>
+
+<div style="display: flex; justify-content: space-between; gap: 8px; padding: 18px 18px 0">
+<div style="display: flex; align-items: center; gap: 8px">
+<span aria-hidden="true" style="width: 36px; height: 36px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.50) 0%, rgba(255, 255, 255, 0.12) 42%, rgba(255, 255, 255, 0.04) 70%, rgba(255, 255, 255, 0.14) 100%); border: 1px solid rgba(255, 255, 255, 0.30); border-radius: 18px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), 0 6px 14px rgba(0, 0, 0, 0.40); backdrop-filter: blur(14px) saturate(170%)">
+<svg viewBox="0 0 24 24" style="width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round"><path d="M4 6h16v14H4zM4 10h16M8 3v4M16 3v4"></path></svg>
+</span>
+<div><div style="font-size: 18px; font-weight: 600; line-height: 1.1">14</div><div style="font-size: 12px; color: #c3cfdb">days to go</div></div>
+</div>
+<div style="display: flex; align-items: center; gap: 8px">
+<span aria-hidden="true" style="width: 36px; height: 36px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.50) 0%, rgba(255, 255, 255, 0.12) 42%, rgba(255, 255, 255, 0.04) 70%, rgba(255, 255, 255, 0.14) 100%); border: 1px solid rgba(255, 255, 255, 0.30); border-radius: 18px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), 0 6px 14px rgba(0, 0, 0, 0.40); backdrop-filter: blur(14px) saturate(170%)">
+<svg viewBox="0 0 24 24" style="width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round"><path d="M21 8 12 3 3 8v8l9 5 9-5z"></path><path d="m3 8 9 5 9-5M12 13v8"></path></svg>
+</span>
+<div><div style="font-size: 18px; font-weight: 600; line-height: 1.1">31/48</div><div style="font-size: 12px; color: #c3cfdb">boxes sealed</div></div>
+</div>
+<div style="display: flex; align-items: center; gap: 8px">
+<span aria-hidden="true" style="width: 36px; height: 36px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.50) 0%, rgba(255, 255, 255, 0.12) 42%, rgba(255, 255, 255, 0.04) 70%, rgba(255, 255, 255, 0.14) 100%); border: 1px solid rgba(255, 255, 255, 0.30); border-radius: 18px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), 0 6px 14px rgba(0, 0, 0, 0.40); backdrop-filter: blur(14px) saturate(170%)">
+<svg viewBox="0 0 24 24" style="width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round"><circle cx="12" cy="12" r="9"></circle><path d="m8 12 3 3 5-6"></path></svg>
+</span>
+<div><div style="font-size: 18px; font-weight: 600; line-height: 1.1">2</div><div style="font-size: 12px; color: #c3cfdb">approvals</div></div>
+</div>
+</div>
+
+<div style="padding: 16px 16px 0; text-align: center">
+<h1 style="margin: 0; font-size: 28px; font-weight: 500; line-height: 1.15; text-shadow: 0 2px 14px rgba(0, 0, 0, 0.5)">Maple Road</h1>
+<div style="font-size: 13px; color: #c3cfdb">Old home · 9 rooms</div>
+</div>
+
+<div style="flex-grow: 1; display: flex; align-items: center; justify-content: center">
+<div style="position: relative; width: 390px; height: 322px">
+<svg viewBox="0 0 390 322" role="img" aria-label="Your old home as a lit model house at night, with moving boxes by the door" style="width: 390px; height: 322px; display: block; overflow: visible">
+<defs>
+<linearGradient id="dhSlabL" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color: #1a2836"></stop><stop offset="1" style="stop-color: #0a121c"></stop></linearGradient>
+<linearGradient id="dhSlabR" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color: #0f1924"></stop><stop offset="1" style="stop-color: #060b12"></stop></linearGradient>
+<radialGradient id="dhGround" cx="0.45" cy="0.5" r="0.6"><stop offset="0" style="stop-color: #31496a"></stop><stop offset="1" style="stop-color: #15222f"></stop></radialGradient>
+<linearGradient id="dhWallL" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color: #f8fafd"></stop><stop offset="1" style="stop-color: #b9c6d4"></stop></linearGradient>
+<linearGradient id="dhWallR" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color: #a9b8c9"></stop><stop offset="1" style="stop-color: #70829a"></stop></linearGradient>
+<linearGradient id="dhGlass" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color: #fff3cc"></stop><stop offset="1" style="stop-color: #ffb84d"></stop></linearGradient>
+<linearGradient id="dhRoof" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color: #41597a"></stop><stop offset="1" style="stop-color: #152030"></stop></linearGradient>
+<linearGradient id="dhFlat" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color: #c8d2de"></stop><stop offset="1" style="stop-color: #97a8bb"></stop></linearGradient>
+<linearGradient id="dhDoor" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color: #3d5270"></stop><stop offset="1" style="stop-color: #1a2636"></stop></linearGradient>
+<radialGradient id="dhBush" cx="0.35" cy="0.3" r="0.75"><stop offset="0" style="stop-color: #8cf0cd"></stop><stop offset="1" style="stop-color: #17604c"></stop></radialGradient>
+<linearGradient id="dhBoxT" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color: #f4d3a0"></stop><stop offset="1" style="stop-color: #dcae6e"></stop></linearGradient>
+<linearGradient id="dhBoxL" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color: #dcae6c"></stop><stop offset="1" style="stop-color: #b58445"></stop></linearGradient>
+<linearGradient id="dhBoxR" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color: #b58749"></stop><stop offset="1" style="stop-color: #855e2c"></stop></linearGradient>
+</defs>
+<g transform="translate(195 112)">
+<g style="filter: blur(1.2px)">
+<polygon points="-209,-16.5 -165,5.5 -165,-71.3 -209,-93.3" style="fill: rgba(150, 180, 220, 0.20)"></polygon>
+<polygon points="-110,-22 -165,5.5 -165,-71.3 -110,-98.8" style="fill: rgba(150, 180, 220, 0.11)"></polygon>
+<polygon points="-154,-120.8 -110,-98.8 -165,-71.3 -209,-93.3" style="fill: rgba(150, 180, 220, 0.28)"></polygon>
+<polygon points="99,-27.5 143,-5.5 143,-87.1 99,-109.1" style="fill: rgba(150, 180, 220, 0.20)"></polygon>
+<polygon points="143,-5.5 187,-27.5 187,-109.1 143,-87.1" style="fill: rgba(150, 180, 220, 0.11)"></polygon>
+<polygon points="143,-131.1 187,-109.1 143,-87.1 99,-109.1" style="fill: rgba(150, 180, 220, 0.28)"></polygon>
+<path d="M-198,-40 -176,-29M-198,-58 -176,-47M-198,-76 -176,-65M110,-50 132,-39M110,-68 132,-57M110,-86 132,-75" style="fill: none; stroke: rgba(255, 215, 140, 0.45); stroke-width: 3"></path>
+</g>
+<ellipse cx="-2.2" cy="196" rx="165" ry="26" style="fill: rgba(98, 227, 187, 0.45); filter: blur(20px)"></ellipse>
+<polygon points="-189.2,72.6 -4.4,165 -4.4,184.2 -189.2,91.8" style="fill: url(#dhSlabL)"></polygon>
+<polygon points="-4.4,165 184.8,70.4 184.8,89.6 -4.4,184.2" style="fill: url(#dhSlabR)"></polygon>
+<polygon points="0,-22 184.8,70.4 -4.4,165 -189.2,72.6" style="fill: url(#dhGround)"></polygon>
+<polyline points="-189.2,72.6 -4.4,165 184.8,70.4" style="fill: none; stroke: rgba(255, 255, 255, 0.34); stroke-width: 1.2"></polyline>
+<polygon points="-59.4,106.7 -41.8,115.5 -72.6,130.9 -90.2,122.1" style="fill: #2c4058"></polygon>
+<polygon points="132,66 -4.4,134.2 43.8,140.9 180.2,72.7" style="fill: rgba(4, 9, 15, 0.42)"></polygon>
+<polygon points="-70.4,52.8 -39.6,68.2 -63.8,89.1 -112.2,64.9" style="fill: rgba(255, 205, 110, 0.26); filter: blur(4px)"></polygon>
+<polygon points="35.2,114.4 4.4,129.8 26.4,147.4 70.4,125.4" style="fill: rgba(255, 205, 110, 0.32); filter: blur(4px)"></polygon>
+<polygon points="-30.8,121 -13.2,129.8 -33,146.3 -63.8,130.9" style="fill: rgba(255, 205, 110, 0.26); filter: blur(4px)"></polygon>
+<polygon points="-88,44 44,110 44,38 -88,-28" style="fill: url(#dhWallL)"></polygon>
+<polygon points="132,66 44,110 44,38 88,-32 132,-6" style="fill: url(#dhWallR)"></polygon>
+<polygon points="-70.4,28.8 -39.6,44.2 -39.6,15.4 -70.4,0" style="fill: rgba(255, 200, 100, 0.55); filter: blur(7px)"></polygon>
+<polygon points="-70.4,28.8 -39.6,44.2 -39.6,15.4 -70.4,0" style="fill: url(#dhGlass); stroke: #56657a; stroke-width: 1.5"></polygon>
+<polygon points="105.6,55.2 70.4,72.8 70.4,44 105.6,26.4" style="fill: rgba(255, 200, 100, 0.55); filter: blur(7px)"></polygon>
+<polygon points="105.6,55.2 70.4,72.8 70.4,44 105.6,26.4" style="fill: url(#dhGlass); stroke: #56657a; stroke-width: 1.5"></polygon>
+<path d="M-55,36.5 -55,7.7M88,64 88,35.2M-70.4,14.4 -39.6,29.8M105.6,40.8 70.4,58.4" style="fill: none; stroke: #56657a; stroke-width: 1.2"></path>
+<polygon points="94.6,-28.7 145.2,1.2 145.2,6 94.6,-23.9" style="fill: #172230"></polygon>
+<polygon points="-101.2,-20.8 44,51.8 94.6,-28.7 -50.6,-101.3" style="fill: url(#dhRoof)"></polygon>
+<polygon points="-93.5,-33 51.7,39.6 62.7,22.1 -82.5,-50.5" style="fill: rgba(255, 255, 255, 0.08)"></polygon>
+<path d="M-75.9,-61.1 69.3,11.5M-64.9,-2.7 -14.3,-83.2M-28.6,15.5 22,-65M7.7,33.6 58.3,-46.8" style="fill: none; stroke: rgba(255, 255, 255, 0.10); stroke-width: 1.2"></path>
+<polygon points="-101.2,-20.8 44,51.8 44,56.6 -101.2,-16" style="fill: #0f1823"></polygon>
+<polygon points="44,51.8 94.6,-28.7 94.6,-23.9 44,56.6" style="fill: #22303f"></polygon>
+<polyline points="-50.6,-101.3 94.6,-28.7" style="fill: none; stroke: rgba(255, 255, 255, 0.35); stroke-width: 1.2"></polyline>
+<polygon points="26.4,-12.2 39.6,-5.6 39.6,-35.6 26.4,-42.2" style="fill: url(#dhWallL)"></polygon>
+<polygon points="52.8,-26.6 39.6,-5.6 39.6,-35.6 52.8,-42.2" style="fill: url(#dhWallR)"></polygon>
+<polygon points="39.6,-48.8 52.8,-42.2 39.6,-35.6 26.4,-42.2" style="fill: #f6f8fb"></polygon>
+<polygon points="-70.4,101.2 -4.4,134.2 -4.4,86.2 -70.4,53.2" style="fill: url(#dhWallL)"></polygon>
+<polygon points="44,110 -4.4,134.2 -4.4,86.2 44,62" style="fill: url(#dhWallR)"></polygon>
+<polygon points="-22,29 44,62 -4.4,86.2 -70.4,53.2" style="fill: #f1f4f8"></polygon>
+<polygon points="-18.7,31.8 38.5,60.3 -4.4,81.8 -61.6,53.2" style="fill: url(#dhFlat)"></polygon>
+<polygon points="-59.4,106.7 -41.8,115.5 -41.8,78.3 -59.4,69.5" style="fill: url(#dhDoor)"></polygon>
+<circle cx="-45.1" cy="95.85" r="1.6" style="fill: #ffd98a"></circle>
+<polygon points="-30.8,101.8 -13.2,110.6 -13.2,91.4 -30.8,82.6" style="fill: rgba(255, 200, 100, 0.55); filter: blur(7px)"></polygon>
+<polygon points="-30.8,101.8 -13.2,110.6 -13.2,91.4 -30.8,82.6" style="fill: url(#dhGlass); stroke: #56657a; stroke-width: 1.5"></polygon>
+<polygon points="35.2,108.4 4.4,123.8 4.4,91.4 35.2,76" style="fill: rgba(255, 200, 100, 0.55); filter: blur(7px)"></polygon>
+<polygon points="35.2,108.4 4.4,123.8 4.4,91.4 35.2,76" style="fill: url(#dhGlass); stroke: #56657a; stroke-width: 1.5"></polygon>
+<path d="M19.8,116.1 19.8,83.7M-22,106.2 -22,87" style="fill: none; stroke: #56657a; stroke-width: 1.2"></path>
+<ellipse cx="-145.6" cy="78" rx="14" ry="4.4" style="fill: rgba(4, 9, 15, 0.4)"></ellipse>
+<circle cx="-149.6" cy="69.3" r="11" style="fill: url(#dhBush)"></circle>
+<ellipse cx="1.8" cy="153.9" rx="15" ry="4.8" style="fill: rgba(4, 9, 15, 0.4)"></ellipse>
+<circle cx="-2.2" cy="144.5" r="12" style="fill: url(#dhBush)"></circle>
+<polygon points="-114.4,77 -96.8,85.8 -81.4,88 -63.8,79.2 -81.4,70.4 -96.8,68.2" style="fill: rgba(4, 9, 15, 0.38)"></polygon>
+<polygon points="-101.2,92.4 -83.6,101.2 -68.2,103.4 -50.6,94.6 -68.2,85.8 -83.6,83.6" style="fill: rgba(4, 9, 15, 0.38)"></polygon>
+<polygon points="-114.4,77 -96.8,85.8 -96.8,69 -114.4,60.2" style="fill: url(#dhBoxL)"></polygon>
+<polygon points="-79.2,77 -96.8,85.8 -96.8,69 -79.2,60.2" style="fill: url(#dhBoxR)"></polygon>
+<polygon points="-96.8,51.4 -79.2,60.2 -96.8,69 -114.4,60.2" style="fill: url(#dhBoxT)"></polygon>
+<polygon points="-111.1,60.8 -96.8,67.9 -96.8,53.5 -111.1,46.4" style="fill: url(#dhBoxL)"></polygon>
+<polygon points="-82.5,60.8 -96.8,67.9 -96.8,53.5 -82.5,46.4" style="fill: url(#dhBoxR)"></polygon>
+<polygon points="-96.8,39.2 -82.5,46.4 -96.8,53.5 -111.1,46.4" style="fill: url(#dhBoxT)"></polygon>
+<polygon points="-101.2,92.4 -83.6,101.2 -83.6,84.4 -101.2,75.6" style="fill: url(#dhBoxL)"></polygon>
+<polygon points="-66,92.4 -83.6,101.2 -83.6,84.4 -66,75.6" style="fill: url(#dhBoxR)"></polygon>
+<polygon points="-83.6,66.8 -66,75.6 -83.6,84.4 -101.2,75.6" style="fill: url(#dhBoxT)"></polygon>
+<path d="M-88,55.8 -105.6,64.6M-74.8,71.2 -92.4,80M-89.8,42.7 -104.1,49.9" style="fill: none; stroke: #f3d9ad; stroke-width: 2.4"></path>
+<circle cx="-24.2" cy="-28.3" r="12" style="fill: rgba(98, 227, 187, 0.55); filter: blur(5px)"></circle>
+<circle cx="-24.2" cy="-28.3" r="6.5" style="fill: rgba(98, 227, 187, 0.35); stroke: #eafff7; stroke-width: 1.5"></circle>
+<circle cx="-24.2" cy="-28.3" r="2.6" style="fill: #ffffff"></circle>
+<circle cx="19.8" cy="76.5" r="12" style="fill: rgba(255, 200, 97, 0.6); filter: blur(5px)"></circle>
+<circle cx="19.8" cy="76.5" r="6.5" style="fill: rgba(255, 200, 97, 0.4); stroke: #fff8e8; stroke-width: 1.5"></circle>
+<circle cx="19.8" cy="76.5" r="2.6" style="fill: #ffffff"></circle>
+</g>
+</svg>
+<div style="position: absolute; left: 222px; top: 206px; display: flex; align-items: center; gap: 8px; padding: 6px 14px 6px 6px; background: linear-gradient(135deg, rgba(255, 255, 255, 0.26) 0%, rgba(255, 255, 255, 0.08) 40%, rgba(255, 255, 255, 0.04) 65%, rgba(255, 255, 255, 0.14) 100%); border: 1px solid rgba(255, 255, 255, 0.30); border-radius: 28px; box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.50), inset -1px -1px 0 rgba(255, 255, 255, 0.12), 0 14px 30px rgba(0, 0, 0, 0.45); backdrop-filter: blur(16px) saturate(170%)">
+<span aria-hidden="true" style="width: 36px; height: 36px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at 32% 24%, #fff3cf 0%, #ffd27a 35%, #f2a93b 100%); color: #2b1c00; border-radius: 18px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), inset 0 -5px 8px rgba(120, 70, 0, 0.35), 0 0 16px rgba(255, 200, 97, 0.55)">
+<svg viewBox="0 0 24 24" style="width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round"><path d="M21 8 12 3 3 8v8l9 5 9-5z"></path><path d="m3 8 9 5 9-5M12 13v8"></path></svg>
+</span>
+<div><div style="font-size: 12px; color: #d5dee7; line-height: 1.2">Kitchen is next</div><div style="font-size: 15px; font-weight: 600; line-height: 1.2">6 boxes left</div></div>
+</div>
+</div>
+</div>
+
+<div style="padding: 0 16px 6px">
+<button type="button" style="display: flex; align-items: center; gap: 12px; width: 100%; box-sizing: border-box; padding: 8px 8px 8px 10px; background: linear-gradient(112deg, rgba(255, 255, 255, 0) 28%, rgba(255, 255, 255, 0.13) 44%, rgba(255, 255, 255, 0) 58%), linear-gradient(135deg, rgba(255, 255, 255, 0.24) 0%, rgba(255, 255, 255, 0.08) 40%, rgba(255, 255, 255, 0.04) 65%, rgba(255, 255, 255, 0.14) 100%); border: 1px solid rgba(255, 255, 255, 0.28); border-radius: 30px; box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.50), inset -1px -1px 0 rgba(255, 255, 255, 0.12), 0 14px 30px rgba(0, 0, 0, 0.42); backdrop-filter: blur(18px) saturate(170%); color: #f2f6fa; text-align: left">
+<span aria-hidden="true" style="display: flex; flex-shrink: 0">
+<span style="width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at 32% 24%, #f4ecff 0%, #c9b3ff 40%, #7a5bd6 100%); color: #24124f; border: 1.5px solid rgba(255, 255, 255, 0.7); border-radius: 19px; font-size: 15px; font-weight: 600">P</span>
+<span style="width: 38px; height: 38px; margin-left: -12px; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at 32% 24%, #e9fbff 0%, #9fdcf5 40%, #3f8fc4 100%); color: #06283d; border: 1.5px solid rgba(255, 255, 255, 0.7); border-radius: 19px; font-size: 15px; font-weight: 600">S</span>
+</span>
+<span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column">
+<span style="font-size: 15px; font-weight: 600; line-height: 1.2">2 suggestions waiting</span>
+<span style="font-size: 12px; color: #d5dee7">Sell the sofa · Buy 20 boxes</span>
+</span>
+<span style="flex-shrink: 0; padding: 9px 16px; background: radial-gradient(circle at 30% 20%, #ffffff 0%, #e6eef5 50%, #b4c3d3 100%); color: #0e1826; border-radius: 20px; box-shadow: inset 0 -4px 8px rgba(60, 80, 100, 0.28), 0 6px 14px rgba(0, 0, 0, 0.35); font-size: 14px; font-weight: 600">Review</span>
+</button>
+</div>
+
+<nav aria-label="Main" style="position: relative; height: 262px; flex-shrink: 0">
+<div aria-hidden="true" style="position: absolute; left: -44px; right: -44px; top: 30px; height: 320px; background: linear-gradient(180deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0.07) 26%, rgba(255, 255, 255, 0.02) 100%); border: 1px solid rgba(255, 255, 255, 0.30); border-radius: 50%; box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.55), inset 0 18px 30px rgba(255, 255, 255, 0.06), 0 -12px 40px rgba(0, 0, 0, 0.35); backdrop-filter: blur(22px) saturate(170%)"></div>
+<div aria-hidden="true" style="position: absolute; left: -32px; right: -32px; top: 42px; height: 320px; border-top: 1px solid rgba(255, 255, 255, 0.14); border-radius: 50%"></div>
+
+<button type="button" style="position: absolute; left: 30px; top: 92px; width: 84px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 0; background: transparent; border: 0; color: #f2f6fa; font-size: 11px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase">
+<span style="width: 56px; height: 56px; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.50) 0%, rgba(255, 255, 255, 0.12) 42%, rgba(255, 255, 255, 0.04) 70%, rgba(255, 255, 255, 0.14) 100%); border: 1px solid rgba(255, 255, 255, 0.30); border-radius: 28px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), inset 0 -6px 10px rgba(255, 255, 255, 0.06), 0 10px 20px rgba(0, 0, 0, 0.45)">
+<svg viewBox="0 0 24 24" aria-hidden="true" style="width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
+</span>
+Overview
+</button>
+
+<button type="button" style="position: absolute; left: 153px; top: 50px; width: 84px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 0; background: transparent; border: 0; color: #f2f6fa; font-size: 11px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase">
+<span style="position: relative; width: 56px; height: 56px; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.50) 0%, rgba(255, 255, 255, 0.12) 42%, rgba(255, 255, 255, 0.04) 70%, rgba(255, 255, 255, 0.14) 100%); border: 1px solid rgba(255, 255, 255, 0.30); border-radius: 28px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), inset 0 -6px 10px rgba(255, 255, 255, 0.06), 0 10px 20px rgba(0, 0, 0, 0.45)">
+<svg viewBox="0 0 24 24" aria-hidden="true" style="width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round"><circle cx="12" cy="12" r="9"></circle><path d="m8 12 3 3 5-6"></path></svg>
+<span style="position: absolute; top: -5px; right: -5px; min-width: 22px; height: 22px; box-sizing: border-box; padding: 0 5px; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at 32% 24%, #e6fff7 0%, #86f0cf 30%, #3fc79f 100%); color: #062a20; border-radius: 11px; box-shadow: 0 0 12px rgba(98, 227, 187, 0.8); font-size: 13px; font-weight: 600; letter-spacing: 0">2</span>
+</span>
+Approvals
+</button>
+
+<button type="button" style="position: absolute; right: 30px; top: 92px; width: 84px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 0; background: transparent; border: 0; color: #f2f6fa; font-size: 11px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase">
+<span style="width: 56px; height: 56px; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.50) 0%, rgba(255, 255, 255, 0.12) 42%, rgba(255, 255, 255, 0.04) 70%, rgba(255, 255, 255, 0.14) 100%); border: 1px solid rgba(255, 255, 255, 0.30); border-radius: 28px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), inset 0 -6px 10px rgba(255, 255, 255, 0.06), 0 10px 20px rgba(0, 0, 0, 0.45)">
+<svg viewBox="0 0 24 24" aria-hidden="true" style="width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round"><circle cx="9" cy="8" r="3.5"></circle><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.2a6.5 6.5 0 0 1 3.5 5.8"></path></svg>
+</span>
+People
+</button>
+
+<button type="button" aria-label="Pack a box" style="position: absolute; left: 151px; top: 136px; width: 88px; height: 88px; display: flex; align-items: center; justify-content: center; padding: 0; background: radial-gradient(circle at 32% 24%, #e6fff7 0%, #86f0cf 22%, #49d1a8 55%, #1c9778 100%); color: #053326; border: 0; border-radius: 44px; box-shadow: inset 0 2px 1px rgba(255, 255, 255, 0.75), inset 0 -10px 16px rgba(6, 60, 44, 0.45), 0 0 0 10px rgba(98, 227, 187, 0.16), 0 0 0 11px rgba(255, 255, 255, 0.12), 0 16px 40px rgba(40, 220, 170, 0.60)">
+<svg viewBox="0 0 24 24" aria-hidden="true" style="width: 38px; height: 38px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round"><path d="M21 8 12 3 3 8v8l9 5 9-5z"></path><path d="m3 8 9 5 9-5M12 13v8"></path></svg>
+</button>
+<div style="position: absolute; left: 0; right: 0; top: 234px; text-align: center; font-size: 13px; font-weight: 500; color: #f2f6fa">Pack a box</div>
+</nav>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

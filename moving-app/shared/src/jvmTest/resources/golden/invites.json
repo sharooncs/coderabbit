@@ -1,0 +1,530 @@
+{
+  "about": "The text of an invite or sync code QR (WifiSync.Invite): HMSYNC:hosts:port:token[:personId:ROLE:name][:moveId:moveName], names through java.net.URLEncoder/URLDecoder with UTF-8 (space as '+', '*' '-' '.' '_' kept, '~' as %7E).",
+  "encode": [
+    {
+      "name": "plain, as before 2.1",
+      "invite": {
+        "hosts": [
+          "192.168.1.23"
+        ],
+        "port": 40123,
+        "token": "ABCDEFGH",
+        "personName": "",
+        "moveId": "",
+        "moveName": "",
+        "helperCode": false,
+        "question": "Sync with this move?"
+      },
+      "text": "HMSYNC:192.168.1.23:40123:ABCDEFGH",
+      "parsedBack": {
+        "hosts": [
+          "192.168.1.23"
+        ],
+        "port": 40123,
+        "token": "ABCDEFGH",
+        "personName": "",
+        "moveId": "",
+        "moveName": "",
+        "helperCode": false,
+        "question": "Sync with this move?"
+      }
+    },
+    {
+      "name": "for a person, as 2.0",
+      "invite": {
+        "hosts": [
+          "192.168.1.23"
+        ],
+        "port": 40123,
+        "token": "ABCDEFGH",
+        "personId": "u2",
+        "personName": "Sam Lee",
+        "role": "HELPER",
+        "moveId": "",
+        "moveName": "",
+        "helperCode": false,
+        "question": "Join this move as Sam Lee, Helper?"
+      },
+      "text": "HMSYNC:192.168.1.23:40123:ABCDEFGH:u2:HELPER:Sam+Lee",
+      "parsedBack": {
+        "hosts": [
+          "192.168.1.23"
+        ],
+        "port": 40123,
+        "token": "ABCDEFGH",
+        "personId": "u2",
+        "personName": "Sam Lee",
+        "role": "HELPER",
+        "moveId": "",
+        "moveName": "",
+        "helperCode": false,
+        "question": "Join this move as Sam Lee, Helper?"
+      }
+    },
+    {
+      "name": "plain sync code, 2.1",
+      "invite": {
+        "hosts": [
+          "192.168.1.23",
+          "10.0.0.7"
+        ],
+        "port": 40123,
+        "token": "HM4RT8WZ",
+        "personName": "",
+        "moveId": "m3906c46cfd44f4074ce7",
+        "moveName": "Maple Road",
+        "helperCode": false,
+        "question": "Sync with Maple Road?"
+      },
+      "text": "HMSYNC:192.168.1.23,10.0.0.7:40123:HM4RT8WZ::::m3906c46cfd44f4074ce7:Maple+Road",
+      "parsedBack": {
+        "hosts": [
+          "192.168.1.23",
+          "10.0.0.7"
+        ],
+        "port": 40123,
+        "token": "HM4RT8WZ",
+        "personName": "",
+        "moveId": "m3906c46cfd44f4074ce7",
+        "moveName": "Maple Road",
+        "helperCode": false,
+        "question": "Sync with Maple Road?"
+      }
+    },
+    {
+      "name": "for a person, 2.1",
+      "invite": {
+        "hosts": [
+          "192.168.1.23",
+          "10.0.0.7"
+        ],
+        "port": 40123,
+        "token": "GQ7K2MXP",
+        "personId": "00000000-0000-4000-8000-000000000020",
+        "personName": "Priya 🏠",
+        "personNameUtf16": "0050 0072 0069 0079 0061 0020 d83c dfe0",
+        "role": "DECIDER",
+        "moveId": "m3906c46cfd44f4074ce7",
+        "moveName": "Maple Road *~ (Zoë's)",
+        "moveNameUtf16": "004d 0061 0070 006c 0065 0020 0052 006f 0061 0064 0020 002a 007e 0020 0028 005a 006f 00eb 0027 0073 0029",
+        "helperCode": false,
+        "question": "Join Maple Road *~ (Zoë's) as Priya 🏠, Decider?",
+        "questionUtf16": "004a 006f 0069 006e 0020 004d 0061 0070 006c 0065 0020 0052 006f 0061 0064 0020 002a 007e 0020 0028 005a 006f 00eb 0027 0073 0029 0020 0061 0073 0020 0050 0072 0069 0079 0061 0020 d83c dfe0 002c 0020 0044 0065 0063 0069 0064 0065 0072 003f"
+      },
+      "text": "HMSYNC:192.168.1.23,10.0.0.7:40123:GQ7K2MXP:00000000-0000-4000-8000-000000000020:DECIDER:Priya+%F0%9F%8F%A0:m3906c46cfd44f4074ce7:Maple+Road+*%7E+%28Zo%C3%AB%27s%29",
+      "parsedBack": {
+        "hosts": [
+          "192.168.1.23",
+          "10.0.0.7"
+        ],
+        "port": 40123,
+        "token": "GQ7K2MXP",
+        "personId": "00000000-0000-4000-8000-000000000020",
+        "personName": "Priya 🏠",
+        "personNameUtf16": "0050 0072 0069 0079 0061 0020 d83c dfe0",
+        "role": "DECIDER",
+        "moveId": "m3906c46cfd44f4074ce7",
+        "moveName": "Maple Road *~ (Zoë's)",
+        "moveNameUtf16": "004d 0061 0070 006c 0065 0020 0052 006f 0061 0064 0020 002a 007e 0020 0028 005a 006f 00eb 0027 0073 0029",
+        "helperCode": false,
+        "question": "Join Maple Road *~ (Zoë's) as Priya 🏠, Decider?",
+        "questionUtf16": "004a 006f 0069 006e 0020 004d 0061 0070 006c 0065 0020 0052 006f 0061 0064 0020 002a 007e 0020 0028 005a 006f 00eb 0027 0073 0029 0020 0061 0073 0020 0050 0072 0069 0079 0061 0020 d83c dfe0 002c 0020 0044 0065 0063 0069 0064 0065 0072 003f"
+      }
+    },
+    {
+      "name": "Helper code",
+      "invite": {
+        "hosts": [
+          "172.20.10.2"
+        ],
+        "port": 5555,
+        "token": "K2M4P6R8",
+        "personId": "*",
+        "personName": "",
+        "role": "HELPER",
+        "moveId": "m3906c46cfd44f4074ce7",
+        "moveName": "50% + 1: done",
+        "helperCode": true,
+        "question": "Join 50% + 1: done as a Helper?"
+      },
+      "text": "HMSYNC:172.20.10.2:5555:K2M4P6R8:*:HELPER::m3906c46cfd44f4074ce7:50%25+%2B+1%3A+done",
+      "parsedBack": {
+        "hosts": [
+          "172.20.10.2"
+        ],
+        "port": 5555,
+        "token": "K2M4P6R8",
+        "personId": "*",
+        "personName": "",
+        "role": "HELPER",
+        "moveId": "m3906c46cfd44f4074ce7",
+        "moveName": "50% + 1: done",
+        "helperCode": true,
+        "question": "Join 50% + 1: done as a Helper?"
+      }
+    },
+    {
+      "name": "an Organiser, a blank move name",
+      "invite": {
+        "hosts": [
+          "10.0.0.7"
+        ],
+        "port": 1,
+        "token": "ZZZZZZZZ",
+        "personId": "u1",
+        "personName": "日本 太郎",
+        "personNameUtf16": "65e5 672c 0020 592a 90ce",
+        "role": "ORGANISER",
+        "moveId": "m3906c46cfd44f4074ce7",
+        "moveName": "",
+        "helperCode": false,
+        "question": "Join this move as 日本 太郎, Organiser?",
+        "questionUtf16": "004a 006f 0069 006e 0020 0074 0068 0069 0073 0020 006d 006f 0076 0065 0020 0061 0073 0020 65e5 672c 0020 592a 90ce 002c 0020 004f 0072 0067 0061 006e 0069 0073 0065 0072 003f"
+      },
+      "text": "HMSYNC:10.0.0.7:1:ZZZZZZZZ:u1:ORGANISER:%E6%97%A5%E6%9C%AC+%E5%A4%AA%E9%83%8E:m3906c46cfd44f4074ce7:",
+      "parsedBack": {
+        "hosts": [
+          "10.0.0.7"
+        ],
+        "port": 1,
+        "token": "ZZZZZZZZ",
+        "personId": "u1",
+        "personName": "日本 太郎",
+        "personNameUtf16": "65e5 672c 0020 592a 90ce",
+        "role": "ORGANISER",
+        "moveId": "m3906c46cfd44f4074ce7",
+        "moveName": "",
+        "helperCode": false,
+        "question": "Join this move as 日本 太郎, Organiser?",
+        "questionUtf16": "004a 006f 0069 006e 0020 0074 0068 0069 0073 0020 006d 006f 0076 0065 0020 0061 0073 0020 65e5 672c 0020 592a 90ce 002c 0020 004f 0072 0067 0061 006e 0069 0073 0065 0072 003f"
+      }
+    }
+  ],
+  "parse": [
+    {
+      "text": "HMSYNC:192.168.1.23:40123:ABCDEFGH",
+      "invite": {
+        "hosts": [
+          "192.168.1.23"
+        ],
+        "port": 40123,
+        "token": "ABCDEFGH",
+        "personName": "",
+        "moveId": "",
+        "moveName": "",
+        "helperCode": false,
+        "question": "Sync with this move?"
+      }
+    },
+    {
+      "text": "  HMSYNC:192.168.1.23:40123:ABCDEFGH\n",
+      "textUtf16": "0020 0020 0048 004d 0053 0059 004e 0043 003a 0031 0039 0032 002e 0031 0036 0038 002e 0031 002e 0032 0033 003a 0034 0030 0031 0032 0033 003a 0041 0042 0043 0044 0045 0046 0047 0048 000a",
+      "invite": {
+        "hosts": [
+          "192.168.1.23"
+        ],
+        "port": 40123,
+        "token": "ABCDEFGH",
+        "personName": "",
+        "moveId": "",
+        "moveName": "",
+        "helperCode": false,
+        "question": "Sync with this move?"
+      }
+    },
+    {
+      "text": "hmsync:192.168.1.23:40123:ABCDEFGH",
+      "invite": null
+    },
+    {
+      "text": "HMSYNC:192.168.1.23:40123:ABCDEFGH:u2:HELPER:Sam+Lee",
+      "invite": {
+        "hosts": [
+          "192.168.1.23"
+        ],
+        "port": 40123,
+        "token": "ABCDEFGH",
+        "personId": "u2",
+        "personName": "Sam Lee",
+        "role": "HELPER",
+        "moveId": "",
+        "moveName": "",
+        "helperCode": false,
+        "question": "Join this move as Sam Lee, Helper?"
+      }
+    },
+    {
+      "text": "HMSYNC:192.168.1.23:40123:ABCDEFGH:u2:HELPER:Sam Lee",
+      "invite": {
+        "hosts": [
+          "192.168.1.23"
+        ],
+        "port": 40123,
+        "token": "ABCDEFGH",
+        "personId": "u2",
+        "personName": "Sam Lee",
+        "role": "HELPER",
+        "moveId": "",
+        "moveName": "",
+        "helperCode": false,
+        "question": "Join this move as Sam Lee, Helper?"
+      }
+    },
+    {
+      "text": "HMSYNC:192.168.1.23:40123:ABCDEFGH:u2:HELPER:%7e%7E%2a*",
+      "invite": {
+        "hosts": [
+          "192.168.1.23"
+        ],
+        "port": 40123,
+        "token": "ABCDEFGH",
+        "personId": "u2",
+        "personName": "~~**",
+        "role": "HELPER",
+        "moveId": "",
+        "moveName": "",
+        "helperCode": false,
+        "question": "Join this move as ~~**, Helper?"
+      }
+    },
+    {
+      "text": "HMSYNC:192.168.1.23:40123:ABCDEFGH:u2:HELPER:50%",
+      "invite": null
+    },
+    {
+      "text": "HMSYNC:192.168.1.23:40123:ABCDEFGH:u2:HELPER:%G1",
+      "invite": null
+    },
+    {
+      "text": "HMSYNC:192.168.1.23:40123:ABCDEFGH:u2:HELPER:%C3",
+      "invite": {
+        "hosts": [
+          "192.168.1.23"
+        ],
+        "port": 40123,
+        "token": "ABCDEFGH",
+        "personId": "u2",
+        "personName": "�",
+        "personNameUtf16": "fffd",
+        "role": "HELPER",
+        "moveId": "",
+        "moveName": "",
+        "helperCode": false,
+        "question": "Join this move as �, Helper?",
+        "questionUtf16": "004a 006f 0069 006e 0020 0074 0068 0069 0073 0020 006d 006f 0076 0065 0020 0061 0073 0020 fffd 002c 0020 0048 0065 006c 0070 0065 0072 003f"
+      }
+    },
+    {
+      "text": "HMSYNC:192.168.1.23:40123:ABCDEFGH:u2:BOSS:Sam",
+      "invite": {
+        "hosts": [
+          "192.168.1.23"
+        ],
+        "port": 40123,
+        "token": "ABCDEFGH",
+        "personId": "u2",
+        "personName": "Sam",
+        "moveId": "",
+        "moveName": "",
+        "helperCode": false,
+        "question": "Join this move as Sam?"
+      }
+    },
+    {
+      "text": "HMSYNC:192.168.1.23:40123:ABCDEFGH:u2:HELPER",
+      "invite": null
+    },
+    {
+      "text": "HMSYNC:192.168.1.23:port:ABCDEFGH",
+      "invite": null
+    },
+    {
+      "text": "HMSYNC::40123:ABCDEFGH",
+      "invite": null
+    },
+    {
+      "text": "HMSYNC:a,,b:40123:ABCDEFGH",
+      "invite": {
+        "hosts": [
+          "a",
+          "b"
+        ],
+        "port": 40123,
+        "token": "ABCDEFGH",
+        "personName": "",
+        "moveId": "",
+        "moveName": "",
+        "helperCode": false,
+        "question": "Sync with this move?"
+      }
+    },
+    {
+      "text": "HMSYNC:192.168.1.23:40123: ",
+      "invite": null
+    },
+    {
+      "text": "HMSYNC:fe80::1:40123:ABCDEFGH",
+      "invite": null
+    },
+    {
+      "text": "HMSYNC:192.168.1.23:40123:ABCDEFGH:::m3906c46cfd44f4074ce7:Maple+Road",
+      "invite": null
+    },
+    {
+      "text": "HMSYNC:192.168.1.23:40123:ABCDEFGH::HELPER::m3906c46cfd44f4074ce7:Maple",
+      "invite": null
+    },
+    {
+      "text": "HMSYNC:192.168.1.23:40123:ABCDEFGH:*::Zo%C3%AB:m3906c46cfd44f4074ce7:Zo%C3%AB",
+      "invite": {
+        "hosts": [
+          "192.168.1.23"
+        ],
+        "port": 40123,
+        "token": "ABCDEFGH",
+        "personId": "*",
+        "personName": "Zoë",
+        "personNameUtf16": "005a 006f 00eb",
+        "moveId": "m3906c46cfd44f4074ce7",
+        "moveName": "Zoë",
+        "moveNameUtf16": "005a 006f 00eb",
+        "helperCode": true,
+        "question": "Join Zoë as a Helper?",
+        "questionUtf16": "004a 006f 0069 006e 0020 005a 006f 00eb 0020 0061 0073 0020 0061 0020 0048 0065 006c 0070 0065 0072 003f"
+      }
+    },
+    {
+      "text": "HMSYNC:192.168.1.23:40123:ABCDEFGH:u2:DECIDER:Priya:m3906c46cfd44f4074ce7:%",
+      "invite": null
+    },
+    {
+      "text": "HMSYNC:192.168.1.23:99999999999:ABCDEFGH",
+      "invite": null
+    },
+    {
+      "text": "HMSYNC:192.168.1.23:-1:ABCDEFGH",
+      "invite": {
+        "hosts": [
+          "192.168.1.23"
+        ],
+        "port": -1,
+        "token": "ABCDEFGH",
+        "personName": "",
+        "moveId": "",
+        "moveName": "",
+        "helperCode": false,
+        "question": "Sync with this move?"
+      }
+    }
+  ],
+  "urlEncode": [
+    {
+      "text": "Maple Road",
+      "encoded": "Maple+Road"
+    },
+    {
+      "text": "*",
+      "encoded": "*"
+    },
+    {
+      "text": "~",
+      "encoded": "%7E"
+    },
+    {
+      "text": "-_.",
+      "encoded": "-_."
+    },
+    {
+      "text": "a+b",
+      "encoded": "a%2Bb"
+    },
+    {
+      "text": "50%",
+      "encoded": "50%25"
+    },
+    {
+      "text": "a:b",
+      "encoded": "a%3Ab"
+    },
+    {
+      "text": "Zoë",
+      "textUtf16": "005a 006f 00eb",
+      "encoded": "Zo%C3%AB"
+    },
+    {
+      "text": "Priya 🏠",
+      "textUtf16": "0050 0072 0069 0079 0061 0020 d83c dfe0",
+      "encoded": "Priya+%F0%9F%8F%A0"
+    },
+    {
+      "text": "日本",
+      "textUtf16": "65e5 672c",
+      "encoded": "%E6%97%A5%E6%9C%AC"
+    },
+    {
+      "text": "x\ud800y",
+      "textUtf16": "0078 d800 0079",
+      "encoded": "x%3Fy"
+    },
+    {
+      "text": "\u0000",
+      "textUtf16": "0000",
+      "encoded": "%00"
+    },
+    {
+      "text": "!'()",
+      "encoded": "%21%27%28%29"
+    }
+  ],
+  "urlDecode": [
+    {
+      "text": "Maple+Road",
+      "decoded": "Maple Road"
+    },
+    {
+      "text": "%7e",
+      "decoded": "~"
+    },
+    {
+      "text": "%7E",
+      "decoded": "~"
+    },
+    {
+      "text": "a%2Bb",
+      "decoded": "a+b"
+    },
+    {
+      "text": "%E6%97%A5",
+      "decoded": "日",
+      "decodedUtf16": "65e5"
+    },
+    {
+      "text": "Zoë",
+      "textUtf16": "005a 006f 00eb",
+      "decoded": "Zoë",
+      "decodedUtf16": "005a 006f 00eb"
+    },
+    {
+      "text": "%",
+      "decoded": "error: IllegalArgumentException"
+    },
+    {
+      "text": "%G1",
+      "decoded": "error: IllegalArgumentException"
+    },
+    {
+      "text": "%C3",
+      "decoded": "�",
+      "decodedUtf16": "fffd"
+    },
+    {
+      "text": "%ed%a0%80",
+      "decoded": "�",
+      "decodedUtf16": "fffd"
+    },
+    {
+      "text": "+%20+",
+      "decoded": "   "
+    }
+  ]
+}

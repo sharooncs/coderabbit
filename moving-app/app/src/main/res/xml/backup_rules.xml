@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    What Android's own backup copies (Android 11 and earlier): only the small per-move data.
+    The list of moves, the phone's settings, and each move's data and settings for this phone.
+    Not the photos (files/photos/), and nothing in no_backup: the phone ID and each move's
+    letter, code counter and label numbers stay with the phone that made them, so a phone
+    restored or cloned from this one gets its own.
+-->
+<full-backup-content>
+    <include domain="file" path="moves.json" />
+    <include domain="file" path="phone.json" />
+    <include domain="file" path="moves/" />
+</full-backup-content>
